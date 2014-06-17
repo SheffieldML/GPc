@@ -1,0 +1,30 @@
+#
+#
+#  The machine (platform) identifier to append to the library names
+#
+SHELL = /bin/sh
+
+PLAT = _OSX
+LAPACKDIR = /opt/local/lib/
+LAPACKLIBS = ${LAPACKDIR}liblapack.dylib ${LAPACKDIR}libatlas.dylib
+F2CLIB = ${LAPACKDIR}libf95.a
+
+# Uncomment these lines to set up the MATLAB interface.
+#MATLABLIBS = -lmat -lmx
+#MATLABBASE=/usr/local/pkg/matlab/
+#MATLABRUNLIBDIR=${MATLABBASE}/bin/glnx86
+#MATLABLIBDIR=${MATLABBASE}/bin/glnx86
+#MATLABINCLUDE=${MATLABBASE}/extern/include
+#MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
+#MATLABFLAG=-D_NDLMATLAB
+
+INCLUDE = $(MATLABINCLUDE)
+
+LD=g++
+LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
+CC=g++
+CCFLAGS = -ggdb -DDBG -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+#CCFLAGS = -O3 -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+FC=g95
+FCFLAGS = -funroll-all-loops -O3
+

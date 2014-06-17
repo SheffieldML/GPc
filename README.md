@@ -23,13 +23,13 @@ The software was written with gcc vs 3.2.2. There are definitely Standard Templa
 <p>Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
 <p>The software is compiled by writing 
 
-<p><code>$ make ivm</code>
+<p>`$ make ivm`
 
-<p>at the command line. Architecture specific options are included in the <code>make.ARCHITECTURE</code> files. Rename the file with the relevant architecture to <code>make.inc</code> for it to be included.
+<p>at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
 
 <h3>Optimisation</h3>
 
-One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file <code>make.atlas</code> includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
+One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file `make.atlas` includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
 
 <h3>Cygwin</h3>
 
@@ -37,19 +37,19 @@ For Windows users the code compiles under cygwin. However you will need version 
 
 <h3>Microsoft Visual C++</h3>
 
-As of Release 0.101 the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory <code>MSVC/ivm</code>. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
+As of Release 0.101 the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory `MSVC/ivm`. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
 
 <h2>General Information</h2>
 
-<p>The way the software operates is through the command line. There is one executable, <code>ivm</code>. Help can be obtained by writing 
+<p>The way the software operates is through the command line. There is one executable, `ivm`. Help can be obtained by writing 
 
-<p><code>$ ivm -h</code>
+<p>`$ ivm -h`
 
 <p>which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
 
-<p><code>$ ivm learn -h</code>
+<p>`$ ivm learn -h`
 
-All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options <code>-v 3</code> in each of the examples so that you can track the iterations.
+All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
 <h1>Bugs</h1>
 
@@ -71,23 +71,23 @@ error in test mode! So I use two vesions simultaneously. "</i>
 
 <a name="toydata"><h2>Toy Data Sets</h2></a>
 
-<p>In this section we present some simple examples. The results will be visualised using <code>gnuplot</code>. It is suggested that you have access to <code>gnuplot</code> vs 4.0 or above.
+<p>In this section we present some simple examples. The results will be visualised using `gnuplot`. It is suggested that you have access to `gnuplot` vs 4.0 or above.
 
-<p>Provided with the software, in the <code>examples</code> directory, are some simple two dimensional problems. We will first try classification with these examples.
+<p>Provided with the software, in the `examples` directory, are some simple two dimensional problems. We will first try classification with these examples.
 
 <p>The first example is data sampled from a Gaussian process with an RBF kernel function with inverse width of 10. The input data is sampled uniformly from the unit square. This data can be learnt with the following command.
 
-<p><code>$ ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model</code>
+<p>`$ ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model`
 
-<p>The flag <code>-v 3</code> sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag <code>-a 200</code> sets the active set size. The kernel type is selected with the flag <code>-k rbf</code>. 
+<p>The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-a 200` sets the active set size. The kernel type is selected with the flag `-k rbf`. 
 
 <h3>Gnuplot</h3>
 
-<p>The learned model is saved in a file called <code>unitsquaregp.model</code>. This file has a plain text format to make it human readable. Once training is complete, the learned kernel parameters of the model can be displayed using 
+<p>The learned model is saved in a file called `unitsquaregp.model`. This file has a plain text format to make it human readable. Once training is complete, the learned kernel parameters of the model can be displayed using 
 
-<p><code>$ ivm display unitsquaregp.model</code>
+<p>`$ ivm display unitsquaregp.model`
 
-<p><code>
+<p>`
 Loading model file.<br>
 ... done.<br>
 IVM Model:<br>
@@ -101,33 +101,33 @@ whitevariance: 0.0784375<br>
 Noise Type:<br>
 Probit noise:<br>
 Bias on process 0: 0.237516
-</code>
+`
 
-<p>Notice the fact that the kernel is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. The bias kernel and the white kernel are automatically added to the rbf kernel. Other kernels may also be used, see <code>ivm learn -h</code> for details.
+<p>Notice the fact that the kernel is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. The bias kernel and the white kernel are automatically added to the rbf kernel. Other kernels may also be used, see `ivm learn -h` for details.
 
 <p>For this model the input data is two dimensional, you can therefore visualise the decision boundary using
 
-<p><code>$ ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp</code>
+<p>`$ ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp`
 
-<p>The <code>unitsquaregp</code> supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
+<p>The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-<p><code>$ gnuplot unitsquaregp_plot.gp</code>
+<p>`$ gnuplot unitsquaregp_plot.gp`
 
 <p>and obtain the plot shown below
 <p><center><img src="unitsquaregp_plot.png"><br>
 The decision boundary learnt for the data sampled from a Gaussian process classification. Note the active points (blue stars) typically lie along the decision boundary.</center><br>
 
-<p>The other files created are <code>oil100_variance_matrix.dat</code>, which produces the grayscale map of the log precisions and <code>oil100_latent_data1-3.dat</code> which are files containing the latent data positions associated with each label.
+<p>The other files created are `oil100_variance_matrix.dat`, which produces the grayscale map of the log precisions and `oil100_latent_data1-3.dat` which are files containing the latent data positions associated with each label.
 
 <h3>Feature Selection</h3>
 
 <p>Next we consider a simple ARD kernel. The toy data in this case is sampled from three Gaussian distributions. To separate the data only one input dimension is necessary. The command is run as follows,
 
-<p><code>$ ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model</code>
+<p>`$ ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model`
 
 <p>Displaying the model it is clear that it has selected one of the input dimensions, 
 
-<p><code>
+<p>`
 Loading model file.<br>
 ... done.<br>
 IVM Model:<br>
@@ -143,11 +143,11 @@ whitevariance: 2.75252e-08<br>
 Noise Type:<br>
 Probit noise:<br>
 Bias on process 0: 0.745098
-</code>
+`
 
 <p>Once again the results can be displayed as a two dimensional plot,
 
-<p><code>$ ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters</code>
+<p>`$ ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters`
 
 <p><center><img src="ard_gaussian_clusters_plot.png"><br>
 The IVM learnt with an ARD RBF kernel. One of the input directions has been recognised as not relevant.
@@ -160,12 +160,12 @@ The IVM learnt with an ARD RBF kernel. One of the input directions has been reco
 
 <p>The toy example given in the paper is reconstructed here. To run it type
 
-<p><code>$ ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
-</code>
+<p>`$ ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
+`
 
 <p>The result of learning is
 
-<p><code>
+<p>`
 Loading model file.<br>
 ... done.<br>
 IVM Model:<br>
@@ -181,15 +181,15 @@ Ncnm noise:<br>
 Bias on process 0: 0.237009<br>
 Missing label probability for -ve class: 0.9075<br>
 Missing label probability for +ve class: 0.9075
-</code>
+`
 
 <p>and can be visualised using
 
-<p><code>$ ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent</code>
+<p>`$ ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent`
 
 <p>followed by 
 
-<p><code>$ gnuplot semisupercrescent_plot.gp</code>
+<p>`$ gnuplot semisupercrescent_plot.gp`
 
 <p>The result of the visualisation being,
 
@@ -200,7 +200,7 @@ GP
 
 <h1>C++ GP Software</h1>
 
-This page describes how to compile and gives some examples of use of the C++ Gaussian Process code available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=gpcpp">download here</a>. 
+This page describes how to compile and gives some examples of use of the C++ Gaussian Process code.
 
 <h3>Release Information</h3>
 
@@ -221,9 +221,9 @@ The software was written with gcc on ubuntu.
 <p>Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
 <p>The software is compiled by writing 
 
-<p><code>$ make gp</code>
+<p>`$ make gp`
 
-<p>at the command line. Architecture specific options are included in the <code>make.ARCHITECTURE</code> files. Rename the file with the relevant architecture to <code>make.inc</code> for it to be included.
+<p>at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
 
 <h3>Optimisation</h3>
 
@@ -232,15 +232,15 @@ One of the advantages of interfacing to the LAPACK and BLAS libraries is that th
 
 <h2>General Information</h2>
 
-<p>The way the software operates is through the command line. There is one executable, <code>gp</code>. Help can be obtained by writing 
+<p>The way the software operates is through the command line. There is one executable, `gp`. Help can be obtained by writing 
 
-<p><code>$ ./gp -h</code>
+<p>`$ ./gp -h`
 
 <p>which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
 
-<p><code>$ ./gp learn -h</code>
+<p>`$ ./gp learn -h`
 
-All the tutorial optimisations suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options <code>-v 3</code> in each of the examples so that you can track the iterations.
+All the tutorial optimisations suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
 <h1>Examples</h1>
 
@@ -249,24 +249,24 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 <a name="spgp1d"><h2>One Dimensional Data Data</h2></a>
 
 
-<p>Provided with the software, in the <code>examples</code> directory, is a one dimensional regression problem. The file is called <code>spgp1d.svml</code>. 
+<p>Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `spgp1d.svml`. 
 
 <p>First we will learn the data using the following command,
 
-<p><code>$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model</code>
+<p>`$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model`
 
-<p>The flag <code>-v 3</code> sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag <code>-# 100</code> terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
+<p>The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
 
-<p>The software will load the data in <code>sinc.svml</code>. The labels are included in this file but they are <i>not</i> used in the optimisation of the model. They are for visualisation purposes only.
+<p>The software will load the data in `sinc.svml`. The labels are included in this file but they are <i>not</i> used in the optimisation of the model. They are for visualisation purposes only.
 
 <h3>Gnuplot</h3>
 
-<p>The learned model is saved in a file called <code>sinc.model</code>. This file has a plain text format to make it human readable. Once training is complete, the learned covariance function parameters of the model can be displayed using 
+<p>The learned model is saved in a file called `sinc.model`. This file has a plain text format to make it human readable. Once training is complete, the learned covariance function parameters of the model can be displayed using 
 
 
-<p><code>$ ./gp display sinc.model</code>
+<p>`$ ./gp display sinc.model`
 
-<p><code>
+<p>`
 Loading model file.</br>
 ... done.</br>
 Standard GP Model: </br>
@@ -287,37 +287,37 @@ rbfinverseWidth: 0.198511</br>
 rbfvariance: 0.0751124</br>
 biasvariance: 1.6755e-05</br>
 whitevariance: 0.00204124</br>
-</code>
+`
 
-<p>Notice the fact that the covariance function is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. This is the default setting, it can be changed with flags to other covariance function types, see <code>./gp learn -h</code> for details.
+<p>Notice the fact that the covariance function is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. This is the default setting, it can be changed with flags to other covariance function types, see `./gp learn -h` for details.
 
-<p>For your convenience a <code>gnuplot</code> file may generated to visualise the data. First run
+<p>For your convenience a `gnuplot` file may generated to visualise the data. First run
 
-<p><code>$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc</code>
+<p>`$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc`
 
-<p>The <code>sinc</code> supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
+<p>The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-<p><code>$ gnuplot sinc_plot.gp</code>
+<p>`$ gnuplot sinc_plot.gp`
 
 <p>And obtain the plot shown below
 <p><center><img src="sinc.png"><br>
 Gaussian process applied to sinc data.</center><br>
 
-<p>The other files created are <code>sinc_error_bar_data.dat</code>, which produces the error bars and <code>sinc_line_data.dat</code> which produces the mean as well as <code>sinc_scatter_data.dat</code> which shows the training data.
+<p>The other files created are `sinc_error_bar_data.dat`, which produces the error bars and `sinc_line_data.dat` which produces the mean as well as `sinc_scatter_data.dat` which shows the training data.
 
 <h3>Other Data</h3>
 
 <p>You might also want to try a larger data set.
 
-<p><code>$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model</code>
+<p>`$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model`
 
 <h3>MATLAB and OCTAVE</h3>
 
 While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="/~neill/gp">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
-
-<p><code>&gt;&gt; [y, X] = svmlread('sinc.svml')<br>
-<p><code>&gt;&gt; gpReadFromFile('sinc.model', X, y)<br>
-&gt;&gt;</code>
+<pre>
+&gt;&gt; [y, X] = svmlread('sinc.svml')<br>
+&gt;&gt; gpReadFromFile('sinc.model', X, y)<br>
+&gt;&gt;</pre>
 
 <p>where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
 
@@ -326,9 +326,7 @@ GP-LVM
 
 <h1>GP-LVM Software</h1>
 
-This page describes how to compile and gives some examples of use of the C++ Gaussian Process Latent Variable Model Software (GP-LVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=gplvmcpp">download here</a>. 
-
-<h3>Release Information</h3>
+This page describes how to compile and gives some examples of use of the C++ Gaussian Process Latent Variable Model Software (GP-LVM). 
 
 <p>Release 0.201
 
@@ -347,7 +345,7 @@ and variational dtc approximations will be available.
 
 <p>In this release the dynamics model of <a href="http://www.dgp.toronto.edu/~jmwang/gpdm/">Wang <i>et al</i>.</a> has been included. The initial work was done by William V. Baxter, with modifications by me to include the unusual prior Wang suggests in his MSc thesis, scaling of the dynamics likelihood and the ability to set the signal noise ratio. A new example has been introduced for this model below.
 
-<p>As part of the dynamics introduction a new MATLAB toolbox for the GP-LVM has been released. This toolbox, <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=fgplvm">download here</a>, is expected to be the main development toolbox for the GP-LVM in MATLAB.
+<p>As part of the dynamics introduction a MATLAB toolbox for the GP-LVM is available in [this github repository](https://github.com/SheffieldML/GPmat).
 
 <p>Version 0.101 was released 21st October 2005.
 
@@ -389,14 +387,14 @@ writing
 <pre>$ make gplvm</pre>
 
 <p>at the command line. Architecture specific options are included in
-the <code>make.ARCHITECTURE</code> files. Rename the file with the
-relevant architecture to <code>make.inc</code> for it to be included.
+the `make.ARCHITECTURE` files. Rename the file with the
+relevant architecture to `make.inc` for it to be included.
 
 <h3>Optimisation</h3>
 
 One of the advantages of interfacing to the LAPACK and BLAS libraries
 is that they are often optimised for particular architectures. The
-file <code>make.atlas</code> includes options for compiling the ATLAS
+file `make.atlas` includes options for compiling the ATLAS
 optimised versions of lapack and blas that are available on a server I
 have access to. These options may vary for particular machines.
 
@@ -416,7 +414,7 @@ lapack and blas.
 
 As of Release 0.101 the code compiles under Microsoft Visual Studio
 7.1. A project file is provided in the current release in the
-directory <code>MSVC/gplvm</code>. The compilation makes use of f2c
+directory `MSVC/gplvm`. The compilation makes use of f2c
 versions of the FORTRAN code and the C version of LAPACK/BLAS,
 CLAPACK. Detailed instructions on how to compile are in the
 readme.msvc file. The work to convert the code (which included ironing
@@ -426,7 +424,7 @@ for allowing me to make this available.
 <h2>General Information</h2>
 
 <p>The way the software operates is through the command line. There is
-one executable, <code>gplvm</code>. Help can be obtained by writing
+one executable, `gplvm`. Help can be obtained by writing
 
 <pre>$ ./gplvm -h</pre>
 
@@ -438,7 +436,7 @@ each command can then be obtained by writing, for example,
 All the tutorial optimisations suggested take less than 1/2 hour to
 run on my less than 2GHz Pentium IV machine. The first oil example
 runs in a couple of minutes. Below I suggest using the highest
-verbosity options <code>-v 3</code> in each of the examples so that
+verbosity options `-v 3` in each of the examples so that
 you can track the iterations.
 
 <h1>Examples</h1>
@@ -458,29 +456,29 @@ page</a> for details) sub-sampled to 100 points. I use this data a lot
 for checking the algorithm is working so in some senses it is not an
 independent `proof' of the model.
 
-<p>Provided with the software, in the <code>examples</code> directory,
+<p>Provided with the software, in the `examples` directory,
 is a sub-sample of the oil data. The file is called
-<code>oilTrain100.svml</code>.
+`oilTrain100.svml`.
 
 <p>First we will learn the data using the following command,
 
 <pre>$ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model</pre>
 
-<p>The flag <code>-v 3</code> sets the verbosity level to 3 (the
+<p>The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate
-gradient algorithm to be shown. The flag <code>-# 100</code>
+gradient algorithm to be shown. The flag `-# 100`
 terminates the optimisation after 100 iterations so that you can
 quickly move on with the rest of the tutorial.
 
 <p>The software will load the data in
-<code>oilTrain100.svml</code>. The labels are included in this file
+`oilTrain100.svml`. The labels are included in this file
 but they are <i>not</i> used in the optimisation of the model. They
 are for visualisation purposes only.
 
 <h3>Gnuplot</h3>
 
 <p>The learned model is saved in a file called
-<code>oil100.model</code>. This file has a plain text format to make
+`oil100.model`. This file has a plain text format to make
 it human readable. Once training is complete, the learned kernel
 parameters of the model can be displayed using
 
@@ -503,15 +501,15 @@ whitevariance: 0.00267715
 known as squared exponential kernel or Gaussian kernel; a bias kernel,
 which is just a constant, and a white noise kernel, which is a
 diagonal term. This is the default setting, it can be changed with
-flags to other kernel types, see <code>gplvm learn -h</code> for
+flags to other kernel types, see `gplvm learn -h` for
 details.
 
-<p>For your convenience a <code>gnuplot</code> file may generated to
+<p>For your convenience a `gnuplot` file may generated to
 visualise the data. First run
 
 <pre>$ ./gplvm gnuplot oil100.model oil100</pre>
 
-<p>The <code>oil100</code> supplied as the last argument acts as a
+<p>The `oil100` supplied as the last argument acts as a
 stub for gnuplot to create names from, so for example (using gnuplot
 vs 4.0 or above), you can write
 
@@ -522,8 +520,8 @@ vs 4.0 or above), you can write
 Visualisation of 100 points of the oil flow data.</center><br>
 
 <p>The other files created are
-<code>oil100_variance_matrix.dat</code>, which produces the grayscale
-map of the log precisions and <code>oil100_latent_data1-3.dat</code>
+`oil100_variance_matrix.dat`, which produces the grayscale
+map of the log precisions and `oil100_latent_data1-3.dat`
 which are files containing the latent data positions associated with
 each label.
 
@@ -621,7 +619,7 @@ light interface. First we downsample so that things run quickly,
 anything up by playing the data again!</i> <p>It makes sense to learn
 the scale independently for each the channels (particularly since we
 have set three of them to zero!), so we now use the gplvm code to
-learn the data setting the flag <code>-L true</code> for learning of
+learn the data setting the flag `-L true` for learning of
 scales.
 
 <pre>$ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model</pre>
@@ -689,10 +687,10 @@ the hyper parameters of the GP-LVM (see pg 58 of his <a
 href="http://www.dgp.toronto.edu/~jmwang/gpdmthesis.pdf">Master's
 thesis</a>). This prior is unusual as it is improper, but it is not
 the standard uninformative 1/x prior. This approach can be recreated
-using the <code>-dh</code> flag when running the code. An alternative
+using the `-dh` flag when running the code. An alternative
 approach of scaling the portion of the likelihood associated with the
 dynamics up by a factor has also been suggested. This approach can be
-recreated by using the <code>-ds</code> flag.
+recreated by using the `-ds` flag.
 
 <p>My own preference is to avoid either of these approaches. A key
 motivation of the GP-LVM as a probabilistic model was to design an
@@ -703,11 +701,11 @@ modelling the dynamics. However it is also true that a non-linear
 model is needed. As an alternative approach we suggest fixing the
 hyper parameters. The level of noise can be fixed by suggesting a
 signal to noise ratio. This approach has also been implemented in the
-code using the <code>-dr</code> flag.
+code using the `-dr` flag.
 
 <pre>$ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model</pre>
 
-<p>where the <code>-M</code> flag sets the parameter associated with
+<p>where the `-M` flag sets the parameter associated with
 Wang's prior. Here the dynamics GP is given a linear and an RBF
 kernel. The results of the visualisation are shown below.
 

@@ -258,7 +258,7 @@ Provided with the software, in the `examples` directory, is a one dimensional re
 
 First we will learn the data using the following command,
 
-`$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model`
+<pre>$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model</pre>
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
 
@@ -269,40 +269,40 @@ The software will load the data in `sinc.svml`. The labels are included in this 
 The learned model is saved in a file called `sinc.model`. This file has a plain text format to make it human readable. Once training is complete, the learned covariance function parameters of the model can be displayed using 
 
 
-`$ ./gp display sinc.model`
+<pre>`$ ./gp display sinc.model</pre>
 
-`
-Loading model file.</br>
-... done.</br>
-Standard GP Model: </br>
-Optimiser: scg</br>
-Data Set Size: 40</br>
-Kernel Type: </br>
-Scales learnt: 0</br>
-X learnt: 0</br>
-Bias: 0.106658 </br>
-</br>
-Scale: 1 </br>
-</br>
-Gaussian Noise: </br>
-Bias on process 0: 0</br?
-Variance: 1e-06</br>
-compound kernel:</br>
-rbfinverseWidth: 0.198511</br>
-rbfvariance: 0.0751124</br>
-biasvariance: 1.6755e-05</br>
-whitevariance: 0.00204124</br>
-`
+<pre>
+Loading model file.
+... done.
+Standard GP Model: 
+Optimiser: scg
+Data Set Size: 40
+Kernel Type: 
+Scales learnt: 0
+X learnt: 0
+Bias: 0.106658 
+
+Scale: 1 
+
+Gaussian Noise: 
+Bias on process 0: 0
+Variance: 1e-06
+compound kernel:
+rbfinverseWidth: 0.198511
+rbfvariance: 0.0751124
+biasvariance: 1.6755e-05
+whitevariance: 0.00204124
+</pre>
 
 Notice the fact that the covariance function is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. This is the default setting, it can be changed with flags to other covariance function types, see `./gp learn -h` for details.
 
 For your convenience a `gnuplot` file may generated to visualise the data. First run
 
-`$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc`
+<pre>$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc</pre>
 
 The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-`$ gnuplot sinc_plot.gp`
+<pre>$ gnuplot sinc_plot.gp</pre>
 
 And obtain the plot shown below
 <center><img src="sinc.png"><br>
@@ -314,14 +314,14 @@ The other files created are `sinc_error_bar_data.dat`, which produces the error 
 
 You might also want to try a larger data set.
 
-`$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model`
+<pre>$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model</pre>
 
 <h3>MATLAB and OCTAVE</h3>
 
 While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="/~neill/gp">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
 <pre>
-&gt;&gt; [y, X] = svmlread('sinc.svml')<br>
-&gt;&gt; gpReadFromFile('sinc.model', X, y)<br>
+&gt;&gt; [y, X] = svmlread('sinc.svml')
+&gt;&gt; gpReadFromFile('sinc.model', X, y)
 &gt;&gt;</pre>
 
 where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
@@ -518,7 +518,7 @@ The `oil100` supplied as the last argument acts as a
 stub for gnuplot to create names from, so for example (using gnuplot
 vs 4.0 or above), you can write
 
-<pre>$ gnuplot oil100_plot.gp</pre>
+<pre>$ gnuplot oil100_plot.gp</Pre>
 
 And obtain the plot shown below
 <center><img src="oil100_plot.png"><br>

@@ -305,7 +305,9 @@ The `sinc` supplied as the last argument acts as a stub for gnuplot to create na
 <pre>$ gnuplot sinc_plot.gp</pre>
 
 And obtain the plot shown below
-<center><img src="sinc.png"><br>
+
+![Sinc Plot](./sinc.png)
+
 Gaussian process applied to sinc data.</center><br>
 
 The other files created are `sinc_error_bar_data.dat`, which produces the error bars and `sinc_line_data.dat` which produces the mean as well as `sinc_scatter_data.dat` which shows the training data.

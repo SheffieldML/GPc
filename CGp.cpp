@@ -92,6 +92,7 @@ CGp::CGp(CKern* pkernel, CNoise* pnois,
 }
 void CGp::_init()
 {
+  setBaseType("DataModel");
   setType("gp");
   setName("Gaussian process");
   setOutputScaleLearnt(false);
@@ -1606,7 +1607,7 @@ void CGp::readParamsFromStream(istream& in)
 {
   string tbaseType = getBaseTypeStream(in);
   if(tbaseType != getBaseType())
-    throw ndlexceptions::StreamFormatError("baseType", "Error mismatch between saved base type, " + tbaseType + ", and Class base type, " + getType() + ".");
+    throw ndlexceptions::StreamFormatError("baseType", "Error mismatch between saved base type, " + tbaseType + ", and Class base type, " + getBaseType() + ".");
   string ttype = getTypeStream(in);
   if(ttype != getType())
     throw ndlexceptions::StreamFormatError("type", "Error mismatch between saved type, " + ttype + ", and Class type, " + getType() + ".");

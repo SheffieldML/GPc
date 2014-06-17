@@ -9,6 +9,7 @@ CGplvm::CGplvm()
 }
 void CGplvm::_init()
 {
+  setBaseType("DataModel");
   setType("gplvm");
   setName("Gaussian process latent variable model");
 }
@@ -802,7 +803,7 @@ void CGplvm::readParamsFromStream(istream& in)
 {
   string tbaseType = getBaseTypeStream(in);
   if(tbaseType != getBaseType())
-    throw ndlexceptions::StreamFormatError("baseType", "Error mismatch between saved base type, " + tbaseType + ", and Class base type, " + getType() + ".");
+    throw ndlexceptions::StreamFormatError("baseType", "Error mismatch between saved base type, " + tbaseType + ", and Class base type, " + getBaseType() + ".");
   string ttype = getTypeStream(in);
   if(ttype != getType())
     throw ndlexceptions::StreamFormatError("type", "Error mismatch between saved type, " + ttype + ", and Class type, " + getType() + ".");

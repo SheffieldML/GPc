@@ -46,13 +46,13 @@ As of Release 0.101 the code compiles under Microsoft Visual Studio 7.1. A proje
 The way the software operates is through the command line. There is one executable, `ivm`. Help can be obtained by writing 
 
 <pre>
-$ ivm -h
+$ ./ivm -h
 </pre>
 
 which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
 
 <pre>
-$ ivm learn -h
+$ ./ivm learn -h
 </pre>
 
 All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
@@ -83,7 +83,7 @@ Provided with the software, in the `examples` directory, are some simple two dim
 
 The first example is data sampled from a Gaussian process with an RBF kernel function with inverse width of 10. The input data is sampled uniformly from the unit square. This data can be learnt with the following command.
 
-`$ ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model`
+<pre>$ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model</pre>
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-a 200` sets the active set size. The kernel type is selected with the flag `-k rbf`. 
 
@@ -91,33 +91,32 @@ The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes t
 
 The learned model is saved in a file called `unitsquaregp.model`. This file has a plain text format to make it human readable. Once training is complete, the learned kernel parameters of the model can be displayed using 
 
-`$ ivm display unitsquaregp.model`
+<pre>$ ./ivm display unitsquaregp.model
 
-`
-Loading model file.<br>
-... done.<br>
-IVM Model:<br>
-Active Set Size: 200<br>
-Kernel Type:<br>
-compound kernel:<br>
-rbfinverseWidth: 12.1211<br>
-rbfvariance: 0.136772<br>
-biasvariance: 0.000229177<br>
-whitevariance: 0.0784375<br>
-Noise Type:<br>
-Probit noise:<br>
+Loading model file.
+... done.
+IVM Model:
+Active Set Size: 200
+Kernel Type:
+compound kernel:
+rbfinverseWidth: 12.1211
+rbfvariance: 0.136772
+biasvariance: 0.000229177
+whitevariance: 0.0784375
+Noise Type:
+Probit noise:
 Bias on process 0: 0.237516
-`
+</pre>
 
 Notice the fact that the kernel is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. The bias kernel and the white kernel are automatically added to the rbf kernel. Other kernels may also be used, see `ivm learn -h` for details.
 
 For this model the input data is two dimensional, you can therefore visualise the decision boundary using
 
-`$ ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp`
+<pre>$ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp</pre>
 
 The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-`$ gnuplot unitsquaregp_plot.gp`
+<pre>$ gnuplot unitsquaregp_plot.gp</pre>
 
 and obtain the plot shown below
 <center><img src="unitsquaregp_plot.png"><br>
@@ -129,31 +128,31 @@ The other files created are `oil100_variance_matrix.dat`, which produces the gra
 
 Next we consider a simple ARD kernel. The toy data in this case is sampled from three Gaussian distributions. To separate the data only one input dimension is necessary. The command is run as follows,
 
-`$ ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model`
+<pre>$ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model</pre>
 
 Displaying the model it is clear that it has selected one of the input dimensions, 
 
-`
-Loading model file.<br>
-... done.<br>
-IVM Model:<br>
-Active Set Size: 100<br>
-Kernel Type:<br>
-compound kernel:<br>
-rbfardinverseWidth: 0.12293<br>
-rbfardvariance: 2.25369<br>
-rbfardinputScale: 5.88538e-08<br>
-rbfardinputScale: 0.935148<br>
-biasvariance: 9.10663e-07<br>
-whitevariance: 2.75252e-08<br>
-Noise Type:<br>
-Probit noise:<br>
+<pre>
+Loading model file.
+... done.
+IVM Model:
+Active Set Size: 100
+Kernel Type:
+compound kernel:
+rbfardinverseWidth: 0.12293
+rbfardvariance: 2.25369
+rbfardinputScale: 5.88538e-08
+rbfardinputScale: 0.935148
+biasvariance: 9.10663e-07
+whitevariance: 2.75252e-08
+Noise Type:
+Probit noise:
 Bias on process 0: 0.745098
-`
+</pre>
 
 Once again the results can be displayed as a two dimensional plot,
 
-`$ ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters`
+<pre>$ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters</pre>
 
 <center><img src="ard_gaussian_clusters_plot.png"><br>
 The IVM learnt with an ARD RBF kernel. One of the input directions has been recognised as not relevant.
@@ -166,36 +165,36 @@ The software also provides an implementation of the null category noise model de
 
 The toy example given in the paper is reconstructed here. To run it type
 
-`$ ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
-`
+<pre>$ ./ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
+</pre>
 
 The result of learning is
 
-`
-Loading model file.<br>
-... done.<br>
-IVM Model:<br>
-Active Set Size: 100<br>
-Kernel Type:<br>
-compound kernel:<br>
-rbfinverseWidth: 0.0716589<br>
-rbfvariance: 2.58166<br>
-biasvariance: 2.03635e-05<br>
-whitevariance: 3.9588e-06<br>
-Noise Type:<br>
-Ncnm noise:<br>
-Bias on process 0: 0.237009<br>
-Missing label probability for -ve class: 0.9075<br>
+<pre>
+Loading model file.
+... done.
+IVM Model:
+Active Set Size: 100
+Kernel Type:
+compound kernel:
+rbfinverseWidth: 0.0716589
+rbfvariance: 2.58166
+biasvariance: 2.03635e-05
+whitevariance: 3.9588e-06
+Noise Type:
+Ncnm noise:
+Bias on process 0: 0.237009
+Missing label probability for -ve class: 0.9075
 Missing label probability for +ve class: 0.9075
-`
+</pre>
 
 and can be visualised using
 
-`$ ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent`
+<pre>$ ./ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent</pre>
 
 followed by 
 
-`$ gnuplot semisupercrescent_plot.gp`
+<pre>$ gnuplot semisupercrescent_plot.gp</pre>
 
 The result of the visualisation being,
 

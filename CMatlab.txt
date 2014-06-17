@@ -1,0 +1,3 @@
+This file contains an abstract base class CMatinterface which when implemented allows an object to load itself from MATLAB and save itselve to MATLAB. This is only compiled if _NDLMATLAB is defined. It requires MATLAB libraries to compile.
+
+20/10/2005 Included William V. Baxter's modifications to allow compilation under MSVC.

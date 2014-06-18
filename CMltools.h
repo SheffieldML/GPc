@@ -1,3 +1,4 @@
+/* This file and CMltools.cpp contain classes for general machine learning models such as multi-layer perceptrons. */
 #ifndef CMLTOOLS_H
 #define CMLTOOLS_H
 

@@ -1,3 +1,11 @@
+/* This file contains classes for representing Gaussian processes latent variable models. The model relies on the CKern class.
+
+05/11/2005 Changed use of abs (which was calling f2c code) to fabs to improve compatability with MSVC.
+
+21/10/2005 Major structural changes to the class. William V. Baxter has included code to allow the `GP-DM' of Wang et al. to be run with this code. As part of this change the back constrained classes and the standard model have been merged. There are many comments added as part of Bill's addition of this material. For the moment, 
+
+20/10/2005 Incorporating William V. Baxter's changes for compiling under MSVC. In this file key changes include, use of the new addVal matrix method, addition of comments Bill used while going through the code (which may be helpful to other users). Finally there are a couple of code tidy ups (formatting etc.). */
+
 #ifndef CGPLVM_H
 #define CGPLVM_H
 #include "CMltools.h"

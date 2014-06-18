@@ -1,3 +1,5 @@
+/*This file contains useful utilities for manipulating and outputting strings.*/
+
 #ifndef NDLSTRUTIL_H
 #define NDLSTRUTIL_H
 #include <limits>

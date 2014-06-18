@@ -1,5 +1,0 @@
-This file provides the command line interface to the GPLVM using the class CClctrl (Command line control) as a base class.
-
-21/10/2005 Extensive updates to the way command line arguments are read so that the argument's long name needn't start with the same letter as the short name. GP-DM model implemented in CGplvm and accessible through a new flag -D.
-
-20/10/2005 Many files updated to accommodate compilation under MSVC. This work was kindly done by William V. Baxter.

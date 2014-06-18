@@ -1,3 +1,7 @@
+/* This file provides the command line interface to the IVM using the class CClctrl (Command line control) as a base class.
+
+   23/10/2005 Modifications for compiling under Visual C++ by Neil.*/
+
 #ifndef IVM_H
 #define IVM_H
 #include <fstream>

@@ -9,7 +9,7 @@ CGplvm::CGplvm()
 }
 void CGplvm::_init()
 {
-  setBaseType("DataModel");
+  setBaseType("dataModel");
   setType("gplvm");
   setName("Gaussian process latent variable model");
 }

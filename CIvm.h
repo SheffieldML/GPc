@@ -36,6 +36,16 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
 
   void writeParamsToStream(ostream& os) const;
   void readParamsFromStream(istream& is);
+
+  inline unsigned int getNumActive() const 
+  {
+    return numActive;
+  }
+  void setNumActive(unsigned int val) 
+  {
+    numActive = val;
+  }
+
   // initialise the model.
   void init();
   // Initialise the storeage for the model.
@@ -125,7 +135,12 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   {
     pkern->setTransParams(param);
   }
-  
+    // Whether noise model on outputs is spherical.
+  bool isSpherical() const 
+  {
+    return pnoise->isSpherical();
+  }
+
   string getTypeSelection() const
   {
     switch(selectionCriterion)
@@ -162,10 +177,6 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   void fromMxArray(const mxArray* matlabArray);
 #endif
 
-  unsigned int getActiveSetSize() const
-  {
-    return activeSetSize;
-  }
   
   double getActiveX(unsigned int i, unsigned int j) const
   {
@@ -226,7 +237,7 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   bool loadedModel;
 
   unsigned int numCovStruct;
-  unsigned int activeSetSize;
+  unsigned int numActive;
 
   unsigned int numTarget;
   unsigned int numData;

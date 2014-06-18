@@ -92,7 +92,7 @@ CGp::CGp(CKern* pkernel, CNoise* pnois,
 }
 void CGp::_init()
 {
-  setBaseType("DataModel");
+  setBaseType("dataModel");
   setType("gp");
   setName("Gaussian process");
   setOutputScaleLearnt(false);

@@ -17,7 +17,9 @@ class CDataModel
 {
  public:
   // Initialise the model.
-  CDataModel() {}
+  CDataModel() {
+    _init();
+  }
   virtual ~CDataModel() {}
   CDataModel(unsigned int nData) : numData(nData) {}
   inline string getType() const
@@ -60,6 +62,10 @@ class CDataModel
   }
   
  private: 
+  void _init()
+  {
+    setBaseType("dataModel");
+  }
   string baseType;
   string type;
   string modelName;
@@ -108,7 +114,7 @@ class CMapModel : public CDataModel
  private:
   void _init()
   {
-    setBaseType("mapmodel");
+    setBaseType("mapModel");
   }
   unsigned int outputDim;
   unsigned int inputDim;

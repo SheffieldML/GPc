@@ -523,7 +523,7 @@ vs 4.0 or above), you can write
 <pre>$ gnuplot oil100_plot.gp</Pre>
 
 And obtain the plot shown below
-<center><img src="oil100_plot.png"><br>
+![Oil 100 Image](./oil100_plot.png)
 Visualisation of 100 points of the oil flow data.</center><br>
 
 The other files created are
@@ -532,16 +532,16 @@ map of the log precisions and `oil100_latent_data1-3.dat`
 which are files containing the latent data positions associated with
 each label.
 
-<h3>The Entire Oil Data Set</h3>
+### The Entire Oil Data Set
 
 Running the GPLVM for 1000 iterations on all 1000 points of the oil
 data leads to the visualisation below.
 
-<center><img src="oil1000_plot.png"><br>
-All 1000 points of the oil data projected into latent space. This visualisation takes overnight to optimise on a Pentinum IV.
-</center>
+![Full oil data](./oil1000_plot.png)
 
-<h3>MATLAB</h3>
+All 1000 points of the oil data projected into latent space. This visualisation takes overnight to optimise on a Pentinum IV.
+
+### MATLAB
 
 While MATLAB can be horribly slow (and very expensive for non-academic
 users) it is still a lot easier (for me) to code the visualisation

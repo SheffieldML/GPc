@@ -6,7 +6,7 @@
 # dependencies created with gcc -MM XXX.cpp
 
 include make.linux
-VPATH=src/
+
 all: gplvm ivm gp
 
 gplvm: gplvm.o CClctrl.o CGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
@@ -16,7 +16,7 @@ gplvm.o: gplvm.cpp gplvm.h ndlexceptions.h ndlstrutil.h CMatrix.h \
   ndlassert.h CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h \
   CTransform.h CDataModel.h CDist.h CGplvm.h CMltools.h COptimisable.h \
   CNoise.h CClctrl.h
-	$(CC) -c src/gplvm.cpp -o gplvm.o $(CCFLAGS)
+	$(CC) -c gplvm.cpp -o gplvm.o $(CCFLAGS)
 
 ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o ivm  ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)

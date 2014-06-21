@@ -16,9 +16,9 @@ The software was written with gcc vs 3.2.2. There are definitely Standard Templa
 Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
 The software is compiled by writing 
 
-<pre>
+```sh
 $ make all
-</pre>
+```
 
 at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
 
@@ -43,15 +43,15 @@ This page describes how to compile and gives some examples of use of the C++ Inf
 
 The way the software operates is through the command line. There is one executable, `ivm`. Help can be obtained by writing 
 
-<pre>
+```sh
 $ ./ivm -h
-</pre>
+```
 
 which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
 
-<pre>
+```sh
 $ ./ivm learn -h
-</pre>
+```
 
 All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
@@ -81,7 +81,8 @@ Provided with the software, in the `examples` directory, are some simple two dim
 
 The first example is data sampled from a Gaussian process with an RBF kernel function with inverse width of 10. The input data is sampled uniformly from the unit square. This data can be learnt with the following command.
 
-<pre>$ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model</pre>
+```sh
+$ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model```
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-a 200` sets the active set size. The kernel type is selected with the flag `-k rbf`. 
 
@@ -89,7 +90,8 @@ The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes t
 
 The learned model is saved in a file called `unitsquaregp.model`. This file has a plain text format to make it human readable. Once training is complete, the learned kernel parameters of the model can be displayed using 
 
-<pre>$ ./ivm display unitsquaregp.model
+```sh
+$ ./ivm display unitsquaregp.model
 
 Loading model file.
 ... done.
@@ -110,11 +112,13 @@ Notice the fact that the kernel is composed of an RBF kernel, also known as squa
 
 For this model the input data is two dimensional, you can therefore visualise the decision boundary using
 
-<pre>$ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp</pre>
+```sh
+$ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp```
 
 The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-<pre>$ gnuplot unitsquaregp_plot.gp</pre>
+```sh
+$ gnuplot unitsquaregp_plot.gp```
 
 and obtain the plot shown below
 <center><img src="unitsquaregp_plot.png"><br>
@@ -126,11 +130,12 @@ The other files created are `oil100_variance_matrix.dat`, which produces the gra
 
 Next we consider a simple ARD kernel. The toy data in this case is sampled from three Gaussian distributions. To separate the data only one input dimension is necessary. The command is run as follows,
 
-<pre>$ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model</pre>
+```sh
+$ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model```
 
 Displaying the model it is clear that it has selected one of the input dimensions, 
 
-<pre>
+```sh
 Loading model file.
 ... done.
 IVM Model:
@@ -150,7 +155,8 @@ Bias on process 0: 0.745098
 
 Once again the results can be displayed as a two dimensional plot,
 
-<pre>$ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters</pre>
+```sh
+$ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters```
 
 <center><img src="ard_gaussian_clusters_plot.png"><br>
 The IVM learnt with an ARD RBF kernel. One of the input directions has been recognised as not relevant.
@@ -163,12 +169,13 @@ The software also provides an implementation of the null category noise model de
 
 The toy example given in the paper is reconstructed here. To run it type
 
-<pre>$ ./ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
-</pre>
+```sh
+$ ./ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.model
+```
 
 The result of learning is
 
-<pre>
+```sh
 Loading model file.
 ... done.
 IVM Model:
@@ -188,11 +195,13 @@ Missing label probability for +ve class: 0.9075
 
 and can be visualised using
 
-<pre>$ ./ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent</pre>
+```sh
+$ ./ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent```
 
 followed by 
 
-<pre>$ gnuplot semisupercrescent_plot.gp</pre>
+```sh
+$ gnuplot semisupercrescent_plot.gp```
 
 The result of the visualisation being,
 
@@ -225,7 +234,8 @@ Provided with the software, in the `examples` directory, is a one dimensional re
 
 First we will learn the data using the following command,
 
-<pre>$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model</pre>
+```sh
+$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model```
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
 
@@ -236,9 +246,10 @@ The software will load the data in `sinc.svml`. The labels are included in this 
 The learned model is saved in a file called `sinc.model`. This file has a plain text format to make it human readable. Once training is complete, the learned covariance function parameters of the model can be displayed using 
 
 
-<pre>`$ ./gp display sinc.model</pre>
+```sh
+$ ./gp display sinc.model```
 
-<pre>
+```sh
 Loading model file.
 ... done.
 Standard GP Model: 
@@ -265,11 +276,13 @@ Notice the fact that the covariance function is composed of an RBF kernel, also 
 
 For your convenience a `gnuplot` file may generated to visualise the data. First run
 
-<pre>$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc</pre>
+```sh
+$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc```
 
 The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
-<pre>$ gnuplot sinc_plot.gp</pre>
+```sh
+$ gnuplot sinc_plot.gp```
 
 And obtain the plot shown below
 
@@ -283,7 +296,8 @@ The other files created are `sinc_error_bar_data.dat`, which produces the error 
 
 You might also want to try a larger data set.
 
-<pre>$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model</pre>
+```sh
+$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model```
 
 <h3>MATLAB and OCTAVE</h3>
 
@@ -327,12 +341,14 @@ This was the original release of the code.
 The way the software operates is through the command line. There is
 one executable, `gplvm`. Help can be obtained by writing
 
-<pre>$ ./gplvm -h</pre>
+```sh
+$ ./gplvm -h```
 
 which lists the commands available under the software. Help for
 each command can then be obtained by writing, for example,
 
-<pre>$ ./gplvm learn -h</pre>
+```sh
+$ ./gplvm learn -h```
 
 All the tutorial optimisations suggested take less than 1/2 hour to
 run on my less than 2GHz Pentium IV machine. The first oil example
@@ -363,7 +379,8 @@ is a sub-sample of the oil data. The file is called
 
 First we will learn the data using the following command,
 
-<pre>$ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model</pre>
+```sh
+$ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model```
 
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate
@@ -383,7 +400,8 @@ The learned model is saved in a file called
 it human readable. Once training is complete, the learned kernel
 parameters of the model can be displayed using
 
-<pre>$ ./gplvm display oil100.model</pre>
+```sh
+$ ./gplvm display oil100.model```
 
 <pre>
 Loading model file.
@@ -408,13 +426,15 @@ details.
 For your convenience a `gnuplot` file may generated to
 visualise the data. First run
 
-<pre>$ ./gplvm gnuplot oil100.model oil100</pre>
+```sh
+$ ./gplvm gnuplot oil100.model oil100```
 
 The `oil100` supplied as the last argument acts as a
 stub for gnuplot to create names from, so for example (using gnuplot
 vs 4.0 or above), you can write
 
-<pre>$ gnuplot oil100_plot.gp</Pre>
+```sh
+$ gnuplot oil100_plot.gp```
 
 And obtain the plot shown below
 ![Oil 100 Image](./oil100_plot.png)
@@ -523,7 +543,8 @@ have set three of them to zero!), so we now use the gplvm code to
 learn the data setting the flag `-L true` for learning of
 scales.
 
-<pre>$ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model</pre>
+```sh
+$ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model```
 
 Once learning is complete the results can be visualised in MATLAB
 using the command
@@ -558,7 +579,8 @@ the walking man the show results you can test the back constraints
 with the command
 
 
-<pre>$ ./gplvm -v 3 learn -L true -c rbf -g 0.0001 examples/swagger.svml swagger_back_constrained.model</pre>
+```sh
+$ ./gplvm -v 3 learn -L true -c rbf -g 0.0001 examples/swagger.svml swagger_back_constrained.model```
 
 The back constraint here is a kernel mapping with an `RBF' kernel
 which is specified as having an inverse width of 1e-4.
@@ -603,7 +625,8 @@ hyper parameters. The level of noise can be fixed by suggesting a
 signal to noise ratio. This approach has also been implemented in the
 code using the `-dr` flag.
 
-<pre>$ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model</pre>
+```sh
+$ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model```
 
 where the `-M` flag sets the parameter associated with
 Wang's prior. Here the dynamics GP is given a linear and an RBF

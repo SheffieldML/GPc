@@ -318,9 +318,9 @@ $ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
 While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="SheffieldML/GPmat">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
 
 ```matlab
-&gt;&gt; [y, X] = svmlread('sinc.svml')
-&gt;&gt; gpReadFromFile('sinc.model', X, y)
-&gt;&gt;
+>> [y, X] = svmlread('sinc.svml')
+>> gpReadFromFile('sinc.model', X, y)
+>>
 ```
 
 where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
@@ -492,8 +492,8 @@ which it depends: KERN, NOISE, etc.) are downloaded you can visualise
 the results in MATLAB using
 
 ```matlab
-&gt;&gt; gplvmResultsCpp('oil100.model', 'vector')
-&gt;&gt;
+>> gplvmResultsCpp('oil100.model', 'vector')
+>>
 ```
 
 This will load the results and allow you to move around the latent
@@ -524,8 +524,8 @@ href="http://www.igi.tugraz.at/aschwaig/software.html"> SVM light
 MATLAB interface</a> (you don't need the SVM light software itself).
 
 ```matlab
-&gt;&gt; [bvhStruct, channels, frameLength] = bvhReadFile('examples/Swagger.bvh');
-&gt;&gt;
+>> [bvhStruct, channels, frameLength] = bvhReadFile('examples/Swagger.bvh');
+>>
 ```
 
 This motion capture data was taken from Ohio State University's <a
@@ -538,13 +538,13 @@ be removed at this stage. Setting the 1st, 3rd and 6th channels to
 zero removes X and Z position and the rotation in the Y plane.
 
 ```matlab
-&gt;&gt; channels(:, [1 3 6]) = zeros(size(channels, 1), 3);
+>> channels(:, [1 3 6]) = zeros(size(channels, 1), 3);
 ```
 
 You can now play the data using the command
 
 ```matlab
-&gt;&gt; bvhPlayData(bvhStruct, channels, frameLength);
+>> bvhPlayData(bvhStruct, channels, frameLength);
 ```
 
 Data in the bvh format consists of angles, this presents a problem
@@ -561,13 +561,13 @@ Then channels can be saved for modelling using Schwaighofer's SVM
 light interface. First we downsample so that things run quickly,
 
 ```matlab
-&gt;&gt; channels = channels(1:4:end, :);
+>> channels = channels(1:4:end, :);
 ```
 
 Then the data is saved as follows:
 
 ```matlab
-&gt;&gt; svmlwrite('examples/swagger.svml',channels);
+>> svmlwrite('examples/swagger.svml',channels);
 ```
 
 <i>Before you save you might want to check you haven't messed
@@ -585,7 +585,7 @@ Once learning is complete the results can be visualised in MATLAB
 using the command
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');
+>> mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');
 ```
 
 <center><img src="swagger_plot.png">
@@ -626,7 +626,7 @@ which is specified as having an inverse width of 1e-4.
 The results can then be seen in MATLAB using
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');
+>> mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');
 ```
 
 <center><img src="swagger_back_constrained_plot.png">
@@ -680,6 +680,6 @@ unusual prior the sequence stays continuous in latent space.</center>
 This result can also be loaded into MATLAB and played using the command 
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');
+>> mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');
 ```
 

@@ -55,7 +55,7 @@ $ ./ivm learn -h
 
 All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
-<h1>Bugs</h1>
+# Bugs
 
 Victor Cheng writes:
 
@@ -69,7 +69,7 @@ error in test mode! So I use two vesions simultaneously. "</i>
 I'm working (as of 31/12/2007) on a major rewrite, so it's unlikely that these bugs will be fixed in the near future, however if anyone makes a fix I'll be happy to incorporate it! Please let me know.
 
 
-<h1>Examples</h1>
+# Examples
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
@@ -136,7 +136,8 @@ The other files created are `oil100_variance_matrix.dat`, which produces the gra
 Next we consider a simple ARD kernel. The toy data in this case is sampled from three Gaussian distributions. To separate the data only one input dimension is necessary. The command is run as follows,
 
 ```sh
-$ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model```
+$ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model
+```
 
 Displaying the model it is clear that it has selected one of the input dimensions, 
 
@@ -161,7 +162,8 @@ Bias on process 0: 0.745098
 Once again the results can be displayed as a two dimensional plot,
 
 ```sh
-$ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters```
+$ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters
+```
 
 <center><img src="ard_gaussian_clusters_plot.png"><br>
 The IVM learnt with an ARD RBF kernel. One of the input directions has been recognised as not relevant.
@@ -201,12 +203,14 @@ Missing label probability for +ve class: 0.9075
 and can be visualised using
 
 ```sh
-$ ./ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent```
+$ ./ivm gnuplot examples/semisupercrescent.svml semisupercrescent.model semisupercrescent
+```
 
 followed by 
 
 ```sh
-$ gnuplot semisupercrescent_plot.gp```
+$ gnuplot semisupercrescent_plot.gp
+```
 
 The result of the visualisation being,
 
@@ -228,7 +232,7 @@ which lists the commands available under the software. Help for each command can
 
 All the tutorial optimisations suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
-<h1>Examples</h1>
+# Examples
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
@@ -253,7 +257,8 @@ The learned model is saved in a file called `sinc.model`. This file has a plain 
 
 
 ```sh
-$ ./gp display sinc.model```
+$ ./gp display sinc.model
+```
 
 ```
 Loading model file.
@@ -283,12 +288,14 @@ Notice the fact that the covariance function is composed of an RBF kernel, also 
 For your convenience a `gnuplot` file may generated to visualise the data. First run
 
 ```sh
-$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc```
+$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc
+```
 
 The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
 ```sh
-$ gnuplot sinc_plot.gp```
+$ gnuplot sinc_plot.gp
+```
 
 And obtain the plot shown below
 
@@ -303,11 +310,13 @@ The other files created are `sinc_error_bar_data.dat`, which produces the error 
 You might also want to try a larger data set.
 
 ```sh
-$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model```
+$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
+```
 
 ### MATLAB and OCTAVE
 
 While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="SheffieldML/GPmat">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
+
 ```matlab
 &gt;&gt; [y, X] = svmlread('sinc.svml')
 &gt;&gt; gpReadFromFile('sinc.model', X, y)
@@ -326,7 +335,7 @@ Fixed bug in gplvm.cpp which meant dynamics wasn't working properly because init
 
 Thanks to Gustav Henter for pointing out these problems.
 
-<h4>Release 0.2</h4>
+#### Release 0.2
 
 In this release we updated the class structure of the gplvm model and
 made some changes in the way in which files are stored. This release
@@ -349,13 +358,15 @@ The way the software operates is through the command line. There is
 one executable, `gplvm`. Help can be obtained by writing
 
 ```sh
-$ ./gplvm -h```
+$ ./gplvm -h
+```
 
 which lists the commands available under the software. Help for
 each command can then be obtained by writing, for example,
 
 ```sh
-$ ./gplvm learn -h```
+$ ./gplvm learn -h
+```
 
 All the tutorial optimisations suggested take less than 1/2 hour to
 run on my less than 2GHz Pentium IV machine. The first oil example
@@ -363,7 +374,7 @@ runs in a couple of minutes. Below I suggest using the highest
 verbosity options `-v 3` in each of the examples so that
 you can track the iterations.
 
-<h1>Examples</h1>
+# Examples
 
 The software loads in data in the <a
 href="http://svmlight.joachims.org/">SVM light</a> format. This is to
@@ -436,14 +447,16 @@ For your convenience a `gnuplot` file may generated to
 visualise the data. First run
 
 ```sh
-$ ./gplvm gnuplot oil100.model oil100```
+$ ./gplvm gnuplot oil100.model oil100
+```
 
 The `oil100` supplied as the last argument acts as a
 stub for gnuplot to create names from, so for example (using gnuplot
 vs 4.0 or above), you can write
 
 ```sh
-$ gnuplot oil100_plot.gp```
+$ gnuplot oil100_plot.gp
+```
 
 And obtain the plot shown below
 ![Oil 100 Image](./oil100_plot.png)
@@ -480,7 +493,8 @@ the results in MATLAB using
 
 ```matlab
 &gt;&gt; gplvmResultsCpp('oil100.model', 'vector')
-&gt;&gt;```
+&gt;&gt;
+```
 
 This will load the results and allow you to move around the latent
 space visualising (in the form of a line plotted from the vector) the
@@ -511,7 +525,8 @@ MATLAB interface</a> (you don't need the SVM light software itself).
 
 ```matlab
 &gt;&gt; [bvhStruct, channels, frameLength] = bvhReadFile('examples/Swagger.bvh');
-&gt;&gt;```
+&gt;&gt;
+```
 
 This motion capture data was taken from Ohio State University's <a
 href="http://accad.osu.edu/research/mocap/mocap_data.htm">ACCAD</a>
@@ -523,12 +538,14 @@ be removed at this stage. Setting the 1st, 3rd and 6th channels to
 zero removes X and Z position and the rotation in the Y plane.
 
 ```matlab
-&gt;&gt; channels(:, [1 3 6]) = zeros(size(channels, 1), 3);```
+&gt;&gt; channels(:, [1 3 6]) = zeros(size(channels, 1), 3);
+```
 
 You can now play the data using the command
 
 ```matlab
-&gt;&gt; bvhPlayData(bvhStruct, channels, frameLength);```
+&gt;&gt; bvhPlayData(bvhStruct, channels, frameLength);
+```
 
 Data in the bvh format consists of angles, this presents a problem
 when the angle passes through a discontinuity. For example in this
@@ -544,12 +561,14 @@ Then channels can be saved for modelling using Schwaighofer's SVM
 light interface. First we downsample so that things run quickly,
 
 ```matlab
-&gt;&gt; channels = channels(1:4:end, :);```
+&gt;&gt; channels = channels(1:4:end, :);
+```
 
 Then the data is saved as follows:
 
 ```matlab
-&gt;&gt; svmlwrite('examples/swagger.svml',channels)```
+&gt;&gt; svmlwrite('examples/swagger.svml',channels);
+```
 
 <i>Before you save you might want to check you haven't messed
 anything up by playing the data again!</i> It makes sense to learn
@@ -559,13 +578,15 @@ learn the data setting the flag `-L true` for learning of
 scales.
 
 ```sh
-$ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model```
+$ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model
+```
 
 Once learning is complete the results can be visualised in MATLAB
 using the command
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');```
+&gt;&gt; mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');
+```
 
 <center><img src="swagger_plot.png">
 <br>Latent space for the Swagger data. Note the breaks in the sequence.</center>
@@ -596,7 +617,8 @@ with the command
 
 
 ```sh
-$ ./gplvm -v 3 learn -L true -c rbf -g 0.0001 examples/swagger.svml swagger_back_constrained.model```
+$ ./gplvm -v 3 learn -L true -c rbf -g 0.0001 examples/swagger.svml swagger_back_constrained.model
+```
 
 The back constraint here is a kernel mapping with an `RBF' kernel
 which is specified as having an inverse width of 1e-4.
@@ -604,7 +626,8 @@ which is specified as having an inverse width of 1e-4.
 The results can then be seen in MATLAB using
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');```
+&gt;&gt; mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');
+```
 
 <center><img src="swagger_back_constrained_plot.png">
 <br>The repeated circular pattern is associated with the repeated walking paces in the data.</center>
@@ -643,7 +666,8 @@ signal to noise ratio. This approach has also been implemented in the
 code using the `-dr` flag.
 
 ```sh
-$ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model```
+$ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model
+```
 
 where the `-M` flag sets the parameter associated with
 Wang's prior. Here the dynamics GP is given a linear and an RBF
@@ -656,5 +680,6 @@ unusual prior the sequence stays continuous in latent space.</center>
 This result can also be loaded into MATLAB and played using the command 
 
 ```matlab
-&gt;&gt; mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');```
+&gt;&gt; mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');
+```
 

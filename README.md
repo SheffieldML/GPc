@@ -82,7 +82,8 @@ Provided with the software, in the `examples` directory, are some simple two dim
 The first example is data sampled from a Gaussian process with an RBF kernel function with inverse width of 10. The input data is sampled uniformly from the unit square. This data can be learnt with the following command.
 
 ```sh
-$ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model```
+$ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model
+```
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-a 200` sets the active set size. The kernel type is selected with the flag `-k rbf`. 
 
@@ -92,7 +93,9 @@ The learned model is saved in a file called `unitsquaregp.model`. This file has 
 
 ```sh
 $ ./ivm display unitsquaregp.model
+```
 
+```
 Loading model file.
 ... done.
 IVM Model:
@@ -113,12 +116,14 @@ Notice the fact that the kernel is composed of an RBF kernel, also known as squa
 For this model the input data is two dimensional, you can therefore visualise the decision boundary using
 
 ```sh
-$ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp```
+$ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp
+```
 
 The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
 
 ```sh
-$ gnuplot unitsquaregp_plot.gp```
+$ gnuplot unitsquaregp_plot.gp
+```
 
 and obtain the plot shown below
 <center><img src="unitsquaregp_plot.png"><br>
@@ -235,7 +240,8 @@ Provided with the software, in the `examples` directory, is a one dimensional re
 First we will learn the data using the following command,
 
 ```sh
-$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model```
+$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model
+```
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
 
@@ -381,7 +387,8 @@ is a sub-sample of the oil data. The file is called
 First we will learn the data using the following command,
 
 ```sh
-$ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model```
+$ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model
+```
 
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate

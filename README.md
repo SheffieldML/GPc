@@ -3,13 +3,13 @@ GPc
 
 Gaussian process code in C++ including some old implementations of GPs, GP-LVM and IVM. The software dates back to 2005 and was modified regularly until around 2007. The combined release was moved from SVN to github in June 2014. The documentation below is still mainly from 2007.
 
-<h3>Design Philosophy</h3>
+### Design Philosophy
 
 The software is written in C++ to try and get a degree of flexibility in the models that can be used without a serious performance hit. 
 
 The software is mainly written in C++ but relies for some functions on FORTRAN code by other authors and the LAPACK and BLAS libraries. 
 
-<h2>Compiling the Software</h2>
+##Compiling the Software
 
 The software was written with gcc vs 3.2.2. There are definitely Standard Template Library issues on Solaris with gcc 2.95, so I suggest that at least version 3.2 or above is used.
 
@@ -22,24 +22,24 @@ $ make all
 
 at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
 
-<h3>Optimisation</h3>
+### Optimisation
 
 One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file `make.atlas` includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
 
-<h3>Cygwin</h3>
+### Cygwin
 
 For Windows users the code compiles under cygwin. However you will need version s of the lapack and blas libraries available (see <a href="http://www.netlib.org">www.netlib.org</a>. This can take some time to compile, and in the absence of any pre-compiled versions on the web I've provided some pre-compiled versions you may want to make use of (see the cygwin directory). Note that these pre-compiled versions are <i>not</i> optimised for the specific architecture and therefore do not give the speed up you would hope for from using lapack and blas.
 
-<h3>Microsoft Visual C++</h3>
+### Microsoft Visual C++
 
 Thanks to modifications by William V. Baxter the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory `MSVC/ivm`. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
 
 
 # IVM
 
-This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=ivmcpp">download here</a>.
+This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM).
 
-<h2>General Information</h2>
+## General Information
 
 The way the software operates is through the command line. There is one executable, `ivm`. Help can be obtained by writing 
 
@@ -73,7 +73,7 @@ I'm working (as of 31/12/2007) on a major rewrite, so it's unlikely that these b
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
-<a name="toydata"><h2>Toy Data Sets</h2></a>
+## Toy Data Sets
 
 In this section we present some simple examples. The results will be visualised using `gnuplot`. It is suggested that you have access to `gnuplot` vs 4.0 or above.
 
@@ -86,7 +86,7 @@ $ ./ivm -v 3 learn -a 200 -k rbf examples/unitsquaregp.svml unitsquaregp.model``
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-a 200` sets the active set size. The kernel type is selected with the flag `-k rbf`. 
 
-<h3>Gnuplot</h3>
+### Gnuplot
 
 The learned model is saved in a file called `unitsquaregp.model`. This file has a plain text format to make it human readable. Once training is complete, the learned kernel parameters of the model can be displayed using 
 
@@ -106,7 +106,7 @@ whitevariance: 0.0784375
 Noise Type:
 Probit noise:
 Bias on process 0: 0.237516
-</pre>
+```
 
 Notice the fact that the kernel is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. The bias kernel and the white kernel are automatically added to the rbf kernel. Other kernels may also be used, see `ivm learn -h` for details.
 
@@ -126,7 +126,7 @@ The decision boundary learnt for the data sampled from a Gaussian process classi
 
 The other files created are `oil100_variance_matrix.dat`, which produces the grayscale map of the log precisions and `oil100_latent_data1-3.dat` which are files containing the latent data positions associated with each label.
 
-<h3>Feature Selection</h3>
+### Feature Selection
 
 Next we consider a simple ARD kernel. The toy data in this case is sampled from three Gaussian distributions. To separate the data only one input dimension is necessary. The command is run as follows,
 
@@ -135,7 +135,7 @@ $ ./ivm learn -a 100 -k rbf -i 1 examples/ard_gaussian_clusters.svml ard_gaussia
 
 Displaying the model it is clear that it has selected one of the input dimensions, 
 
-```sh
+```
 Loading model file.
 ... done.
 IVM Model:
@@ -151,7 +151,7 @@ whitevariance: 2.75252e-08
 Noise Type:
 Probit noise:
 Bias on process 0: 0.745098
-</pre>
+```
 
 Once again the results can be displayed as a two dimensional plot,
 
@@ -163,7 +163,7 @@ The IVM learnt with an ARD RBF kernel. One of the input directions has been reco
 </center>
 
 
-<h2>Semi-Supervised Learning</h2>
+## Semi-Supervised Learning
 
 The software also provides an implementation of the null category noise model described in <a href="http://www.cs.man.ac.uk/neill-bin/publications/bibpage.cgi?keyName=Lawrence:semisuper04">Lawrence and Jordan</a>. 
 
@@ -175,7 +175,7 @@ $ ./ivm learn -a 100 -k rbf examples/semisupercrescent.svml semisupercrescent.mo
 
 The result of learning is
 
-```sh
+```
 Loading model file.
 ... done.
 IVM Model:
@@ -191,7 +191,7 @@ Ncnm noise:
 Bias on process 0: 0.237009
 Missing label probability for -ve class: 0.9075
 Missing label probability for +ve class: 0.9075
-</pre>
+```
 
 and can be visualised using
 
@@ -211,7 +211,7 @@ The result of the visualisation being,
 
 This page describes how to compile and gives some examples of use of the C++ Gaussian Process code.
 
-<h2>General Information</h2>
+## General Information
 
 The way the software operates is through the command line. There is one executable, `gp`. Help can be obtained by writing 
 
@@ -227,7 +227,7 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
-<a name="spgp1d"><h2>One Dimensional Data Data</h2></a>
+## One Dimensional Data Data
 
 
 Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `spgp1d.svml`. 
@@ -241,7 +241,7 @@ The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes t
 
 The software will load the data in `sinc.svml`. The labels are included in this file but they are <i>not</i> used in the optimisation of the model. They are for visualisation purposes only.
 
-<h3>Gnuplot</h3>
+### Gnuplot
 
 The learned model is saved in a file called `sinc.model`. This file has a plain text format to make it human readable. Once training is complete, the learned covariance function parameters of the model can be displayed using 
 
@@ -249,7 +249,7 @@ The learned model is saved in a file called `sinc.model`. This file has a plain 
 ```sh
 $ ./gp display sinc.model```
 
-```sh
+```
 Loading model file.
 ... done.
 Standard GP Model: 
@@ -270,7 +270,7 @@ rbfinverseWidth: 0.198511
 rbfvariance: 0.0751124
 biasvariance: 1.6755e-05
 whitevariance: 0.00204124
-</pre>
+```
 
 Notice the fact that the covariance function is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. This is the default setting, it can be changed with flags to other covariance function types, see `./gp learn -h` for details.
 
@@ -292,20 +292,21 @@ Gaussian process applied to sinc data.</center><br>
 
 The other files created are `sinc_error_bar_data.dat`, which produces the error bars and `sinc_line_data.dat` which produces the mean as well as `sinc_scatter_data.dat` which shows the training data.
 
-<h3>Other Data</h3>
+### Other Data
 
 You might also want to try a larger data set.
 
 ```sh
 $ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model```
 
-<h3>MATLAB and OCTAVE</h3>
+### MATLAB and OCTAVE
 
-While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="/~neill/gp">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
-<pre>
+While MATLAB can be horribly slow (and very expensive for non-academic users) it is still a lot easier (for me) to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="SheffieldML/GPmat">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
+```matlab
 &gt;&gt; [y, X] = svmlread('sinc.svml')
 &gt;&gt; gpReadFromFile('sinc.model', X, y)
-&gt;&gt;</pre>
+&gt;&gt;
+```
 
 where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
 
@@ -365,7 +366,7 @@ Process software</a>. Anton Schwaighofer has written <a
 href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a>
 which can write from MATLAB to the SVM light format.
 
-<a name="oilflow"><h2>Oil Flow Data</h2></a>
+## Oil Flow Data
 
 In the original NIPS paper the first example was the oil flow data
 (see <a href="http://www.ncrg.aston.ac.uk/GTM/3PhaseData.html">this
@@ -393,7 +394,7 @@ The software will load the data in
 but they are <i>not</i> used in the optimisation of the model. They
 are for visualisation purposes only.
 
-<h3>Gnuplot</h3>
+### Gnuplot
 
 The learned model is saved in a file called
 `oil100.model`. This file has a plain text format to make
@@ -401,9 +402,10 @@ it human readable. Once training is complete, the learned kernel
 parameters of the model can be displayed using
 
 ```sh
-$ ./gplvm display oil100.model```
+$ ./gplvm display oil100.model
+```
 
-<pre>
+```
 Loading model file.
 ... done.
 GPLVM Model:
@@ -414,7 +416,7 @@ rbfinverseWidth: 3.97209
 rbfvariance: 0.337566
 biasvariance: 0.0393251
 whitevariance: 0.00267715
-</pre>
+```
 
 Notice the fact that the kernel is composed of an RBF kernel, also
 known as squared exponential kernel or Gaussian kernel; a bias kernel,
@@ -469,14 +471,15 @@ the relevant toolboxes (you need the IVM toolbox and the toolboxes on
 which it depends: KERN, NOISE, etc.) are downloaded you can visualise
 the results in MATLAB using
 
-<pre>&gt;&gt; gplvmResultsCpp('oil100.model', 'vector')
-&gt;&gt;</pre>
+```matlab
+&gt;&gt; gplvmResultsCpp('oil100.model', 'vector')
+&gt;&gt;```
 
 This will load the results and allow you to move around the latent
 space visualising (in the form of a line plotted from the vector) the
 nature of the data at each point.
 
-<a name="mocap"><h2>Motion Capture</h2></a>
+## Motion Capture
 
 One popular use of the GPLVM has been in learning of human motion
 styles (see <a
@@ -492,15 +495,16 @@ will also need a small <a
 href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=mocap">MATLAB
 mocap toolkit</a>.
 
-<a name="mocap"><h3>BVH Files</h3></a>
+<a name="mocap">### BVH Files</a>
 
 To prepare a new bvh file for visualisation you need the MATLAB
 mocap toolkit and Anton Schwaighofer's <a
 href="http://www.igi.tugraz.at/aschwaig/software.html"> SVM light
 MATLAB interface</a> (you don't need the SVM light software itself).
 
-<pre>&gt;&gt; [bvhStruct, channels, frameLength] = bvhReadFile('examples/Swagger.bvh');
-&gt;&gt;</pre>
+```matlab
+&gt;&gt; [bvhStruct, channels, frameLength] = bvhReadFile('examples/Swagger.bvh');
+&gt;&gt;```
 
 This motion capture data was taken from Ohio State University's <a
 href="http://accad.osu.edu/research/mocap/mocap_data.htm">ACCAD</a>
@@ -511,11 +515,13 @@ root node at each frame. If we don't want to model this motion it can
 be removed at this stage. Setting the 1st, 3rd and 6th channels to
 zero removes X and Z position and the rotation in the Y plane.
 
-<pre>&gt;&gt; channels(:, [1 3 6]) = zeros(size(channels, 1), 3);</pre>
+```matlab
+&gt;&gt; channels(:, [1 3 6]) = zeros(size(channels, 1), 3);```
 
 You can now play the data using the command
 
-<pre>&gt;&gt; bvhPlayData(bvhStruct, channels, frameLength);</pre>
+```matlab
+&gt;&gt; bvhPlayData(bvhStruct, channels, frameLength);```
 
 Data in the bvh format consists of angles, this presents a problem
 when the angle passes through a discontinuity. For example in this
@@ -530,11 +536,13 @@ for files with more rotation on the joints.
 Then channels can be saved for modelling using Schwaighofer's SVM
 light interface. First we downsample so that things run quickly,
 
-<pre>&gt;&gt; channels = channels(1:4:end, :);</pre>
+```matlab
+&gt;&gt; channels = channels(1:4:end, :);```
 
 Then the data is saved as follows:
 
-<pre>&gt;&gt; svmlwrite('examples/swagger.svml',channels)</pre>
+```matlab
+&gt;&gt; svmlwrite('examples/swagger.svml',channels)```
 
 <i>Before you save you might want to check you haven't messed
 anything up by playing the data again!</i> It makes sense to learn
@@ -549,12 +557,13 @@ $ ./gplvm -v 3 learn -L true examples/swagger.svml swagger.model```
 Once learning is complete the results can be visualised in MATLAB
 using the command
 
-<pre>&gt;&gt; mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');</pre>
+```matlab
+&gt;&gt; mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');```
 
 <center><img src="swagger_plot.png">
 <br>Latent space for the Swagger data. Note the breaks in the sequence.</center>
 
-<h3>Dealing with the Breaks</h3>
+### Dealing with the Breaks
 
 Note that there are breaks in the sequence. These reason for these
 breaks is as follows. The GPLVM maps from the latent space to the data
@@ -587,12 +596,13 @@ which is specified as having an inverse width of 1e-4.
  
 The results can then be seen in MATLAB using
 
-<pre>&gt;&gt; mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');</pre>
+```matlab
+&gt;&gt; mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');```
 
 <center><img src="swagger_back_constrained_plot.png">
 <br>The repeated circular pattern is associated with the repeated walking paces in the data.</center>
 
-<h3>Dealing with the Breaks with Dynamics</h3>
+### Dealing with the Breaks with Dynamics
 
 It conceptually straightforward to add MAP dynamics in the GP-LVM
 latent space by placing a prior that relates the latent points
@@ -638,5 +648,6 @@ unusual prior the sequence stays continuous in latent space.</center>
 
 This result can also be loaded into MATLAB and played using the command 
 
-<pre>&gt;&gt; mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');</pre>
+```matlab
+&gt;&gt; mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');```
 

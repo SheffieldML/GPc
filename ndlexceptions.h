@@ -1,3 +1,4 @@
+/* This is exception handling code. It provides some basic classes for exception handling.*/
 // This is very basic exception handling. It should probably be better integrated with the C++ exceptions.
 #ifndef NDLEXCEPTIONS_H
 #define NDLEXCEPTIONS_H

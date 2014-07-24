@@ -969,7 +969,10 @@ void CClivm::gnuplot()
     }
     CMatrix XPos(numPos, X.getCols()+1);
     CMatrix XNeg(numNeg, X.getCols()+1);
-    CMatrix XUnlab(numUnlab, X.getCols()+1);
+    CMatrix XUnlab;
+    if(numUnlab>0)
+      XUnlab.resize(numUnlab, X.getCols()+1);
+
     int posIndex = 0;
     int negIndex = 0;
     int unlabIndex = 0;
@@ -991,6 +994,7 @@ void CClivm::gnuplot()
 	  XUnlab.setVal(X.getVal(i, j), unlabIndex, j);
 	XUnlab.setVal(0, unlabIndex, XUnlab.getCols()-1);
 	unlabIndex++;
+      
       }
     }
     if(numPos>0)

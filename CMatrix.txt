@@ -1,5 +1,0 @@
-This file contains the basic matrix class. The matrix hierarchy is currently very flat and is designed to be a simple (and hopefully efficient) interface to the LAPACK and BLAS libraries. 
-
-21/10/2005 More changes from William Baxter. In particular more redundant consts are removed and a symvColColOff is added for offset multiplication. Some bugs are removed (including in sumCol) and casting is made clearer in many places. Also in several places vector<> is now used instead of declaring an array.
-
-20/10/2005 Incorporated William Baxter's changes which allow compilation of files under MSVC. These included a number of bug fixes (such as my embarrassing use of otherwise: rather than default:!). Also included is a new Matrix method addVal, which is a sensible way of adding to an element.

@@ -1,3 +1,5 @@
+/*This file contains classes for representing Gaussian processes using the variational method of probabilistic point assimilation (PPA). The model relies on the CKern class and the CNoise class to define the kernel and the noise model.*/
+
 #ifndef CPPA_H
 #define CPPA_H
 #include "CDataModel.h"

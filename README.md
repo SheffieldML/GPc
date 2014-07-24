@@ -1,14 +1,7 @@
 GPc
 ===
 
-Gaussian process code in C++ including some old implementations of GPs, GP-LVM and IVM.
-
-IVM
-===
-
-<h1>C++ IVM Software</h1>
-
-This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=ivmcpp">download here</a>.
+Gaussian process code in C++ including some old implementations of GPs, GP-LVM and IVM. The software dates back to 2005 and was modified regularly until around 2007. The combined release was moved from SVN to github in June 2014. The documentation below is still mainly from 2007.
 
 <h3>Design Philosophy</h3>
 
@@ -24,7 +17,7 @@ Part of the reason for using gcc is the ease of interoperability with FORTRAN. T
 The software is compiled by writing 
 
 <pre>
-$ make ivm
+$ make all
 </pre>
 
 at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
@@ -39,7 +32,12 @@ For Windows users the code compiles under cygwin. However you will need version 
 
 <h3>Microsoft Visual C++</h3>
 
-As of Release 0.101 the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory `MSVC/ivm`. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
+Thanks to modifications by William V. Baxter the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory `MSVC/ivm`. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
+
+
+# IVM
+
+This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=ivmcpp">download here</a>.
 
 <h2>General Information</h2>
 
@@ -200,40 +198,9 @@ The result of the visualisation being,
 
 <center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data, blue stars are the active set. <center>
 
-GP
-==
-
-<h1>C++ GP Software</h1>
+# Gaussian Process
 
 This page describes how to compile and gives some examples of use of the C++ Gaussian Process code.
-
-<h3>Release Information</h3>
-
-Current release is 0.001.
-
-<h3>Design Philosophy</h3>
-
-The software is written in C++ to try and get a degree of flexibility in the models that can be used without a serious performance hit. This was difficult to do in MATLAB as users who have tried version 1 (which was fast but inflexible) and version 2 (which was flexible but slow) of the MATLAB software will appreciate.
-
-The software is mainly written in C++ but relies for some functions on FORTRAN code by other authors and the LAPACK and BLAS libraries. 
-
-As well as the C++ code some utilities are supplied in the corresponding MATLAB code for visualising the results. 
-
-<h2>Compiling the Software</h2>
-
-The software was written with gcc on ubuntu.
-
-Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
-The software is compiled by writing 
-
-`$ make gp`
-
-at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
-
-<h3>Optimisation</h3>
-
-One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. 
-
 
 <h2>General Information</h2>
 
@@ -328,14 +295,9 @@ While MATLAB can be horribly slow (and very expensive for non-academic users) it
 
 where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
 
-GP-LVM
-======
+# GP-LVM
 
-<h1>GP-LVM Software</h1>
-
-This page describes how to compile and gives some examples of use of the C++ Gaussian Process Latent Variable Model Software (GP-LVM). 
-
-Release 0.201
+Release Notes
 
 Fixed bug which meant that back constraint wasn't working due to failure to initialise lwork properly for dsysv. 
 
@@ -361,74 +323,6 @@ This release contained modifications by William V. Baxter to enable the code to 
 Version 0.1, was released in late July 2005.
 
 This was the original release of the code.
-
-<h3>Design Philosophy</h3>
-
-The software is written in C++ to try and get a degree of
-flexibility in the models that can be used without a serious
-performance hit. This was difficult to do in MATLAB as users who have
-tried version 1 (which was fast but inflexible) and version 2 (which
-was flexible but slow) of the MATLAB software will appreciate.
-
-The sparsification algorithm has not been implemented in the C++
-software so this software is mainly for smaller data sets (up to
-around a thousand points).
-
-The software is mainly written in C++ but relies for some functions
-on FORTRAN code by other authors and the LAPACK and BLAS libraries.
-
-As well as the C++ code some utilities are supplied in MATLAB code
-for visualising the results.
-
-<h2>Compiling the Software</h2>
-
-The software was written with gcc vs 3.2.2. There are definitely
-Standard Template Library issues on Solaris with gcc 2.95, so I
-suggest that at least version 3.2 or above is used.
-
-Part of the reason for using gcc is the ease of interoperability
-with FORTRAN. The code base makes fairly extensive use of FORTRAN so
-you need to have g77 installed.  The software is compiled by
-writing
-
-<pre>$ make gplvm</pre>
-
-at the command line. Architecture specific options are included in
-the `make.ARCHITECTURE` files. Rename the file with the
-relevant architecture to `make.inc` for it to be included.
-
-<h3>Optimisation</h3>
-
-One of the advantages of interfacing to the LAPACK and BLAS libraries
-is that they are often optimised for particular architectures. The
-file `make.atlas` includes options for compiling the ATLAS
-optimised versions of lapack and blas that are available on a server I
-have access to. These options may vary for particular machines.
-
-<h3>Cygwin</h3>
-
-For Windows users the code compiles under cygwin. However you will
-need version s of the lapack and blas libraries available (see <a
-href="http://www.netlib.org">www.netlib.org</a>. This can take some
-time to compile, and in the absence of any pre-compiled versions on
-the web I've provided some pre-compiled versions you may want to make
-use of (see the cygwin directory). Note that these pre-compiled
-versions are <i>not</i> optimised for the specific architecture and
-therefore do not give the speed up you would hope for from using
-lapack and blas.
-
-<h3>Microsoft Visual C++</h3>
-
-As of Release 0.101 the code compiles under Microsoft Visual Studio
-7.1. A project file is provided in the current release in the
-directory `MSVC/gplvm`. The compilation makes use of f2c
-versions of the FORTRAN code and the C version of LAPACK/BLAS,
-CLAPACK. Detailed instructions on how to compile are in the
-readme.msvc file. The work to convert the code (which included ironing
-out several bugs) was done by William V. Baxter. Many thanks to Bill
-for allowing me to make this available.
-
-<h2>General Information</h2>
 
 The way the software operates is through the command line. There is
 one executable, `gplvm`. Help can be obtained by writing
@@ -665,7 +559,6 @@ with the command
 
 
 <pre>$ ./gplvm -v 3 learn -L true -c rbf -g 0.0001 examples/swagger.svml swagger_back_constrained.model</pre>
-
 
 The back constraint here is a kernel mapping with an `RBF' kernel
 which is specified as having an inverse width of 1e-4.

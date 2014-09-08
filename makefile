@@ -32,6 +32,8 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CDataModel.h CDist.h CGp.h CMltools.h COptimisable.h CNoise.h CClctrl.h
 	$(CC) -c gp.cpp -o gp.o $(CCFLAGS)
 
+
+# To compile tests, the MATLAB interface must be enabled (i.e. define _NDLMATLAB)
 tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform  
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o

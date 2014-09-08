@@ -1,5 +1,5 @@
 
-include make.gutsy
+include make.linux
 
 all: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform  
 

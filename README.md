@@ -61,7 +61,7 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
-<a name="spgp1d">## One Dimensional Data Data</a>
+## One Dimensional Data Data
 
 
 Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `spgp1d.svml`. 
@@ -219,7 +219,7 @@ I'm working (as of 31/12/2007) on a major rewrite, so it's unlikely that these b
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
 
-<a name="toydata">## Toy Data Sets</a>
+## Toy Data Sets
 
 In this section we present some simple examples. The results will be visualised using `gnuplot`. It is suggested that you have access to `gnuplot` vs 4.0 or above.
 
@@ -255,7 +255,6 @@ whitevariance: 0.0784375<br>
 Noise Type:<br>
 Probit noise:<br>
 Bias on process 0: 0.237516
-
 ```
 
 Notice the fact that the kernel is composed of an RBF kernel, also known as squared exponential kernel or Gaussian kernel; a bias kernel, which is just a constant, and a white noise kernel, which is a diagonal term. The bias kernel and the white kernel are automatically added to the rbf kernel. Other kernels may also be used, see `ivm learn -h` for details.
@@ -501,7 +500,7 @@ Process software</a>. Anton Schwaighofer has written <a
 href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a>
 which can write from MATLAB to the SVM light format.
 
-<a name="oilflow">## Oil Flow Data</a>
+## Oil Flow Data
 
 In the original NIPS paper the first example was the oil flow data
 (see <a href="http://www.ncrg.aston.ac.uk/GTM/3PhaseData.html">this
@@ -619,7 +618,7 @@ This will load the results and allow you to move around the latent
 space visualising (in the form of a line plotted from the vector) the
 nature of the data at each point.
 
-<a name="mocap">## Motion Capture</a>
+## Motion Capture
 
 One popular use of the GPLVM has been in learning of human motion
 styles (see <a
@@ -635,7 +634,7 @@ will also need a small <a
 href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=mocap">MATLAB
 mocap toolkit</a>.
 
-<a name="mocap">### BVH Files</a>
+### BVH Files
 
 To prepare a new bvh file for visualisation you need the MATLAB
 mocap toolkit and Anton Schwaighofer's <a

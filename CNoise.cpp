@@ -1,3 +1,4 @@
+
 #include "CNoise.h"
 
 using namespace std;
@@ -329,7 +330,7 @@ void CGaussianNoise::_init()
 void CGaussianNoise::initNames()
 {
   for(unsigned int j=0; j<getOutputDim(); j++)
-    setParamName("bias" + j, j);
+    setParamName("bias" + ndlstrutil::itoa(j), j);
   setParamName("sigma2", getOutputDim());
 }
 void CGaussianNoise::initParams()
@@ -568,8 +569,8 @@ void CScaleNoise::initNames()
 {
   for(unsigned int j=0; j<getOutputDim(); j++)
   {
-    setParamName("bias" + j, j);
-    setParamName("scale" + j, getOutputDim()+j);
+    setParamName("bias" + ndlstrutil::itoa(j), j);
+    setParamName("scale" + ndlstrutil::itoa(j), getOutputDim()+j);
   }
 }
 void CScaleNoise::initParams()
@@ -839,7 +840,7 @@ void CProbitNoise::_init()
 void CProbitNoise::initNames()
 {
   for(unsigned int j=0; j<getOutputDim(); j++)
-    setParamName("bias" + j, j); 
+    setParamName("bias" + ndlstrutil::itoa(j), j); 
 }
 void CProbitNoise::initParams()
 {
@@ -1057,7 +1058,7 @@ void CNcnmNoise::_init()
 void CNcnmNoise::initNames()
 {
   for(unsigned int j=0; j<getOutputDim(); j++)
-    setParamName("bias" + j, j);
+    setParamName("bias" + ndlstrutil::itoa(j), j);
 }
 void CNcnmNoise::initParams()
 {
@@ -1447,9 +1448,9 @@ void COrderedNoise::_init()
 void COrderedNoise::initNames()
 {
   for(unsigned int j=0; j<getOutputDim(); j++)
-    setParamName("bias" + j, j);
+    setParamName("bias" + ndlstrutil::itoa(j), j);
   for(unsigned int j=0; j<getNumCategories()-2; j++)
-    setParamName("width" + j, j+getOutputDim());
+    setParamName("width" + ndlstrutil::itoa(j), j+getOutputDim());
 }
 void COrderedNoise::initParams()
 {

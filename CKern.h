@@ -222,7 +222,7 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   {
     return updateXused;
   }
-  virtual bool setUpdateXused(bool val) 
+  virtual void setUpdateXused(bool val) 
   {
     updateXused = val;
   }

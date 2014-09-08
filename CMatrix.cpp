@@ -886,8 +886,8 @@ double jitChol(CMatrix& outMatrix, const CMatrix& inMatrix, unsigned int maxTrie
     {
       throw;
     }
-
   }
+  return jitter; // should never get here, but prevents clang warning on lack of return for non void function.
 }
 
 
@@ -1080,9 +1080,9 @@ void CMatrix::readParamsFromStream(istream& in)
     {
       int ind = tokens[j].find('.');
       if(ind==std::string::npos||ind<0)
-	       setVal((double)atoi(tokens[j].c_str()), i, j);
+	setVal((double)atoi(tokens[j].c_str()), i, j);
       else
-	       setVal(atof(tokens[j].c_str()), i, j);
+	setVal(atof(tokens[j].c_str()), i, j);
     }
   }
 }
@@ -1136,7 +1136,7 @@ void CMatrix::fromUnheadedStream(istream& in)
       throw ndlexceptions::StreamFormatError("numCols");
     for(unsigned int j=0; j<tokens.size(); j++) 
     {
-      unsigned int ind = tokens[j].find('.');
+      int ind = tokens[j].find('.');
       if(ind==std::string::npos||ind<0)
 	setVal((double)atoi(tokens[j].c_str()), rowNo, j);
       else

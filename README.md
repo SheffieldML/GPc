@@ -9,7 +9,7 @@ Gaussian Process Software
 
 ## C++ GP Software
 
-This page describes how to compile and gives some examples of use of the C++ Gaussian Process code available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=gpcpp">download here</a>. 
+This page describes how to compile and gives some examples of use of the C++ Gaussian Process code. 
 
 ### Release Information
 
@@ -152,7 +152,7 @@ IVM Software
 
 ## C++ IVM Software
 
-This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=ivmcpp">download here</a>.
+This page describes how to compile and gives some examples of use of the C++ Informative Vector Machine Software (IVM).
 
 ### Design Philosophy
 
@@ -319,7 +319,7 @@ The IVM learnt with an ARD RBF kernel. One of the input directions has been reco
 
 ## Semi-Supervised Learning
 
-The software also provides an implementation of the null category noise model described in <a href="http://www.cs.man.ac.uk/neill-bin/publications/bibpage.cgi?keyName=Lawrence:semisuper04">Lawrence and Jordan</a>. 
+The software also provides an implementation of the null category noise model described in <a href="http://ml.sheffield.ac.uk/~neil/cgi-bin/publications/bibpage.cgi?keyName=Lawrence:semisuper04">Lawrence and Jordan</a>. 
 
 The toy example given in the paper is reconstructed here. To run it type
 
@@ -370,7 +370,7 @@ GP-LVM Software
 
 ## GP-LVM Software
 
-This page describes how to compile and gives some examples of use of the C++ Gaussian Process Latent Variable Model Software (GP-LVM) available for <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=gplvmcpp">download here</a>. 
+This page describes how to compile and gives some examples of use of the C++ Gaussian Process Latent Variable Model Software (GP-LVM) available for <a href="http://ml.sheffield.ac.uk/~neil/cgi-bin/software/downloadForm.cgi?toolbox=gplvmcpp">download here</a>. 
 
 ### Release Information
 
@@ -391,7 +391,7 @@ and variational dtc approximations will be available.
 
 In this release the dynamics model of <a href="http://www.dgp.toronto.edu/~jmwang/gpdm/">Wang <i>et al</i>.</a> has been included. The initial work was done by William V. Baxter, with modifications by me to include the unusual prior Wang suggests in his MSc thesis, scaling of the dynamics likelihood and the ability to set the signal noise ratio. A new example has been introduced for this model below.
 
-As part of the dynamics introduction a new MATLAB toolbox for the GP-LVM has been released. This toolbox, <a href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=fgplvm">download here</a>, is expected to be the main development toolbox for the GP-LVM in MATLAB.
+As part of the dynamics introduction a new MATLAB toolbox for the GP-LVM has been released. This toolbox, <a href="http://ml.sheffield.ac.uk/~neil/cgi-bin/software/downloadForm.cgi?toolbox=fgplvm">download here</a>, is expected to be the main development toolbox for the GP-LVM in MATLAB.
 
 Version 0.101 was released 21st October 2005.
 
@@ -604,7 +604,7 @@ new release of the GPLVM code in MATLAB has been provided (vs 2.012
 and above) which allows you to load the results of the learning from
 the C++ code into MATLAB for further manipulation. You can download
 the toolbox from <a
-href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=gplvm">here</a>. Once
+href="http://ml.sheffield.ac.uk/~neil/cgi-bin/software/downloadForm.cgi?toolbox=gplvm">here</a>. Once
 the relevant toolboxes (you need the IVM toolbox and the toolboxes on
 which it depends: KERN, NOISE, etc.) are downloaded you can visualise
 the results in MATLAB using
@@ -622,7 +622,7 @@ nature of the data at each point.
 
 One popular use of the GPLVM has been in learning of human motion
 styles (see <a
-href="http://www.cs.man.ac.uk/neill-bin/publications/bibpage.cgi?keyName=Grochow:styleik04&printAbstract=1">Grochow
+href="http://ml.sheffield.ac.uk/~neil/cgi-bin/publications/bibpage.cgi?keyName=Grochow:styleik04&printAbstract=1">Grochow
 <i>et al.</i></a>). Personally, I find this application very
 motivating as Motion Capture data is a rare example of high
 dimensional data about which humans have a strong intuition. If the
@@ -631,7 +631,7 @@ observer. Therefore, as a second example, we will look at data of this
 type. In particular we will consider a data sets containing a walking
 man and a further data set containing a horse. To run these demos you
 will also need a small <a
-href="http://www.cs.man.ac.uk/neill-bin/software/downloadForm.cgi?toolbox=mocap">MATLAB
+href="http://ml.sheffield.ac.uk/~neil/cgi-bin/software/downloadForm.cgi?toolbox=mocap">MATLAB
 mocap toolkit</a>.
 
 ### BVH Files

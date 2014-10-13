@@ -59,7 +59,7 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 ## Examples
 
-The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
+The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
 
 ## One Dimensional Data Data
 
@@ -145,7 +145,7 @@ While MATLAB can be horribly slow (and very expensive for non-academic users) it
 >>
 ```
 
-where we have used the <a href="./~neill/svml/">SVML toolbox</a> of Anton Schwaighofer to load in the data.
+where we have used the <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html">SVML toolbox</a> of Anton Schwaighofer to load in the data.
 
 IVM Software
 ============
@@ -217,7 +217,7 @@ I'm working (as of 31/12/2007) on a major rewrite, so it's unlikely that these b
 
 ## Examples
 
-The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. Anton Schwaighofer has written <a href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a> which can write from MATLAB to the SVM light format.
+The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
 
 ## Toy Data Sets
 
@@ -495,15 +495,15 @@ you can track the iterations.
 
 The software loads in data in the <a
 href="http://svmlight.joachims.org/">SVM light</a> format. This is to
-provide compatibility with other <a href="~neil/ivmapp/">Gaussian
+provide compatibility with other <a href="https://github.com/SheffieldML/GPmat/">Gaussian
 Process software</a>. Anton Schwaighofer has written <a
-href="http://www.igi.tugraz.at/aschwaig/software.html"> a package</a>
+href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a>
 which can write from MATLAB to the SVM light format.
 
 ## Oil Flow Data
 
 In the original NIPS paper the first example was the oil flow data
-(see <a href="http://www.ncrg.aston.ac.uk/GTM/3PhaseData.html">this
+(see <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/3PhaseData.html">this
 page</a> for details) sub-sampled to 100 points. I use this data a lot
 for checking the algorithm is working so in some senses it is not an
 independent `proof' of the model.
@@ -638,7 +638,7 @@ mocap toolkit</a>.
 
 To prepare a new bvh file for visualisation you need the MATLAB
 mocap toolkit and Anton Schwaighofer's <a
-href="http://www.igi.tugraz.at/aschwaig/software.html"> SVM light
+href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> SVM light
 MATLAB interface</a> (you don't need the SVM light software itself).
 
 ```matlab

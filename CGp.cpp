@@ -1435,7 +1435,7 @@ CGp::CGp(CMatrix* pinData,
 }
 mxArray* CGp::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   dims[0]=1;
   mxArray* matlabArray;
   if(isSparseApproximation()) 

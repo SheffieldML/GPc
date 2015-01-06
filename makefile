@@ -129,10 +129,23 @@ CMatrix.o: CMatrix.cpp CMatrix.h ndlassert.h ndlexceptions.h \
   CNdlInterfaces.h ndlstrutil.h ndlutil.h ndlfortran.h lapack.h
 	$(CC) -c CMatrix.cpp -o CMatrix.o $(CCFLAGS)
 
+CGp.o: CGp.cpp CGp.h CMltools.h ndlassert.h ndlexceptions.h \
+  ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \
+  ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
+  CNoise.h
+	$(CC) -c CGp.cpp -o CGp.o $(CCFLAGS)
+
+CIvm.o: CIvm.cpp CIvm.h CMltools.h ndlassert.h ndlexceptions.h \
+  ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \
+  ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
+  CNoise.h
+	$(CC) -c CIvm.cpp -o CIvm.o $(CCFLAGS)
+
 ndlutil.o: ndlutil.cpp ndlutil.h ndlassert.h ndlexceptions.h ndlfortran.h
 	$(CC) -c ndlutil.cpp -o ndlutil.o $(CCFLAGS)
 
 ndlstrutil.o: ndlstrutil.cpp ndlstrutil.h ndlexceptions.h
+	$(CC) -c ndlstrutil.cpp -o ndlstrutil.o $(CCFLAGS)
 
 ndlassert.o: ndlassert.cpp ndlassert.h ndlexceptions.h
 	$(CC) -c ndlassert.cpp -o ndlassert.o $(CCFLAGS)

@@ -4077,7 +4077,7 @@ void CKern::readParamsFromStream(istream& in)
 #ifdef _NDLMATLAB
 mxArray* CKern::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   dims[0] = 1;
   const char *fieldNames[] = {"type", "transforms", "inputDimension"};
   mxArray* matlabArray = mxCreateStructArray(1, dims, 3, fieldNames);
@@ -4228,7 +4228,7 @@ void CComponentKern::extractParamFromMxArray(const mxArray* matlabArray)
 void CComponentKern::addParamToMxArray(mxArray* matlabArray) const
 {
   // Add comp field to mxArray.
-  int dims[1];
+  size_t dims[1];
   mxAddField(matlabArray, "comp");
   dims[0] = components.size();
   mxArray* compArray = mxCreateCellArray(1, dims);

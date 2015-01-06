@@ -244,7 +244,7 @@ class CMatInterface
   }
   mxArray* convertMxArray(const bool val) const
   {
-    int dims[1];
+    size_t dims[1];
     dims[0] = 1;
     mxArray* matlabArray = mxCreateNumericArray(1, dims, mxDOUBLE_CLASS, mxREAL);
     double* matlabVals = mxGetPr(matlabArray);
@@ -256,7 +256,7 @@ class CMatInterface
   }
   mxArray* convertMxArray(const double val) const
   {
-    int dims[1];
+    size_t dims[1];
     dims[0] = 1;
     mxArray* matlabArray = mxCreateNumericArray(1, dims, mxDOUBLE_CLASS, mxREAL);
     double* matlabVals = mxGetPr(matlabArray);
@@ -269,7 +269,7 @@ class CMatInterface
   }
   mxArray* convertMxArray(const vector<int> vals) const
   {
-    int dims[2];
+    size_t dims[2];
     dims[0]=(int)vals.size();
     dims[1] = 1;
     mxArray* matlabArray = mxCreateNumericArray(2, dims, mxDOUBLE_CLASS, mxREAL);
@@ -282,7 +282,7 @@ class CMatInterface
   }
   mxArray* convertMxArray(const vector<unsigned int> vals) const
   {
-    int dims[2];
+    size_t dims[2];
     dims[0]=(int)vals.size();
     dims[1] = 1;
     mxArray* matlabArray = mxCreateNumericArray(2, dims, mxDOUBLE_CLASS, mxREAL);

@@ -227,8 +227,8 @@ void CClivm::relearn()
 #ifdef _NDLMATLAB
     // Write matlab output.
     model.writeMatlabFile(newModelFileName, "ivmInfo");
-    model.kern.updateMatlabFile(newModelFileName, "kern");
-    model.noise.updateMatlabFile(newModelFileName, "noise");
+    model.pkern->updateMatlabFile(newModelFileName, "kern");
+    model.pnoise->updateMatlabFile(newModelFileName, "noise");
     X.updateMatlabFile(newModelFileName, "X");
     y.updateMatlabFile(newModelFileName, "y");
 #else 
@@ -649,8 +649,8 @@ void CClivm::learn() {
 #ifdef _NDLMATLAB
     // Write matlab output.
     model.writeMatlabFile(modelFileName, "ivmInfo");
-    model.kern.updateMatlabFile(modelFileName, "kern");
-    model.noise.updateMatlabFile(modelFileName, "noise");
+    model.pkern->updateMatlabFile(modelFileName, "kern");
+    model.pnoise->updateMatlabFile(modelFileName, "noise");
     X.updateMatlabFile(modelFileName, "X");
     y.updateMatlabFile(modelFileName, "y");
 #else 

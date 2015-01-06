@@ -1173,7 +1173,7 @@ void CMatrix::toUnheadedStream(ostream& out) const
 #ifdef _NDLMATLAB
 mxArray* CMatrix::toMxArray() const 
 {
-  int dims[2];
+  size_t dims[2];
   dims[0] = nrows;
   dims[1] = ncols;
   mxArray* matlabArray = mxCreateNumericArray(2, dims, mxDOUBLE_CLASS, mxREAL);
@@ -1204,7 +1204,7 @@ void CMatrix::fromFullMxArray(const mxArray* matlabArray)
   {
     throw ndlexceptions::Error("mxArray does not have 2 dimensions.");
   }
-  const int* dims = mxGetDimensions(matlabArray);
+  const size_t* dims = mxGetDimensions(matlabArray);
   resize(dims[0], dims[1]);
   double* matlabVals = mxGetPr(matlabArray);
   dcopy_(ncols*nrows, matlabVals, 1, vals, 1);
@@ -1220,12 +1220,12 @@ void CMatrix::fromSparseMxArray(const mxArray* matlabArray)
   {
     throw ndlexceptions::Error("mxArray does not have 2 dimensions.");
   }
-  const int* dims = mxGetDimensions(matlabArray);
+  const size_t* dims = mxGetDimensions(matlabArray);
   resize(dims[0], dims[1]);
   double* matlabVals = mxGetPr(matlabArray);
   setVals(0.0);
-  int* matlabIr = mxGetIr(matlabArray);
-  int* matlabJc = mxGetJc(matlabArray);
+  size_t* matlabIr = mxGetIr(matlabArray);
+  size_t* matlabJc = mxGetJc(matlabArray);
   int nnz = matlabJc[getCols()];
   for(int j=0; j<getCols(); j++) 
   {

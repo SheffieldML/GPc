@@ -600,7 +600,7 @@ void CClgplvm::learn()
 #ifdef _NDLMATLAB
     // Write matlab output.
     pmodel->writeMatlabFile(modelFileName, "gplvmInfo");
-    pmodel->kern.updateMatlabFile(modelFileName, "kern");
+    pmodel->pkern->updateMatlabFile(modelFileName, "kern");
     X.updateMatlabFile(modelFileName, "X");
     Y.updateMatlabFile(modelFileName, "Y");
 #else 

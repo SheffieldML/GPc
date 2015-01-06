@@ -412,7 +412,7 @@ void CClgp::learn()
 #ifdef _NDLMATLAB
     // Write matlab output.
     pmodel->writeMatlabFile(modelFileName, "gpInfo");
-    pmodel->kern.updateMatlabFile(modelFileName, "kern");
+    pmodel->getKernel()->updateMatlabFile(modelFileName, "kern");
     X.updateMatlabFile(modelFileName, "X");
     y.updateMatlabFile(modelFileName, "y");
 #else 
@@ -508,7 +508,7 @@ void CClgp::relearn()
 #ifdef _NDLMATLAB
     // Write matlab output.
     pmodel->writeMatlabFile(newModelFileName, "gpInfo");
-    pmodel->kern.updateMatlabFile(newModelFileName, "kern");
+    pmodel->getKernel()->updateMatlabFile(newModelFileName, "kern");
     X.updateMatlabFile(newModelFileName, "X");
     y.updateMatlabFile(newModelFileName, "y");
 #else 

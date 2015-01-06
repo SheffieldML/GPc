@@ -42,7 +42,7 @@ bool CDist::equals(const CDist& dist, double tol) const
 #ifdef _NDLMATLAB
 mxArray* CDist::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   dims[0] = 1;
   const char *fieldNames[] = {"type", "transforms"};
   mxArray* matlabArray = mxCreateStructArray(1, dims, 2, fieldNames);
@@ -285,7 +285,7 @@ double CWangDist::getGradInput(double x) const
 #ifdef _NDLMATLAB
 mxArray* CParamPriors::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   // dists field.
   const char *transFieldNames[] = {"index", "type"};
   dims[0]=getNumDists();

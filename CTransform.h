@@ -172,9 +172,8 @@ class CParamTransforms : public CMatInterface, public CStreamInterface
 #endif
   void addTransform(const CTransform* trans, unsigned int index) 
   {
-    
     transIndex.push_back(index);
-    transforms.push_back(trans->clone());
+    transforms.push_back(trans);
   }
 
   void clearTransforms() 
@@ -184,13 +183,11 @@ class CParamTransforms : public CMatInterface, public CStreamInterface
   }
   inline string getTransformType(unsigned int ind) const 
   {
-    
     BOUNDCHECK(ind<getNumTransforms());
     return transforms[ind]->getType();
   }
   inline unsigned int getTransformIndex(unsigned int ind) const 
   {
-    
     BOUNDCHECK(ind<getNumTransforms());
     return transIndex[ind];
   }
@@ -198,9 +195,8 @@ class CParamTransforms : public CMatInterface, public CStreamInterface
   {
     return transforms.size();
   }
-	
 
-  vector<CTransform*> transforms;
+  vector<const CTransform*> transforms;
   vector<unsigned int> transIndex;
 };
 
@@ -339,12 +335,10 @@ class CTransformable
   }
   void addTransform(const CTransform* trans, unsigned int index) 
   {
-    
     BOUNDCHECK(index<getNumParams());
-    transArray.transIndex.push_back(index);
-    transArray.transforms.push_back(trans->clone());
+    transArray.addTransform(trans, index);
   }
-  
+
   void clearTransforms() 
   {
     for(size_t i = 0; i<transArray.transforms.size(); i++)
@@ -352,7 +346,7 @@ class CTransformable
     transArray.transIndex.clear();
     transArray.transforms.clear();
   }
-  
+
 #ifdef _NDLMATLAB
   mxArray* transformsToMxArray() const 
   {

@@ -163,8 +163,8 @@ void CClgp::learn()
         incrementArgument(); 
         if(kernelTypes.size()==0)
           exitError("Inverse width specification must come after covariance function type is specified.");
-        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="ratquad")
-          exitError("Inverse width parameter only valid for RBF and rational quadratic covariance function.");
+        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
+          exitError("Inverse width parameter only valid for RBF, exponential and rational quadratic covariance function.");
         rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if (isCurrentArg("-d", "--degree")) {
@@ -275,6 +275,16 @@ void CClgp::learn()
         kernels.push_back(new CRbfKern(*M));
       if(rbfInvWidths[i]!=-1.0)
         kernels[i]->setParam(rbfInvWidths[i], 0); /// set rbf inverse width as specified.
+      if(variances[i]!=-1.0)
+        kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
+	}
+    else if(kernelTypes[i]=="exp") {
+      if(selectInputs[i])
+        exitError("Exponential covariance function not available with input selection yet.");
+      else
+        kernels.push_back(new CExpKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setParam(rbfInvWidths[i], 0); /// set exp inverse width as specified.
       if(variances[i]!=-1.0)
         kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
 	}
@@ -936,8 +946,8 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Type of covariance function function. Currently available options are lin (linear), poly (polynomial -- not recommended), rbf (radial basis function), ratquad (rational quadratic) and mlp (multi-layer perceptron otherwise known as arcsin). If the covariance function is not specified it defaults to rbf.");
-    helpArgument("-g, --gamma float", "Inverse width parameter in RBF and rational quadratic covariance function.");
+    helpArgument("-k, --kernel string", "Type of covariance function function. Currently available options are lin (linear), poly (polynomial -- not recommended), rbf (radial basis function), exp (exponential), ratquad (rational quadratic) and mlp (multi-layer perceptron otherwise known as arcsin). If the covariance function is not specified it defaults to rbf.");
+    helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
     helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");
     helpArgument("-v, --variance float", "Variance parameter for covariance function.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP covariance function.");

@@ -21,7 +21,7 @@ using namespace std;
 class CStreamInterface 
 {
 public:
-  virtual ~CStreamInterface() {};
+  virtual ~CStreamInterface() {}
   virtual void toStream(ostream& out) const
   {
     out << setiosflags(ios::fixed);

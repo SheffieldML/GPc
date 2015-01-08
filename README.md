@@ -801,3 +801,20 @@ This result can also be loaded into MATLAB and played using the command
 ```matlab
 >> mocapResultsCppBvh('swagger_dynamics.model', 'examples/Swagger.bvh', 'bvh');
 ```
+
+Matlab mex-files
+================
+
+It is possible to use GPc in Matlab using a mex-file, combining the speed of
+C++ and comfort of Matlab. However, there are several issues which might need
+a special attention:
+
+* when getting errors about symbols _defined in discarded section_, it
+surprisingly might help to remove the Matlab interface (comment the
+Matlab-related lines in your makefile.platform out);
+
+* when getting segmentation faults in calls to BLAS/LAPACK libraries, it might
+help to compile the mex-file against MKL library instead (use -lmkl_rt instead
+of -lblas -llapack).
+
+

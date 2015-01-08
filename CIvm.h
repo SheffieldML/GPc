@@ -171,6 +171,7 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
       selectionCriterion=RANDOM;
     else
       cerr << "Unrecognised selection criterion " << val << "." << endl;
+    
   }
   void setTypeSelection(unsigned int val)
   {

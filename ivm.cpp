@@ -303,9 +303,9 @@ void CClivm::learn() {
 	incrementArgument(); 
 	if(kernelTypes.size()==0)
 	  exitError("Inverse width specification must come after kernel type is specified.");
-	if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="ratquad")
-	  exitError("Inverse width parameter only valid for RBF and Rational Quadratic kernel.");
-	rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
+        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
+          exitError("Inverse width parameter only valid for RBF, exponential and rational quadratic covariance function.");
+        rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if(isCurrentArg("-@", "--alpha")) {
 	incrementArgument(); 
@@ -555,6 +555,16 @@ void CClivm::learn() {
 	kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
       if(missingData)	
 	kernels[i]->addPrior(prior, 1);// place L1 regulariser on variance for ncnm model.
+    }
+    else if(kernelTypes[i]=="exp") {
+      if(selectInputs[i])
+        exitError("Exponential covariance function not available with input selection yet.");
+      else
+        kernels.push_back(new CExpKern(X));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setParam(rbfInvWidths[i], 0); /// set exp inverse width as specified.
+      if(variances[i]!=-1.0)
+        kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
     }
     else if(kernelTypes[i]=="ratquad") {
       if(selectInputs[i])
@@ -1262,8 +1272,8 @@ void CClivm::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Kernel options:" << endl;
-    helpArgument("-k, --kernel string", "Type of kernel function. Currently available options are lin (linear), poly (polynomial -- not recommended), rbf (radial basis function), ratquad (rational quadratic) and mlp (multi-layer perceptron otherwise known as arcsin).");
-    helpArgument("-g, --gamma float", "Inverse width parameter in RBF and rational quadratic kernel.");
+    helpArgument("-k, --kernel string", "Type of kernel function. Currently available options are lin (linear), poly (polynomial), rbf (radial basis function), exp (exponential), ratquad (rational quadratic) and mlp (multi-layer perceptron otherwise known as arcsin).");
+    helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic kernel.");
     helpArgument("-v, --variance float", "Variance parameter for kernel.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP kernel.");
     helpArgument("-@, --alpha float", "Alpha parameter for the rational quadratic kernel.");

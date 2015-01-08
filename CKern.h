@@ -739,7 +739,7 @@ class CRbfKern: public CKern {
 
 };
 
-// Exponential Kernel, I have no idea what I am doing
+// Exponential Kernel, written by Karel Lebeda with no guarantees whatsoever...
 class CExpKern: public CKern {
  public:
   CExpKern();

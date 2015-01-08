@@ -288,7 +288,7 @@ void CClgp::learn()
       if(variances[i]!=-1.0)
         kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
 	}
-	else if(kernelTypes[i]=="ratquad") {
+    else if(kernelTypes[i]=="ratquad") {
       if(selectInputs[i])
         exitError("Rational quadratic covariance function not available with input selection yet.");
       else

@@ -1022,6 +1022,8 @@ double CBiasKern::getGradParam(unsigned int index, const CMatrix& X, const CMatr
   BOUNDCHECK(index==0);
   return covGrad.sum();
 }
+
+
 // the RBF kernel.
 CRbfKern::CRbfKern() : CKern()
 {
@@ -1252,6 +1254,204 @@ double CRbfKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
   throw ndlexceptions::NotImplementedError( "Error getGradParam is not currently implemented for CRbfKern");
   
 }
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// Exponential kernel, written by Karel Lebeda with no guarantees whatsoever...
+//////////////////////////////////////////////////////////////////////////////////////////////
+CExpKern::CExpKern() : CKern()
+{
+  _init();
+}
+CExpKern::CExpKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CExpKern::CExpKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CExpKern::CExpKern(const CExpKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  inverseWidth = kern.inverseWidth;
+}
+// Class destructor
+CExpKern::~CExpKern()
+{
+}
+double CExpKern::getVariance() const
+{
+  return variance;
+}
+void CExpKern::_init()
+{
+  nParams = 2;
+  setType("exp");
+  setName("EXP");
+  setParamName("inverseWidth", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setStationary(true);
+}
+void CExpKern::setInitParam()
+{
+  inverseWidth = 1.0;
+  variance = 1.0;
+}
+
+inline double CExpKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+void CExpKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(d.getCols()==1);
+  DIMENSIONMATCH(X.rowsMatch(d));
+  d.setVals(variance);
+}
+// Parameters are kernel parameters
+void CExpKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    inverseWidth = val;
+    break;
+  case 1:
+    variance = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CExpKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return inverseWidth;
+    break;
+  case 1:
+    return variance;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+// gradient of the kernel function w.r.t. the data
+void CExpKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+	DIMENSIONMATCH(gX.getRows() == X2.getRows());
+	BOUNDCHECK(row < X.getRows());
+	DIMENSIONMATCH(X.getCols()==X2.getCols());
+	DIMENSIONMATCH(gX.getCols()==X2.getCols());
+	for(unsigned int k=0; k<X2.getRows(); k++)
+	{
+		double dist = sqrt(X.dist2Row(row, X2, k))*inverseWidth;
+		for(unsigned int j=0; j<X2.getCols(); j++)
+			{
+			// ddist_dX = (X[:, None, :] - X2[None, :, :]) / self.lengthscale ** 2 / np.where(dist != 0., dist, np.inf)
+			double ddist_dX = (X2.getVal(k, j) - X.getVal(row, j)) * inverseWidth * inverseWidth;
+			if (dist != 0) {
+				ddist_dX /= dist;
+			} else {
+				ddist_dX = 0;
+			}
+			// dK_dX = -np.transpose(self.variance * np.exp(-dist) * ddist_dX, (1, 0, 2))
+			double val = variance * exp(-dist) * ddist_dX;
+			if(addG)
+				gX.addVal(val, k, j);
+			else
+				gX.setVal(val, k, j);
+		}
+	}
+}
+// gradient of the kernel function w.r.t. the data - some special diagonal version?
+void CExpKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CExpKern::getWhite() const
+{
+  return 0.0;
+}
+// the kernel function
+double CExpKern::computeElement(const CMatrix& X1, unsigned int index1, const CMatrix& X2, unsigned int index2) const
+{
+  double k = X1.dist2Row(index1, X2, index2);
+  k = sqrt(k)*inverseWidth;
+  k = variance*exp(-k);
+  return k;
+}
+
+// gradient of the kernel function w.r.t. the parameters (0:inverseWidth=1/gamma, 1:variance=alpha, with two data matrices given)
+void CExpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+	DIMENSIONMATCH(g.getRows()==1);
+	DIMENSIONMATCH(g.getCols()==nParams);
+	DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+	DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+	double g1=0.0;
+	double g2=0.0;
+
+	unsigned int nrows = X.getRows();
+	for(unsigned int j=0; j<nrows; j++)
+	{
+		for(unsigned int i=0; i<X2.getRows(); i++)
+		{
+			// dist = np.sqrt(np.sum(np.square((X[:, None, :] - X2[None, :, :]) / self.lengthscale), -1))
+			double dist2 = X2.dist2Row(i, X, j);
+			double dist = sqrt(dist2) * inverseWidth;
+			// invdist = 1. / np.where(dist != 0., dist, np.inf)
+			double invdist = (dist != 0 ? invdist = 1 / dist :  invdist = 0 );
+			// dist2M = np.square(X[:, None, :] - X2[None, :, :]) / self.lengthscale ** 3
+			double dist2M = dist2 * inverseWidth*inverseWidth*inverseWidth;
+			// dvar = np.exp(-dist)
+			double k = exp(-dist);
+			// target[0] += np.sum(dvar * dL_dK)
+			g2 += k * covGrad.getVal(j,i); // in python, dK/dalpha goes firts, here gamma comes first
+			// dl = self.variance * dvar * dist2M.sum(-1) * invdist NO ARD HERE, right?!?
+			// I have to do it using dK_diw (inverse width), not dK_dl (length=width)!!!
+			double dl = - dist2 * k * inverseWidth * variance * invdist;
+			// target[1] += np.sum(dl * dL_dK)
+			g1 += dl * covGrad.getVal(j,i);
+		}
+	}
+	g.setVal(g1, 0);
+	g.setVal(g2, 1);
+	if(regularise)
+		addPriorGrad(g);
+}
+
+// gradient of the kernel function w.r.t. the parameters (0:inverseWidth, 1:variance, with one data matrix given)
+void CExpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+	getGradParams(g, X, X, covGrad, regularise); // just call it like the non-sym. case
+	return; // it could be sped up by exploiting the fact it's symmetric
+}
+
+double CExpKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError( "Error getGradParam is not currently implemented for CExpKern");
+}
+double CExpKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError( "Error getGradParam is not currently implemented for CExpKern");
+}
+//////////////////////////////////////////////////////////////////////////////////////////////
+
 
 // the Rational Quadratic kernel.
 CRatQuadKern::CRatQuadKern() : CKern()
@@ -4007,6 +4207,8 @@ CKern* readKernFromStream(istream& in)
 
   else if(type=="rbf")
     pkern = new CRbfKern();
+  else if(type=="exp")
+    pkern = new CExpKern();
   else if(type=="ratquad")
     pkern = new CRatQuadKern();
   else if(type=="matern32")

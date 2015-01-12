@@ -1,6 +1,7 @@
 #ifndef GP_H
 #define GP_H
 #include <fstream>
+#include <cmath>
 #include <cstdlib>
 #include "ndlexceptions.h"
 #include "ndlstrutil.h"

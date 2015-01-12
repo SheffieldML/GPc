@@ -57,7 +57,7 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 ## Examples
 
-The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="/~neill/ivmcpp/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
+The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="https://github.com/SheffieldML/GPmat/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
 
 ## One Dimensional Data Data
 
@@ -142,7 +142,7 @@ $ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
 
 ### MATLAB and OCTAVE
 
-While MATLAB can be slow (and very expensive for non-academic users) it can still be a lot easier to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GP toolbox for further manipulation. You can download the toolbox from <a href="/~neill/gp">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
+While MATLAB can be slow (and very expensive for non-academic users) it can still be a lot easier to code the visualisation routines by building on MATLAB's graphics facilities. To this end you can load in the results from the MATLAB/OCTAVE GPmat toolbox for further manipulation. You can download the toolbox from <a href="https://github.com/SheffieldML/GPmat/">here</a>. Once the relevant toolboxes (you need all the dependent toolboxes) are downloaded you can visualise the results in MATLAB using
 
 ```matlab
 >> [y, X] = svmlread('sinc.svml')

@@ -345,6 +345,9 @@ public:
   {
     backConstrained = val;
   }
+  inline const CKern* getKernel() const {
+    return pkern;
+  }
  
   CMapModel* backConstraintModel; // for mapping constraints on latent variables.
   CMatrix X_u; // for inducing variables if needed.

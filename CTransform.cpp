@@ -158,7 +158,7 @@ bool CParamTransforms::equals(CParamTransforms transforms) const
 #ifdef _NDLMATLAB
 mxArray* CParamTransforms::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   // transforms field.
   const char *transFieldNames[] = {"index", "type"};
   dims[0]=getNumTransforms();

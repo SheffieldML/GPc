@@ -622,7 +622,7 @@ CIvm::CIvm(CMatrix* inData,
 }
 mxArray* CIvm::toMxArray() const
 {
-  int dims[1];
+  size_t dims[1];
   dims[0]=1;
   const char* fieldNames[]={"I", "J", "m", "beta"};
   mxArray* matlabArray = mxCreateStructArray(1, dims, 4, fieldNames);

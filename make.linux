@@ -7,6 +7,11 @@ SHELL = /bin/sh
 PLAT = _LINUX
 LAPACKLIBS = -llapack -lblas
 F2CLIB = -lgfortran
+# commands to make statically&dynamically linked libraries and their extensions
+LIBSCOMMAND = ar rcs
+LIBDCOMMAND = gcc -shared -o
+LIBSEXT = .a
+LIBDEXT = .so
 
 # Uncomment these lines to set up the MATLAB interface.
 #MATLABLIBS = -lmat -lmx
@@ -17,12 +22,12 @@ F2CLIB = -lgfortran
 #MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
 #MATLABFLAG=-D_NDLMATLAB
 
-INCLUDE = ./src:$(MATLABINCLUDE)
+INCLUDE = $(MATLABINCLUDE)
 LD=g++
 LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
 CC=g++
-CCFLAGS = -ggdb -DDBG -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
-#CCFLAGS = -O3 -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+CCFLAGS = -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+#CCFLAGS = -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
 FC=gfortran
-FCFLAGS = -funroll-all-loops -O3
+FCFLAGS = -funroll-all-loops -O3 -fPIC
 

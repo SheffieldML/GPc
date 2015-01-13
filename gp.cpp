@@ -864,13 +864,13 @@ void CClgp::gnuplot()
 	errorBarMinus.setVal(x, j, 0);
       }
       CMatrix outVals(Xinvals.getRows(), pmodel->getOutputDim());
-      CMatrix varVals(Xinvals.getRows(), pmodel->getOutputDim());
-      pmodel->out(outVals, varVals, Xinvals);
+      CMatrix stdVals(Xinvals.getRows(), pmodel->getOutputDim());
+      pmodel->out(outVals, stdVals, Xinvals);
       for(int j=0; j<numx; j++) {
 	double val = outVals.getVal(j);
 	regressOut.setVal(val, j, 1);
-	errorBarPlus.setVal(val + 2*sqrt(varVals.getVal(j)), j, 1);
-	errorBarMinus.setVal(val - 2*sqrt(varVals.getVal(j)), j, 1);
+	errorBarPlus.setVal(val + 2*stdVals.getVal(j), j, 1);
+	errorBarMinus.setVal(val - 2*stdVals.getVal(j), j, 1);
       }
       string lineFile = name + "_line_data.dat";
       regressOut.toUnheadedFile(lineFile);

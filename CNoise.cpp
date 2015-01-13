@@ -480,13 +480,13 @@ void CGaussianNoise::out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& v
   for(unsigned int j=0; j<getOutputDim(); j++)
     yPred.addCol(j,bias.getVal(j));
 }
-void CGaussianNoise::out(CMatrix& yPred, CMatrix& errorBars, const CMatrix& muTest, const CMatrix& varSigmaTest) const
+void CGaussianNoise::out(CMatrix& yPred, CMatrix& stdDeviations, const CMatrix& muTest, const CMatrix& varSigmaTest) const
 {
-  DIMENSIONMATCH(yPred.dimensionsMatch(errorBars));
+  DIMENSIONMATCH(yPred.dimensionsMatch(stdDeviations));
   out(yPred, muTest, varSigmaTest);
-  for(unsigned int i=0; i<errorBars.getRows(); i++)
-    for(unsigned int j=0; j<errorBars.getCols(); j++)
-      errorBars.setVal(sqrt(varSigmaTest.getVal(i, j) + sigma2), i, j);
+  for(unsigned int i=0; i<stdDeviations.getRows(); i++)
+    for(unsigned int j=0; j<stdDeviations.getCols(); j++)
+      stdDeviations.setVal(sqrt(varSigmaTest.getVal(i, j) + sigma2), i, j);
 }
 void CGaussianNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, 
 				 const CMatrix& yTest) const

@@ -806,15 +806,27 @@ Matlab mex-files
 ================
 
 It is possible to use GPc in Matlab using a mex-file, combining the speed of
-C++ and comfort of Matlab. However, there are several issues which might need
-a special attention:
+C++ and comfort of Matlab.
+
+## Example
+
+The folder `mex` contains an example of a mex-file mirroring the functionality
+of the `gp` binary. It offers choices for (re)training, querying and clearing
+the model. Scripts for compiling and testing the mex-file are provided as well.
+For general information on usage and available commands, type just `fGP` in your
+Matlab command window. For information on usage of a particular command, type
+`fGP('command')`.
+
+## Known issues
+
+There are several issues which might need a special attention:
 
 * when getting errors about symbols _defined in discarded section_, it
 surprisingly might help to remove the Matlab interface (comment the
 Matlab-related lines in your makefile.platform out);
 
 * when getting segmentation faults in calls to BLAS/LAPACK libraries, it might
-help to compile the mex-file against MKL library instead (use -lmkl_rt instead
-of -lblas -llapack).
+help to compile the mex-file against MKL library instead (use -lmkl\_rt instead
+of -lblas -llapack) and/or preload the libmkl\_rt.so library file.
 
 

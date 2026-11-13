@@ -6,7 +6,7 @@ priority: "Low"
 created: "2026-11-13"
 last_updated: "2026-11-13"
 category: "bugs"
-related_cips: ["0001"]
+related_cips: ["0001", "0006"]
 owner: "Neil Lawrence"
 dependencies: []
 tags:

@@ -1170,6 +1170,115 @@ void CMatrix::toUnheadedStream(ostream& out) const
     out << endl;
   }
 }
+#ifdef _NDLMATIO
+#include <cstdint>
+#include <matio.h>
+
+void CMatrix::readMatlabFile(const std::string& fileName, const std::string& variableName)
+{
+  mat_t* matFile = Mat_Open(fileName.c_str(), MAT_ACC_RDONLY);
+  if(matFile == NULL)
+    throw ndlexceptions::FileReadError(fileName);
+
+  matvar_t* var = Mat_VarRead(matFile, variableName.c_str());
+  if(var == NULL)
+  {
+    Mat_Close(matFile);
+    ndlexceptions::MatlabInterfaceReadError matError(variableName);
+    throw ndlexceptions::FileFormatError(fileName, matError);
+  }
+
+  try
+  {
+    if(var->rank != 2)
+      throw ndlexceptions::Error("matio variable does not have 2 dimensions.");
+    if(var->isComplex)
+      throw ndlexceptions::Error("matio variable is complex; only real doubles are supported.");
+    if(var->class_type != MAT_C_DOUBLE && var->class_type != MAT_C_SINGLE
+       && var->class_type != MAT_C_INT8 && var->class_type != MAT_C_UINT8
+       && var->class_type != MAT_C_INT16 && var->class_type != MAT_C_UINT16
+       && var->class_type != MAT_C_INT32 && var->class_type != MAT_C_UINT32
+       && var->class_type != MAT_C_INT64 && var->class_type != MAT_C_UINT64)
+      throw ndlexceptions::Error("matio variable is not a numeric matrix.");
+
+    const size_t rows = var->dims[0];
+    const size_t cols = var->dims[1];
+    resize((unsigned int)rows, (unsigned int)cols);
+
+    // MATLAB/matio store column-major, matching CMatrix/LAPACK layout.
+    if(var->class_type == MAT_C_DOUBLE && var->data_type == MAT_T_DOUBLE)
+    {
+      dcopy_((int)(rows*cols), (double*)var->data, 1, vals, 1);
+    }
+    else
+    {
+      // Promote other numeric classes element-wise (fixtures sometimes store integers).
+      for(size_t j=0; j<cols; j++)
+      {
+        for(size_t i=0; i<rows; i++)
+        {
+          const size_t idx = i + j*rows;
+          double v = 0.0;
+          switch(var->data_type)
+          {
+          case MAT_T_SINGLE: v = (double)((float*)var->data)[idx]; break;
+          case MAT_T_DOUBLE: v = ((double*)var->data)[idx]; break;
+          case MAT_T_INT8:   v = (double)((int8_t*)var->data)[idx]; break;
+          case MAT_T_UINT8:  v = (double)((uint8_t*)var->data)[idx]; break;
+          case MAT_T_INT16:  v = (double)((int16_t*)var->data)[idx]; break;
+          case MAT_T_UINT16: v = (double)((uint16_t*)var->data)[idx]; break;
+          case MAT_T_INT32:  v = (double)((int32_t*)var->data)[idx]; break;
+          case MAT_T_UINT32: v = (double)((uint32_t*)var->data)[idx]; break;
+          case MAT_T_INT64:  v = (double)((int64_t*)var->data)[idx]; break;
+          case MAT_T_UINT64: v = (double)((uint64_t*)var->data)[idx]; break;
+          default:
+            throw ndlexceptions::Error("Unsupported matio data type for matrix load.");
+          }
+          setVal(v, (unsigned int)i, (unsigned int)j);
+        }
+      }
+    }
+  }
+  catch(...)
+  {
+    Mat_VarFree(var);
+    Mat_Close(matFile);
+    throw;
+  }
+
+  Mat_VarFree(var);
+  if(Mat_Close(matFile) != 0)
+    throw ndlexceptions::FileReadError(fileName);
+}
+
+void CMatrix::writeMatlabFile(const std::string& fileName, const std::string& variableName) const
+{
+  mat_t* matFile = Mat_CreateVer(fileName.c_str(), NULL, MAT_FT_MAT5);
+  if(matFile == NULL)
+    throw ndlexceptions::FileWriteError(fileName);
+
+  size_t dims[2];
+  dims[0] = nrows;
+  dims[1] = ncols;
+  matvar_t* var = Mat_VarCreate(variableName.c_str(), MAT_C_DOUBLE, MAT_T_DOUBLE,
+                                2, dims, (void*)vals, 0);
+  if(var == NULL)
+  {
+    Mat_Close(matFile);
+    throw ndlexceptions::FileWriteError(fileName);
+  }
+  if(Mat_VarWrite(matFile, var, MAT_COMPRESSION_NONE) != 0)
+  {
+    Mat_VarFree(var);
+    Mat_Close(matFile);
+    throw ndlexceptions::FileWriteError(fileName);
+  }
+  Mat_VarFree(var);
+  if(Mat_Close(matFile) != 0)
+    throw ndlexceptions::FileWriteError(fileName);
+}
+#endif /* _NDLMATIO */
+
 #ifdef _NDLMATLAB
 mxArray* CMatrix::toMxArray() const 
 {

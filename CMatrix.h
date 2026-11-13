@@ -1151,6 +1151,12 @@ public:
   void fromFullMxArray(const mxArray* matlabArray);
 #endif /* _NDLMATLAB*/
 
+#ifdef _NDLMATIO
+  // Load/save real double arrays from MATLAB v5 .mat files via libmatio (no MATLAB runtime).
+  void readMatlabFile(const std::string& fileName, const std::string& variableName);
+  void writeMatlabFile(const std::string& fileName, const std::string& variableName) const;
+#endif /* _NDLMATIO */
+
 #ifdef _HDF5
     void writeToHdf5(  const std::string& filename, const std::string& path_to_dataset ) const;
 

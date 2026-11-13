@@ -40,10 +40,5 @@ jobs:
           ./testKern
 
       - name: Run matrix LAPACK reference tests
-        # Built above; some cases disagree with modern BLAS vs 2005 MATLAB
-        # fixtures (e.g. eigenvector sign, a few trsm paths). Tracked as
-        # follow-up under CIP-0001 — do not block the matio gate on them yet.
-        continue-on-error: true
         run: |
           ./testMatrix
-          echo "testMatrix finished with exit code $?"

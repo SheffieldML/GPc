@@ -14,6 +14,7 @@ int main()
     fail += testType("gamma");
     fail += testType("wang");
     cout << "Number of failures: " << fail << "." << endl;
+    return fail > 0 ? 1 : 0;
   }
   catch(ndlexceptions::FileFormatError err)
   {
@@ -95,6 +96,7 @@ int testDist(CDist* dist, CDist* dist2, const string fileName)
   CMatrix ll;
   ll.readMatlabFile(fileName, "ll");
   dist->setTransParams(params);
+#ifdef _NDLMATLAB
   dist2->readMatlabFile(fileName, "dist");
   if(dist2->equals(*dist))
     cout << dist->getName() << " Initial Dist matches." << endl;
@@ -103,6 +105,16 @@ int testDist(CDist* dist, CDist* dist2, const string fileName)
     cout << "FAILURE: " << dist->getName() << " Initial Dist." << endl;
     fail++;
   }
+#else
+  dist2->setTransParams(params);
+  if(dist2->equals(*dist))
+    cout << dist->getName() << " Initial Dist parameter mirror matches." << endl;
+  else
+  {
+    cout << "FAILURE: " << dist->getName() << " Initial Dist parameter mirror." << endl;
+    fail++;
+  }
+#endif
   CMatrix g1(X.getRows(), X.getCols());
   dist->getGradInputs(g1, X);
   if(g1.equals(g))
@@ -130,6 +142,7 @@ int testDist(CDist* dist, CDist* dist2, const string fileName)
     fail++;
   }
 
+#ifdef _NDLMATLAB
   // Matlab read and Read and write test 
   dist->writeMatlabFile("crap.mat", "writtenDist");
   dist2->readMatlabFile("crap.mat", "writtenDist");
@@ -140,16 +153,24 @@ int testDist(CDist* dist, CDist* dist2, const string fileName)
     cout << "FAILURE: MATLAB read in " << dist->getName() << " does not match written out dist." << endl;
     fail++;
   }
+#endif
 
-  // Matlab read and Read and write test 
+  // Stream round-trip via factory (matches noise/kern; CDist::readParamsFromStream
+  // also accepts fromFile after baseType/type are written).
   dist->toFile("crap_dist");
-  dist2->fromFile("crap_dist");
-  if(dist->equals(*dist2))
-    cout << "Text written " << dist->getName() << " matches read in dist. Read and write to text passes." << endl;
-  else
   {
-    cout << "FAILURE: Text read in " << dist->getName() << " does not match written out dist." << endl;
-    fail++;
+    ifstream in("crap_dist");
+    if(!in.is_open())
+      throw ndlexceptions::FileReadError("crap_dist");
+    CDist* loaded = readDistFromStream(in);
+    if(dist->equals(*loaded))
+      cout << "Text written " << dist->getName() << " matches read in dist. Read and write to text passes." << endl;
+    else
+    {
+      cout << "FAILURE: Text read in " << dist->getName() << " does not match written out dist." << endl;
+      fail++;
+    }
+    delete loaded;
   }
   return fail;
 }

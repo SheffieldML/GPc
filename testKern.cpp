@@ -387,9 +387,9 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
   {
     cout << "FAILURE: MATLAB read in " << kern->getName() << " does not match written out kernel." << endl;
     cout << "Matlab written:" << endl;
-    cout << kern->display(cout) << endl;
+    kern->display(cout); cout << endl;
     cout << "Read back in:" << endl;
-    cout << kern2->display(cout) << endl;
+    kern2->display(cout); cout << endl;
     fail++;
   }
 
@@ -402,9 +402,9 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
   {
     cout << "FAILURE: Text read in " << kern->getName() << " does not match written kernel." << endl;
     cout << "Text written:" << endl;
-    cout << kern->display(cout) << endl;
+    kern->display(cout); cout << endl;
     cout << "Read back in:" << endl;
-    cout << kern2->display(cout) << endl;
+    kern2->display(cout); cout << endl;
     fail++;
   }
 

@@ -12,6 +12,8 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 | Coverage | [![Coverage](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml?query=branch%3Amain) |
 | Codecov | [![codecov](https://codecov.io/gh/SheffieldML/GPc/branch/main/graph/badge.svg)](https://codecov.io/gh/SheffieldML/GPc/branch/main) |
 
+Compile and Reference tests run on **Ubuntu** and **macOS** (CIP-0006). Ubuntu is the hard reference gate; macOS reference runs are soft until ordered-categorical noise matches OpenBLAS. Coverage stays on Ubuntu. Windows CI waits on a maintained Windows make path.
+
 Gaussian Process Software
 =========================
 

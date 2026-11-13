@@ -8,12 +8,21 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            make_fragment: make.linux
+          - os: macos-latest
+            make_fragment: make.osx
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install toolchain (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -23,11 +32,21 @@ jobs:
             libblas-dev \
             make
 
-      - name: Build core tools
+      - name: Install toolchain (macOS)
+        if: runner.os == 'macOS'
         run: |
-          # Prefer committed make.linux defaults (no MATLAB) for CI.
+          brew update
+          brew install gcc openblas libmatio
+
+      - name: Configure platform make fragment
+        run: |
           rm -f make.inc
-          make gp ivm gplvm
+          if [ "${{ matrix.make_fragment }}" = "make.osx" ]; then
+            cp make.osx make.inc
+          fi
+
+      - name: Build core tools
+        run: make gp ivm gplvm
 
       - name: Smoke help
         run: |

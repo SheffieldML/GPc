@@ -1,6 +1,8 @@
 #
+#  Historic MacPorts / ATLAS / g95 fragment — not maintained.
 #
-#  The machine (platform) identifier to append to the library names
+#  For contemporary macOS builds use make.osx (Homebrew OpenBLAS + GCC/gfortran)
+#  and copy it to make.inc. See CIP-0001 / REQ-0001 and the README.
 #
 SHELL = /bin/sh
 
@@ -15,7 +17,7 @@ F2CLIB = ${LAPACKDIR}libf95.a
 #MATLABRUNLIBDIR=${MATLABBASE}/bin/glnx86
 #MATLABLIBDIR=${MATLABBASE}/bin/glnx86
 #MATLABINCLUDE=${MATLABBASE}/extern/include
-#MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
+#MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR}
 #MATLABFLAG=-D_NDLMATLAB
 
 INCLUDE = $(MATLABINCLUDE)
@@ -27,4 +29,3 @@ CCFLAGS = -ggdb -DDBG -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
 #CCFLAGS = -O3 -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
 FC=g95
 FCFLAGS = -funroll-all-loops -O3
-

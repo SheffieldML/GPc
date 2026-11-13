@@ -27,6 +27,9 @@
 *.out
 *.app
 
+# Local platform flags (copy make.linux / make.osx → make.inc). CI uses make.linux.
+make.inc
+
 #
 *.dat
 *~

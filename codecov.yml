@@ -1,0 +1,22 @@
+# Codecov settings for GPc (CIP-0004 / CIP-0005).
+# Library coverage comes from the matio reference suite under gcov.
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        # Allow a one-time project dip when test drivers leave the uploaded
+        # totals (they were highly covered and inflated the baseline %).
+        # Patch coverage is the gate for new library lines.
+        threshold: 2%
+    patch:
+      default:
+        target: auto
+        threshold: 0%
+
+ignore:
+  - "test*.cpp"
+  - "test*.h"
+  - "**/test*.cpp"
+  - "**/test*.h"

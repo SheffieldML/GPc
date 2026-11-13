@@ -194,29 +194,41 @@ int testType(const string kernelType)
   else if(kernelType=="cmpnd")
   {
     kern = new CCmpndKern(X);
-    
-    kern->addKern(new CRbfardKern(X));
-    kern->addKern(new CMlpardKern(X));
-    kern->addKern(new CLinardKern(X));
-    kern->addKern(new CPolyardKern(X));
-    kern->addKern(new CMlpKern(X));
-    kern->addKern(new CRatQuadKern(X));
-    kern->addKern(new CRbfKern(X));
-    kern->addKern(new CLinKern(X));
-    kern->addKern(new CPolyKern(X));
-    kern->addKern(new CBiasKern(X));
-    kern->addKern(new CWhiteKern(X));
     kern2 = new CCmpndKern(X);
-    
+    // Duplicate component layout on kern2 for matio (no MATLAB object I/O).
+    kern->addKern(new CRbfardKern(X));
+    kern2->addKern(new CRbfardKern(X));
+    kern->addKern(new CMlpardKern(X));
+    kern2->addKern(new CMlpardKern(X));
+    kern->addKern(new CLinardKern(X));
+    kern2->addKern(new CLinardKern(X));
+    kern->addKern(new CPolyardKern(X));
+    kern2->addKern(new CPolyardKern(X));
+    kern->addKern(new CMlpKern(X));
+    kern2->addKern(new CMlpKern(X));
+    kern->addKern(new CRatQuadKern(X));
+    kern2->addKern(new CRatQuadKern(X));
+    kern->addKern(new CRbfKern(X));
+    kern2->addKern(new CRbfKern(X));
+    kern->addKern(new CLinKern(X));
+    kern2->addKern(new CLinKern(X));
+    kern->addKern(new CPolyKern(X));
+    kern2->addKern(new CPolyKern(X));
+    kern->addKern(new CBiasKern(X));
+    kern2->addKern(new CBiasKern(X));
+    kern->addKern(new CWhiteKern(X));
+    kern2->addKern(new CWhiteKern(X));
   }
   else if(kernelType=="tensor")
   {
     kern = new CTensorKern(X);
-    kern->addKern(new CRbfKern(X));
-    kern->addKern(new CLinKern(X));
-    kern->addKern(new CPolyKern(X));
     kern2 = new CTensorKern(X);
-    
+    kern->addKern(new CRbfKern(X));
+    kern2->addKern(new CRbfKern(X));
+    kern->addKern(new CLinKern(X));
+    kern2->addKern(new CLinKern(X));
+    kern->addKern(new CPolyKern(X));
+    kern2->addKern(new CPolyKern(X));
   }
   else
   {

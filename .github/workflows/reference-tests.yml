@@ -30,15 +30,4 @@ jobs:
           make USE_MATIO=1 matio-tests
 
       - name: Run matio reference tests
-        run: |
-          set -e
-          # Core matio + model-component checks (numeric fixtures, no MATLAB).
-          ./testNdlutil
-          ./testTransform
-          ./testDist
-          ./testNoise
-          ./testKern
-
-      - name: Run matrix LAPACK reference tests
-        run: |
-          ./testMatrix
+        run: make run-matio-tests

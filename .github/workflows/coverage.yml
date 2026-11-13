@@ -1,0 +1,53 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ \
+            gfortran \
+            liblapack-dev \
+            libblas-dev \
+            libmatio-dev \
+            lcov \
+            make
+
+      - name: Build matio tests with gcov
+        run: |
+          rm -f make.inc
+          make clean || true
+          make USE_MATIO=1 COVERAGE=1 matio-tests
+
+      - name: Run matio reference tests
+        run: make run-matio-tests
+
+      - name: Collect lcov report
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info \
+            '/usr/*' \
+            '*/test*.cpp' \
+            --output-file coverage.info
+          lcov --list coverage.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.info
+          flags: matio-tests
+          name: ubuntu-matio-gcov
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

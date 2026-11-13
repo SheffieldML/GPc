@@ -79,18 +79,19 @@ public:
     memAllocate();
     dcopy_(nrows*ncols, inVals, 1, vals, 1);
   }
-  // Constructor for initialising a CMatrix from a double* array for use with SWIG.
- CMatrix(double* pythonInVals, int numRows, int numCols) : nrows(numCols), ncols(numRows)
+  // Constructor for initialising a CMatrix from a double* array for use with SWIG/numpy.
+  // numpy C-order is row-major; CMatrix stores column-major — copy straight into place.
+ CMatrix(double* pythonInVals, int numRows, int numCols) : nrows(numRows), ncols(numCols)
   {
     BOUNDCHECK(numRows>0);
     BOUNDCHECK(numCols>0);
-    // for numpy storeage --- first copy memory then transpose. 
     _init();
     symmetric = false;
     triangular = false;
     memAllocate();
-    dcopy_(nrows*ncols, pythonInVals, 1, vals, 1);
-    trans();
+    for(unsigned int i=0; i<nrows; i++)
+      for(unsigned int j=0; j<ncols; j++)
+        vals[i + nrows*j] = pythonInVals[i*ncols + j];
   }
   
   // This was designed for interfacing with SWIG/Python, but for some reason it seems to cause a memory leak.
@@ -762,15 +763,7 @@ public:
 	    vals[rows[i]+nrows*cols[j]]=A.vals[i+A.nrows*j];
 	  }
   }
-  // In place transpose of the matrix using Algorithm 380.
-  void dtrans(int lwork)
-  {
-    int res;
-    vector<int> work(lwork);
-    dtrans_(vals, nrows, ncols, nrows*ncols, &work[0], lwork, res);
-    SANITYCHECK(res==0);
-  }
-  // In place transpose of the matrix using Algorithm 513.
+  // In-place transpose via ACM Algorithm 513 (DTRANSR). lwork=(m+n)/2 is recommended.
   void dtransr(int lwork)
   {
     int res;
@@ -778,20 +771,14 @@ public:
     dtransr_(vals, nrows, ncols, nrows*ncols, &work[0], lwork, res);
     SANITYCHECK(res==0);
   }
-  // In place transpose of the matrix using Algorithm 467 (currently not working).
-  void dxpose(int lwork)
-  {
-    // this is algorithm 467 (it is supposed to be more efficient - but doesn't work!)
-    std::vector<int> work(lwork);
-    dxpose_(vals, nrows, ncols, nrows*ncols, &work[0], lwork);
-  }
-  // Perform matrix transpose.
+  // Perform matrix transpose (CIP-0005).
+  // Vectors: swap dimensions only. Otherwise Algorithm 513 in place, then swap dims if non-square.
+  // A transpose leaves a symmetric matrix's values unchanged; triangular storage still swaps
+  // which triangle holds the factor (GPc tracks only a boolean triangular flag today).
   void trans()
   {
-    // if rows or columns are 1 dimensional then you don't need to move elements.
     if (nrows!=1 && ncols!=1)
-      dtransr((nrows+ncols)/2); // this is algorithm 513 (467 doesn't seem to work)
-    // if the matrix is square then you don't need to swap rows and columns.
+      dtransr((nrows+ncols)/2); // Algorithm 513; square matrices use its triangle-swap path
     if (!isSquare())
     {
       int temp = nrows;

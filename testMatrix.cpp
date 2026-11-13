@@ -9,6 +9,7 @@ int testDot();
 int testNorm();
 int testInv();
 int testCholesky();
+int testTranspose();
 int testRandn();
 int testGemm();
 int testSyrk();
@@ -36,6 +37,7 @@ int main()
       fail += testSyev();
       fail += testInv();
       fail += testCholesky();
+      fail += testTranspose();
       fail += testRandn();
       
       // Level 3 Blas
@@ -232,9 +234,102 @@ int testCholesky()
   if(U.equals(C))
     cout << "Upper Cholesky factor matches."<< endl;
   else
-    cout << "FAILURE: Upper Cholesky." << endl;
+    {
+      cout << "FAILURE: Upper Cholesky." << endl;
+      fail++;
+    }
   return fail;
 }
+
+// Reference transpose into a new matrix (column-major element check).
+static void referenceTranspose(const CMatrix& A, CMatrix& AT)
+{
+  AT.resize(A.getCols(), A.getRows());
+  for(unsigned int i=0; i<A.getRows(); i++)
+    for(unsigned int j=0; j<A.getCols(); j++)
+      AT.setVal(A.getVal(i, j), j, i);
+}
+
+static int checkOneTranspose(unsigned int rows, unsigned int cols, const char* label)
+{
+  int fail = 0;
+  CMatrix A(rows, cols);
+  for(unsigned int i=0; i<rows; i++)
+    for(unsigned int j=0; j<cols; j++)
+      A.setVal(static_cast<double>(i + 1000*j + 1), i, j);
+
+  CMatrix expected(1, 1);
+  referenceTranspose(A, expected);
+
+  CMatrix B(A);
+  B.trans();
+  if(!B.equals(expected))
+    {
+      cout << "FAILURE: transpose " << label << " (" << rows << "x" << cols << ")." << endl;
+      fail++;
+    }
+  else
+    cout << "transpose " << label << " matches." << endl;
+
+  B.trans();
+  if(!B.equals(A))
+    {
+      cout << "FAILURE: double transpose round-trip " << label << "." << endl;
+      fail++;
+    }
+  else
+    cout << "transpose " << label << " round-trip matches." << endl;
+  return fail;
+}
+
+int testTranspose()
+{
+  // CIP-0005: hard-gate Algorithm 513 / CMatrix::trans across shapes.
+  int fail = 0;
+  fail += checkOneTranspose(1, 1, "1x1");
+  fail += checkOneTranspose(1, 7, "row-vector");
+  fail += checkOneTranspose(5, 1, "col-vector");
+  fail += checkOneTranspose(4, 4, "square");
+  fail += checkOneTranspose(3, 7, "wide");
+  fail += checkOneTranspose(7, 3, "tall");
+  fail += checkOneTranspose(5, 8, "wide-coprime");  // (m-1,n-1)=(4,7) gcd=1
+  fail += checkOneTranspose(8, 5, "tall-coprime");  // (7,4) gcd=1
+
+  // Symmetric flag: values unchanged under transpose for a symmetric fill.
+  CMatrix S(3, 3);
+  S.setVal(2.0, 0, 0); S.setVal(1.0, 0, 1); S.setVal(0.5, 0, 2);
+  S.setVal(1.0, 1, 0); S.setVal(3.0, 1, 1); S.setVal(-1.0, 1, 2);
+  S.setVal(0.5, 2, 0); S.setVal(-1.0, 2, 1); S.setVal(4.0, 2, 2);
+  S.setSymmetric(true);
+  CMatrix S0(S);
+  S.trans();
+  if(!S.equals(S0) || !S.isSymmetric())
+    {
+      cout << "FAILURE: symmetric matrix transpose should preserve values and flag." << endl;
+      fail++;
+    }
+  else
+    cout << "symmetric transpose preserves values and flag." << endl;
+
+  // Triangular flag is only a boolean today; document that it remains set.
+  CMatrix T(3, 3);
+  T.zeros();
+  T.setVal(1.0, 0, 0); T.setVal(2.0, 0, 1); T.setVal(3.0, 0, 2);
+  T.setVal(4.0, 1, 1); T.setVal(5.0, 1, 2);
+  T.setVal(6.0, 2, 2);
+  T.setTriangular(true);
+  T.trans();
+  if(!T.isTriangular())
+    {
+      cout << "FAILURE: triangular flag cleared by trans()." << endl;
+      fail++;
+    }
+  else
+    cout << "triangular flag survives trans() (storage triangle swaps)." << endl;
+
+  return fail;
+}
+
 int testRandn()
 {
   int fail = 0;

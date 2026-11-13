@@ -1,7 +1,7 @@
 ---
 id: "0004"
 title: "Codebase compiles under a modern C++ standard without legacy pins"
-status: "Implemented"
+status: "Validated"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"

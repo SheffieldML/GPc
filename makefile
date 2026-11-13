@@ -53,6 +53,15 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform
 
+# Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
+run-matio-tests: matio-tests
+	./testNdlutil
+	./testTransform
+	./testDist
+	./testNoise
+	./testKern
+	./testMatrix
+
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testDist testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 
@@ -174,4 +183,5 @@ ndlfortran.o: ndlfortran.f
 
 
 clean:
-	rm *.o
+	rm -f *.o *.gcda *.gcno *.gcov coverage.info
+	rm -rf coverage-html

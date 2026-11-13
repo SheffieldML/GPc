@@ -25,3 +25,14 @@ How planning artefacts relate to day-to-day work on GPc.
 ## Documentation system
 
 Plain Markdown under `docs/`. No Sphinx/MkDocs requirement yet. If the maintainer guide set grows or hosted HTML is needed, revisit the `system` field in `.vibesafe/documentation.yml`.
+
+## Proposed modernization sequence
+
+After the CIP-0001–0007 stabilization pass, a structural review ranked remaining C++ hygiene work as follows (all **Proposed**):
+
+1. [CIP-0008](../cip/cip0008.md) — `CMatrix` copy/move assignment (ownership / double-free risk)
+2. [CIP-0009](../cip/cip0009.md) — explicit GP / GPLVM cache invalidation (reduce `mutable` working state)
+3. [CIP-000A](../cip/cip000A.md) — `unique_ptr` for compound/tensor kernel components
+4. [CIP-000B](../cip/cip000B.md) — remove dead paths and fix contradicting comments (can run in parallel)
+
+Accept and implement in that order unless a concrete bug forces a reorder.

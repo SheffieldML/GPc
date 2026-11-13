@@ -57,41 +57,42 @@ int main()
       fail += testDot();
       fail += testNorm();
       cout << endl << "Total number of failures: " << fail << endl;
+      return fail > 0 ? 1 : 0;
     }
   catch(ndlexceptions::FileFormatError err)
     {
-      cerr << err.getMessage();
-      exit(1);
+      cerr << err.getMessage() << endl;
+      return 1;
     }
   catch(ndlexceptions::FileReadError err)
     {
-      cerr << err.getMessage();
-      exit(1);
-  }
+      cerr << err.getMessage() << endl;
+      return 1;
+    }
   catch(ndlexceptions::FileWriteError err)
     {
-      cerr << err.getMessage();
-      exit(1);
+      cerr << err.getMessage() << endl;
+      return 1;
     }
   catch(ndlexceptions::FileError err)
     {
-      cerr << err.getMessage();
-      exit(1);
+      cerr << err.getMessage() << endl;
+      return 1;
     }
   catch(ndlexceptions::Error err)
   {
-    cerr << err.getMessage();
-    exit(1);
+    cerr << err.getMessage() << endl;
+    return 1;
   }
   catch(std::bad_alloc err)
     {
-      cerr << "Out of memory.";
-      exit(1);
+      cerr << "Out of memory." << endl;
+      return 1;
     }
-  catch(std::exception err)
+  catch(std::exception& err)
   {
-    cerr << "Unhandled exception.";
-    exit(1);
+    cerr << "Unhandled exception: " << err.what() << endl;
+    return 1;
   }
 }
 

@@ -219,15 +219,22 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
   }
 #endif
 
-  // Write to stream.
+  // Stream round-trip via factory: writeParams emits baseType/type; fromFile
+  // does not consume them, but readNoiseFromStream does.
   noise->toFile("crap_noise");
-  noise2->fromFile("crap_noise");
-  if(noise->equals(*noise2))
-    cout << "Text written " << noise->getName() << " matches read in noise. Read and write to stream passes." << endl;
-  else
   {
-    cout << "FAILURE: Stream read in " << noise->getName() << " does not match written noise." << endl;
-    fail++;
+    ifstream in("crap_noise");
+    if(!in.is_open())
+      throw ndlexceptions::FileReadError("crap_noise");
+    CNoise* loaded = readNoiseFromStream(in);
+    if(noise->equals(*loaded))
+      cout << "Text written " << noise->getName() << " matches read in noise. Read and write to stream passes." << endl;
+    else
+    {
+      cout << "FAILURE: Stream read in " << noise->getName() << " does not match written noise." << endl;
+      fail++;
+    }
+    delete loaded;
   }
   return fail;
 }

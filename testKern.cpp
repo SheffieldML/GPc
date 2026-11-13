@@ -39,8 +39,7 @@ int main()
     // fail += testType("gibbsard");
    
     fail += testType("cmpnd");
-    // tensor: K matches fixtures; gradients disagree badly under matio. Backlog.
-    // fail += testType("tensor");
+    fail += testType("tensor");
     cout << "Number of failures: " << fail << "." << endl;
     return fail > 0 ? 1 : 0;
   }

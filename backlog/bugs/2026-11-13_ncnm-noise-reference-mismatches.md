@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_ncnm-noise-reference-mismatches"
 title: "Null-category noise disagrees with MATLAB fixtures"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -39,3 +39,7 @@ Under `USE_MATIO=1`, `testNoise` for `ncnm` (Null Category) loads `matfiles/ncnm
 ### 2026-11-13
 
 Observed on CI after matio bring-up; `ncnm` temporarily disabled in `testNoise` main so the CIP-0001 gate can stay focused on loaders and the noise types that already match.
+
+### 2026-11-13 (CIP-0003)
+
+Resolved on branch `cip0003-reference-mismatch-backlog`; re-enabled in the Reference tests hard gate.

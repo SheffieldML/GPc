@@ -1,6 +1,6 @@
 /*This file contains interfaces to various useful FORTRAN functions which are called in the code. Many of the FORTRAN functions are from ACM transactions, others are from the book Computation of Special Functions by Zhang and Jin. See copyright messages below and in the FORTRAN code for further information. The ACM Transactions have the associated algorithm numbers. Also provided are various erf implementations by William J. Cody.
 
-  21/10/05 bool* work changed to int* work in dxpose*/
+*/
 #ifndef NDLFORTRAN_H
 #define NDLFORTRAN_H
 
@@ -42,28 +42,13 @@ extern "C" double derfcx_(const double& x);
 // this is algorithm 488 for GRAND, Gaussian sampling.
 extern "C" double dgrand_(const int& N); // N is a dummy parameter
 
-// this is algorithm 467 (which I can't get to work).
-extern "C" void dxpose_(double* A, 
-		       const int& nrows,
-		       const int& ncols,
-		       const int& numElements,
-		       int* work, // (this was bool* which may be why it didn't work)
-		       const int& lwork);
-
-// this is algorithm 380 (which should be slower).
-extern "C" void dtrans_(double* A,
-		       const int& ncols,
-		       const int& nrows,
-		       const int& numElements,
-		       int* work,
-		       const int& lwork,
-		       int& iok);
-
-// this is algorithm 513 (a revised version of 380).
+// Algorithm 513 (revised 380): in-place transpose of an M-by-N matrix
+// stored column-wise in A[0..MN-1]. Recommended lwork is (M+N)/2.
+// Argument order matches Fortran DTRANSR(A, M, N, MN, MOVE, IWRK, IOK).
 extern "C" void dtransr_(double* A,
-		       const int& ncols,
-		       const int& nrows,
-		       const int& numElements,
+		       const int& M,   // rows before transpose
+		       const int& N,   // cols before transpose
+		       const int& MN,  // M*N
 		       int* work,
 		       const int& lwork,
 		       int& iok);

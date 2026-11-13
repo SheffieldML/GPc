@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_restore-reference-tests"
 title: "Restore runnable reference test suite"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -24,9 +24,9 @@ Make `make tests` (or a documented subset) build and run against `matfiles/`. MA
 
 ## Acceptance Criteria
 
-- [ ] Documented steps build the reference test binaries
-- [ ] Kernel and matrix tests run with clear pass/fail
-- [ ] README notes how to run verification and the temporary MATLAB dependency
+- [x] Documented steps build the reference test binaries
+- [x] Kernel and matrix tests run with clear pass/fail
+- [x] README notes how to run verification and the temporary MATLAB dependency
 
 ## Related
 
@@ -38,3 +38,7 @@ Make `make tests` (or a documented subset) build and run against `matfiles/`. MA
 ### 2026-11-13
 
 Task created (Ready).
+
+### 2026-11-13 (later)
+
+Completed via CIP-0001 matio gate and CIP-0003 hard-gate cleanup.

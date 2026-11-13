@@ -346,8 +346,8 @@ void CGplvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin
   updateK();
 
   pkern->compute(kX, *pX, Xin);
-  // solve LcholK * tmp = kX,  kX := tmp
-  kX.trsm(LcholK, 1.0, "L", "L", "N", "N"); // now it is LcholKinv*K
+  // Upper Cholesky U: solve U^T * tmp = kX (equiv. lower L * tmp = kX)
+  kX.trsm(LcholK, 1.0, "L", "U", "T", "N"); // now it is LcholKinv*K
   for(int i=0; i<Xin.getRows(); i++)
   {
     double vsVal = pkern->diagComputeElement(Xin, i) - kX.norm2Col(i);
@@ -355,8 +355,8 @@ void CGplvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin
     for(int j=0; j<dataDim; j++)
       varSigma.setVal(vsVal, i, j);	    
   }
-  // solve LcholK' * tmp = kX, kX := tmp
-  kX.trsm(LcholK, 1.0, "L", "L", "T", "N"); // now it is invK * K
+  // solve U * tmp = kX (equiv. L^T * tmp = kX)
+  kX.trsm(LcholK, 1.0, "L", "U", "N", "N"); // now it is invK * K
   mu.gemm(kX, m, 1.0, 0.0, "T", "N");
 }
 
@@ -442,7 +442,7 @@ void CGplvm::_updateInvK(int dim) const
   logDetK = logDet(LcholK);
   invK.setSymmetric(true);
   invK.pdinv(LcholK);
-  LcholK.trans();
+  // Keep LcholK upper (CIP-0005).
 }
 
 void CGplvm::_updateDynK() const
@@ -485,7 +485,7 @@ void CGplvm::_updateInvDynK(int dim) const
   logDetDynK = logDet(LcholDynK);
   invDynK.pdinv(LcholDynK);
   invDynK.setSymmetric(true);
-  LcholDynK.trans();
+  // Keep LcholDynK upper; unused after pdinv (CIP-0005).
 }
 
 

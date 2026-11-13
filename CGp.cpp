@@ -479,8 +479,9 @@ void CGp::updateAlpha() const
       if(isSpherical())
       {
 	Alpha.deepCopy(m);
-	Alpha.trsm(LcholK, 1.0, "l", "l", "n", "n");
-	Alpha.trsm(LcholK, 1.0, "l", "l", "t", "n");
+	// LcholK stored upper: solve U^T then U (equiv. lower L then L^T).
+	Alpha.trsm(LcholK, 1.0, "l", "u", "t", "n");
+	Alpha.trsm(LcholK, 1.0, "l", "u", "n", "n");
       }
       else
       {
@@ -492,8 +493,8 @@ void CGp::updateAlpha() const
       if(isSpherical())
       {
 	Alpha.gemm(K_uf, m, 1.0, 0.0, "n", "n");
-	Alpha.trsm(LcholA, 1.0, "l", "l", "n", "n");
-	Alpha.trsm(LcholA, 1.0, "l", "l", "t", "n");
+	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
+	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
       }
       else
       {
@@ -511,8 +512,8 @@ void CGp::updateAlpha() const
 	/////////////
 	setADupToDate(false);
 	Alpha.gemm(K_uf, scaledM, 1.0, 0.0, "n", "n");
-	Alpha.trsm(LcholA, 1.0, "l", "l", "n", "n");
-	Alpha.trsm(LcholA, 1.0, "l", "l", "t", "n");
+	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
+	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
       }
       else
       {
@@ -599,8 +600,8 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
   }
   else 
   {
-    // solve LcholK * tmp = kX,  kX := tmp
-    kX.trsm(LcholK, 1.0, "L", "L", "N", "N"); // now it is LcholKinv*K
+    // solve U^T * tmp = kX with upper Cholesky U (equiv. L * tmp = kX)
+    kX.trsm(LcholK, 1.0, "L", "U", "T", "N"); // now it is LcholKinv*K
     for(unsigned int i=0; i<kX.getCols(); i++)
     {
       double vsVal = pkern->diagComputeElement(Xin, i) - kX.norm2Col(i);
@@ -778,8 +779,7 @@ void CGp::updateAD() const {
 	logDetA = logDet(LcholA);
 	Ainv.setSymmetric(true);
         Ainv.pdinv(LcholA);
-	// Now stored as a lower cholesky.
-        LcholA.trans();
+	// Keep LcholA upper; consumers use uplo/trans flags (CIP-0005).
 	if(getApproximationType()==DTCVAR)
 	{
 	  V.gemm(invK_uu, K_uf, 1.0, 0.0, "n", "n");
@@ -833,25 +833,23 @@ void CGp::updateAD() const {
 	logDetA = logDet(LcholA);
 	Ainv.setSymmetric(true);
 	Ainv.pdinv(LcholA);
-	// now make it a lower Cholesky.
-	LcholA.trans();
+	// Keep LcholA upper (CIP-0005).
 	
 	V.deepCopy(K_uf);
-	V.trsm(LcholK, 1.0, "l", "l", "n", "n");
+	V.trsm(LcholK, 1.0, "l", "u", "t", "n");
 	for(unsigned int j=0; j<getNumData(); j++)
 	  V.scaleCol(j, 1/sqrt(diagD.getVal(j)));
 	Am.diag(1/getBetaVal());
 	Am.gemm(V, V, 1.0, 1.0, "n", "t");
 	Am.setSymmetric(true);
 
-	jit = Lm.jitChol(Am); // this will initially be upper triangular.
+	jit = Lm.jitChol(Am); // upper triangular Cholesky.
 	if(jit>1e-2)
 	  if(getVerbosity()>2)
 	    cout << "Warning: jitter of " << jit << " added to Am in updateAD()." << endl;
-	Lm.trans(); // now it is lower
 
 	invLmV.deepCopy(V);
-	invLmV.trsm(Lm, 1.0, "l", "l", "n", "n");
+	invLmV.trsm(Lm, 1.0, "l", "u", "t", "n");
 	bet.gemm(invLmV, scaledM, 1.0, 0.0, "n", "n");
       }
       else 
@@ -887,7 +885,7 @@ void CGp::_updateInvK(unsigned int dim) const
     logDetK = logDet(LcholK);
     invK.setSymmetric(true);
     invK.pdinv(LcholK);
-    LcholK.trans();
+    // Keep LcholK upper (CIP-0005).
     break;
   case DTC:
   case DTCVAR:
@@ -902,8 +900,7 @@ void CGp::_updateInvK(unsigned int dim) const
     logDetK_uu = logDet(LcholK);
     invK_uu.setSymmetric(true);
     invK_uu.pdinv(LcholK);
-    // make it lower
-    LcholK.trans();
+    // Keep LcholK upper (CIP-0005).
     break;
   }
 }

@@ -1194,19 +1194,37 @@ void CMatrix::readMatlabFile(const std::string& fileName, const std::string& var
       throw ndlexceptions::Error("matio variable does not have 2 dimensions.");
     if(var->isComplex)
       throw ndlexceptions::Error("matio variable is complex; only real doubles are supported.");
-    if(var->class_type != MAT_C_DOUBLE && var->class_type != MAT_C_SINGLE
-       && var->class_type != MAT_C_INT8 && var->class_type != MAT_C_UINT8
-       && var->class_type != MAT_C_INT16 && var->class_type != MAT_C_UINT16
-       && var->class_type != MAT_C_INT32 && var->class_type != MAT_C_UINT32
-       && var->class_type != MAT_C_INT64 && var->class_type != MAT_C_UINT64)
-      throw ndlexceptions::Error("matio variable is not a numeric matrix.");
 
     const size_t rows = var->dims[0];
     const size_t cols = var->dims[1];
     resize((unsigned int)rows, (unsigned int)cols);
 
+    // Sparse fixtures (e.g. whiteKern K2/K4): densify like fromSparseMxArray.
+    if(var->class_type == MAT_C_SPARSE)
+    {
+      mat_sparse_t* sp = (mat_sparse_t*)var->data;
+      if(sp == NULL)
+        throw ndlexceptions::Error("matio sparse variable has null data.");
+      if(var->data_type != MAT_T_DOUBLE)
+        throw ndlexceptions::Error("matio sparse variable is not double.");
+      setVals(0.0);
+      double* data = (double*)sp->data;
+      for(size_t j=0; j<cols; j++)
+      {
+        for(mat_uint32_t k=sp->jc[j]; k<sp->jc[j+1]; k++)
+          setVal(data[k], (unsigned int)sp->ir[k], (unsigned int)j);
+      }
+    }
+    else if(var->class_type != MAT_C_DOUBLE && var->class_type != MAT_C_SINGLE
+       && var->class_type != MAT_C_INT8 && var->class_type != MAT_C_UINT8
+       && var->class_type != MAT_C_INT16 && var->class_type != MAT_C_UINT16
+       && var->class_type != MAT_C_INT32 && var->class_type != MAT_C_UINT32
+       && var->class_type != MAT_C_INT64 && var->class_type != MAT_C_UINT64)
+    {
+      throw ndlexceptions::Error("matio variable is not a numeric matrix.");
+    }
     // MATLAB/matio store column-major, matching CMatrix/LAPACK layout.
-    if(var->class_type == MAT_C_DOUBLE && var->data_type == MAT_T_DOUBLE)
+    else if(var->class_type == MAT_C_DOUBLE && var->data_type == MAT_T_DOUBLE)
     {
       dcopy_((int)(rows*cols), (double*)var->data, 1, vals, 1);
     }

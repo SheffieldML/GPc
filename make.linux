@@ -29,6 +29,12 @@ MATIOFLAG = -D_NDLMATIO
 MATIOLIBS = -lmatio
 endif
 
+# gcov instrumentation for coverage reports (CIP-0004).
+# Enable with: make USE_MATIO=1 COVERAGE=1 matio-tests
+ifeq ($(COVERAGE),1)
+COVERAGEFLAGS = --coverage -O0
+endif
+
 # Default to the project root so -I is never empty when MATLAB is disabled.
 # When enabling MATLAB above, set MATLABINCLUDE and it will be used instead.
 ifeq ($(strip $(MATLABINCLUDE)),)
@@ -37,10 +43,10 @@ else
 INCLUDE = $(MATLABINCLUDE)
 endif
 LD=g++
-LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
+LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
 CC=g++
 # C++17: dynamic exception specifications removed from the sources (CIP-0002).
-CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG)
+CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
 #CCFLAGS = -std=c++17 -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG)
 FC=gfortran
 FCFLAGS = -funroll-all-loops -O3 -fPIC

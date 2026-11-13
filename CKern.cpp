@@ -3419,6 +3419,7 @@ double CRbfardKern::getGradParam(unsigned int index, const CMatrix& X, const CMa
 // the MLP ARD kernel.
 CMlpardKern::CMlpardKern() : CArdKern()
 {
+  _init();
 }
 CMlpardKern::CMlpardKern(unsigned int inDim) : CArdKern(inDim)
 {

@@ -1,4 +1,7 @@
 #include "CKern.h"
+#ifdef _NDLMATIO
+#include <matio.h>
+#endif
 using namespace std;
 
 int testType(const string kernelType);
@@ -337,8 +340,10 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
     fail++;
   }
   
-  /* Gradient with respect to X */
+  /* Gradient with respect to X (G2 is a cell array of matrices in the fixture) */
+#if defined(_NDLMATLAB) || defined(_NDLMATIO)
   vector<CMatrix*> G2;
+#ifdef _NDLMATLAB
   MATFile* matFile=matOpen(fileName.c_str(), "r");
   if(matFile==NULL)
     throw ndlexceptions::FileReadError(fileName);
@@ -354,12 +359,37 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
     G2.push_back(new CMatrix(1, 1));
     G2[i]->fromMxArray(matlabMatrix);
   }
+  matClose(matFile);
+#else
+  mat_t* matFile = Mat_Open(fileName.c_str(), MAT_ACC_RDONLY);
+  if(matFile==NULL)
+    throw ndlexceptions::FileReadError(fileName);
+  matvar_t* cellVar = Mat_VarRead(matFile, "G2");
+  if(cellVar==NULL || cellVar->class_type != MAT_C_CELL)
+  {
+    if(cellVar) Mat_VarFree(cellVar);
+    Mat_Close(matFile);
+    throw ndlexceptions::MatlabInterfaceReadError("G2");
+  }
+  size_t elems = cellVar->dims[0] * cellVar->dims[1];
+  for(size_t i=0; i<elems; i++)
+  {
+    matvar_t* el = Mat_VarGetCell(cellVar, (int)i);
+    if(el==NULL || el->rank!=2 || el->class_type!=MAT_C_DOUBLE)
+      throw ndlexceptions::MatlabInterfaceReadError("G2");
+    CMatrix* m = new CMatrix((unsigned int)el->dims[0], (unsigned int)el->dims[1]);
+    dcopy_((int)(el->dims[0]*el->dims[1]), (double*)el->data, 1, m->getVals(), 1);
+    G2.push_back(m);
+  }
+  Mat_VarFree(cellVar);
+  Mat_Close(matFile);
+#endif
   vector<CMatrix*> gX;
-  for(int i=0; i<X.getRows(); i++)
+  for(int i=0; i<(int)X.getRows(); i++)
     gX.push_back(new CMatrix(X2.getRows(), X2.getCols()));
   kern->getGradX(gX, X, X2);
   double maxDiff=0.0;
-  for(int i=0; i<gX.size(); i++)
+  for(int i=0; i<(int)gX.size(); i++)
   {
     double diff=gX[i]->maxAbsDiff(*G2[i]);
     if(diff>maxDiff)
@@ -373,6 +403,11 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
     cout << "Maximum absolute difference: " << maxDiff << endl;
     fail++;
   }
+  for(size_t i=0; i<G2.size(); i++) delete G2[i];
+  for(size_t i=0; i<gX.size(); i++) delete gX[i];
+#else
+  cout << kern->getName() << " X gradient skipped (needs MATLAB or matio cell support)." << endl;
+#endif
   
   /* Gradient with respect to diagonal X */
   CMatrix GD2(X.getRows(), X.getCols());

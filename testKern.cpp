@@ -41,6 +41,7 @@ int main()
     fail += testType("cmpnd");
     fail += testType("tensor");
     cout << "Number of failures: " << fail << "." << endl;
+    return fail > 0 ? 1 : 0;
   }
   catch(ndlexceptions::FileFormatError err)
   {

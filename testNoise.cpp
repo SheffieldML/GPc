@@ -14,6 +14,7 @@ int main()
     //fail += testType("mgaussian");
     //fail += testType("cmpnd");
     cout << "Number of failures: " << fail << "." << endl;
+    return fail > 0 ? 1 : 0;
   }
   catch(ndlexceptions::FileFormatError err)
   {

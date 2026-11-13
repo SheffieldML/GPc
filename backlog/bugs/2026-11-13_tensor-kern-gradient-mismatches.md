@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_tensor-kern-gradient-mismatches"
 title: "Tensor kernel gradients disagree with MATLAB fixtures"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -39,3 +39,7 @@ Under `USE_MATIO=1`, `testKern` for `tensor` matches full/double/diag compute an
 ### 2026-11-13
 
 Observed on CI after matio bring-up; tensor temporarily disabled in `testKern` main for the CIP-0001 gate.
+
+### 2026-11-13 (CIP-0003)
+
+Resolved on branch `cip0003-reference-mismatch-backlog`; re-enabled in the Reference tests hard gate.

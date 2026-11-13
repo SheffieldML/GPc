@@ -1034,7 +1034,8 @@ void CNcnmNoise::initStoreage()
   addTransform(new CSigmoidTransform(), getNumParams()-1);
   if(isSplitGamma())
     addTransform(new CSigmoidTransform(), getNumParams()-2);
-  sigma2 = 1e-6;
+  // Match GPmat ncnmNoiseParamInit: noise.sigma2 = eps (not optimised).
+  sigma2 = ndlutil::EPS;
   width = 1.0;
   
   // sigma2 isn't treated as a parameter.

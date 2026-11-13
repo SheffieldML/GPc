@@ -8,12 +8,25 @@ on:
 
 jobs:
   matio-tests:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            make_fragment: make.linux
+            soft_gate: "no"
+          - os: macos-latest
+            make_fragment: make.osx
+            # Ordered-categorical noise still mismatches on macOS OpenBLAS
+            # (backlog/bugs/2026-11-13_macos-ordered-categorical-noise-mismatch.md).
+            soft_gate: "yes"
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install toolchain (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -24,10 +37,29 @@ jobs:
             libmatio-dev \
             make
 
-      - name: Build matio reference tests
+      - name: Install toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install gcc openblas libmatio
+
+      - name: Configure platform make fragment
         run: |
           rm -f make.inc
+          if [ "${{ matrix.make_fragment }}" = "make.osx" ]; then
+            cp make.osx make.inc
+          fi
+
+      - name: Build matio reference tests
+        run: |
+          make clean || true
           make USE_MATIO=1 matio-tests
 
-      - name: Run matio reference tests
+      - name: Run matio reference tests (hard gate)
+        if: matrix.soft_gate == 'no'
+        run: make run-matio-tests
+
+      - name: Run matio reference tests (macOS soft gate)
+        if: matrix.soft_gate == 'yes'
+        continue-on-error: true
         run: make run-matio-tests

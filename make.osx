@@ -66,10 +66,17 @@ INCLUDE = $(MATLABINCLUDE)
 endif
 
 # Prefer Homebrew GCC for C++ and Fortran so ABIs match (avoid the old
-# /usr/local/bin/gfortran 6.x that may sit earlier on PATH).
-CC = $(GCCPREFIX)/bin/g++-16
-LD = $(GCCPREFIX)/bin/g++-16
-FC = $(GCCPREFIX)/bin/gfortran-16
+# /usr/local/bin/gfortran 6.x that may sit earlier on PATH). Pick the newest
+# g++-N / gfortran-N shipped by the gcc formula (works across GCC 15/16/…).
+CC := $(shell ls $(GCCPREFIX)/bin/g++-[0-9]* 2>/dev/null | sort -V | tail -1)
+FC := $(shell ls $(GCCPREFIX)/bin/gfortran-[0-9]* 2>/dev/null | sort -V | tail -1)
+ifeq ($(strip $(CC)),)
+$(error no Homebrew g++-N under $(GCCPREFIX)/bin; brew install gcc)
+endif
+ifeq ($(strip $(FC)),)
+$(error no Homebrew gfortran-N under $(GCCPREFIX)/bin; brew install gcc)
+endif
+LD = $(CC)
 
 LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
 CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)

@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_rename-default-branch-main"
 title: "Rename default branch master to main"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -23,10 +23,10 @@ Rename the repository default branch from `master` to `main` (local and GitHub),
 
 ## Acceptance Criteria
 
-- [ ] Local branch renamed to `main`
-- [ ] Remote `main` exists and is the GitHub default branch
-- [ ] CI workflows trigger on `main`
-- [ ] `master` removed or clearly non-default after cutover
+- [x] Local branch renamed to `main`
+- [x] Remote `main` exists and is the GitHub default branch
+- [x] CI workflows trigger on `main`
+- [x] `master` removed or clearly non-default after cutover
 
 ## Implementation Notes
 
@@ -41,3 +41,7 @@ Use `git branch -m`, push `-u origin main`, then `gh repo edit --default-branch 
 ### 2026-11-13
 
 Task created with CIP-0001 acceptance. Starting cutover.
+
+### 2026-11-13 (later)
+
+Completed: default branch is `main`; CI triggers on `main`.

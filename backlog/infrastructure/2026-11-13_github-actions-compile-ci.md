@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_github-actions-compile-ci"
 title: "Add GitHub Actions workflow that compiles core tools"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -24,11 +24,11 @@ Add a GitHub Actions workflow on Ubuntu that installs a C++/Fortran/LAPACK toolc
 
 ## Acceptance Criteria
 
-- [ ] Workflow file under `.github/workflows/`
-- [ ] Installs g++, gfortran, LAPACK/BLAS via apt
-- [ ] Builds at least `gp` successfully on `ubuntu-latest`
-- [ ] Runs on pushes and PRs to `main`
-- [ ] Empty MATLAB include path does not break the compile (`-I` hazard fixed)
+- [x] Workflow file under `.github/workflows/`
+- [x] Installs g++, gfortran, LAPACK/BLAS via apt
+- [x] Builds at least `gp` successfully on `ubuntu-latest`
+- [x] Runs on pushes and PRs to `main`
+- [x] Empty MATLAB include path does not break the compile (`-I` hazard fixed)
 
 ## Implementation Notes
 
@@ -44,3 +44,7 @@ Prefer `make.linux`-style `-llapack -lblas`. Fix `INCLUDE = $(MATLABINCLUDE)` wh
 ### 2026-11-13
 
 Task created; implementing alongside branch rename.
+
+### 2026-11-13 (later)
+
+Completed under CIP-0001 / CIP-0006 (Compile on Ubuntu and macOS).

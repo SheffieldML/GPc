@@ -45,8 +45,14 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 	$(CC) -c gp.cpp -o gp.o $(CCFLAGS)
 
 
-# To compile tests, the MATLAB interface must be enabled (i.e. define _NDLMATLAB)
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform  
+# Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
+# (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
+#   make USE_MATIO=1 matio-tests
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform
+
+# Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform
+
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o
 	$(LD) ${XLINKERFLAGS} -o testDist testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o $(LDFLAGS) 

@@ -122,6 +122,7 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
   noise->setTransParams(params);
   noise->setMus(mu);
   noise->setVarSigmas(varSigma);
+#ifdef _NDLMATLAB
   noise2->readMatlabFile(fileName, "noise2");
   if(noise2->equals(*noise))
     cout << noise->getName() << " Initial Noise matches." << endl;
@@ -134,6 +135,18 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
     noise->display(cout);
     fail++;
   }
+#else
+  noise2->setTransParams(params);
+  noise2->setMus(mu);
+  noise2->setVarSigmas(varSigma);
+  if(noise2->equals(*noise))
+    cout << noise->getName() << " Initial Noise parameter mirror matches." << endl;
+  else
+  {
+    cout << "FAILURE: " << noise->getName() << " Initial Noise parameter mirror." << endl;
+    fail++;
+  }
+#endif
   CMatrix L2;
   L2.readMatlabFile(fileName, "L2");
   double L = noise->logLikelihood();
@@ -188,6 +201,7 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
 
   }
    
+#ifdef _NDLMATLAB
   // Write to MATLAB
   noise->writeMatlabFile("crap.mat", "writtenNoise");
   noise2->readMatlabFile("crap.mat", "writtenNoise");
@@ -202,6 +216,7 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
     noise->display(cout);
     fail++;
   }
+#endif
 
   // Write to stream.
   noise->toFile("crap_noise");

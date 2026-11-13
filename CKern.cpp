@@ -139,12 +139,14 @@ CCmpndKern::CCmpndKern(const CMatrix& X) : CComponentKern(X)
   _init();
   setInputDim(X.getCols());
 }  
-CCmpndKern::CCmpndKern(const CCmpndKern& kern) : CComponentKern(kern)
+CCmpndKern::CCmpndKern(const CCmpndKern& kern) : CComponentKern()
 {
   _init();
   setInputDim(kern.getInputDim());
-  for(size_t i=0; i<components.size(); i++)
-    addKern(components[i]->clone()); 
+  // Start empty: CComponentKern(kern) would shallow-copy pointers, then
+  // addKern would duplicate (and grow size mid-loop).
+  for(size_t i=0; i<kern.components.size(); i++)
+    addKern(kern.components[i]);
 }
 // Class destructor
 CCmpndKern::~CCmpndKern()
@@ -342,32 +344,24 @@ CTensorKern::CTensorKern(const CMatrix& X) : CComponentKern(X)
   _init();
   setInputDim(X.getCols());
 }  
-CTensorKern::CTensorKern(const CTensorKern& kern) : CComponentKern(kern)
+CTensorKern::CTensorKern(const CTensorKern& kern) : CComponentKern()
 {
-
   _init();
   setInputDim(kern.getInputDim());
-  for(size_t i=0; i<components.size(); i++)
-  {
-    addKern(components[i]->clone()); 
-  }
+  for(size_t i=0; i<kern.components.size(); i++)
+    addKern(kern.components[i]);
 }
-CTensorKern::CTensorKern(const CTensorKern& kern, unsigned int comp) : CComponentKern(kern)
+CTensorKern::CTensorKern(const CTensorKern& kern, unsigned int comp) : CComponentKern()
 {
+  // Leave-one-out (slash) tensor for product-rule gradients. Must not
+  // inherit shallow-copied component pointers from kern.
   _init();
   BOUNDCHECK(comp<kern.components.size());
   setInputDim(kern.getInputDim());
-  setInitParam();
-  nParams = kern.getNumParams();
-  nParams -= kern.components[comp]->getNumParams();
   for(size_t i=0; i<comp; i++)
-  {
-    addKern(kern.components[i]->clone());
-  }
+    addKern(kern.components[i]);
   for(size_t i=comp+1; i<kern.components.size(); i++)
-  {
-    addKern(kern.components[i]->clone());
-  }
+    addKern(kern.components[i]);
 }
 // Class destructor
 CTensorKern::~CTensorKern()
@@ -488,9 +482,9 @@ void CTensorKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, cons
   CMatrix Kslash(X2.getRows(), 1);
   for(size_t i=0; i<components.size(); i++)
   {
-    CTensorKern* slashKern = new CTensorKern(*this, i);
+    CTensorKern slashKern(*this, (unsigned int)i);
     components[i]->getGradX(gXTemp, X, row, X2);
-    slashKern->compute(Kslash, X2, X, row);
+    slashKern.compute(Kslash, X2, X, row);
     for(unsigned int j=0; j<getInputDim(); j++)
     {
       gXTemp.dotMultiplyColCol(j, Kslash, 0);
@@ -507,9 +501,9 @@ void CTensorKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
   CMatrix diagKslash(X.getRows(), 1);
   for(size_t i=0; i<components.size(); i++)
   {
-    CTensorKern* slashKern = new CTensorKern(*this, i);
+    CTensorKern slashKern(*this, (unsigned int)i);
     components[i]->getDiagGradX(gXTemp, X);
-    slashKern->diagCompute(diagKslash, X);
+    slashKern.diagCompute(diagKslash, X);
     for(unsigned int k=0; k<getInputDim(); k++)
     {
       gXTemp.dotMultiplyColCol(k, diagKslash, 0);
@@ -526,8 +520,8 @@ void CTensorKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
   CMatrix tempCovGrad(covGrad.getRows(), covGrad.getCols());
   for(size_t i=0; i<components.size(); i++)
   {
-    CTensorKern* slashKern = new CTensorKern(*this, i);
-    slashKern->compute(tempCovGrad, X, X2);
+    CTensorKern slashKern(*this, (unsigned int)i);
+    slashKern.compute(tempCovGrad, X, X2);
     tempCovGrad.dotMultiply(covGrad);
     end = start+components[i]->getNumParams()-1;
     CMatrix subg(1, components[i]->getNumParams());
@@ -545,8 +539,8 @@ void CTensorKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cov
   CMatrix tempCovGrad(covGrad.getRows(), covGrad.getCols());
   for(size_t i=0; i<components.size(); i++)
   {
-    CTensorKern* slashKern = new CTensorKern(*this, i);
-    slashKern->compute(tempCovGrad, X);
+    CTensorKern slashKern(*this, (unsigned int)i);
+    slashKern.compute(tempCovGrad, X);
     tempCovGrad.dotMultiply(covGrad);
     end = start+components[i]->getNumParams()-1;
     CMatrix subg(1, components[i]->getNumParams());
@@ -566,14 +560,14 @@ double CTensorKern::getGradParam(unsigned int index, const CMatrix& X, const CMa
   for(size_t i=0; i<components.size(); i++)
   {
     end = start+components[i]->getNumParams()-1;
-    if(index<end)
+    if(index<=end)
     {
-      CTensorKern* slashKern = new CTensorKern(*this, i);
-      slashKern->compute(tempCovGrad, X, X2);
+      CTensorKern slashKern(*this, (unsigned int)i);
+      slashKern.compute(tempCovGrad, X, X2);
       tempCovGrad.dotMultiply(covGrad);
-      return components[i]->getGradParam(index-start, X, X2, covGrad);
-      start = end + 1;
+      return components[i]->getGradParam(index-start, X, X2, tempCovGrad);
     }
+    start = end + 1;
   }
   return -1;
 }
@@ -587,16 +581,16 @@ double CTensorKern::getGradParam(unsigned int index, const CMatrix& X, const CMa
   for(unsigned int i=0; i<components.size(); i++)
   {
     end = start+components[i]->getNumParams()-1;
-    if(index<end)
+    if(index<=end)
     {
-      CTensorKern* slashKern = new CTensorKern(*this, i);
-      slashKern->compute(tempCovGrad, X);
+      CTensorKern slashKern(*this, i);
+      slashKern.compute(tempCovGrad, X);
       tempCovGrad.dotMultiply(covGrad);
       tempCovGrad.setSymmetric(true);
 
-      return components[i]->getGradParam(index-start, X, covGrad);
-      start = end + 1;
+      return components[i]->getGradParam(index-start, X, tempCovGrad);
     }
+    start = end + 1;
   }
   return -1;
 }

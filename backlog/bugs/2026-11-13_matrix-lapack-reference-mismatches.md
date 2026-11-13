@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_matrix-lapack-reference-mismatches"
 title: "testMatrix mismatches vs MATLAB fixtures on modern BLAS"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -39,3 +39,7 @@ With libmatio loading the existing `matfiles/` fixtures on Ubuntu CI, `testMatri
 ### 2026-11-13
 
 Observed on CI after matio bring-up; `testMatrix` temporarily `continue-on-error` in the Reference tests workflow.
+
+### 2026-11-13 (CIP-0003)
+
+Resolved on branch `cip0003-reference-mismatch-backlog`; re-enabled in the Reference tests hard gate.

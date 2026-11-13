@@ -111,14 +111,18 @@ int CMatrix::sysv(const CMatrix& A, const char* uplo, int lwork)
   MATRIXPROPERTIES(A.isSymmetric());
   CHARARGUMENTS(uplo[0]=='L' || uplo[0]=='l' || uplo[0]=='U' || uplo[0]=='u');
   DIMENSIONMATCH(nrows==A.nrows);
-  if(lwork < 0)
-    lwork = 3*nrows;
+  // Default/header lwork=0 must allocate a real workspace (LAPACK query uses -1).
+  if(lwork <= 0)
+    lwork = 3*(int)nrows;
   int info;
   std::vector<int> ipivv(nrows);
   int *ipiv = &ipivv[0];
+  // dsysv overwrites A; copy so const callers and reuse stay valid.
+  CMatrix Afac(A);
+  Afac.setSymmetric(true);
   CMatrix work(1, lwork);
 
-  dsysv_(uplo, nrows, ncols, A.vals, A.nrows, ipiv, vals, nrows, work.vals, lwork, info);
+  dsysv_(uplo, nrows, ncols, Afac.vals, Afac.nrows, ipiv, vals, nrows, work.vals, lwork, info);
   if(info>0) throw ndlexceptions::MatrixSingular();
   if(info<0) throw ndlexceptions::Error("Incorrect argument in SYSV.");
   return (int)work.getVal(0); // optimal value for lwork

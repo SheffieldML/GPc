@@ -32,10 +32,9 @@ endif
 LD=g++
 LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
 CC=g++
-# C++14: dynamic exception specifications (throw(...)) were removed in C++17;
-# current g++ defaults to C++17 and rejects the existing headers.
-CCFLAGS = -std=c++14 -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
-#CCFLAGS = -std=c++14 -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+# C++17: dynamic exception specifications removed from the sources (CIP-0002).
+CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+#CCFLAGS = -std=c++17 -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
 FC=gfortran
 FCFLAGS = -funroll-all-loops -O3 -fPIC
 

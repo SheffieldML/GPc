@@ -311,6 +311,8 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
     cout << "Maximum absolute difference: " << diff << endl;    
     fail++;
   }
+  // Product/compound gradients accumulate more roundoff than MATCHTOL (1e-10).
+  const double gradTol = 1e-8;
   CMatrix covGrad;
   covGrad.readMatlabFile(fileName, "covGrad");
   covGrad.setSymmetric(true);
@@ -318,7 +320,7 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
   kern->getGradTransParams(g1, X, covGrad);
   CMatrix g2;
   g2.readMatlabFile(fileName, "g2");
-  if(g1.equals(g2))
+  if(g1.equals(g2, gradTol))
     cout << kern->getName() << " parameter gradient matches." << endl;
   else
   {
@@ -339,7 +341,7 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
   kern->getGradTransParams(g3, X, X2, covGrad2);
   CMatrix g4;
   g4.readMatlabFile(fileName, "g4");
-  if(g3.equals(g4))
+  if(g3.equals(g4, gradTol))
     cout << kern->getName() << " parameter X, X2 gradient matches." << endl;
   else
   {

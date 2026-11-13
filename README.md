@@ -3,6 +3,14 @@ GPc
 
 Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 
+## Status
+
+| Workflow | Badge |
+| --- | --- |
+| Compile | [![Compile](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml?query=branch%3Amain) |
+| Reference tests | [![Reference tests](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml?query=branch%3Amain) |
+| Coverage | [![Coverage](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml?query=branch%3Amain) |
+| Codecov | [![codecov](https://codecov.io/gh/SheffieldML/GPc/branch/main/graph/badge.svg)](https://codecov.io/gh/SheffieldML/GPc/branch/main) |
 
 Gaussian Process Software
 =========================

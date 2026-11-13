@@ -36,17 +36,17 @@ jobs:
 
       - name: Collect lcov report
         run: |
-          lcov --capture --directory . --output-file coverage.info
-          # Exclude system headers and test drivers. Patterns must match deep
-          # CI paths (/home/runner/work/.../testMatrix.cpp); a single '*/'
-          # segment is not enough (CIP-0005 Codecov patch noise).
-          lcov --remove coverage.info \
+          # lcov 2.x treats unused exclude patterns and inconsistent gcov
+          # counts as hard errors unless ignored.
+          lcov --ignore-errors inconsistent \
+            --capture --directory . --output-file coverage.info
+          # Drop system headers and test drivers (root test*.cpp).
+          lcov --ignore-errors unused \
+            --remove coverage.info \
             '/usr/*' \
             '*/test*.cpp' \
-            '*/test*.h' \
-            '*test*.cpp' \
             --output-file coverage.info
-          if lcov --list coverage.info | grep -E 'test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm)\.cpp'; then
+          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm)\.cpp'; then
             echo "ERROR: test drivers still present in coverage.info" >&2
             lcov --list coverage.info
             exit 1

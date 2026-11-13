@@ -78,9 +78,11 @@ $ make clean
 $ make USE_MATIO=1 COVERAGE=1 matio-tests
 $ make run-matio-tests
 $ lcov --capture --directory . --output-file coverage.info
-$ lcov --remove coverage.info '/usr/*' '*/test*.cpp' --output-file coverage.info
+$ lcov --remove coverage.info '/usr/*' '*/test*.cpp' '*test*.cpp' --output-file coverage.info
 $ lcov --list coverage.info
 ```
+
+`codecov.yml` ignores `test*.cpp` so patch coverage tracks library changes, not unhit `FAILURE:` branches in the drivers.
 
 The **Coverage** workflow builds with `COVERAGE=1`, collects `coverage.info`, and uploads via `codecov/codecov-action@v7`. Add a repository secret `CODECOV_TOKEN` from [Codecov](https://codecov.io) (same pattern as GPy) so uploads authenticate for the org.
 

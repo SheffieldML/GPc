@@ -1,0 +1,20 @@
+# Codecov settings for GPc (CIP-0004 / CIP-0005).
+# Library coverage comes from the matio reference suite under gcov.
+
+coverage:
+  status:
+    project:
+      default:
+        # Informational floor near the current matio-suite baseline.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+ignore:
+  - "test*.cpp"
+  - "test*.h"
+  - "**/test*.cpp"
+  - "**/test*.h"

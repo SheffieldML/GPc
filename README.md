@@ -25,14 +25,26 @@ As well as the C++ code some utilities are supplied in the corresponding MATLAB 
 
 The software was written with gcc on ubuntu.
 
-Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
+Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need a Fortran compiler (gfortran on contemporary systems; historically g77).
 The software is compiled by writing 
 
 ```sh
 $ make gp
 ```
 
-at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
+at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included. On Linux CI we use `make.linux` (C++17).
+
+### Reference tests without MATLAB (libmatio)
+
+Numeric fixtures in `matfiles/` can be loaded with **libmatio** instead of a full MATLAB/`mex` install:
+
+```sh
+$ sudo apt-get install -y libmatio-dev   # Debian/Ubuntu
+$ make USE_MATIO=1 matio-tests
+$ ./testDist && ./testNoise && ./testKern   # plus testNdlutil, testTransform
+```
+
+GitHub Actions runs this path as the **Reference tests** workflow. Object-level MATLAB I/O remains behind `_NDLMATLAB`. Known soft mismatches (matrix LAPACK, ncnm noise, tensor kernel gradients) are tracked under `backlog/bugs/`.
 
 ### Optimisation
 

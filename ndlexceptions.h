@@ -13,7 +13,7 @@ namespace ndlexceptions
   {
   public:
     Error(){}
-    virtual ~Error() throw (){}
+    virtual ~Error() noexcept{}
     Error(std::string message) 
     {
       msg = message;
@@ -26,7 +26,7 @@ namespace ndlexceptions
     {
       msg = message;
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Unknown ndlexception";
     }
@@ -39,8 +39,8 @@ namespace ndlexceptions
   public:
   RuntimeError() : Error() {}
   RuntimeError(std::string message) : Error(message) {}
-    ~RuntimeError() throw() {}
-    virtual const char* what() const throw()
+    ~RuntimeError() noexcept {}
+    virtual const char* what() const noexcept
     {
       return "Runtime error";
     }
@@ -50,8 +50,8 @@ namespace ndlexceptions
   public:
   TypeError() : Error() {}
   TypeError(std::string message) : Error(message) {}
-    ~TypeError() throw() {}
-    virtual const char* what() const throw()
+    ~TypeError() noexcept {}
+    virtual const char* what() const noexcept
     {
       return "Type error";
     }
@@ -61,8 +61,8 @@ namespace ndlexceptions
   public:
   MatlabInterfaceError() : Error() {}
   MatlabInterfaceError(std::string message) : Error(message) {}
-    ~MatlabInterfaceError() throw() {}
-    virtual const char* what() const throw()
+    ~MatlabInterfaceError() noexcept {}
+    virtual const char* what() const noexcept
     {
       return "MATLAB interface error";
     }
@@ -76,7 +76,7 @@ namespace ndlexceptions
     {
       setFieldName(fieldName);
     }
-    ~MatlabInterfaceReadError() throw() {}
+    ~MatlabInterfaceReadError() noexcept {}
     void setFieldName(const std::string name)
     {
       fieldName = name;
@@ -89,7 +89,7 @@ namespace ndlexceptions
     {
       return "Error in MATLAB interface reading " + getFieldName() + ".";
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "MATLAB interface read error";
     }
@@ -101,7 +101,7 @@ namespace ndlexceptions
   public:
   NotImplementedError() : Error() {}
   NotImplementedError(std::string message) : Error(message) {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Functionality not implemented.";
     }
@@ -112,7 +112,7 @@ namespace ndlexceptions
   public:
   FileError() : Error() {}
   FileError(std::string file) : fileName(file), Error("File error " + file) {}
-    virtual ~FileError() throw() {}
+    virtual ~FileError() noexcept {}
     std::string getMessage() const
     {
       return "File error in: " + getFileName();
@@ -125,7 +125,7 @@ namespace ndlexceptions
     {
       return fileName;
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "File error";
     }
@@ -141,12 +141,12 @@ namespace ndlexceptions
       {
 	setFileName(file);
       }
-    virtual ~FileReadError() throw() {}
+    virtual ~FileReadError() noexcept {}
     virtual  std::string getMessage() const
     {
       return "Unable to read file: " + getFileName();
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "File read error";
     }
@@ -165,7 +165,7 @@ namespace ndlexceptions
     {
       setFieldName(field);
     }
-    virtual ~StreamFormatError() throw() {}
+    virtual ~StreamFormatError() noexcept {}
     std::string getFieldName() const
     {
       return fieldName;
@@ -174,7 +174,7 @@ namespace ndlexceptions
     {
       fieldName = name;
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Stream format error";
     }
@@ -191,7 +191,7 @@ namespace ndlexceptions
       {
 	return "Incorrect version.";
       }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Stream version error";
     }
@@ -205,8 +205,8 @@ namespace ndlexceptions
   FileFormatError(std::string fileName, ndlexceptions::StreamFormatError& err) : FileError(err.getMessage() + " in " + fileName) {}
   FileFormatError(std::string fileName, ndlexceptions::MatlabInterfaceReadError& err) : FileError(err.getMessage() + " in " + fileName) {}
   FileFormatError(std::string fileName) : FileError("File format error in  " + fileName) {}
-    virtual ~FileFormatError() throw() {}
-    virtual const char* what() const throw()
+    virtual ~FileFormatError() noexcept {}
+    virtual const char* what() const noexcept
     {
       return "File format error";
     }
@@ -222,7 +222,7 @@ namespace ndlexceptions
     {
 	return "Unable to write to file: " + getFileName();
     }
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "File write error";
     }
@@ -235,7 +235,7 @@ namespace ndlexceptions
   public:
   MatrixError() : Error(){}
   MatrixError(std::string message)  : Error(message) {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Matrix error";
     }
@@ -246,7 +246,7 @@ namespace ndlexceptions
   {
   public:
   MatrixNonPosDef() : MatrixError("Matrix non positive definite error") {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Non positive definite matrix.";
     }
@@ -256,7 +256,7 @@ namespace ndlexceptions
   {
   public:
   MatrixConditionError() : MatrixError("Matrix has low condition number.") {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Matrix condition error";
     }
@@ -266,7 +266,7 @@ namespace ndlexceptions
   {
   public:
   MatrixSingular() : MatrixError("Matrix is singular.") {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Matrix is singular error";
     }
@@ -278,7 +278,7 @@ namespace ndlexceptions
   public:
   CommandLineError() : Error() {} 
   CommandLineError(std::string message) : Error(message) {}
-    virtual const char* what() const throw()
+    virtual const char* what() const noexcept
     {
       return "Command line format error";
     }

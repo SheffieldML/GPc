@@ -1,7 +1,7 @@
 ---
 id: "0004"
 title: "Codebase compiles under a modern C++ standard without legacy pins"
-status: "Ready"
+status: "Implemented"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -22,10 +22,10 @@ The core tools and (once restored) reference tests build with a contemporary C++
 
 ## Acceptance Criteria
 
-- [ ] Project compile flags target C++17 or newer (documented in make fragments / CI)
-- [ ] No dynamic exception specifications (`throw(Type)`) remain in headers or sources that CI compiles
-- [ ] Compile CI remains green without a C++14-only pin
-- [ ] Known iostream / API mismatches introduced by modern libstdc++ (and cousins) that block the core tools are fixed, not papered over with an older `-std`
+- [x] Project compile flags target C++17 or newer (documented in make fragments / CI)
+- [x] No dynamic exception specifications (`throw(Type)`) remain in headers or sources that CI compiles
+- [x] Compile CI remains green without a C++14-only pin
+- [x] Known iostream / API mismatches introduced by modern libstdc++ (and cousins) that block the core tools are fixed, not papered over with an older `-std`
 
 ## Notes (Optional)
 
@@ -40,3 +40,5 @@ Scope is language-mode and compile fixes needed for that mode. Broader style mod
 
 ### 2026-11-13
 Requirement created after compile CI landed with a C++14 bridge.
+
+Implemented on `cip0002-cxx17-modernization` / PR #14; Compile CI green under `-std=c++17`.

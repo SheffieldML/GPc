@@ -10,8 +10,9 @@
     fail+=testTransform("negLogLogit");
     fail+=testTransform("sigmoid");
 
-    ptransforms->writeMatlabFile("crap.mat", "writtenTransforms");
     CParamTransforms* preadTrans = new CParamTransforms();
+#ifdef _NDLMATLAB
+    ptransforms->writeMatlabFile("crap.mat", "writtenTransforms");
     preadTrans->readMatlabFile("crap.mat", "writtenTransforms");
    if(ptransforms->equals(*preadTrans))
       cout << "MATLAB Read and write transforms to stream passed"<<endl;
@@ -24,6 +25,7 @@
       preadTrans->display(cout);
       fail++;
     }
+#endif
  
     ptransforms->toFile("crap_paramtransform");
     preadTrans->fromFile("crap_paramtransform");

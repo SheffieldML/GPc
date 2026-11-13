@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_cxx17-remove-dynamic-exceptions"
 title: "Remove dynamic exception specs and build as C++17"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -24,10 +24,10 @@ Strip dynamic exception specifications from `CNdlInterfaces.h` and replace empty
 
 ## Acceptance Criteria
 
-- [ ] No `) throw(` dynamic specs remain in build headers
-- [ ] `ndlexceptions` uses `noexcept` for `what()` / relevant dtors
-- [ ] `-std=c++17` in make.linux / make.inc
-- [ ] GitHub Compile workflow green on this branch
+- [x] No `) throw(` dynamic specs remain in build headers
+- [x] `ndlexceptions` uses `noexcept` for `what()` / relevant dtors
+- [x] `-std=c++17` in make.linux / make.inc
+- [x] GitHub Compile workflow green on this branch
 
 ## Related
 
@@ -39,3 +39,5 @@ Strip dynamic exception specifications from `CNdlInterfaces.h` and replace empty
 ### 2026-11-13
 
 Task created; edits underway on `cip0002-cxx17-modernization`.
+
+Compile CI green on PR https://github.com/SheffieldML/GPc/pull/14 — marked Completed.

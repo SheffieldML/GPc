@@ -1725,7 +1725,7 @@ void COrderedNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix
 	L.setVal(ndlutil::cumGaussian(muAdj*c), i, j);
       }
       else
-	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::likelihoods");
+	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
     }
   }
 }
@@ -1768,7 +1768,7 @@ double COrderedNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSig
 	L+=ndlutil::lnCumGaussian(muAdj*c);
       }
       else
-	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::logLikelihood");
+	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
 
     }
   }  

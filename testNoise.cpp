@@ -161,6 +161,9 @@ int testNoise(CNoise* noise, CNoise* noise2, string fileName)
     cout << "C++: " << L << endl;
     fail++;
   }
+  // Exercise per-point likelihoods (covers ordered missing-NaN branch; no MATLAB fixture).
+  CMatrix Lsite(mu.getRows(), mu.getCols());
+  noise->likelihoods(Lsite, mu, varSigma, y);
   CMatrix g(1, noise->getNumParams());
   noise->getGradTransParams(g);
   CMatrix g2;

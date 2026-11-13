@@ -444,19 +444,26 @@ int testKern(CKern* kern, CKern* kern2, const string fileName)
   }
 #endif
 
-  // Write to stream.
+  // Stream round-trip via factory: writeParams emits baseType/type; fromFile
+  // does not consume them, but readKernFromStream does (and handles cmpnd/tensor).
   kern->toFile("crap_kern");
-  kern2->fromFile("crap_kern");
-  if(kern->equals(*kern2))
-    cout << "Text written " << kern->getName() << " matches read in kernel. Read and write to stream passes." << endl;
-  else
   {
-    cout << "FAILURE: Text read in " << kern->getName() << " does not match written kernel." << endl;
-    cout << "Text written:" << endl;
-    kern->display(cout); cout << endl;
-    cout << "Read back in:" << endl;
-    kern2->display(cout); cout << endl;
-    fail++;
+    ifstream in("crap_kern");
+    if(!in.is_open())
+      throw ndlexceptions::FileReadError("crap_kern");
+    CKern* loaded = readKernFromStream(in);
+    if(kern->equals(*loaded))
+      cout << "Text written " << kern->getName() << " matches read in kernel. Read and write to stream passes." << endl;
+    else
+    {
+      cout << "FAILURE: Text read in " << kern->getName() << " does not match written kernel." << endl;
+      cout << "Text written:" << endl;
+      kern->display(cout); cout << endl;
+      cout << "Read back in:" << endl;
+      loaded->display(cout); cout << endl;
+      fail++;
+    }
+    delete loaded;
   }
 
 

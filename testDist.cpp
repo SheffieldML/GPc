@@ -155,15 +155,22 @@ int testDist(CDist* dist, CDist* dist2, const string fileName)
   }
 #endif
 
-  // Stream read and write test
+  // Stream round-trip via factory (matches noise/kern; CDist::readParamsFromStream
+  // also accepts fromFile after baseType/type are written).
   dist->toFile("crap_dist");
-  dist2->fromFile("crap_dist");
-  if(dist->equals(*dist2))
-    cout << "Text written " << dist->getName() << " matches read in dist. Read and write to text passes." << endl;
-  else
   {
-    cout << "FAILURE: Text read in " << dist->getName() << " does not match written out dist." << endl;
-    fail++;
+    ifstream in("crap_dist");
+    if(!in.is_open())
+      throw ndlexceptions::FileReadError("crap_dist");
+    CDist* loaded = readDistFromStream(in);
+    if(dist->equals(*loaded))
+      cout << "Text written " << dist->getName() << " matches read in dist. Read and write to text passes." << endl;
+    else
+    {
+      cout << "FAILURE: Text read in " << dist->getName() << " does not match written out dist." << endl;
+      fail++;
+    }
+    delete loaded;
   }
   return fail;
 }

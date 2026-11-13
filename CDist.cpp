@@ -13,12 +13,8 @@ void CDist::writeParamsToStream(ostream& out) const
 }
 void CDist::readParamsFromStream(istream& in)
 {
-  string tbaseType = getBaseTypeStream(in);
-  if(tbaseType != getBaseType())
-    throw ndlexceptions::StreamFormatError("baseType", "Error mismatch between saved base type, " + tbaseType + ", and Class base type, " + getType() + ".");
-  string ttype = getTypeStream(in);
-  if(ttype != getType())
-    throw ndlexceptions::StreamFormatError("type", "Error mismatch between saved type, " + ttype + ", and Class type, " + getType() + ".");
+  // baseType/type are consumed by readDistFromStream (and by fromStream
+  // callers that peel them first). Do not re-read here.
   unsigned int nPars = readIntFromStream(in, "numParams");
   CMatrix par(1, nPars);
   par.fromStream(in);

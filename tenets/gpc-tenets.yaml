@@ -1,0 +1,59 @@
+tenets:
+- id: assert-and-verify
+  title: Assert Invariants and Verify Against Reference
+  description: Gaussian process code fails quietly when shapes, symmetries, or gradients
+    drift. GPc treats dimension and bound checks as part of the design language (`DIMENSIONMATCH`,
+    `BOUNDCHECK`, `MATRIXPROPERTIES`, `SANITYCHECK`) and pairs them with tests that
+    compare C++ behaviour to reference artefacts under `matfiles/`. Optimisable models
+    expose `checkGradients`. When you change a kernel, noise model, or sparse approximation,
+    you owe both local assertions at API boundaries and a verification path against
+    a known-good result. Correctness bugs in likelihood gradients are more expensive
+    than an assert that fires early.
+  quote: If the shapes disagree, stop; if the gradients disagree, do not ship.
+  version: 1.1 (2026-11-13)
+- id: compose-through-interfaces
+  title: Compose Through Interfaces
+  description: 'GPc builds models by composing small contracts rather than by forking
+    monolithic solvers. Kernels implement `CKern`, noise models implement `CNoise`,
+    trainable objects implement `COptimisable`, and persistence goes through `CStreamInterface`
+    and (optionally) `CMatInterface`. New covariance functions, likelihoods, or optimisers
+    should arrive as implementations of those contracts. Compound structure is first-class:
+    `CCmpndKern` and tensor kernels assemble behaviour from parts. The GP, GPLVM,
+    IVM, and PPA entry points consume these interfaces; they should not hard-code
+    a single kernel or noise type.'
+  quote: Extend by fulfilling the contract, not by rewriting the model.
+  version: 1.0 (2026-11-13)
+- id: ecosystem-interoperability
+  title: Interoperate With the GP Ecosystem
+  description: 'GPc is one node in a wider Gaussian process toolchain. Users should
+    move data and models across that toolchain without bespoke converters for every
+    experiment. The durable commitment is shared, inspectable formats: plain-text
+    `.model` streams people can read, and SVM-light-style data shared with other SheffieldML
+    GP software. Portability across compilers and OSes (gcc, MSVC, architecture make
+    files) is part of the same idea: meet users where their scientific stack already
+    is.'
+  quote: Speak the formats the community already uses.
+  version: 1.2 (2026-11-13)
+- id: flexibility-with-performance
+  title: Flexibility Without a Performance Tax
+  description: GPc exists because MATLAB GP toolboxes forced a choice between speed
+    and model flexibility. We write the modelling layer in C++ so users can compose
+    kernels, noise models, and sparse approximations without paying the interpreter
+    tax that made flexible MATLAB designs slow. Performance is not an afterthought
+    bolted on later; it is a constraint on every design choice. When a new abstraction
+    would make the code clearer but would force unnecessary allocations, copies, or
+    Python/MATLAB round-trips in the inner loop, we reject it or push the cost outside
+    the hot path.
+  quote: Be flexible in the model, thrifty in the inner loop.
+  version: 1.0 (2026-11-13)
+- id: lapack-owns-linear-algebra
+  title: LAPACK Owns the Linear Algebra
+  description: Dense linear algebra is a solved problem for this codebase. `CMatrix`
+    is a deliberate thin interface over LAPACK and BLAS, not a general-purpose matrix
+    library seeking feature parity with Eigen or MATLAB. Architecture-specific `make.*`
+    files exist so builds can pick tuned BLAS. We own GP modelling, transforms, and
+    optimisation orchestration; we do not reimplement Cholesky, GEMM, or eigensolvers
+    unless LAPACK cannot express what we need. When numerical work appears in a pull
+    request, the default question is which BLAS/LAPACK call should carry it.
+  quote: Own the model; borrow the linear algebra.
+  version: 1.0 (2026-11-13)

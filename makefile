@@ -5,7 +5,13 @@
 #  Dec 23, 2008
 # dependencies created with gcc -MM XXX.cpp
 
+# Platform flags: copy make.linux / make.osx / … to make.inc, or rely on
+# make.linux as the portable LAPACK/BLAS default (used by CI).
+ifeq ($(wildcard make.inc),make.inc)
+include make.inc
+else
 include make.linux
+endif
 
 all: gplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 

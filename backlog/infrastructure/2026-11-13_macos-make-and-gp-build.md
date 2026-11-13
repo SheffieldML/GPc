@@ -1,7 +1,7 @@
 ---
 id: "2026-11-13_macos-make-and-gp-build"
 title: "Refresh macOS make config and build gp locally"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -24,9 +24,9 @@ Establish a working macOS `make.inc` (OpenBLAS/Accelerate + gfortran as availabl
 
 ## Acceptance Criteria
 
-- [ ] Documented macOS make fragment works on this machine
-- [ ] `makefile` includes via `make.inc` (or equivalent clear mechanism)
-- [ ] `./gp -h` (or equivalent) runs after build
+- [x] Documented macOS make fragment works on this machine
+- [x] `makefile` includes via `make.inc` (or equivalent clear mechanism)
+- [x] `./gp -h` (or equivalent) runs after build
 
 ## Related
 
@@ -38,3 +38,7 @@ Establish a working macOS `make.inc` (OpenBLAS/Accelerate + gfortran as availabl
 ### 2026-11-13
 
 Task created (Ready); starts after compile CI lands.
+
+### 2026-11-13 (later)
+
+Completed. `make.osx` uses Homebrew `gcc`/`gfortran` 16, OpenBLAS, and optional libmatio. Copy to `make.inc` (now gitignored). Verified `make gp ivm gplvm` and help smoke on Apple Silicon. Matio suite mostly green locally; ordered-categorical noise mismatches tracked separately.

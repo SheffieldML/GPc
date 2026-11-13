@@ -1,7 +1,7 @@
 ---
 id: "0001"
 title: "Core tools build on a contemporary platform"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"
@@ -22,10 +22,10 @@ A maintainer or user can build the core command-line tools (`gp`, and where stil
 
 ## Acceptance Criteria
 
-- [ ] Documented build steps succeed on at least one contemporary developer platform without undocumented hacks
-- [ ] `gp` (and any other tools claimed by the README as buildable) link successfully against a working BLAS/LAPACK
-- [ ] Architecture/make configuration for that platform is checked in or clearly named (no silent reliance on a mismatched `make.linux` include)
-- [ ] A short smoke command from the README (for example help or a tiny learn) runs after the build
+- [x] Documented build steps succeed on at least one contemporary developer platform without undocumented hacks
+- [x] `gp` (and any other tools claimed by the README as buildable) link successfully against a working BLAS/LAPACK
+- [x] Architecture/make configuration for that platform is checked in or clearly named (no silent reliance on a mismatched `make.linux` include)
+- [x] A short smoke command from the README (for example help or a tiny learn) runs after the build
 
 ## Notes (Optional)
 
@@ -39,3 +39,6 @@ Near-term scope is restore and document what works. Retiring unused executables 
 
 ### 2026-11-13
 Requirement created. Makefile currently hard-includes `make.linux`; macOS/macports make fragments look stale; no CI.
+
+### 2026-11-13 (later)
+Completed via CIP-0001: `make.osx` (Homebrew OpenBLAS + GCC 16), `make.inc` gitignored local override, Linux CI still uses `make.linux`. Local smoke: `./gp -h`, `./ivm -h`, `./gplvm -h`.

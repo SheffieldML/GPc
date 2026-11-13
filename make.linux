@@ -22,7 +22,13 @@ LIBDEXT = .so
 #MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
 #MATLABFLAG=-D_NDLMATLAB
 
+# Default to the project root so -I is never empty when MATLAB is disabled.
+# When enabling MATLAB above, set MATLABINCLUDE and it will be used instead.
+ifeq ($(strip $(MATLABINCLUDE)),)
+INCLUDE = .
+else
 INCLUDE = $(MATLABINCLUDE)
+endif
 LD=g++
 LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
 CC=g++

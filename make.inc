@@ -4,28 +4,36 @@
 #
 SHELL = /bin/sh
 
-PLAT = _UBUNTU
-LAPACKDIR = /usr/lib/sse2/atlas/
-LAPACKLIBS = ${LAPACKDIR}liblapack.so.3gf ${LAPACKDIR}libblas.so.3gf
+PLAT = _LINUX
+LAPACKLIBS = -llapack -lblas
 F2CLIB = -lgfortran
+# commands to make statically&dynamically linked libraries and their extensions
+LIBSCOMMAND = ar rcs
+LIBDCOMMAND = gcc -shared -o
+LIBSEXT = .a
+LIBDEXT = .so
 
 # Uncomment these lines to set up the MATLAB interface.
 #MATLABLIBS = -lmat -lmx
-#MATLABBASE=/cygdrive/c/MATLAB701/
-#MATLABRUNLIBDIR=${MATLABBASE}/bin/win32
-#MATLABLIBDIR=${MATLABBASE}/extern/lib/win32/gcc
+#MATLABBASE=/usr/local/pkg/matlab/
+#MATLABRUNLIBDIR=${MATLABBASE}/bin/glnx86
+#MATLABLIBDIR=${MATLABBASE}/bin/glnx86
 #MATLABINCLUDE=${MATLABBASE}/extern/include
 #MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
 #MATLABFLAG=-D_NDLMATLAB
 
-
+# Default to the project root so -I is never empty when MATLAB is disabled.
+# When enabling MATLAB above, set MATLABINCLUDE and it will be used instead.
+ifeq ($(strip $(MATLABINCLUDE)),)
+INCLUDE = .
+else
 INCLUDE = $(MATLABINCLUDE)
-
+endif
 LD=g++
 LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
 CC=g++
-CCFLAGS = -ggdb -DDBG -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
-#CCFLAGS = -O3 -I$(INCLUDE) -D$(PLAT)
+CCFLAGS = -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
+#CCFLAGS = -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
 FC=gfortran
-FCFLAGS = -funroll-all-loops -O3
+FCFLAGS = -funroll-all-loops -O3 -fPIC
 

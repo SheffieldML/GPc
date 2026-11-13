@@ -1,7 +1,7 @@
 ---
 id: "0002"
 title: "Reference verification suite is runnable"
-status: "Completed"
+status: "Validated"
 priority: "High"
 created: "2026-11-13"
 last_updated: "2026-11-13"

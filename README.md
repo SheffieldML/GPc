@@ -31,7 +31,7 @@ As well as the C++ code some utilities are supplied in the corresponding MATLAB 
 
 ## Compiling the Software
 
-The software was written with gcc on ubuntu.
+The software was written with gcc on ubuntu and builds on contemporary macOS via Homebrew.
 
 Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need a Fortran compiler (gfortran on contemporary systems; historically g77).
 The software is compiled by writing 
@@ -40,7 +40,19 @@ The software is compiled by writing
 $ make gp
 ```
 
-at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included. On Linux CI we use `make.linux` (C++17).
+at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored.
+
+### macOS (Homebrew)
+
+```sh
+$ brew install gcc openblas libmatio
+$ cp make.osx make.inc
+$ make clean
+$ make gp
+$ ./gp -h
+```
+
+`make.osx` uses Homebrew `g++-16` / `gfortran-16` and OpenBLAS. For the matio reference suite on the Mac: `make clean && make USE_MATIO=1 matio-tests` then `make run-matio-tests` (rebuild without `USE_MATIO` if you need `gp`/`ivm`/`gplvm` again, or link with matio as well).
 
 ### Reference tests without MATLAB (libmatio)
 

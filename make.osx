@@ -1,30 +1,80 @@
 #
+#  macOS platform flags (Homebrew) — CIP-0001 / REQ-0001
 #
-#  The machine (platform) identifier to append to the library names
+#  Blessed path on Apple Silicon / Intel Homebrew:
+#    brew install gcc openblas libmatio
+#  Then either:
+#    cp make.osx make.inc
+#  or rely on copying this file as documented in the README.
+#
+#  Historic MacPorts ATLAS/g95 settings live in make.macports (not maintained).
 #
 SHELL = /bin/sh
 
-PLAT = _UBUNTU
-LAPACKDIR = /usr/local/atlas/lib/
-LAPACKLIBS = ${LAPACKDIR}libatlas.so  ${LAPACKDIR}liblapack.so ${LAPACKDIR}libptf77blas.so ${LAPACKDIR}libptcblas.so -lpthread
-F2CLIB = -lgfortran
+PLAT = _OSX
+
+# Homebrew prefixes (works for /opt/homebrew and /usr/local).
+BREW ?= $(shell brew --prefix 2>/dev/null)
+ifeq ($(strip $(BREW)),)
+$(error brew not found; install Homebrew or set BREW=/opt/homebrew)
+endif
+
+OPENBLAS ?= $(BREW)/opt/openblas
+GCCPREFIX ?= $(BREW)/opt/gcc
+MATIOROOT ?= $(BREW)/opt/libmatio
+HDF5ROOT ?= $(BREW)/opt/hdf5
+
+# OpenBLAS provides both BLAS and LAPACK.
+LAPACKLIBS = -L$(OPENBLAS)/lib -lopenblas -Wl,-rpath,$(OPENBLAS)/lib
+# gfortran runtime must match the Fortran compiler below.
+F2CLIB = -L$(GCCPREFIX)/lib/gcc/current -lgfortran -Wl,-rpath,$(GCCPREFIX)/lib/gcc/current
+
+# Shared / static library helpers (dylib on macOS).
+LIBSCOMMAND = ar rcs
+LIBDCOMMAND = $(CC) -shared -o
+LIBSEXT = .a
+LIBDEXT = .dylib
 
 # Uncomment these lines to set up the MATLAB interface.
 #MATLABLIBS = -lmat -lmx
-#MATLABBASE=/cygdrive/c/MATLAB701/
-#MATLABRUNLIBDIR=${MATLABBASE}/bin/win32
-#MATLABLIBDIR=${MATLABBASE}/extern/lib/win32/gcc
+#MATLABBASE=
+#MATLABRUNLIBDIR=${MATLABBASE}/bin/maca64
+#MATLABLIBDIR=${MATLABBASE}/bin/maca64
 #MATLABINCLUDE=${MATLABBASE}/extern/include
-#MATLABXLINKFLAG=-L${MATLABLIBDIR} -Xlinker -rpath -Xlinker ${MATLABRUNLIBDIR} 
+#MATLABXLINKFLAG=-L${MATLABLIBDIR} -Wl,-rpath,${MATLABRUNLIBDIR}
 #MATLABFLAG=-D_NDLMATLAB
 
+# Optional libmatio path for reading numeric .mat fixtures without MATLAB (CIP-0001).
+# Enable with: make USE_MATIO=1 matio-tests
+ifeq ($(USE_MATIO),1)
+MATIOFLAG = -D_NDLMATIO
+MATIOINC = -I$(MATIOROOT)/include
+MATIOLIBS = -L$(MATIOROOT)/lib -lmatio -Wl,-rpath,$(MATIOROOT)/lib -Wl,-rpath,$(HDF5ROOT)/lib
+endif
 
+# gcov instrumentation for coverage reports (CIP-0004). Local use only;
+# Coverage CI remains on Linux.
+ifeq ($(COVERAGE),1)
+COVERAGEFLAGS = --coverage -O0
+endif
+
+# Default to the project root so -I is never empty when MATLAB is disabled.
+ifeq ($(strip $(MATLABINCLUDE)),)
+INCLUDE = .
+else
 INCLUDE = $(MATLABINCLUDE)
+endif
 
-LD=g++
-LDFLAGS = ${MATLABLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG}
-CC=g++
-CCFLAGS = -ggdb -DDBG -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG)
-#CCFLAGS = -O3 -I$(INCLUDE) -D$(PLAT)
-FC=gfortran
-FCFLAGS = -funroll-all-loops -O3
+# Prefer Homebrew GCC for C++ and Fortran so ABIs match (avoid the old
+# /usr/local/bin/gfortran 6.x that may sit earlier on PATH).
+CC = $(GCCPREFIX)/bin/g++-16
+LD = $(GCCPREFIX)/bin/g++-16
+FC = $(GCCPREFIX)/bin/gfortran-16
+
+LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
+CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+#CCFLAGS = -std=c++17 -O3 -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG)
+FCFLAGS = -funroll-all-loops -O3 -fPIC
+
+# Optional: Apple Accelerate instead of OpenBLAS (still needs F2CLIB above).
+# LAPACKLIBS = -framework Accelerate

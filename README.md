@@ -41,10 +41,26 @@ Numeric fixtures in `matfiles/` can be loaded with **libmatio** instead of a ful
 ```sh
 $ sudo apt-get install -y libmatio-dev   # Debian/Ubuntu
 $ make USE_MATIO=1 matio-tests
-$ ./testDist && ./testNoise && ./testKern   # plus testNdlutil, testTransform
+$ make run-matio-tests
 ```
 
-GitHub Actions runs this path as the **Reference tests** workflow. Object-level MATLAB I/O remains behind `_NDLMATLAB`. Known soft mismatches (matrix LAPACK, ncnm noise, tensor kernel gradients) are tracked under `backlog/bugs/`.
+GitHub Actions runs this path as the **Reference tests** workflow. Object-level MATLAB I/O remains behind `_NDLMATLAB`.
+
+### Code coverage (gcov / Codecov)
+
+Instrument the same matio suite with gcov and upload to Codecov (CIP-0004):
+
+```sh
+$ sudo apt-get install -y libmatio-dev lcov
+$ make clean
+$ make USE_MATIO=1 COVERAGE=1 matio-tests
+$ make run-matio-tests
+$ lcov --capture --directory . --output-file coverage.info
+$ lcov --remove coverage.info '/usr/*' '*/test*.cpp' --output-file coverage.info
+$ lcov --list coverage.info
+```
+
+The **Coverage** workflow builds with `COVERAGE=1`, collects `coverage.info`, and uploads via `codecov/codecov-action@v7`. Add a repository secret `CODECOV_TOKEN` from [Codecov](https://codecov.io) (same pattern as GPy) so uploads authenticate for the org.
 
 ### Optimisation
 

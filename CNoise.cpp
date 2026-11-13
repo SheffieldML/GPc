@@ -1534,8 +1534,11 @@ void COrderedNoise::getGradParams(CMatrix& g) const
     for(unsigned int i=0; i<getNumData(); i++)
     {
       double muAdj = getMu(i, j)+b;
+      // Test NaN before casting: on ARM, (int)NaN is 0 and would look like category 0.
+      if(isnan(getTarget(i, j)))
+	continue;
       int targVal = (int)getTarget(i, j);
-      SANITYCHECK(isnan(getTarget(i, j)) || getTarget(i, j)==(double)targVal);
+      SANITYCHECK(getTarget(i, j)==(double)targVal);
       double c = 1/sqrt(sigma2+getVarSigma(i, j));
       if(targVal==0)
       {
@@ -1572,8 +1575,6 @@ void COrderedNoise::getGradParams(CMatrix& g) const
 	  for(unsigned int k=0; k<gwidth.getCols(); k++)
 	    gwidth.setVal(gwidth.getVal(k)-addPart, k);
       }
-      else if(isnan(getTarget(i, j)))
-      { /* do nothing*/  }
       else
 	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradParams");
     }
@@ -1587,8 +1588,15 @@ void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsi
   double b = bias.getVal(j);
   double c = 1.0/sqrt(sigma2+getVarSigma(i, j));
   double muAdj = getMu(i, j)+b;
+  // Test NaN before casting: on ARM, (int)NaN is 0 and would look like category 0.
+  if(isnan(getTarget(i, j)))
+  {
+    gmu = 0.0;
+    gvs = 0.0;
+    return;
+  }
   int targ = (int)getTarget(i, j);
-  SANITYCHECK(isnan(getTarget(i, j)) || getTarget(i, j)==(double)targ);
+  SANITYCHECK(getTarget(i, j)==(double)targ);
   if(targ==0)
   {
     muAdj*=c;
@@ -1607,7 +1615,7 @@ void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsi
     gmu = c*(B1-B2);
     gvs = -.5*c*c*(u*B1 - uprime*B2);
   }
-  else if (targ==getNumCategories()-1) // missing data
+  else if (targ==getNumCategories()-1) // highest category
   {
     for(unsigned int k=0; k<targ-1; k++)
       muAdj-=widths.getVal(k);
@@ -1615,11 +1623,6 @@ void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsi
     gmu = c*ndlutil::gradLnCumGaussian(muAdj);
     gvs = -.5*gmu*c*muAdj;
       
-  }
-  else if(isnan(getTarget(i, j)))
-  { 
-    gmu = 0.0;
-    gvs = 0.0;
   }
   else
     throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
@@ -1696,9 +1699,15 @@ void COrderedNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix
     for(unsigned int i=0; i<muTest.getRows(); i++)
     {
       double muAdj=muTest.getVal(i, j) + b;
-      double c=1/sqrt(sigma2+varSigmaTest.getVal(i, j));	  
+      double c=1/sqrt(sigma2+varSigmaTest.getVal(i, j));
+      // Test NaN before casting: on ARM, (int)NaN is 0 and would look like category 0.
+      if(isnan(yTest.getVal(i, j)))
+      {
+	L.setVal(1.0, i, j);
+	continue;
+      }
       int targVal=(int)yTest.getVal(i, j);
-      SANITYCHECK(isnan(getTarget(i, j)) || getTarget(i, j)==(double)targVal);
+      SANITYCHECK(yTest.getVal(i, j)==(double)targVal);
       if(targVal==0)
       {
 	L.setVal(ndlutil::cumGaussian(-muAdj*c), i, j);
@@ -1715,12 +1724,8 @@ void COrderedNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix
 	  muAdj+=widths.getVal(k);
 	L.setVal(ndlutil::cumGaussian(muAdj*c), i, j);
       }
-      else if(isnan(getTarget(i, j)))
-      {
-	L.setVal(1.0, i, j);
-      }
       else
-	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
+	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::likelihoods");
     }
   }
 }
@@ -1738,9 +1743,12 @@ double COrderedNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSig
     for(unsigned int i=0; i<muTest.getRows(); i++)
     {
       double muAdj=muTest.getVal(i, j) + b;
-      double c=1/sqrt(sigma2+varSigmaTest.getVal(i, j));	  
+      double c=1/sqrt(sigma2+varSigmaTest.getVal(i, j));
+      // Test NaN before casting: on ARM, (int)NaN is 0 and would look like category 0.
+      if(isnan(yTest.getVal(i, j)))
+	continue;
       int targVal=(int)yTest.getVal(i, j);
-      SANITYCHECK(isnan(getTarget(i, j)) || getTarget(i, j)==(double)targVal);
+      SANITYCHECK(yTest.getVal(i, j)==(double)targVal);
       if(targVal==0)
       {
 	L+=ndlutil::lnCumGaussian(-muAdj*c);
@@ -1759,10 +1767,8 @@ double COrderedNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSig
 	  muAdj-=widths.getVal(k);
 	L+=ndlutil::lnCumGaussian(muAdj*c);
       }
-      else if(isnan(getTarget(i, j)))
-      {/*do nothing*/}
       else
-	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
+	throw ndlexceptions::Error("This point should never be reached in COrderedNoise::logLikelihood");
 
     }
   }  

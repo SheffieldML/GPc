@@ -14,12 +14,8 @@ jobs:
         include:
           - os: ubuntu-latest
             make_fragment: make.linux
-            soft_gate: "no"
           - os: macos-latest
             make_fragment: make.osx
-            # Ordered-categorical noise still mismatches on macOS OpenBLAS
-            # (backlog/bugs/2026-11-13_macos-ordered-categorical-noise-mismatch.md).
-            soft_gate: "yes"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -55,11 +51,5 @@ jobs:
           make clean || true
           make USE_MATIO=1 matio-tests
 
-      - name: Run matio reference tests (hard gate)
-        if: matrix.soft_gate == 'no'
-        run: make run-matio-tests
-
-      - name: Run matio reference tests (macOS soft gate)
-        if: matrix.soft_gate == 'yes'
-        continue-on-error: true
+      - name: Run matio reference tests
         run: make run-matio-tests

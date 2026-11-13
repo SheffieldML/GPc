@@ -3,6 +3,9 @@
 
 void CDist::writeParamsToStream(ostream& out) const
 {
+  // Match CKern/CNoise: readers expect baseType/type before parameters.
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
   writeToStream(out, "numParams", getNumParams());
   CMatrix par(1, getNumParams());
   getParams(par);

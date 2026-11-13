@@ -31,7 +31,7 @@ public:
     out << setprecision(17);
     writeParamsToStream(out);
   }
-  static double readVersionFromStream(istream& in) throw(ndlexceptions::StreamVersionError&)
+  static double readVersionFromStream(istream& in)
   {
     double ver = readDoubleFromStream(in, "version");
     if(ver<getMinCompatVersion())
@@ -57,7 +57,7 @@ public:
     else
       return false;
   }
-  static vector<int> readVectorIntFromStream(istream& in, const std::string fieldName) throw(ndlexceptions::StreamFormatError&)
+  static vector<int> readVectorIntFromStream(istream& in, const std::string fieldName)
   {
     vector<int> vals;
     string str = readStringFromStream(in, fieldName);
@@ -69,7 +69,7 @@ public:
       vals.push_back(atol(tokens[i].c_str()));
     return vals;
   }
-  static vector<unsigned int> readVectorUintFromStream(istream& in, const std::string fieldName) throw(ndlexceptions::StreamFormatError&)
+  static vector<unsigned int> readVectorUintFromStream(istream& in, const std::string fieldName)
   {
     vector<unsigned int> vals;
     string str = readStringFromStream(in, fieldName);
@@ -81,7 +81,7 @@ public:
       vals.push_back(atol(tokens[i].c_str()));
     return vals;
   }
-  static string readStringFromStream(istream& in, const std::string fieldName) throw(ndlexceptions::StreamFormatError&)
+  static string readStringFromStream(istream& in, const std::string fieldName)
   {
     string line;
     vector<string> tokens;
@@ -142,7 +142,7 @@ public:
   {
     return readStringFromStream(in, "type");
   }
-  virtual void fromStream(istream& in) throw(ndlexceptions::StreamFormatError&)
+  virtual void fromStream(istream& in)
   {
     readVersionFromStream(in);
     readParamsFromStream(in);
@@ -158,7 +158,7 @@ public:
   }
   virtual void writeParamsToStream(ostream& out) const=0;
   virtual void readParamsFromStream(istream& out)=0;
-  void toFile(const string fileName, const string comment="") const throw(ndlexceptions::FileWriteError&)
+  void toFile(const string fileName, const string comment="") const
   {
     ofstream out(fileName.c_str());
     if(!out) throw ndlexceptions::FileWriteError(fileName);
@@ -167,7 +167,7 @@ public:
     toStream(out);
     out.close();
   }
-  void fromFile(const string fileName) throw(ndlexceptions::FileReadError&, ndlexceptions::FileFormatError&)
+  void fromFile(const string fileName)
   {
     ifstream in(fileName.c_str());
     if(!in.is_open()) throw ndlexceptions::FileReadError(fileName);
@@ -196,7 +196,7 @@ class CMatInterface
  public:
   virtual mxArray* toMxArray() const=0;
   virtual void fromMxArray(const mxArray* matlabArray)=0;
-  void readMatlabFile(const string fileName, const string variableName) throw(ndlexceptions::FileReadError&, ndlexceptions::FileFormatError&)
+  void readMatlabFile(const string fileName, const string variableName)
   {
     MATFile* matFile = matOpen(fileName.c_str(), "r");
     if(matFile==NULL)
@@ -219,7 +219,7 @@ class CMatInterface
     if(matClose(matFile) !=0 )
       throw ndlexceptions::FileReadError(fileName);   
   }
-  void updateMatlabFile(string fileName, const string variableName) const throw(ndlexceptions::FileWriteError&)
+  void updateMatlabFile(string fileName, const string variableName) const
   {
     MATFile* matFile = matOpen(fileName.c_str(), "u");
     if(matFile==NULL)
@@ -231,7 +231,7 @@ class CMatInterface
       throw ndlexceptions::FileWriteError(fileName);
   }
   
-  void writeMatlabFile(const string fileName, const string variableName) const throw(ndlexceptions::FileWriteError&)
+  void writeMatlabFile(const string fileName, const string variableName) const
   {
     MATFile* matFile = matOpen(fileName.c_str(), "w");
     if(matFile==NULL)
@@ -293,7 +293,7 @@ class CMatInterface
     }
       return matlabArray;
   }
-  int mxArrayToInt(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  int mxArrayToInt(const mxArray* matlabArray) const
   {
     int val = 0;
     mxClassID classID = mxGetClassID(matlabArray);
@@ -308,7 +308,7 @@ class CMatInterface
       throw ndlexceptions::NotImplementedError("Conversion of this type to int not yet supported.");
     return val;
   }
-  double mxArrayToDouble(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  double mxArrayToDouble(const mxArray* matlabArray) const
   {
     double val = 0;
     mxClassID classID = mxGetClassID(matlabArray);
@@ -323,7 +323,7 @@ class CMatInterface
       throw ndlexceptions::NotImplementedError("Conversion of this type to double not yet supported.");
     return val;
   }
-  string mxArrayToString(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  string mxArrayToString(const mxArray* matlabArray) const
   {
     vector<char> charVal;
     int buflen;
@@ -339,7 +339,7 @@ class CMatInterface
     string val(&charVal[0]);
     return val;
   }
-  vector<int> mxArrayToVectorInt(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  vector<int> mxArrayToVectorInt(const mxArray* matlabArray) const
   {
     vector<int> val;
     mxClassID classID = mxGetClassID(matlabArray);
@@ -354,7 +354,7 @@ class CMatInterface
       throw ndlexceptions::NotImplementedError("Conversion of this type to vector<int> not yet supported.");
     return val;
   }
-  vector<unsigned int> mxArrayToVectorUint(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  vector<unsigned int> mxArrayToVectorUint(const mxArray* matlabArray) const
   {
     vector<unsigned int> val;
     mxClassID classID = mxGetClassID(matlabArray);
@@ -369,7 +369,7 @@ class CMatInterface
       throw ndlexceptions::NotImplementedError("Conversion of this type to vector<int> not yet supported.");
     return val;
   }
-  bool mxArrayToBool(const mxArray* matlabArray) const throw(ndlexceptions::NotImplementedError&)
+  bool mxArrayToBool(const mxArray* matlabArray) const
   {
     bool val;
     mxClassID classID = mxGetClassID(matlabArray);
@@ -389,7 +389,7 @@ class CMatInterface
   }	  
   
   
-  mxArray* mxArrayExtractMxArrayField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  mxArray* mxArrayExtractMxArrayField(const mxArray* matlabArray, const string fieldName, const int index=0) const
   {
     const char* fName = fieldName.c_str();
     if(mxGetClassID(matlabArray) != mxSTRUCT_CLASS)
@@ -398,21 +398,21 @@ class CMatInterface
     return fieldPtr;
   }
   
-  int mxArrayExtractIntField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  int mxArrayExtractIntField(const mxArray* matlabArray, const string fieldName, const int index=0) const
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)
       throw ndlexceptions::MatlabInterfaceReadError(fieldName);
     return mxArrayToInt(fieldPtr);
   }
-  double mxArrayExtractDoubleField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&) 
+  double mxArrayExtractDoubleField(const mxArray* matlabArray, const string fieldName, const int index=0) const 
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)
       throw ndlexceptions::MatlabInterfaceReadError(fieldName);
     return mxArrayToDouble(fieldPtr);
   }
-  string mxArrayExtractStringField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  string mxArrayExtractStringField(const mxArray* matlabArray, const string fieldName, const int index=0) const
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)
@@ -420,7 +420,7 @@ class CMatInterface
     return mxArrayToString(fieldPtr);
   }
   
-  vector<int> mxArrayExtractVectorIntField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  vector<int> mxArrayExtractVectorIntField(const mxArray* matlabArray, const string fieldName, const int index=0) const
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)
@@ -428,14 +428,14 @@ class CMatInterface
     return mxArrayToVectorInt(fieldPtr);
   }
   
-  vector<unsigned int> mxArrayExtractVectorUintField(const mxArray* matlabArray, const string fieldName, int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  vector<unsigned int> mxArrayExtractVectorUintField(const mxArray* matlabArray, const string fieldName, int index=0) const
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)
       throw ndlexceptions::MatlabInterfaceReadError(fieldName);
     return mxArrayToVectorUint(fieldPtr);
   }
-  bool mxArrayExtractBoolField(const mxArray* matlabArray, const string fieldName, const int index=0) const throw(ndlexceptions::MatlabInterfaceReadError&)
+  bool mxArrayExtractBoolField(const mxArray* matlabArray, const string fieldName, const int index=0) const
   {
     mxArray* fieldPtr = mxArrayExtractMxArrayField(matlabArray, fieldName, index);
     if(fieldPtr==NULL)

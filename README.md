@@ -14,6 +14,8 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 
 Compile and Reference tests run on **Ubuntu** and **macOS** (CIP-0006); both are hard gates. Coverage stays on Ubuntu. Windows CI waits on a maintained Windows make path.
 
+Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
+
 Gaussian Process Software
 =========================
 

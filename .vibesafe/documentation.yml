@@ -1,0 +1,32 @@
+# GPc documentation structure (plain Markdown).
+# Enables CIP compression targeting for ./whats-next.
+
+documentation:
+  system: "plain-markdown"
+  source_dir: "docs"
+  format: "markdown"
+  targets:
+    infrastructure: "docs/build-and-ci.md"
+    feature: "docs/numerics.md"
+    process: "docs/workflow.md"
+    guides: "docs/"
+  getting_started: "README.md"
+
+compression:
+  enabled: true
+  workflow: "WHY→WHAT→HOW→DO→DOCUMENT"
+  triggers:
+    - "CIP status changes to Closed"
+    - "3+ CIPs closed within 7 days (batch opportunity)"
+    - "CIP has compressed: false"
+    - "Manual check via whats-next --compression-check"
+  quality_metrics:
+    - "Documentation structure is explicit"
+    - "All closed CIPs reference their compression location"
+    - "Formal docs exist for compressed CIPs"
+    - "Traceability links work bidirectionally"
+
+notes: |
+  GPc keeps the README as the user-facing build/test entry point.
+  Maintainer rationale from closed CIPs compresses into docs/*.md.
+  Sphinx/MyST remains optional if docs/ outgrows a few maintainer pages.

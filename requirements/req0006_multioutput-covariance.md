@@ -32,6 +32,8 @@ GPc can express intrinsic/linear coregionalization for multiple outputs: a coreg
 
 This requirement is deliberately separate from REQ-0005 so single-output kernel coverage is not blocked on multi-output design.
 
+The HOW is locked in [CIP-000D](../cip/cip000D.md) to GPy’s own objects: `build_XY` (index in the last column), `Coregionalize`, `ICM` as a product on active columns, `LCM` as a sum of those products, and a per-output noise diagonal matching `MixedNoise`. The wrapper classes named in the non-goals stay out of scope.
+
 ## References
 
 - **Related Tenets**: compose-through-interfaces, assert-and-verify, ecosystem-interoperability, flexibility-with-performance
@@ -41,3 +43,6 @@ This requirement is deliberately separate from REQ-0005 so single-output kernel 
 
 ### 2026-11-15
 Requirement created alongside CIP-000D.
+
+### 2026-11-15 (later)
+CIP-000D’s open stacking and composition choices were replaced by GPy’s `build_XY`, `ICM`, and `LCM`. Requirement text is unchanged. Status stays Proposed.

@@ -66,6 +66,15 @@ public:
   // update the gradient matrices.
   void updateG() const;
 
+  // Explicit cache protocol ([CIP-0009](cip/cip0009.md)): mutators call
+  // invalidateCache(); const evaluators call ensure* before reading factors.
+  // A single CGp instance is single-threaded.
+  void invalidateCache();
+  void ensureMUpToDate() const { updateM(); }
+  void ensureKUpToDate() const { updateK(); }
+  void ensureADUpToDate() const { updateAD(); }
+  void ensureAlphaUpToDate() const { updateAlpha(); }
+
   // compute the approximation to the log likelihood.
   virtual double logLikelihood() const;
   // compute the gradients of the approximation wrt parameters.
@@ -251,6 +260,7 @@ public:
       setSparseApproximation(true);
     else
       throw ndlexceptions::Error("Unknown approximation type");
+    invalidateCache();
   }
   // Flag which indicates if a sparse approximation is used.
   bool isSparseApproximation() const 

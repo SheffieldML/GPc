@@ -1,5 +1,6 @@
 #include <iostream>
 #include <ctime>
+#include <utility>
 #include "ndlexceptions.h"
 #include "CMatrix.h"
 using namespace std;
@@ -24,6 +25,7 @@ int testSysv();
 int testSyev();
 int testAxpy();
 int testScale();
+int testOwnership();
 
 int main()
 {
@@ -34,6 +36,7 @@ int main()
   
   try
     {
+      fail += testOwnership();
       fail += testSyev();
       fail += testInv();
       fail += testCholesky();
@@ -96,6 +99,96 @@ int main()
     cerr << "Unhandled exception: " << err.what() << endl;
     return 1;
   }
+}
+
+// CIP-0008: copy/move assignment must not alias vals (no double-free / shared buffer).
+int testOwnership()
+{
+  int fail = 0;
+  double raw[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  CMatrix A(2, 3, raw);
+
+  CMatrix B(A);
+  if(!B.equals(A))
+  {
+    cout << "FAILURE: copy construct independence of values." << endl;
+    fail++;
+  }
+  B.setVal(100.0, 0, 0);
+  if(A.getVal(0, 0) == 100.0)
+  {
+    cout << "FAILURE: copy construct shared storage with source." << endl;
+    fail++;
+  }
+  else
+    cout << "copy construct owns independent storage." << endl;
+
+  CMatrix C(1, 1, 0.0);
+  C = A;
+  if(!C.equals(A))
+  {
+    cout << "FAILURE: copy assignment value match." << endl;
+    fail++;
+  }
+  C.setVal(200.0, 1, 2);
+  if(A.getVal(1, 2) == 200.0)
+  {
+    cout << "FAILURE: copy assignment shared storage with source." << endl;
+    fail++;
+  }
+  else
+    cout << "copy assignment owns independent storage." << endl;
+
+  C = C; // self-assignment
+  if(C.getVal(1, 2) != 200.0)
+  {
+    cout << "FAILURE: self copy-assignment corrupted matrix." << endl;
+    fail++;
+  }
+  else
+    cout << "self copy-assignment is a no-op." << endl;
+
+  CMatrix D(2, 3, raw);
+  CMatrix E(std::move(D));
+  if(!E.equals(A))
+  {
+    cout << "FAILURE: move construct did not transfer values." << endl;
+    fail++;
+  }
+  else
+    cout << "move construct transfers values." << endl;
+  // D is empty / moved-from; assigning into it must be safe.
+  D = A;
+  if(!D.equals(A))
+  {
+    cout << "FAILURE: assign into moved-from matrix." << endl;
+    fail++;
+  }
+  else
+    cout << "assign into moved-from matrix works." << endl;
+
+  CMatrix expected(2, 3, raw);
+  CMatrix F(1, 1, -1.0);
+  F = std::move(A);
+  if(!F.equals(expected))
+  {
+    cout << "FAILURE: move assignment did not transfer values." << endl;
+    fail++;
+  }
+  else
+    cout << "move assignment transfers values." << endl;
+
+  // A is moved-from; destruction at scope exit must not throw / double-free.
+  A = F;
+  if(!A.equals(F))
+  {
+    cout << "FAILURE: copy into moved-from after move assignment." << endl;
+    fail++;
+  }
+  else
+    cout << "copy into moved-from after move assignment works." << endl;
+
+  return fail;
 }
 
 int testDot()

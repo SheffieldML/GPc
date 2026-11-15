@@ -2,7 +2,7 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md)  
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
 ## Platforms and make fragments
@@ -17,6 +17,7 @@ Maintainer notes for how GPc builds and how verification is gated. Short command
 Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/` load via **libmatio** when built with `USE_MATIO=1` (`_NDLMATIO`).
 
 - Gate: `make USE_MATIO=1 matio-tests` then `make run-matio-tests`.
+- Optimiser unit gate (no `.mat` fixtures): `make testOptimisable && ./testOptimisable` — also run from `run-matio-tests` ([CIP-0010](../cip/cip0010.md)).
 - Object-level MATLAB I/O (kernel/noise/model structs) remains behind `_NDLMATLAB`.
 - Retiring MATLAB bridges entirely is [REQ-0003](../requirements/req0003_matlab-bridge-retirement.md) (deferred).
 

@@ -1,0 +1,257 @@
+/* Dedicated tests for COptimisable drivers (CIP-0010).
+   Toy objective: f(x) = 0.5 ||x - target||^2, minimiser at target. */
+#include <iostream>
+#include <cmath>
+#include <string>
+#include "COptimisable.h"
+#include "ndlutil.h"
+
+using namespace std;
+
+namespace {
+const double GRADTOL = 1e-6;
+const double OPTTOL = 1e-4;
+const unsigned int NDIM = 3;
+
+class CQuadOptimisable : public COptimisable
+{
+public:
+  CQuadOptimisable()
+  {
+    target.resize(1, NDIM);
+    target.setVal(1.0, 0);
+    target.setVal(-2.0, 1);
+    target.setVal(0.5, 2);
+    params.resize(1, NDIM);
+    params.zeros();
+  }
+
+  unsigned int getOptNumParams() const
+  {
+    return NDIM;
+  }
+  void getOptParams(CMatrix& param) const
+  {
+    param.deepCopy(params);
+  }
+  void setOptParams(const CMatrix& param)
+  {
+    params.deepCopy(param);
+  }
+  double computeObjectiveVal() const
+  {
+    double f = 0.0;
+    for(unsigned int i = 0; i < NDIM; i++)
+    {
+      double d = params.getVal(i) - target.getVal(i);
+      f += 0.5 * d * d;
+    }
+    return f;
+  }
+  double computeObjectiveGradParams(CMatrix& g) const
+  {
+    g.resize(1, NDIM);
+    for(unsigned int i = 0; i < NDIM; i++)
+      g.setVal(params.getVal(i) - target.getVal(i), i);
+    return computeObjectiveVal();
+  }
+
+  void setParamsTo(double v0, double v1, double v2)
+  {
+    params.setVal(v0, 0);
+    params.setVal(v1, 1);
+    params.setVal(v2, 2);
+  }
+  const CMatrix& getTarget() const { return target; }
+  const CMatrix& getParams() const { return params; }
+
+private:
+  CMatrix target;
+  CMatrix params;
+};
+
+int failNear(const CMatrix& got, const CMatrix& want, double tol, const string& label)
+{
+  if(got.maxAbsDiff(want) > tol)
+  {
+    cout << "FAILURE: " << label << " (maxAbsDiff=" << got.maxAbsDiff(want) << ")." << endl;
+    return 1;
+  }
+  cout << label << " matches." << endl;
+  return 0;
+}
+
+int testGradients()
+{
+  int fail = 0;
+  CQuadOptimisable model;
+  model.setVerbosity(0);
+  model.setParamsTo(0.2, -0.3, 1.1);
+
+  CMatrix analytic(1, NDIM);
+  model.computeObjectiveGradParams(analytic);
+
+  CMatrix numerical(1, NDIM);
+  CMatrix p(1, NDIM);
+  model.getOptParams(p);
+  const double h = ndlutil::GRADCHANGE;
+  for(unsigned int j = 0; j < NDIM; j++)
+  {
+    double orig = p.getVal(j);
+    p.setVal(orig + h, j);
+    model.setOptParams(p);
+    double fp = model.computeObjectiveVal();
+    p.setVal(orig - h, j);
+    model.setOptParams(p);
+    double fm = model.computeObjectiveVal();
+    numerical.setVal(0.5 * (fp - fm) / h, j);
+    p.setVal(orig, j);
+  }
+  model.setOptParams(p);
+
+  fail += failNear(analytic, numerical, GRADTOL, "finite-difference gradients");
+
+  // Exercise COptimisable::checkGradients for coverage (prints; no fail count).
+  // It does not restore setOptParams after FD probes; reset afterwards.
+  model.setParamsTo(0.2, -0.3, 1.1);
+  model.checkGradients();
+  model.setParamsTo(0.2, -0.3, 1.1);
+  return fail;
+}
+
+int runDriver(CQuadOptimisable& model, const string& name, void (COptimisable::*method)())
+{
+  model.setParamsTo(0.0, 0.0, 0.0);
+  model.setVerbosity(0);
+  model.setMaxIters(500);
+  model.setObjectiveTol(1e-12);
+  model.setParamTol(1e-12);
+  if(name == "graddesc")
+  {
+    model.setLearnRate(0.25);
+    model.setMomentum(0.0);
+  }
+  double f0 = model.computeObjectiveVal();
+  (model.*method)();
+  double f1 = model.computeObjectiveVal();
+  int fail = 0;
+  if(!(f1 < f0 - 1e-8))
+  {
+    cout << "FAILURE: " << name << " did not decrease objective (" << f0 << " -> " << f1 << ")." << endl;
+    fail++;
+  }
+  else
+    cout << name << " decreased objective." << endl;
+  fail += failNear(model.getParams(), model.getTarget(), OPTTOL, name + " near minimiser");
+  return fail;
+}
+
+int testDrivers()
+{
+  int fail = 0;
+  CQuadOptimisable model;
+  fail += runDriver(model, "scg", &COptimisable::scgOptimise);
+  fail += runDriver(model, "conjgrad", &COptimisable::cgOptimise);
+  fail += runDriver(model, "graddesc", &COptimisable::gdOptimise);
+  fail += runDriver(model, "lbfgs", &COptimisable::lbfgsOptimise);
+  return fail;
+}
+
+int testDefaultOptimiserStrings()
+{
+  int fail = 0;
+  CQuadOptimisable model;
+  model.setVerbosity(0);
+  model.setMaxIters(200);
+  model.setObjectiveTol(1e-12);
+  model.setParamTol(1e-12);
+  model.setLearnRate(0.25);
+  model.setMomentum(0.0);
+
+  const char* names[] = {"scg", "conjgrad", "graddesc", "quasinew", "lbfgs"};
+  for(unsigned int i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+  {
+    string name = names[i];
+    model.setParamsTo(0.0, 0.0, 0.0);
+    try
+    {
+      model.setDefaultOptimiserStr(name);
+    }
+    catch(...)
+    {
+      cout << "FAILURE: setDefaultOptimiserStr(\"" << name << "\") threw." << endl;
+      fail++;
+      continue;
+    }
+    string canonical = model.getDefaultOptimiserStr();
+    if(name == "lbfgs")
+    {
+      if(canonical != "quasinew")
+      {
+        cout << "FAILURE: lbfgs synonym should report quasinew, got " << canonical << endl;
+        fail++;
+      }
+      else
+        cout << "lbfgs synonym maps to quasinew." << endl;
+    }
+    else if(canonical != name)
+    {
+      cout << "FAILURE: getDefaultOptimiserStr after " << name << " gave " << canonical << endl;
+      fail++;
+    }
+    else
+      cout << "optimiser string " << name << " round-trips." << endl;
+
+    double f0 = model.computeObjectiveVal();
+    model.runDefaultOptimiser();
+    double f1 = model.computeObjectiveVal();
+    if(!(f1 < f0 - 1e-8))
+    {
+      cout << "FAILURE: runDefaultOptimiser(" << name << ") did not decrease objective." << endl;
+      fail++;
+    }
+    else
+      cout << "runDefaultOptimiser(" << name << ") decreased objective." << endl;
+  }
+
+  try
+  {
+    model.setDefaultOptimiserStr("not-an-optimiser");
+    cout << "FAILURE: unknown optimiser string did not throw." << endl;
+    fail++;
+  }
+  catch(ndlexceptions::NotImplementedError&)
+  {
+    cout << "unknown optimiser string throws." << endl;
+  }
+  catch(...)
+  {
+    cout << "FAILURE: unknown optimiser string threw unexpected type." << endl;
+    fail++;
+  }
+  return fail;
+}
+} // namespace
+
+int main()
+{
+  int fail = 0;
+  try
+  {
+    fail += testGradients();
+    fail += testDrivers();
+    fail += testDefaultOptimiserStrings();
+    cout << endl << "Total number of failures: " << fail << endl;
+    return fail > 0 ? 1 : 0;
+  }
+  catch(ndlexceptions::Error& err)
+  {
+    cerr << err.getMessage() << endl;
+    return 1;
+  }
+  catch(std::exception& err)
+  {
+    cerr << "Unhandled exception: " << err.what() << endl;
+    return 1;
+  }
+}

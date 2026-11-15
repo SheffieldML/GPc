@@ -37,6 +37,7 @@ gp
 gplvm
 ivm
 testGp
+testOptimisable
 diagDtcvar
 genTestGpDtcvar
 diag_dtc_state.txt

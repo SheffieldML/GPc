@@ -25,7 +25,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 
 - [CIP-0001](./cip0001.md)–[CIP-000B](./cip000B.md): see individual files (0005 transpose; 0006 macOS CI; …)
 - [CIP-000C](./cip000C.md): Finish ARD stubs and import StdPeriodic, Cosine, Brownian (**Implemented** — close after CI)
-- [CIP-000D](./cip000D.md): Multi-output covariance via Coregionalize (**Proposed**)
+- [CIP-000D](./cip000D.md): Multi-output covariance via Coregionalize (**Proposed**). Design locked to GPy `build_XY` / `ICM` / `LCM`. Implements [REQ-0006](../requirements/req0006_multioutput-covariance.md).
 - [CIP-000E](./cip000E.md): Stable sparse-GP factorisation path with dual-path compare flag (**Implemented** — superseded-complete by 0012 when that lands)
 - [CIP-000F](./cip000F.md): Implement spherical PITC and ship a matio reference fixture (**Implemented** — close after CI)
 - [CIP-0010](./cip0010.md): Dedicated testOptimisable suite (**Closed**)

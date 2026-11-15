@@ -241,7 +241,7 @@ void CGplvm::updateX()
       }
     }
   }
-  setKupToDate(false);
+  invalidateCache();
 }
 
 unsigned int CGplvm::getOptNumParams() const
@@ -289,9 +289,14 @@ void CGplvm::getOptParams(CMatrix& param) const
   }
 }
 
-void CGplvm::setOptParams(const CMatrix& param)
+void CGplvm::invalidateCache()
 {
   setKupToDate(false);
+}
+
+void CGplvm::setOptParams(const CMatrix& param)
+{
+  invalidateCache();
   unsigned int counter=0;
   for(unsigned int i=0; i<pkern->getNumParams(); i++)
   {	  
@@ -492,7 +497,7 @@ void CGplvm::_updateInvDynK(int dim) const
 // compute the approximation to the log likelihood.
 double CGplvm::logLikelihood() const
 {
-  updateK();
+  ensureKUpToDate();
   double L=0.0;
   CMatrix invKm(invK.getRows(), 1);
   for(int j=0; j<dataDim; j++)
@@ -565,7 +570,7 @@ double CGplvm::logLikelihoodGradient(CMatrix& g) const
     xoffset = 0;
   }
   CMatrix& gref = isBackConstrained() ? tempgX : g;
-  updateK();
+  ensureKUpToDate();
   pkern->getGradX(gX, *pX, *pX); // gX[1...ndata].val(1:ndata,1:latentdim)
   pkern->getDiagGradX(gDiagX, *pX);// zero except for w/ linear kernel
   for(int i=0; i<numData; i++)

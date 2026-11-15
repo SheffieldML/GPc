@@ -1272,7 +1272,7 @@ void CClivm::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Kernel options:" << endl;
-    helpArgument("-k, --kernel string", "Type of kernel function. Currently available options are lin (linear), poly (polynomial), rbf (radial basis function), exp (exponential), ratquad (rational quadratic) and mlp (multi-layer perceptron otherwise known as arcsin).");
+    helpArgument("-k, --kernel string", "Type of kernel function. CLI learn path: lin, poly, rbf, exp, ratquad, mlp. Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian, plus bias/white/ard variants.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic kernel.");
     helpArgument("-v, --variance float", "Variance parameter for kernel.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP kernel.");

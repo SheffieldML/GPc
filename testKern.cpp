@@ -19,16 +19,23 @@ int main()
     fail += testType("ratquad");
     fail += testType("matern32");
     fail += testType("matern52");
+    fail += testType("exp");
 
     fail += testType("lin");
     fail += testType("poly");
     fail += testType("mlp");
-    // Gibbs / rbfperiodic / *ard Matérn-RatQuad: enable under CIP-000C once implemented.
 
     fail += testType("rbfard");
     fail += testType("linard");
     fail += testType("polyard");
     fail += testType("mlpard");
+    fail += testType("matern32ard");
+    fail += testType("matern52ard");
+    fail += testType("ratquadard");
+
+    fail += testType("stdperiodic");
+    fail += testType("cosine");
+    fail += testType("brownian");
 
     fail += testType("cmpnd");
     fail += testType("tensor");
@@ -147,8 +154,41 @@ int testType(const string kernelType)
     kern = new CMlpardKern(X);
     kern2 = new CMlpardKern(X);
   }
-  // Additional types (periodic / ARD Matérn / Gibbs): CIP-000C.
-
+  else if(kernelType=="matern32ard")
+  {
+    kern = new CMatern32ardKern(X);
+    kern2 = new CMatern32ardKern(X);
+  }
+  else if(kernelType=="matern52ard")
+  {
+    kern = new CMatern52ardKern(X);
+    kern2 = new CMatern52ardKern(X);
+  }
+  else if(kernelType=="ratquadard")
+  {
+    kern = new CRatQuadardKern(X);
+    kern2 = new CRatQuadardKern(X);
+  }
+  else if(kernelType=="exp")
+  {
+    kern = new CExpKern(X);
+    kern2 = new CExpKern(X);
+  }
+  else if(kernelType=="stdperiodic")
+  {
+    kern = new CStdPeriodicKern(X);
+    kern2 = new CStdPeriodicKern(X);
+  }
+  else if(kernelType=="cosine")
+  {
+    kern = new CCosineKern(X);
+    kern2 = new CCosineKern(X);
+  }
+  else if(kernelType=="brownian")
+  {
+    kern = new CBrownianKern(X);
+    kern2 = new CBrownianKern(X);
+  }
   else if(kernelType=="cmpnd")
   {
     kern = new CCmpndKern(X);

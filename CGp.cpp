@@ -241,9 +241,65 @@ void CGp::initStoreage()
     diagK_ufAinvEMT.resize(getNumData(), 1);
     break;
   case PITC:
+    initDefaultBlockEnd();
+    {
+      const unsigned int nBlocks = getNumBlocks();
+      blockK.resize(nBlocks);
+      blockD.resize(nBlocks);
+      blockDinv.resize(nBlocks);
+      blockLcholD.resize(nBlocks);
+      logDetD.resize(nBlocks);
+      gLambdaBlock.resize(nBlocks);
+      pitcKufDinvm.resize(numActive, getOutputDim());
+      AinvE.resize(numActive, getOutputDim());
+      logDetDSum = 0.0;
+      unsigned int start = 0;
+      for(unsigned int b = 0; b < nBlocks; b++)
+      {
+        unsigned int endInc = 0;
+        getBlockRange(b, start, endInc);
+        const unsigned int bs = endInc - start + 1;
+        blockK[b].resize(bs, bs);
+        blockD[b].resize(bs, bs);
+        blockDinv[b].resize(bs, bs);
+        blockLcholD[b].resize(bs, bs);
+        gLambdaBlock[b].resize(bs, bs);
+      }
+    }
     break;
   }    
    
+}
+
+void CGp::initDefaultBlockEnd()
+{
+  // Match GPmat gpCreate for pitc: first block ends at k, then ceil(N/numBlocks).
+  const unsigned int N = getNumData();
+  unsigned int k = numActive;
+  if(k == 0)
+    k = 1;
+  if(k > N)
+    k = N;
+  const unsigned int numBlocks = (N + k - 1) / k;
+  const unsigned int numPerBlock = (N + numBlocks - 1) / numBlocks;
+  blockEnd.resize(numBlocks);
+  unsigned int endVal1 = k; // 1-based end
+  for(unsigned int i = 0; i < numBlocks; i++)
+  {
+    blockEnd[i] = endVal1 - 1;
+    endVal1 = numPerBlock + endVal1;
+    if(endVal1 > N)
+      endVal1 = N;
+  }
+}
+
+void CGp::getBlockRange(unsigned int block, unsigned int& start, unsigned int& endInclusive) const
+{
+  BOUNDCHECK(block < blockEnd.size());
+  start = (block == 0) ? 0 : blockEnd[block - 1] + 1;
+  endInclusive = blockEnd[block];
+  BOUNDCHECK(endInclusive >= start);
+  BOUNDCHECK(endInclusive < getNumData());
 }
 
 void CGp::updateM() const 
@@ -531,6 +587,10 @@ void CGp::updateAlpha() const
     case PITC:
       if (isSpherical()) 
       {
+        // Alpha := A^{-1} sum_i K_uf(:,ind) Dinv{i} m(ind,:)
+        Alpha.deepCopy(pitcKufDinvm);
+        Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
+        Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
       }
       else 
       {
@@ -756,6 +816,25 @@ void CGp::_updateK() const
     }
     break;
   case PITC:
+    for(unsigned int b = 0; b < getNumBlocks(); b++)
+    {
+      unsigned int start = 0, endInc = 0;
+      getBlockRange(b, start, endInc);
+      const unsigned int bs = endInc - start + 1;
+      for(unsigned int i = 0; i < bs; i++)
+      {
+        const unsigned int ii = start + i;
+        blockK[b].setVal(pkern->diagComputeElement(*pX, ii), i, i);
+        for(unsigned int j = 0; j < i; j++)
+        {
+          const unsigned int jj = start + j;
+          const double kValb = pkern->computeElement(*pX, ii, *pX, jj);
+          blockK[b].setVal(kValb, i, j);
+          blockK[b].setVal(kValb, j, i);
+        }
+      }
+      blockK[b].setSymmetric(true);
+    }
     break;
   default:
     break;
@@ -879,7 +958,49 @@ void CGp::updateAD() const {
     case PITC:
       if (isSpherical()) 
       {
-	throw ndlexceptions::NotImplementedError("PITC approximation not yet implemented.");
+        const double betaValP = getBetaVal();
+        A.deepCopy(K_uu);
+        A.scale(1.0 / betaValP);
+        A.setSymmetric(true);
+        pitcKufDinvm.zeros();
+        logDetDSum = 0.0;
+        for(unsigned int b = 0; b < getNumBlocks(); b++)
+        {
+          unsigned int start = 0, endInc = 0;
+          getBlockRange(b, start, endInc);
+          const unsigned int bs = endInc - start + 1;
+          CMatrix Kufb(numActive, bs);
+          K_uf.getMatrix(Kufb, 0, numActive - 1, start, endInc);
+          CMatrix Qu(numActive, bs);
+          Qu.gemm(invK_uu, Kufb, 1.0, 0.0, "n", "n");
+          blockD[b].deepCopy(blockK[b]);
+          blockD[b].scale(betaValP);
+          blockD[b].gemm(Kufb, Qu, -betaValP, 1.0, "t", "n");
+          blockD[b].addDiag(1.0);
+          blockD[b].setSymmetric(true);
+          double jitD = blockLcholD[b].jitChol(blockD[b]);
+          if(jitD > 1e-2 && getVerbosity() > 2)
+            cout << "Warning: jitter of " << jitD << " added to PITC D block." << endl;
+          logDetD[b] = logDet(blockLcholD[b]);
+          logDetDSum += logDetD[b];
+          blockDinv[b].setSymmetric(true);
+          blockDinv[b].pdinv(blockLcholD[b]);
+          CMatrix KufDinv(numActive, bs);
+          KufDinv.gemm(Kufb, blockDinv[b], 1.0, 0.0, "n", "n");
+          A.gemm(KufDinv, Kufb, 1.0, 1.0, "n", "t");
+          CMatrix mb(bs, getOutputDim());
+          m.getMatrix(mb, start, endInc, 0, getOutputDim() - 1);
+          CMatrix Dinvm(bs, getOutputDim());
+          Dinvm.symm(blockDinv[b], mb, 1.0, 0.0, "l", "l");
+          pitcKufDinvm.gemm(Kufb, Dinvm, 1.0, 1.0, "n", "n");
+        }
+        A.setSymmetric(true);
+        double jitA = LcholA.jitChol(A);
+        if(jitA > 1e-2 && getVerbosity() > 2)
+          cout << "Warning: jitter of " << jitA << " added to A in PITC updateAD()." << endl;
+        logDetA = logDet(LcholA);
+        Ainv.setSymmetric(true);
+        Ainv.pdinv(LcholA);
       }
       else 
       {
@@ -1007,7 +1128,28 @@ double CGp::logLikelihood() const
   case PITC:
     if(isSpherical()) 
     {
-      throw ndlexceptions::NotImplementedError("PITC not yet implemented.");
+      // GPmat gpLogLikelihood pitc (spherical, scalar beta).
+      const double dOut = (double)getOutputDim();
+      const double betaValP = getBetaVal();
+      L = dOut * (logDetA - logDetK_uu + (double)numActive * log(betaValP));
+      CMatrix AinvKufDinvm(numActive, getOutputDim());
+      AinvKufDinvm.symm(Ainv, pitcKufDinvm, 1.0, 0.0, "l", "l");
+      for(unsigned int j = 0; j < getOutputDim(); j++)
+        L -= betaValP * AinvKufDinvm.dotColCol(j, pitcKufDinvm, j);
+      for(unsigned int b = 0; b < getNumBlocks(); b++)
+      {
+        unsigned int start = 0, endInc = 0;
+        getBlockRange(b, start, endInc);
+        const unsigned int bs = endInc - start + 1;
+        L += dOut * (logDetD[b] - (double)bs * log(betaValP));
+        CMatrix mb(bs, getOutputDim());
+        m.getMatrix(mb, start, endInc, 0, getOutputDim() - 1);
+        CMatrix Dinvm(bs, getOutputDim());
+        Dinvm.symm(blockDinv[b], mb, 1.0, 0.0, "l", "l");
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+          L += betaValP * Dinvm.dotColCol(j, mb, j);
+      }
+      // 2π term applied once below with other approximations.
     }
     else 
     {
@@ -1240,9 +1382,20 @@ void CGp::updateG() const
     }
     break;
   case PITC:
+    // Block-diagonal Lambda terms contribute to kernel parameter gradients.
+    for(unsigned int b = 0; b < getNumBlocks(); b++)
+    {
+      unsigned int start = 0, endInc = 0;
+      getBlockRange(b, start, endInc);
+      const unsigned int bs = endInc - start + 1;
+      CMatrix Xb(bs, getInputDim());
+      pX->getMatrix(Xb, start, endInc, 0, getInputDim() - 1);
+      pkern->getGradTransParams(tempG, Xb, gLambdaBlock[b], false);
+      for(unsigned int i = 0; i < numKernParams; i++)
+        g_param.addVal(tempG.getVal(i), i);
+    }
     if(isOptimiseX())
       throw ndlexceptions::NotImplementedError("Optimisation of X not yet implemnted for PTIC sparse approximations");
-
     break;
   }
   
@@ -1420,6 +1573,129 @@ void CGp::gpCovGrads() const
   case PITC:
     if(isSpherical())
     {
+      // GPmat gpCovGrads pitc (spherical).
+      const double dOut = (double)getOutputDim();
+      const double betaValP = getBetaVal();
+      CMatrix E(numActive, getOutputDim());
+      E.zeros();
+      for(unsigned int b = 0; b < getNumBlocks(); b++)
+      {
+        unsigned int start = 0, endInc = 0;
+        getBlockRange(b, start, endInc);
+        const unsigned int bs = endInc - start + 1;
+        CMatrix Kufb(numActive, bs);
+        K_uf.getMatrix(Kufb, 0, numActive - 1, start, endInc);
+        CMatrix mb(bs, getOutputDim());
+        m.getMatrix(mb, start, endInc, 0, getOutputDim() - 1);
+        CMatrix Dinvm(bs, getOutputDim());
+        Dinvm.symm(blockDinv[b], mb, 1.0, 0.0, "l", "l");
+        E.gemm(Kufb, Dinvm, 1.0, 1.0, "n", "n");
+      }
+      AinvE.symm(Ainv, E, 1.0, 0.0, "l", "l");
+      AinvEET.gemm(AinvE, E, 1.0, 0.0, "n", "t");
+      AinvEET.setSymmetric(true);
+      AinvEETAinv.gemm(AinvEET, Ainv, 1.0, 0.0, "n", "n");
+      AinvEETAinv.setSymmetric(true);
+
+      gK_uu.deepCopy(invK_uu);
+      gK_uu.scale(dOut);
+      gK_uu.axpy(Ainv, -dOut / betaValP);
+      gK_uu.axpy(AinvEETAinv, -1.0);
+
+      CMatrix gKufBase(numActive, getNumData());
+      CMatrix Aterm(numActive, numActive);
+      Aterm.deepCopy(Ainv);
+      Aterm.scale(dOut);
+      Aterm.axpy(AinvEETAinv, betaValP);
+      Aterm.setSymmetric(true);
+      gKufBase.symm(Aterm, K_uf, -1.0, 0.0, "l", "l");
+      {
+        CMatrix EMT(numActive, getNumData());
+        EMT.gemm(AinvE, m, betaValP, 0.0, "n", "t");
+        gKufBase.axpy(EMT, 1.0);
+      }
+
+      double gBetaAcc = 0.0;
+      gK_uf.zeros();
+      for(unsigned int b = 0; b < getNumBlocks(); b++)
+      {
+        unsigned int start = 0, endInc = 0;
+        getBlockRange(b, start, endInc);
+        const unsigned int bs = endInc - start + 1;
+        CMatrix Kufb(numActive, bs);
+        K_uf.getMatrix(Kufb, 0, numActive - 1, start, endInc);
+        CMatrix mb(bs, getOutputDim());
+        m.getMatrix(mb, start, endInc, 0, getOutputDim() - 1);
+
+        CMatrix KfuAinvEMT(bs, bs);
+        {
+          CMatrix tmp(numActive, bs);
+          tmp.gemm(AinvE, mb, 1.0, 0.0, "n", "t");
+          KfuAinvEMT.gemm(Kufb, tmp, betaValP, 0.0, "t", "n");
+        }
+        CMatrix blockQ(bs, bs);
+        blockQ.deepCopy(blockD[b]);
+        blockQ.scale(-dOut);
+        {
+          CMatrix mmt(bs, bs);
+          mmt.gemm(mb, mb, 1.0, 0.0, "n", "t");
+          blockQ.axpy(mmt, betaValP);
+        }
+        {
+          CMatrix mid(numActive, numActive);
+          mid.deepCopy(Ainv);
+          mid.scale(dOut);
+          mid.axpy(AinvEETAinv, betaValP);
+          mid.setSymmetric(true);
+          CMatrix midK(numActive, bs);
+          midK.symm(mid, Kufb, 1.0, 0.0, "l", "l");
+          CMatrix add(bs, bs);
+          add.gemm(Kufb, midK, 1.0, 0.0, "t", "n");
+          blockQ.axpy(add, 1.0);
+        }
+        blockQ.axpy(KfuAinvEMT, -1.0);
+        // KfuAinvEMT'
+        for(unsigned int i = 0; i < bs; i++)
+          for(unsigned int j = 0; j < bs; j++)
+            blockQ.addVal(-KfuAinvEMT.getVal(j, i), i, j);
+        blockQ.setSymmetric(true);
+
+        CMatrix invKuuKufDinv(numActive, bs);
+        {
+          CMatrix Qu(numActive, bs);
+          Qu.gemm(invK_uu, Kufb, 1.0, 0.0, "n", "n");
+          invKuuKufDinv.gemm(Qu, blockDinv[b], 1.0, 0.0, "n", "n");
+        }
+        {
+          CMatrix tmp(numActive, bs);
+          tmp.gemm(invKuuKufDinv, blockQ, 1.0, 0.0, "n", "n");
+          gK_uu.gemm(tmp, invKuuKufDinv, betaValP, 1.0, "n", "t");
+        }
+
+        // gK_uf(:,ind) = (gKufBase(:,ind) - beta * invK_uu K_uf Dinv * blockQ) * Dinv
+        {
+          CMatrix baseb(numActive, bs);
+          gKufBase.getMatrix(baseb, 0, numActive - 1, start, endInc);
+          CMatrix tmp(numActive, bs);
+          tmp.gemm(invKuuKufDinv, blockQ, betaValP, 0.0, "n", "n");
+          baseb.axpy(tmp, -1.0);
+          CMatrix outb(numActive, bs);
+          outb.gemm(baseb, blockDinv[b], 1.0, 0.0, "n", "n");
+          gK_uf.setMatrix(0, start, outb);
+        }
+
+        // g_Lambda{i} = 0.5 * beta * Dinv * blockQ * Dinv
+        {
+          CMatrix tmp(bs, bs);
+          tmp.gemm(blockDinv[b], blockQ, 0.5 * betaValP, 0.0, "n", "n");
+          gLambdaBlock[b].gemm(tmp, blockDinv[b], 1.0, 0.0, "n", "n");
+          gLambdaBlock[b].setSymmetric(true);
+        }
+        gBetaAcc -= gLambdaBlock[b].trace() / (betaValP * betaValP);
+      }
+      gK_uu.scale(0.5);
+      gK_uu.setSymmetric(true);
+      gBeta.setVal(gBetaAcc, 0);
     }
     else 
     {

@@ -28,7 +28,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload |
 
-Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. Project threshold allows a short dip when the suite starts linking large modules such as `CGp` via `testGp`. Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
+Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC/DTC/DTCVAR/FITC) under matio. Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
 
 ## Ordered categorical missing labels (macOS)
 

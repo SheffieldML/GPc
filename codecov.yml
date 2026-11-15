@@ -6,12 +6,11 @@ coverage:
     project:
       default:
         target: auto
-        # Allow a one-time project dip when the measured library surface grows
-        # without a matching hit rate. CIP-0005 used 2% when test drivers left
-        # the upload; enabling testGp in matio-tests pulls CGp.cpp (and
-        # CMltools) into gcov — PR #27 saw ~-4% (62.3%→58.2%) while patch
-        # stayed green. Patch coverage remains the gate for new library lines.
-        threshold: 5%
+        # Allow a small project dip when the measured library surface changes
+        # (e.g. CIP-0005 test-driver exclude). Prefer covering new modules
+        # (testGp exercises CGp FTC/DTC/DTCVAR/FITC) over raising this further.
+        # Patch coverage is the gate for new library lines.
+        threshold: 2%
     patch:
       default:
         target: auto

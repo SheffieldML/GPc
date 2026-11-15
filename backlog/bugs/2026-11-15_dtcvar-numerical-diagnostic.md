@@ -63,4 +63,4 @@ Task created; ran diagnostic.
 
 Added `matfiles/testGpdtcvar.mat` via Octave+GPmat (`scripts/gen_testGpdtcvar.sh` / `scripts/octave/gen_testGpdtcvar.m`), then stamped C++ `params`/`grads`/`ll`. GPmat vs C++ LL on this fixture: `|Δ|≈2.4e-4`. `testGp` matio path runs `dtcvar` (DTC 2007 fixture still ~459 LL off — left disabled). Stream round-trip needs `updateM()` after `fromFile`.
 
-**CI note:** params stay at `MATCHTOL`; grads/ll use `gpFixtureTol=1.0` because sparse Cholesky drifts across BLAS (PR #27 Ubuntu vs Mac-stamped fixture saw max abs grad diff ~0.26).
+**CI note:** params stay at `MATCHTOL`; grads/ll use `gpFixtureTol=1.0` because sparse Cholesky drifts across BLAS (PR #27 Ubuntu vs Mac-stamped fixture saw max abs grad diff ~0.26). MATLAB-era FTC/DTC/FITC fixtures disagree on LL by exactly \(N/2\log(2\pi)\); `testGp` accepts that convention gap so those arms stay on the matio gate (grads already matched).

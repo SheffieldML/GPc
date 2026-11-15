@@ -112,6 +112,7 @@ void CClgp::learn()
   int activeSetSize = -1;
   int approxType = -1;
   string approxTypeStr = "ftc";
+  string sparseLinalgStr = "legacy";
   bool labelsProvided = true;
   double signalVariance = 0.0;
   vector<int> labels;
@@ -146,6 +147,10 @@ void CClgp::learn()
       else if (isCurrentArg("-A", "--Approximation-type")) {
 	incrementArgument();
 	approxTypeStr = getCurrentArgument();
+      }
+      else if (isCurrentArg("-L", "--sparse-linalg")) {
+	incrementArgument();
+	sparseLinalgStr = getCurrentArgument();
       }
       else if (isCurrentArg("-k", "--kernel")) {
         incrementArgument(); 
@@ -392,6 +397,12 @@ void CClgp::learn()
   CGp* pmodel;
   CMatrix bK(1,1,0.0);
   pmodel = new CGp(&kern, &noise, &X, approxType, activeSetSize, getVerbosity());
+  if(sparseLinalgStr=="legacy")
+    pmodel->setStableSparseLinalg(false);
+  else if(sparseLinalgStr=="stable")
+    pmodel->setStableSparseLinalg(true);
+  else
+    exitError("Unknown --sparse-linalg mode (use legacy or stable): " + sparseLinalgStr);
   if(optimiser=="scg")
     pmodel->setDefaultOptimiser(CGp::SCG);
   else if(optimiser=="conjgrad")
@@ -940,6 +951,7 @@ void CClgp::helpInfo()
     helpArgument("-L, --Learn-scales bool", "Whether or not to learn the scaling on the input data. Default value is 0 (false).");
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
+    helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: legacy (explicit invK_uu) or stable (Cholesky + trsm). Default legacy ([CIP-000E]).");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();
     setMode("kern");

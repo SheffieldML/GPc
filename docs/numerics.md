@@ -17,6 +17,15 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 - Evaluators call `ensureMUpToDate` / `ensureKUpToDate` / `ensureADUpToDate` / `ensureAlphaUpToDate` before reading cached factors.
 - One model instance is single-threaded; do not share a live `CGp` / `CGplvm` across threads.
 
+## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md))
+
+DTC / DTCVAR / FITC paths that need \(K_{uu}^{-1}K_{uf}\) can run under two schedules (runtime only; not stored in `.model` files):
+
+- **Legacy** (default): `pdinv` of \(K_{uu}\) then `gemm(invK_uu, K_uf)`.
+- **StableFactor**: upper `jitChol(K_uu)` then two `trsm` solves (`U^{-T}` then `U^{-1}`).
+
+Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`. Dual-path LL/grad agreement on the synthetic DTC/DTCVAR problem is gated by `make diagDtcvar && ./diagDtcvar`.
+
 ## Reference mismatches cleared in CIP-0003
 
 Three cases were deferred from the first matio gate and then fixed so Reference tests could hard-fail:

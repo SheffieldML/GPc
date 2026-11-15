@@ -358,7 +358,9 @@ void CClgp::learn()
     }
     else if(approxTypeStr=="dtcvar") {
       approxType = CGp::DTCVAR;
-      cout << "Warning: numerical stabilities exist in DTCVAR approximation." << endl;
+      // DTCVAR matches GPy VarDTC on the spherical Gaussian path (see
+      // backlog/bugs/2026-11-15_dtcvar-numerical-diagnostic.md). K_uu / A may
+      // still need jitter under poor conditioning, as with DTC.
     }
     else if(approxTypeStr=="fitc") {
       approxType = CGp::FITC;

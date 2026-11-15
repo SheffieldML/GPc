@@ -6,8 +6,9 @@ coverage:
     project:
       default:
         target: auto
-        # Allow a one-time project dip when test drivers leave the uploaded
-        # totals (they were highly covered and inflated the baseline %).
+        # Allow a small project dip when the measured library surface changes
+        # (e.g. CIP-0005 test-driver exclude). Prefer covering new modules
+        # (testGp exercises CGp FTC/DTC/DTCVAR/FITC) over raising this further.
         # Patch coverage is the gate for new library lines.
         threshold: 2%
     patch:
@@ -20,3 +21,6 @@ ignore:
   - "test*.h"
   - "**/test*.cpp"
   - "**/test*.h"
+  # Local DTCVAR diagnostic / fixture stampers (not part of matio-tests).
+  - "diagDtcvar.cpp"
+  - "genTestGpDtcvar.cpp"

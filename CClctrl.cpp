@@ -215,3 +215,54 @@ void CClctrl::exitError(const string error)
   exit(1);
 }
 
+void CClctrl::writeGnuplotStyleHeader(ostream& out)
+{
+  // Colours match GPy/plotting/Tango.py (matplotlib defaults in matplot_dep/defaults.py).
+  out << "# GPc gnuplot style (GPy Tango palette)" << endl;
+  out << "# mean/CI: mediumBlue #3465a4, lightBlue #729fcf, darkBlue #204a87" << endl;
+  out << "# data: Aluminium6 #2e3436; inducing: darkRed #a40000" << endl;
+  out << "# pos/neg/unlab: mediumGreen #73d216 / mediumOrange #f57900 / mediumPurple #75507b" << endl;
+  out << "set style line 1 lc rgb \"#3465a4\" lw 2  # mean" << endl;
+  out << "set style line 2 lc rgb \"#204a87\" lw 1  # CI edge" << endl;
+  out << "set style line 3 lc rgb \"#2e3436\" pt 2   # data" << endl;
+  out << "set style line 4 lc rgb \"#a40000\" pt 7   # inducing / active" << endl;
+  out << "set style line 5 lc rgb \"#73d216\" pt 7   # positive" << endl;
+  out << "set style line 6 lc rgb \"#f57900\" pt 7   # negative" << endl;
+  out << "set style line 7 lc rgb \"#75507b\" pt 5   # unlabelled" << endl;
+  out << "set style line 8 lc rgb \"#3465a4\" lw 2  # decision" << endl;
+  out << "set style line 9 lc rgb \"#729fcf\" lw 1  # contours" << endl;
+  out << "set style fill transparent solid 0.25 noborder" << endl;
+  out << "set key top left Left reverse samplen 1 spacing 1" << endl;
+  out << "set border 3" << endl;
+  out << "set tics nomirror out" << endl;
+  out << "set grid lc rgb \"#d3d7cf\" lw 1" << endl;
+}
+
+void CClctrl::writeGnuplotTermSelect(ostream& out)
+{
+  // Do not honour the GNUTERM environment variable: many shells still export
+  // GNUTERM=x11, which Homebrew gnuplot no longer provides.
+  out << "# Terminal: interactive qt by default (Homebrew gnuplot)." << endl;
+  out << "# PNG for docs: gnuplot -e \"GPLOT_PNG='name.png'\" name_plot.gp" << endl;
+  out << "# Override interactive term: gnuplot -e \"GPC_GNUTERM='aqua'\" name_plot.gp" << endl;
+  out << "if (exists(\"GPLOT_PNG\")) {" << endl;
+  out << "  set terminal pngcairo size 900,600 enhanced font \",11\"" << endl;
+  out << "  set output GPLOT_PNG" << endl;
+  out << "} else {" << endl;
+  out << "  if (exists(\"GPC_GNUTERM\")) {" << endl;
+  out << "    set terminal GPC_GNUTERM size 900,600 enhanced" << endl;
+  out << "  } else {" << endl;
+  out << "    set terminal qt size 900,600 enhanced" << endl;
+  out << "  }" << endl;
+  out << "}" << endl;
+}
+
+void CClctrl::writeGnuplotFinish(ostream& out)
+{
+  out << "if (exists(\"GPLOT_PNG\")) {" << endl;
+  out << "  unset output" << endl;
+  out << "} else {" << endl;
+  out << "  pause mouse close" << endl;
+  out << "}" << endl;
+}
+

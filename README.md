@@ -170,23 +170,24 @@ For your convenience a `gnuplot` file may generated to visualise the data. First
 $ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc
 ```
 
-The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
+The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from. Generated scripts use the Qt terminal by default (works with a stock Homebrew `gnuplot`). For example:
 
 ```sh
+$ brew install gnuplot   # provides qt and pngcairo terminals
 $ gnuplot sinc_plot.gp
 ```
 
-Note: for this to work on OSX you may have to 
+To write a PNG for documentation (no interactive window):
 
 ```sh
-$ brew install gnuplot --with-x
+$ gnuplot -e "GPLOT_PNG='sinc.png'" sinc_plot.gp
 ```
 
 Then you should obtain the plot shown below
 <center><img src="sinc.png"><br>
 Gaussian process applied to sinc data.</center><br>
 
-The other files created are `sinc_error_bar_data.dat`, which produces the error bars and `sinc_line_data.dat` which produces the mean as well as `sinc_scatter_data.dat` which shows the training data.
+The other files created are `sinc_error_bar_data.dat` (x, ymin, ymax for the ±2σ band), `sinc_line_data.dat` (posterior mean), and `sinc_scatter_data.dat` (training data). Colours follow the GPy Tango palette.
 
 ### Other Data
 
@@ -280,7 +281,7 @@ The software loads in data in the <a href="http://svmlight.joachims.org/">SVM li
 
 ## Toy Data Sets
 
-In this section we present some simple examples. The results will be visualised using `gnuplot`. It is suggested that you have access to `gnuplot` vs 4.0 or above.
+In this section we present some simple examples. The results will be visualised using `gnuplot` (Qt terminal; Homebrew: `brew install gnuplot`).
 
 Provided with the software, in the `examples` directory, are some simple two dimensional problems. We will first try classification with these examples.
 
@@ -324,15 +325,16 @@ For this model the input data is two dimensional, you can therefore visualise th
 $ ./ivm gnuplot examples/unitsquaregp.svml unitsquaregp.model unitsquaregp
 ```
 
-The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from, so for example (using gnuplot vs 4.0 or above), you can write
+The `unitsquaregp` supplied as the last argument acts as a stub for gnuplot to create names from. For an interactive plot, or a PNG for the docs:
 
 ```sh
 $ gnuplot unitsquaregp_plot.gp
+$ gnuplot -e "GPLOT_PNG='unitsquaregp_plot.png'" unitsquaregp_plot.gp
 ```
 
 and obtain the plot shown below
 <center><img src="unitsquaregp_plot.png"><br>
-The decision boundary learnt for the data sampled from a Gaussian process classification. Note the active points (blue stars) typically lie along the decision boundary.</center><br>
+The decision boundary learnt for the data sampled from a Gaussian process classification. Note the active points (dark red) typically lie along the decision boundary.</center><br>
 
 The other files created are `oil100_variance_matrix.dat`, which produces the grayscale map of the log precisions and `oil100_latent_data1-3.dat` which are files containing the latent data positions associated with each label.
 
@@ -416,11 +418,12 @@ followed by
 
 ```sh
 $ gnuplot semisupercrescent_plot.gp
+$ gnuplot -e "GPLOT_PNG='semisupercrescent_plot.png'" semisupercrescent_plot.gp
 ```
 
 The result of the visualisation being,
 
-<center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data, blue stars are the active set. <center>
+<center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data; dark-red markers are the active set. <center>
 
 
 GP-LVM Software
@@ -625,11 +628,11 @@ $ ./gplvm gnuplot oil100.model oil100
 ```
 
 The `oil100` supplied as the last argument acts as a
-stub for gnuplot to create names from, so for example (using gnuplot
-vs 4.0 or above), you can write
+stub for gnuplot to create names from. Interactive Qt, or PNG for docs:
 
 ```sh
 $ gnuplot oil100_plot.gp
+$ gnuplot -e "GPLOT_PNG='oil100_plot.png'" oil100_plot.gp
 ```
 
 And obtain the plot shown below

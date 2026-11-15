@@ -191,10 +191,11 @@ void COptimisable::lbfgsOptimise()
   int nParams = getOptNumParams();
   int iflag = 0;
   int memSize = 10;
-  double* Xvals = new double[nParams];
-  double* work = new double[nParams*(2*memSize+1) + 2*memSize];
-  double* gvals = new double[nParams];
-  double* diagVals = new double[nParams];
+  // vector<> frees automatically on return or throw
+  vector<double> Xvals(nParams);
+  vector<double> work(nParams*(2*memSize+1) + 2*memSize);
+  vector<double> gvals(nParams);
+  vector<double> diagVals(nParams);
   
   CMatrix X(1, nParams);
   CMatrix g(1, nParams);
@@ -208,10 +209,10 @@ void COptimisable::lbfgsOptimise()
   while(true)
   {
     f = computeObjectiveGradParams(g);
-    X.toArray(Xvals);
-    g.toArray(gvals);
-    lbfgs_(nParams, memSize, Xvals, f, gvals, 0, diagVals, iPrint, getObjectiveTol(), getParamTol(), work, iflag);
-    if(iflag<=0)
+    X.toArray(&Xvals[0]);
+    g.toArray(&gvals[0]);
+    lbfgs_(nParams, memSize, &Xvals[0], f, &gvals[0], 0, &diagVals[0], iPrint, getObjectiveTol(), getParamTol(), &work[0], iflag);
+    if(iflag<0)
     {
       if(iflag==-1)
       {
@@ -226,14 +227,20 @@ void COptimisable::lbfgsOptimise()
       {
 	throw ndlexceptions::Error("Inproper input to lbfgs_.");
       }
+      else
+      {
+	throw ndlexceptions::Error("Unhandled negative iflag from lbfgs_.");
+      }
     }
     else if(iflag==0)
     {
+      X.fromArray(&Xvals[0]);
+      setOptParams(X);
       break;
     }
     else if(iflag==1)
     {
-      X.fromArray(Xvals);
+      X.fromArray(&Xvals[0]);
       setOptParams(X);
       funcEval++;
     }

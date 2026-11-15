@@ -398,7 +398,7 @@ void CClgp::learn()
     pmodel->setDefaultOptimiser(CGp::CG);
   else if(optimiser=="graddesc")
     pmodel->setDefaultOptimiser(CGp::GD);
-  else if(optimiser=="quasinew")
+  else if(optimiser=="quasinew" || optimiser=="lbfgs")
     pmodel->setDefaultOptimiser(CGp::BFGS);
   else
     exitError("Unrecognised optimiser type: " + optimiser);
@@ -497,7 +497,7 @@ void CClgp::relearn()
     pmodel->setDefaultOptimiser(CGp::CG);
   else if(optimiser=="graddesc")
     pmodel->setDefaultOptimiser(CGp::GD);
-  else if(optimiser=="quasinew")
+  else if(optimiser=="quasinew" || optimiser=="lbfgs")
     pmodel->setDefaultOptimiser(CGp::BFGS);
   else
     exitError("Unrecognised optimiser type: " + optimiser);
@@ -933,7 +933,7 @@ void CClgp::helpInfo()
     cout << endl;
     cout << "Command Options:" << endl;
     helpArgument("-?, -h, --help", "This help.");
-    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad and graddesc. Default is scg.");
+    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew (or lbfgs) and graddesc. Default is scg.");
     helpArgument("-#, --#iterations int", "Number of iterations for optimisation by scaled conjugate gradient. Default is 1000.");
     helpArgument("-x, --input-dim int", "Dimension for input space.");
     helpArgument("-C, --Centre-data bool", "Centre the data by removing the mean value. Default value is 1 (true).");

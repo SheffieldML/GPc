@@ -51,7 +51,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -61,6 +61,7 @@ run-matio-tests: matio-tests
 	./testNoise
 	./testKern
 	./testMatrix
+	./testGp
 
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
@@ -74,6 +75,20 @@ testGp: testGp.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CT
 
 testGp.o: testGp.cpp CGp.h CKern.h CMatrix.h CClctrl.h
 	$(CC) -c testGp.cpp -o testGp.o $(CCFLAGS)
+
+# DTC/DTCVAR gradient + GPy-aligned reference dump (backlog 2026-11-15_dtcvar-numerical-diagnostic).
+diagDtcvar: diagDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagDtcvar diagDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+diagDtcvar.o: diagDtcvar.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c diagDtcvar.cpp -o diagDtcvar.o $(CCFLAGS)
+
+# Fixture generator for matfiles/testGpdtcvar.mat (scripts/gen_testGpdtcvar.py).
+genTestGpDtcvar: genTestGpDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar genTestGpDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+genTestGpDtcvar.o: genTestGpDtcvar.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c genTestGpDtcvar.cpp -o genTestGpDtcvar.o $(CCFLAGS)
  
 testIvm: testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testIvm  testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
@@ -155,6 +170,9 @@ CDist.o: CDist.cpp CDist.h CMatrix.h ndlassert.h ndlexceptions.h \
 CMatrix.o: CMatrix.cpp CMatrix.h ndlassert.h ndlexceptions.h \
   CNdlInterfaces.h ndlstrutil.h ndlutil.h ndlfortran.h lapack.h
 	$(CC) -c CMatrix.cpp -o CMatrix.o $(CCFLAGS)
+
+CMltools.o: CMltools.cpp CMltools.h
+	$(CC) -c CMltools.cpp -o CMltools.o $(CCFLAGS)
 
 CGp.o: CGp.cpp CGp.h CMltools.h ndlassert.h ndlexceptions.h \
   ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \

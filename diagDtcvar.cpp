@@ -1,5 +1,5 @@
-/* Diagnostic for DTC / DTCVAR: finite-difference gradient check and state dump
-   for comparison with a GPy-aligned VarDTC reference (see scripts/diag_dtcvar_compare.py). */
+/* Diagnostic for DTC / DTCVAR: finite-difference gradient check, state dump,
+   and CIP-000E dual-path Legacy vs StableFactor LL/grad compare. */
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -28,7 +28,6 @@ void fillSynthetic(CMatrix& X, CMatrix& y, CMatrix& Xu)
     X.setVal(xdat[i][1], i, 1);
     y.setVal(ydat[i], i, 0);
   }
-  // Inducing inputs: first five data points.
   for(unsigned int i = 0; i < 5; i++)
   {
     Xu.setVal(xdat[i][0], i, 0);
@@ -116,6 +115,42 @@ void dumpState(const string& path, const CMatrix& X, const CMatrix& y, const CMa
   out.close();
 }
 
+int dualPathCompare(CGp& model, const string& name)
+{
+  cout << "---- dual-path " << name << " (CIP-000E) ----" << endl;
+  model.setStableSparseLinalg(false);
+  const double llLegacy = model.logLikelihood();
+  CMatrix gLegacy(1, model.getOptNumParams());
+  model.logLikelihoodGradient(gLegacy);
+
+  model.setStableSparseLinalg(true);
+  const double llStable = model.logLikelihood();
+  CMatrix gStable(1, model.getOptNumParams());
+  model.logLikelihoodGradient(gStable);
+
+  const double llDiff = fabs(llLegacy - llStable);
+  double gMax = 0.0;
+  for(unsigned int j = 0; j < gLegacy.getCols(); j++)
+  {
+    const double d = fabs(gLegacy.getVal(0, j) - gStable.getVal(0, j));
+    if(d > gMax)
+      gMax = d;
+  }
+  cout << setprecision(16);
+  cout << "ll_legacy: " << llLegacy << endl;
+  cout << "ll_stable: " << llStable << endl;
+  cout << "ll_abs_diff: " << llDiff << endl;
+  cout << "grad_max_abs_diff: " << gMax << endl;
+
+  const double tol = ndlutil::MATCHTOL;
+  const bool ok = (llDiff <= tol) && (gMax <= tol);
+  cout << (ok ? "PASS" : "FAIL") << " dual-path (tol=" << tol << ")" << endl;
+
+  // Restore default for any later Legacy-facing callers.
+  model.setStableSparseLinalg(false);
+  return ok ? 0 : 1;
+}
+
 int runApprox(int approxType, const string& name, const string& dumpPath)
 {
   cout << "==== " << name << " ====" << endl;
@@ -148,7 +183,22 @@ int runApprox(int approxType, const string& name, const string& dumpPath)
 
   dumpState(dumpPath, X, y, Xu, model, name);
   cout << "Wrote " << dumpPath << endl;
-  return ok ? 0 : 1;
+
+  int fail = ok ? 0 : 1;
+  // Dual-path is most informative for DTCVAR (uses invK_uu K_uf); still run DTC.
+  fail += dualPathCompare(model, name);
+
+  // StableFactor must also pass FD grads.
+  model.setStableSparseLinalg(true);
+  const double maxAbsStable = maxAbsDiffCheck(model, ndlutil::GRADCHANGE, cout);
+  cout << "stable maxAbsDiff(analytic, numerical): " << maxAbsStable << endl;
+  const bool okStable = maxAbsStable < tol;
+  cout << (okStable ? "PASS" : "FAIL") << " StableFactor checkGradients (tol=" << tol << ")" << endl;
+  if(!okStable)
+    fail += 1;
+  model.setStableSparseLinalg(false);
+
+  return fail;
 }
 
 } // namespace

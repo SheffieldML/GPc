@@ -1185,24 +1185,33 @@ void CClppa::gnuplot()
       outGnuplot << "set nosurface" << endl;
       outGnuplot << "set contour base" << endl;
       outGnuplot << "set cntrparam levels discrete 0.5" << endl;
-      outGnuplot << "set term table # set output type to tables" << endl;
-      outGnuplot << "set out '" << name << "_decision.dat'" << endl;
+      outGnuplot << "set table '" << name << "_decision.dat'" << endl;
       outGnuplot << "splot \"" << name << "_prob_matrix.dat\"" << endl;
       outGnuplot << "set cntrparam levels discrete 0.25, 0.75" << endl;
-      outGnuplot << "set out '" << name << "_contours.dat'" << endl;
+      outGnuplot << "set table '" << name << "_contours.dat'" << endl;
       outGnuplot << "splot \"" << name << "_prob_matrix.dat\"" << endl;
+      outGnuplot << "unset table" << endl;
       outGnuplot << "reset" << endl;
-      outGnuplot << "set term x11" << endl;
+      writeGnuplotTermSelect(outGnuplot);
+      writeGnuplotStyleHeader(outGnuplot);
       outGnuplot << "plot ";
-      if(numPos>0)
-	outGnuplot << "\"" << name << "_positive.dat\" with points ps " << pointSize << ", ";
-      if(numNeg>0)
-	outGnuplot << "\"" << name << "_negative.dat\" with points ps " << pointSize << ", ";
-      outGnuplot << "\"" << name << "_active_set.dat\" with points ps " << pointSize*2 << ", ";
+      bool firstPlot = true;
+      if(numPos>0) {
+	outGnuplot << "\"" << name << "_positive.dat\" with points ls 5 ps " << pointSize << " title \"positive\"";
+	firstPlot = false;
+      }
+      if(numNeg>0) {
+	if(!firstPlot) outGnuplot << ", ";
+	outGnuplot << "\"" << name << "_negative.dat\" with points ls 6 ps " << pointSize << " title \"negative\"";
+	firstPlot = false;
+      }
+      if(!firstPlot) outGnuplot << ", ";
+      outGnuplot << "\"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize*2 << " title \"active\"";
       if(numUnlab>0)
-	outGnuplot << "\"" << name << "_unlabelled.dat\" with points ps " << pointSize << ", ";
-      outGnuplot << "\"" << name << "_decision.dat\" with lines lw " << lineWidth << ", \"" << name << "_contours.dat\" with lines lw " << lineWidth << endl;
-      outGnuplot << "pause -1" << endl;
+	outGnuplot << ", \"" << name << "_unlabelled.dat\" with points ls 7 ps " << pointSize << " title \"unlabelled\"";
+      outGnuplot << ", \"" << name << "_decision.dat\" with lines ls 8 lw " << lineWidth << " title \"decision\"";
+      outGnuplot << ", \"" << name << "_contours.dat\" with lines ls 9 lw " << lineWidth << " title \"0.25/0.75\"" << endl;
+      writeGnuplotFinish(outGnuplot);
       outGnuplot.close();
       
       
@@ -1278,10 +1287,13 @@ void CClppa::gnuplot()
 	  string plotFileName = name + "_plot.gp";
 	  ofstream outGnuplot(plotFileName.c_str());
 	  if(!outGnuplot) throw ndlexceptions::FileWriteError(plotFileName);
-	  outGnuplot << "splot \"" << name << "_output_matrix.dat\"  with lines lw " << lineWidth;
-	  outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ps " << pointSize;
-	  outGnuplot << ", \"" << name << "_active_set.dat\" with points ps " << pointSize << endl;
-	  outGnuplot << "pause -1";
+	  writeGnuplotTermSelect(outGnuplot);
+	  writeGnuplotStyleHeader(outGnuplot);
+	  outGnuplot << "set hidden3d" << endl;
+	  outGnuplot << "splot \"" << name << "_output_matrix.dat\" with lines ls 1 lw " << lineWidth << " title \"mean\"";
+	  outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ls 3 ps " << pointSize << " title \"data\"";
+	  outGnuplot << ", \"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize << " title \"active\"" << endl;
+	  writeGnuplotFinish(outGnuplot);
 	  outGnuplot.close();
 	}
       else if(pmodel->activeX.getCols()==1) // one dimensional input.
@@ -1319,18 +1331,23 @@ void CClppa::gnuplot()
 	  if(!out) throw ndlexceptions::FileWriteError(errorFile);
 	  out << setiosflags(ios::scientific);
 	  out << setprecision(17);
-	  out << "# Prepared plot of model file " << endl;
-	  errorBarPlus.toStream(out);
-	  out << endl;
-	  errorBarMinus.toStream(out);
+	  out << "# x ymin ymax for filledcurves" << endl;
+	  for(int j=0; j<numx; j++) {
+	    out << errorBarMinus.getVal(j, 0) << " "
+		<< errorBarMinus.getVal(j, 1) << " "
+		<< errorBarPlus.getVal(j, 1) << endl;
+	  }
+	  out.close();
 	  string plotFileName = name + "_plot.gp";
 	  ofstream outGnuplot(plotFileName.c_str());
 	  if(!outGnuplot) throw ndlexceptions::FileWriteError(plotFileName);
-	  outGnuplot << "plot \"" << name << "_line_data.dat\" with lines lw " << lineWidth;
-	  outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ps " << pointSize;
-	  outGnuplot << ", \"" << name << "_active_set.dat\" with points ps " << pointSize;
-	  outGnuplot << ", \"" << name << "_error_bar_data.dat\" with lines lw " << lineWidth << endl;
-	  outGnuplot << "pause -1";
+	  writeGnuplotTermSelect(outGnuplot);
+	  writeGnuplotStyleHeader(outGnuplot);
+	  outGnuplot << "plot \"" << name << "_error_bar_data.dat\" using 1:2:3 with filledcurves fc rgb \"#729fcf\" title \"±σ\"";
+	  outGnuplot << ", \"" << name << "_line_data.dat\" with lines ls 1 lw " << lineWidth << " title \"mean\"";
+	  outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ls 3 ps " << pointSize << " title \"data\"";
+	  outGnuplot << ", \"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize << " title \"active\"" << endl;
+	  writeGnuplotFinish(outGnuplot);
 	  outGnuplot.close();
 	}      
   

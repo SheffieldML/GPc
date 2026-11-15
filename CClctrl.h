@@ -160,6 +160,11 @@ class CClctrl {
       return mode;
     }
 
+  // Gnuplot script helpers (Tango/GPy-aligned colours; qt or pngcairo via GPLOT_PNG).
+  static void writeGnuplotStyleHeader(ostream& out);
+  static void writeGnuplotTermSelect(ostream& out);
+  static void writeGnuplotFinish(ostream& out);
+
  private:
   bool flags;
   unsigned long seed;

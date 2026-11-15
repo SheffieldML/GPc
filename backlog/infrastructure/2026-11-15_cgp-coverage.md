@@ -35,6 +35,7 @@ Implement [CIP-0011](../../cip/cip0011.md): baseline lcov for `CGp.cpp`, classif
 
 - CIP: 0011
 - REQ: 0002
+- PR: https://github.com/SheffieldML/GPc/pull/37
 
 ## Progress Updates
 
@@ -44,4 +45,4 @@ Task created with CIP-0011 Proposed on main (after CIP-000E/000F merged).
 
 ### 2026-11-15 (later)
 
-Accepted and implemented on `cip0011-cgp-coverage`: baseline 71% → ~96% with `testCGp`; unreachable non-spherical LL/grad tails removed; Coverage workflow gate at 95%.
+Accepted and implemented on `cip0011-cgp-coverage`: baseline 71% → ~96% with `testCGp`; unreachable non-spherical LL/grad tails removed; Coverage workflow gate at 95%. PR #37 opened.

@@ -85,6 +85,18 @@ diagDtcvar: diagDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstru
 diagDtcvar.o: diagDtcvar.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c diagDtcvar.cpp -o diagDtcvar.o $(CCFLAGS)
 
+diagPitc: diagPitc.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+diagPitc.o: diagPitc.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c diagPitc.cpp -o diagPitc.o $(CCFLAGS)
+
+genTestGpPitc: genTestGpPitc.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpPitc genTestGpPitc.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+genTestGpPitc.o: genTestGpPitc.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c genTestGpPitc.cpp -o genTestGpPitc.o $(CCFLAGS)
+
 # Fixture generator for matfiles/testGpdtcvar.mat (scripts/gen_testGpdtcvar.py).
 genTestGpDtcvar: genTestGpDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar genTestGpDtcvar.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)

@@ -2,7 +2,7 @@
 
 Decisions that keep the matio reference suite trustworthy against MATLAB-era fixtures.
 
-**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md)  
+**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000F](../cip/cip000F.md)  
 **Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
 ## CMatrix ownership ([CIP-0008](../cip/cip0008.md))
@@ -16,6 +16,10 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 - Mutators call `invalidateCache()` (or a specific `set*UpToDate(false)`).
 - Evaluators call `ensureMUpToDate` / `ensureKUpToDate` / `ensureADUpToDate` / `ensureAlphaUpToDate` before reading cached factors.
 - One model instance is single-threaded; do not share a live `CGp` / `CGplvm` across threads.
+
+## Spherical PITC ([CIP-000F](../cip/cip000F.md))
+
+`CGp::PITC` implements the GPmat spherical path: contiguous `blockEnd` partitions (default matching `gpCreate`), block \(D\) / \(A\) updates, log-likelihood, and `gpCovGrads`. Gate with `matfiles/testGppitc.mat` via `testGaussian("pitc")`. Regenerate with `make USE_MATIO=1 genTestGpPitc && python scripts/gen_testGppitc.py`. FD check: `make diagPitc && ./diagPitc`.
 
 ## Reference mismatches cleared in CIP-0003
 

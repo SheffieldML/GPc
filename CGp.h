@@ -18,6 +18,13 @@ public:
     DTCVAR
   };
 
+  // Sparse factorisation schedule ([CIP-000E](cip/cip000E.md)).
+  enum SparseLinalgMode
+  {
+    SparseLinalgLegacy = 0,
+    SparseLinalgStableFactor = 1
+  };
+
   CGp();
 
   // Constructor given a kernel
@@ -74,6 +81,33 @@ public:
   void ensureKUpToDate() const { updateK(); }
   void ensureADUpToDate() const { updateAD(); }
   void ensureAlphaUpToDate() const { updateAlpha(); }
+
+  // CIP-000E: Legacy uses gemm(invK_uu, …); StableFactor uses trsm on LcholK.
+  // Default Legacy. Not persisted in .model streams.
+  bool isStableSparseLinalg() const
+  {
+    return sparseLinalgMode == SparseLinalgStableFactor;
+  }
+  void setStableSparseLinalg(bool val)
+  {
+    const int mode = val ? SparseLinalgStableFactor : SparseLinalgLegacy;
+    if(mode != sparseLinalgMode)
+    {
+      sparseLinalgMode = mode;
+      setADupToDate(false);
+    }
+  }
+  void setSparseLinalgMode(int mode)
+  {
+    if(mode != SparseLinalgLegacy && mode != SparseLinalgStableFactor)
+      throw ndlexceptions::Error("Unknown sparseLinalgMode");
+    if(mode != sparseLinalgMode)
+    {
+      sparseLinalgMode = mode;
+      setADupToDate(false);
+    }
+  }
+  int getSparseLinalgMode() const { return sparseLinalgMode; }
 
   // compute the approximation to the log likelihood.
   virtual double logLikelihood() const;
@@ -463,6 +497,8 @@ public:
   void _init();
   void _updateK() const; // update K with the inverse of the kernel plus beta terms computed from the active points.
   void _updateInvK(unsigned int dim=0) const;
+  // out := invK_uu * rhs (Legacy: gemm; StableFactor: two trsm against upper LcholK).
+  void _multiplyInvKuu(CMatrix& out, const CMatrix& rhs) const;
   void _testComputeKx(CMatrix& kX, const CMatrix& Xin) const; /// compute the kernel for some test points.
   
   void _posteriorMean(CMatrix& mu, const CMatrix& kX) const; /// compute the posterior mean given the kernel evaluated at test points.
@@ -473,6 +509,7 @@ public:
 
   unsigned int numActive;
   int approximationType; /// FTC, DTC, FITC, PITC, DTCVAR
+  int sparseLinalgMode; /// SparseLinalgLegacy or SparseLinalgStableFactor
   int numCovStruct;
 
   bool outputScaleLearnt;

@@ -10,7 +10,7 @@ int main()
 {
   int fail = 0;
   fail += testGaussian();
-  //fail += testOrdered();
+  // ordered IVM: deferred (see backlog macos-ordered-categorical-noise).
   fail += testProbit();
   fail += testNcnm();
   cout << "Number of failures: " << fail << endl;

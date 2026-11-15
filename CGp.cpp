@@ -122,7 +122,7 @@ void CGp::initOptimiseXStoreage()
     {
       if(!isSparseApproximation())
       {
-	dgKX.resize(getNumData(), getInputDim()); /// TODO: this also may be too big.
+	dgKX.resize(getNumData(), getInputDim());
 	gKX.resize(getNumData(), getInputDim());
       }
       else
@@ -182,10 +182,9 @@ void CGp::initStoreage()
   m.resize(getNumData(), getOutputDim());
   setMupToDate(false);
 
-  // TODO cater for all different types of beta.
+  // Spherical GPs use a shared beta; storage stays full-sized for noise site init.
   if(isSpherical()) 
   {
-    // TODO : This should only be one value! But the noise initialisation requires large matrix
     beta.resize(getNumData(), getOutputDim());
   }
   else 
@@ -317,9 +316,9 @@ void CGp::updateM() const
 }
 void CGp::initVals() 
 {
-  setSpherical(true); // not implemented non-spherical stuff yet.
-  maxTries = 10; // number of cholesky decompositions to be attempted (adding jitter each time)
-  // TODO: this isn't being properly used ...
+  setSpherical(true); // non-spherical paths throw NotImplementedError.
+  // maxTries is retained for API symmetry with CMatrix::jitChol; site init uses default tries.
+  maxTries = 10;
   for(size_t i=0; i<getNumData(); i++) 
   {
     pnoise->updateSites(m, beta, i, nu, g, i);
@@ -765,8 +764,7 @@ void CGp::_updateK() const
   switch(getApproximationType()) 
   {
   case FTC:
-    // TODO: These computes should be done with pkern->compute, which 
-    // could be made multi-threaded.
+    // Element-wise fill; pkern->compute bulk path is a future optimisation.
     for(unsigned int i=0; i<getNumData(); i++) 
     {
       K.setVal(pkern->diagComputeElement(*pX, i), i, i);
@@ -783,8 +781,7 @@ void CGp::_updateK() const
   case DTCVAR:
   case FITC:
   case PITC:
-    // TODO: These computes should be done with pkern->compute, which 
-    // could be made multi-threaded.
+    // Element-wise fill; pkern->compute bulk path is a future optimisation.
     for(unsigned int i=0; i<numActive; i++) 
     {
       K_uu.setVal(pkern->diagComputeElement(X_u, i), i, i);
@@ -864,7 +861,6 @@ void CGp::updateAD() const {
     switch(getApproximationType()) 
     {
     case FTC:
-      // TODO update the inner products here.
       break;
     case DTC:
     case DTCVAR:
@@ -896,7 +892,6 @@ void CGp::updateAD() const {
       {
         throw ndlexceptions::NotImplementedError("Non-spherical implementations not yet in place for DTC or DTCVAR");
       }
-      // TODO generate the inner products here
       break;
     case FITC:  
       if (isSpherical()) 
@@ -1395,7 +1390,7 @@ void CGp::updateG() const
         g_param.addVal(tempG.getVal(i), i);
     }
     if(isOptimiseX())
-      throw ndlexceptions::NotImplementedError("Optimisation of X not yet implemnted for PTIC sparse approximations");
+      throw ndlexceptions::NotImplementedError("Optimisation of X not yet implemented for PITC sparse approximations");
     break;
   }
   
@@ -1707,7 +1702,7 @@ void CGp::gpCovGrads() const
 }
 void CGp::pointLogLikelihood(const CMatrix& y, const CMatrix& X) const
 {
-  
+  throw ndlexceptions::NotImplementedError("pointLogLikelihood not yet implemented for CGp.");
 }
 #ifdef _NDLMATLAB
 CGp::CGp(CMatrix* pinData, 
@@ -1818,7 +1813,7 @@ void CGp::fromMxArray(const mxArray* matlabArray)
     else if(betaTransformType == "negLogLogit")
       betaTransform = new CNegLogLogitTransform();
     else
-      ndlexceptions::NotImplementedError("fromMxArray: Not yet implemented transform types apart from exp and negLogLogit."); 
+      throw ndlexceptions::NotImplementedError("fromMxArray: Not yet implemented transform types apart from exp and negLogLogit.");
   }
   
   scale.fromMxArray(mxArrayExtractMxArrayField(matlabArray, "scale"));

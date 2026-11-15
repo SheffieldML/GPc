@@ -36,6 +36,16 @@ make.inc
 gp
 gplvm
 ivm
+testGp
+diagDtcvar
+genTestGpDtcvar
+diag_dtc_state.txt
+diag_dtcvar_state.txt
+matfiles/_gen_*.mat
+matfiles/_ll_gpmat.npy
+matfiles/_grads_gpmat.npy
+crap_gp
+crap.mat
 *.gp
 *.model
 octave-workspace

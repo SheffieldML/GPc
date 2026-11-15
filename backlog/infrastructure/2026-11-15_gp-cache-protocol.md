@@ -31,15 +31,16 @@ Accept and implement CIP-0009: document the mutable working-state inventory, exp
 - [x] `testGp` cache-invalidation case green (plus existing matio arms)
 - [x] Maintainer note in `docs/numerics.md`
 - [x] CIP-0009 Implemented after local green
-- [ ] CIP-0009 Closed after PR CI
+- [x] CIP-0009 Closed after PR CI
 
 ## Related
 
 - CIP: 0009
 - REQ: 0002, 0004
+- PR: https://github.com/SheffieldML/GPc/pull/32
 
 ## Progress Updates
 
 ### 2026-11-15
 
-Task created on `cip0009-gp-caches`. Local `./testGp` green (cache case + ftc/dtc/dtcvar/fitc). CIP-0009 → Implemented; close after PR CI.
+Task created on `cip0009-gp-caches`. Local `./testGp` green (cache case + ftc/dtc/dtcvar/fitc). CIP-0009 → Implemented; PR #32 CI green → Closed.

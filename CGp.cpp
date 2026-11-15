@@ -104,6 +104,7 @@ void CGp::_init()
   backConstrained = false;
   KupToDate = false;
   sparseApproximation = false;
+  sparseLinalgMode = SparseLinalgLegacy;
   setApproximationType(FTC);
   numActive = 0;
 }
@@ -841,6 +842,21 @@ void CGp::_updateK() const
   
 }
 
+void CGp::_multiplyInvKuu(CMatrix& out, const CMatrix& rhs) const
+{
+  // out = K_uu^{-1} rhs. Upper Cholesky LcholK = U with K_uu = U^T U.
+  if(isStableSparseLinalg())
+  {
+    out.deepCopy(rhs);
+    out.trsm(LcholK, 1.0, "l", "u", "t", "n"); // U^{-T} rhs
+    out.trsm(LcholK, 1.0, "l", "u", "n", "n"); // U^{-1} U^{-T} rhs
+  }
+  else
+  {
+    out.gemm(invK_uu, rhs, 1.0, 0.0, "n", "n");
+  }
+}
+
 void CGp::updateAD() const {
   if(!isADupToDate())
   {
@@ -868,7 +884,7 @@ void CGp::updateAD() const {
 	// Keep LcholA upper; consumers use uplo/trans flags (CIP-0005).
 	if(getApproximationType()==DTCVAR)
 	{
-	  V.gemm(invK_uu, K_uf, 1.0, 0.0, "n", "n");
+	  _multiplyInvKuu(V, K_uf);
 	  V.dotMultiply(K_uf);
 
 	  diagD.deepCopy(diagK);
@@ -885,11 +901,7 @@ void CGp::updateAD() const {
     case FITC:  
       if (isSpherical()) 
       {
-// 	V.deepCopy(K_uf);
-// 	V.trsm(LcholK, 1.0, "l", "l", "n", "n");
-// 	V.trsm(LcholK, 1.0, "l", "l", "t", "n");
-// 	V.dotMultiply(K_uf);
-	V.gemm(invK_uu, K_uf, 1.0, 0.0, "n", "n");
+	_multiplyInvKuu(V, K_uf);
 	V.dotMultiply(K_uf);
 	diagD.deepCopy(diagK);
 	diagD.negate();
@@ -1429,7 +1441,7 @@ void CGp::gpCovGrads() const
       gK_uu.setSymmetric(true);
       if(getApproximationType()==DTCVAR)
       {
-	invK_uuK_uf.gemm(invK_uu, K_uf, 1.0, 0.0, "n", "n");
+	_multiplyInvKuu(invK_uuK_uf, K_uf);
 	gK_uu.syrk(invK_uuK_uf, -getBetaVal()*(double)getOutputDim(), 1.0, "l", "n");
       }
       gK_uu.scale(0.5);

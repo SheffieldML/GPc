@@ -70,6 +70,8 @@ $ make run-matio-tests
 
 GitHub Actions runs this path as the **Reference tests** workflow. Object-level MATLAB I/O remains behind `_NDLMATLAB`.
 
+Kernel types exercised by `testKern` include the CIP-000C set: `matern32ard`, `matern52ard`, `ratquadard`, `exp`, `stdperiodic`, `cosine`, `brownian` (plus the historical catalogue). Regenerate those fixtures with `scripts/gen_cip000C_kern_fixtures.py` (project `.venv` with numpy/scipy). Stream type string for the periodic kernel is `stdperiodic`.
+
 ### Code coverage (gcov / Codecov)
 
 Instrument the same matio suite with gcov and upload to Codecov (CIP-0004):

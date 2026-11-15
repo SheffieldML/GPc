@@ -20,6 +20,14 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 ## Spherical PITC ([CIP-000F](../cip/cip000F.md))
 
 `CGp::PITC` implements the GPmat spherical path: contiguous `blockEnd` partitions (default matching `gpCreate`), block \(D\) / \(A\) updates, log-likelihood, and `gpCovGrads`. Gate with `matfiles/testGppitc.mat` via `testGaussian("pitc")`. Regenerate with `make USE_MATIO=1 genTestGpPitc && python scripts/gen_testGppitc.py`. FD check: `make diagPitc && ./diagPitc`.
+## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md))
+
+DTC / DTCVAR / FITC paths that need \(K_{uu}^{-1}K_{uf}\) can run under two schedules (runtime only; not stored in `.model` files):
+
+- **Legacy** (default): `pdinv` of \(K_{uu}\) then `gemm(invK_uu, K_uf)`.
+- **StableFactor**: upper `jitChol(K_uu)` then two `trsm` solves (`U^{-T}` then `U^{-1}`).
+
+Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`. Dual-path LL/grad agreement on the synthetic DTC/DTCVAR problem is gated by `make diagDtcvar && ./diagDtcvar`.
 
 ## Reference mismatches cleared in CIP-0003
 

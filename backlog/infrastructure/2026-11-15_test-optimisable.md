@@ -28,15 +28,16 @@ Ship `testOptimisable` with a quadratic toy `COptimisable`, cover gradients and 
 - [x] Included in `matio-tests` / `run-matio-tests`
 - [x] Documented in `docs/build-and-ci.md`
 - [x] CIP-0010 marked Implemented after local green
-- [ ] CIP-0010 Closed after PR CI
+- [x] CIP-0010 Closed after PR CI
 
 ## Related
 
 - CIP: 0010
 - REQ: 0002
+- PR: https://github.com/SheffieldML/GPc/pull/30
 
 ## Progress Updates
 
 ### 2026-11-15
 
-Task created; implementation on `cip0010-test-optimisable`. Local `./testOptimisable` green (0 failures). CIP-0010 → Implemented; close after PR CI.
+Task created; implementation on `cip0010-test-optimisable`. Local `./testOptimisable` green (0 failures). CIP-0010 → Implemented; PR #30 CI green → Closed.

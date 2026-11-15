@@ -738,7 +738,7 @@ void CClgplvm::gnuplot()
 	      for(int i=0; i<storeIndex.size(); i++)
 		for(int k=0; k<2; k++)
 		  Xtemp.setVal(pmodel->pX->getVal(storeIndex[i], k), i, k);
-	      Xtemp.toFile(name+"_latent_data" + ndlstrutil::itoa(j) + ".dat");
+	      Xtemp.toUnheadedFile(name+"_latent_data" + ndlstrutil::itoa(j) + ".dat");
 	      labelFileWritten.push_back(true);
 	    }
 	  else
@@ -755,7 +755,7 @@ void CClgplvm::gnuplot()
 	  for(int j=0; j<2; j++)
 	    Xext.setVal(pmodel->pX->getVal(i, j), i, j);
 	}
-      Xext.toFile(name+"_latent_data.dat");
+      Xext.toUnheadedFile(name+"_latent_data.dat");
     }
 
   // Prepare the background variance plot.
@@ -807,7 +807,7 @@ void CClgplvm::gnuplot()
   out << "# Prepared plot of model file " << endl;
   for(int i=0; i<numy; i++)
     {
-      matrixOut[i]->toStream(out);
+      matrixOut[i]->toUnheadedStream(out);
       out << endl;
     }
   out.close();
@@ -816,21 +816,32 @@ void CClgplvm::gnuplot()
   string plotFileName = name + "_plot.gp";
   ofstream outGnuplot(plotFileName.c_str());
   if(!outGnuplot) throw ndlexceptions::FileWriteError(plotFileName);
-  outGnuplot << "set palette gray" << endl;
-  outGnuplot << "set palette gamma 2.5" << endl;
+  writeGnuplotTermSelect(outGnuplot);
+  writeGnuplotStyleHeader(outGnuplot);
+  // Greys variance background matches GPy latent defaults; Tango points for labels.
+  outGnuplot << "set palette defined (0 \"#eeeeec\", 1 \"#2e3436\")" << endl;
   outGnuplot << "set pm3d map" << endl;
   outGnuplot << "set pm3d explicit" << endl;
-  outGnuplot << "splot \"" << name << "_variance_matrix.dat\" with pm3d";
+  outGnuplot << "unset key" << endl;
+  outGnuplot << "splot \"" << name << "_variance_matrix.dat\" with pm3d notitle";
+  // Cycle Tango darkList for labelled latent points.
+  const char* labelCols[] = {
+    "#204a87", "#a40000", "#4e9a06", "#ce5c00",
+    "#c4a000", "#5c3566", "#8f5902", "#2e3436"
+  };
+  const int nLabelCols = 8;
   if(pmodel->isLabels())
     {
       for(int i=minVal, j=0; i<=maxVal; i++, j++)
 	if(labelFileWritten[j])
-	  outGnuplot << ", \"" << name << "_latent_data" << i << ".dat\" with points ps " << pointSize;
+	  outGnuplot << ", \"" << name << "_latent_data" << i
+		     << ".dat\" with points pt 7 ps " << pointSize
+		     << " lc rgb \"" << labelCols[(i - minVal) % nLabelCols] << "\"";
     }
   else
-    outGnuplot << ", \"" << name << "_latent_data.dat\"  with points ps " << pointSize;
+    outGnuplot << ", \"" << name << "_latent_data.dat\" with points ls 3 ps " << pointSize;
   outGnuplot << endl;
-  outGnuplot << "pause -1";
+  writeGnuplotFinish(outGnuplot);
   outGnuplot.close();
   exitNormal();
 }
@@ -909,7 +920,7 @@ void CClgplvm::helpInfo()
       helpDescriptor("This command creates files for displaying the visualisation in gnuplot.");
       cout << "Arguments:" << endl;
       helpArgument("model_file", "The GPLVM model you want to use for generating the plot. The default is gplvm_model");
-      helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gplvm\". Requires gnuplot vs 4.0 or later.");
+      helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gplvm\". Uses qt by default; set GPLOT_PNG='file.png' for pngcairo output.");
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");
       helpArgument("-l, --labels string", "Label file name for visualisation of the data. If you wish to add labels to the data you can specify a file containing a vector of those labels here. By default any labels in the original data file are used.");

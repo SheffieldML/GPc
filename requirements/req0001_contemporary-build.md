@@ -4,7 +4,7 @@ title: "Core tools build on a contemporary platform"
 status: "Validated"
 priority: "High"
 created: "2026-11-13"
-last_updated: "2026-11-13"
+last_updated: "2026-11-15"
 related_tenets: ["flexibility-with-performance", "ecosystem-interoperability"]
 stakeholders: ["maintainers", "users building from source"]
 tags: ["build", "platform", "stabilization"]
@@ -31,9 +31,12 @@ A maintainer or user can build the core command-line tools (`gp`, and where stil
 
 Near-term scope is restore and document what works. Retiring unused executables or platforms can wait for a later release.
 
+A tuned default BLAS, an optimised Linux build, and a correctness-gated timing comparison are [REQ-0007](req0007_competitive-default-build.md). This requirement is met when the tools build and a smoke command runs.
+
 ## References
 
 - **Related Tenets**: flexibility-with-performance, ecosystem-interoperability
+- **Performance outcome**: [REQ-0007](req0007_competitive-default-build.md)
 
 ## Progress Updates
 
@@ -42,3 +45,6 @@ Requirement created. Makefile currently hard-includes `make.linux`; macOS/macpor
 
 ### 2026-11-13 (later)
 Completed via CIP-0001: `make.osx` (Homebrew OpenBLAS + GCC 16), `make.inc` gitignored local override, Linux CI still uses `make.linux`. Local smoke: `./gp -h`, `./ivm -h`, `./gplvm -h`.
+
+### 2026-11-15
+Cross-link only. Default Linux library choice and optimisation flags are REQ-0007, implemented by CIP-0013. Status stays Validated.

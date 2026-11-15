@@ -4174,6 +4174,1390 @@ double CPolyardKern::getGradParam(unsigned int index, const CMatrix& X, const CM
   
 }
 
+// the Matern 3/2 ARD kernel.
+CMatern32ardKern::CMatern32ardKern() : CArdKern()
+{
+  _init();
+}
+CMatern32ardKern::CMatern32ardKern(unsigned int inDim) : CArdKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CMatern32ardKern::CMatern32ardKern(const CMatrix& X) : CArdKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CMatern32ardKern::CMatern32ardKern(const CMatern32ardKern& kern) : CArdKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+  scales = kern.scales;
+}
+// Class destructor
+CMatern32ardKern::~CMatern32ardKern()
+{
+}
+double CMatern32ardKern::getVariance() const
+{
+  return variance;
+}
+void CMatern32ardKern::_init()
+{
+  nParams = 2;
+  setType("matern32ard");
+  setName("Matern dof=3/2 ARD");
+  setParamName("lengthScale", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setStationary(true);
+}
+void CMatern32ardKern::setInitParam()
+{
+  nParams = 2+getInputDim();
+  lengthScale = 1.0;
+  variance = 1.0;
+
+  // input scales.
+  scales.resize(1, getInputDim());
+  gscales.resize(1, getInputDim());
+  scales.setVals(0.5);
+  for(unsigned int i=2; i<getInputDim()+2; i++)
+  {
+    string name = "inputScale";
+    setParamName(name, i);
+  }
+  for(unsigned int i=2; i<getInputDim()+2; i++)
+  {
+    addTransform(CTransform::defaultZeroOne(), i);
+  }
+}
+
+inline double CMatern32ardKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+// Parameters are kernel parameters
+void CMatern32ardKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    lengthScale=val;
+    break;
+  case 1:
+    variance=val;
+    break;
+  default:
+    if(paramNo<nParams)
+      scales.setVal(val, paramNo-2);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }    
+  }
+}
+double CMatern32ardKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return lengthScale;
+    break;
+  case 1:
+    return variance;
+    break;
+  default:
+    if(paramNo<nParams)
+      return scales.getVal(paramNo-2);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }  
+  }
+}
+void CMatern32ardKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  double wi2 = 3.0/(lengthScale*lengthScale);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r2 = 0.0;
+    for(unsigned int j=0; j<getInputDim(); j++)
+    {
+      double dx = X.getVal(row, j)-X2.getVal(k, j);
+      r2 += scales.getVal(j)*dx*dx;
+    }
+    double t = sqrt(r2*wi2);
+    double expmt = exp(-t);
+    double K = variance*(1+t)*expmt;
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double val = 0.0;
+      if(t != 0.0)
+      {
+	double dx = X2.getVal(k, j)-X.getVal(row, j);
+	val = wi2*scales.getVal(j)*dx/t*(K-variance*expmt);
+      }
+      if(addG)
+	gX.addVal(val, k, j);
+      else 
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CMatern32ardKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CMatern32ardKern::getWhite() const
+{
+  return 0.0;
+}
+
+double CMatern32ardKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				     const CMatrix& X2, unsigned int index2) const
+{
+  double r2 = 0.0;
+  for(unsigned int j=0; j<getInputDim(); j++)
+  {
+    double dx = X1.getVal(index1, j)-X2.getVal(index2, j);
+    r2 += scales.getVal(j)*dx*dx;
+  }
+  double wi2 = 3.0/(lengthScale*lengthScale);
+  double t = sqrt(r2*wi2);
+  return variance*(1+t)*exp(-t);
+}
+
+void CMatern32ardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1=0.0;
+  double g2=0.0;
+  gscales.zeros();
+  double wi2=3.0/(lengthScale*lengthScale);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<X2.getRows(); i++)
+    {
+      double cgVal = covGrad.getVal(j,i);
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X2.getVal(i, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double t = sqrt(r2*wi2);
+      double expmt = exp(-t);
+      double k = (1+t)*expmt;
+      double ratio;
+      if(t==0.0)
+	ratio = 1.0;
+      else
+	ratio = r2/t;
+      g1 += cgVal*wi2/lengthScale*ratio*(k-expmt);
+      g2 += cgVal*k;
+      for(unsigned int kk=0; kk<getInputDim(); kk++)
+      {
+	double xi = X.getVal(j, kk);
+	double xj = X2.getVal(i, kk);
+	double g3 = gscales.getVal(kk);
+	g3 += wi2*cgVal*expmt*(xi*xj-.5*xi*xi-.5*xj*xj)*variance;
+	gscales.setVal(g3, kk);
+      }
+    }
+  }
+  g.setVal(g1*variance, 0);
+  g.setVal(g2, 1);
+  for(unsigned int kk=0; kk<getInputDim(); kk++)
+    g.setVal(gscales.getVal(kk), kk+2);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CMatern32ardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  MATRIXPROPERTIES(covGrad.isSymmetric());
+  double g1=0.0;
+  double g2=0.0;
+  gscales.zeros();
+  double wi2=3.0/(lengthScale*lengthScale);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<j; i++)
+    {
+      double cgVal = covGrad.getVal(j,i);
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X.getVal(i, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double t = sqrt(r2*wi2);
+      double expmt = exp(-t);
+      double k = (1+t)*expmt;
+      double ratio;
+      if(t==0.0)
+	ratio = 1.0;
+      else
+	ratio = r2/t;
+      g1 += cgVal*wi2/lengthScale*ratio*(k-expmt);
+      g2 += cgVal*k;
+      for(unsigned int kk=0; kk<getInputDim(); kk++)
+      {
+	double xi = X.getVal(j, kk);
+	double xj = X.getVal(i, kk);
+	double g3 = gscales.getVal(kk);
+	g3 += wi2*cgVal*expmt*(xi*xj-.5*xi*xi-.5*xj*xj)*variance;
+	gscales.setVal(g3, kk);
+      }
+    }
+    g2 += 0.5*covGrad.getVal(j, j);
+  }
+  gscales.scale(2.0);
+  g.setVal(2.0*g1*variance, 0);
+  g.setVal(2.0*g2, 1);
+  for(unsigned int kk=0; kk<getInputDim(); kk++)
+    g.setVal(gscales.getVal(kk), kk+2);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CMatern32ardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CMatern32ardKern");
+}
+double CMatern32ardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CMatern32ardKern");
+}
+
+// the Matern 5/2 ARD kernel.
+CMatern52ardKern::CMatern52ardKern() : CArdKern()
+{
+  _init();
+}
+CMatern52ardKern::CMatern52ardKern(unsigned int inDim) : CArdKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CMatern52ardKern::CMatern52ardKern(const CMatrix& X) : CArdKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CMatern52ardKern::CMatern52ardKern(const CMatern52ardKern& kern) : CArdKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+  scales = kern.scales;
+}
+// Class destructor
+CMatern52ardKern::~CMatern52ardKern()
+{
+}
+double CMatern52ardKern::getVariance() const
+{
+  return variance;
+}
+void CMatern52ardKern::_init()
+{
+  nParams = 2;
+  setType("matern52ard");
+  setName("Matern dof=5/2 ARD");
+  setParamName("lengthScale", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setStationary(true);
+}
+void CMatern52ardKern::setInitParam()
+{
+  nParams = 2+getInputDim();
+  lengthScale = 1.0;
+  variance = 1.0;
+
+  // input scales.
+  scales.resize(1, getInputDim());
+  gscales.resize(1, getInputDim());
+  scales.setVals(0.5);
+  for(unsigned int i=2; i<getInputDim()+2; i++)
+  {
+    string name = "inputScale";
+    setParamName(name, i);
+  }
+  for(unsigned int i=2; i<getInputDim()+2; i++)
+  {
+    addTransform(CTransform::defaultZeroOne(), i);
+  }
+}
+
+inline double CMatern52ardKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+// Parameters are kernel parameters
+void CMatern52ardKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    lengthScale=val;
+    break;
+  case 1:
+    variance=val;
+    break;
+  default:
+    if(paramNo<nParams)
+      scales.setVal(val, paramNo-2);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }    
+  }
+}
+double CMatern52ardKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return lengthScale;
+    break;
+  case 1:
+    return variance;
+    break;
+  default:
+    if(paramNo<nParams)
+      return scales.getVal(paramNo-2);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }  
+  }
+}
+void CMatern52ardKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  double wi2 = 5.0/(lengthScale*lengthScale);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r2 = 0.0;
+    for(unsigned int j=0; j<getInputDim(); j++)
+    {
+      double dx = X.getVal(row, j)-X2.getVal(k, j);
+      r2 += scales.getVal(j)*dx*dx;
+    }
+    double n2wi2 = r2*wi2;
+    double t = sqrt(n2wi2);
+    double expmt = exp(-t);
+    double K = variance*(1+t+n2wi2/3.0)*expmt;
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double dx = X2.getVal(k, j)-X.getVal(row, j);
+      double ratio = (t != 0.0) ? dx/t : 0.0;
+      double val = scales.getVal(j)*(wi2*ratio*(K-variance*expmt) - variance*2.0*wi2/3.0*dx*expmt);
+      if(addG)
+	gX.addVal(val, k, j);
+      else 
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CMatern52ardKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CMatern52ardKern::getWhite() const
+{
+  return 0.0;
+}
+
+double CMatern52ardKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				     const CMatrix& X2, unsigned int index2) const
+{
+  double r2 = 0.0;
+  for(unsigned int j=0; j<getInputDim(); j++)
+  {
+    double dx = X1.getVal(index1, j)-X2.getVal(index2, j);
+    r2 += scales.getVal(j)*dx*dx;
+  }
+  double wi2 = 5.0/(lengthScale*lengthScale);
+  double n2wi2 = r2*wi2;
+  double t = sqrt(n2wi2);
+  return variance*(1+t+n2wi2/3.0)*exp(-t);
+}
+
+void CMatern52ardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1=0.0;
+  double g2=0.0;
+  gscales.zeros();
+  double wi2=5.0/(lengthScale*lengthScale);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<X2.getRows(); i++)
+    {
+      double cgVal = covGrad.getVal(j,i);
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X2.getVal(i, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double n2wi2 = r2*wi2;
+      double t = sqrt(n2wi2);
+      double expmt = exp(-t);
+      double k = (1+t+n2wi2/3.0)*expmt;
+      double ratio;
+      if(t==0.0)
+	ratio = 1.0;
+      else
+	ratio = r2/t;
+      g1 += cgVal*(wi2/lengthScale*ratio*(k-expmt)-2.0*wi2/(3.0*lengthScale)*r2*expmt);
+      g2 += cgVal*k;
+      double factor = wi2*(1+t)*expmt/3.0;
+      for(unsigned int kk=0; kk<getInputDim(); kk++)
+      {
+	double xi = X.getVal(j, kk);
+	double xj = X2.getVal(i, kk);
+	double g3 = gscales.getVal(kk);
+	g3 += factor*cgVal*(xi*xj-.5*xi*xi-.5*xj*xj)*variance;
+	gscales.setVal(g3, kk);
+      }
+    }
+  }
+  g.setVal(g1*variance, 0);
+  g.setVal(g2, 1);
+  for(unsigned int kk=0; kk<getInputDim(); kk++)
+    g.setVal(gscales.getVal(kk), kk+2);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CMatern52ardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  MATRIXPROPERTIES(covGrad.isSymmetric());
+  double g1=0.0;
+  double g2=0.0;
+  gscales.zeros();
+  double wi2=5.0/(lengthScale*lengthScale);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<j; i++)
+    {
+      double cgVal = covGrad.getVal(j,i);
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X.getVal(i, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double n2wi2 = r2*wi2;
+      double t = sqrt(n2wi2);
+      double expmt = exp(-t);
+      double k = (1+t+n2wi2/3.0)*expmt;
+      double ratio;
+      if(t==0.0)
+	ratio = 1.0;
+      else
+	ratio = r2/t;
+      g1 += cgVal*(wi2/lengthScale*ratio*(k-expmt)-2.0*wi2/(3.0*lengthScale)*r2*expmt);
+      g2 += cgVal*k;
+      double factor = wi2*(1+t)*expmt/3.0;
+      for(unsigned int kk=0; kk<getInputDim(); kk++)
+      {
+	double xi = X.getVal(j, kk);
+	double xj = X.getVal(i, kk);
+	double g3 = gscales.getVal(kk);
+	g3 += factor*cgVal*(xi*xj-.5*xi*xi-.5*xj*xj)*variance;
+	gscales.setVal(g3, kk);
+      }
+    }
+    g2 += 0.5*covGrad.getVal(j, j);
+  }
+  gscales.scale(2.0);
+  g.setVal(2.0*g1*variance, 0);
+  g.setVal(2.0*g2, 1);
+  for(unsigned int kk=0; kk<getInputDim(); kk++)
+    g.setVal(gscales.getVal(kk), kk+2);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CMatern52ardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CMatern52ardKern");
+}
+double CMatern52ardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CMatern52ardKern");
+}
+
+// the Rational Quadratic ARD kernel.
+CRatQuadardKern::CRatQuadardKern() : CArdKern()
+{
+  _init();
+}
+CRatQuadardKern::CRatQuadardKern(unsigned int inDim) : CArdKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CRatQuadardKern::CRatQuadardKern(const CMatrix& X) : CArdKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CRatQuadardKern::CRatQuadardKern(const CRatQuadardKern& kern) : CArdKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  alpha = kern.alpha;
+  lengthScale = kern.lengthScale;
+  scales = kern.scales;
+}
+// Class destructor
+CRatQuadardKern::~CRatQuadardKern()
+{
+}
+double CRatQuadardKern::getVariance() const
+{
+  return variance;
+}
+void CRatQuadardKern::_init()
+{
+  nParams = 3;
+  setType("ratquadard");
+  setName("Rational Quadratic ARD");
+  setParamName("alpha", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("lengthScale", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setParamName("variance", 2);
+  addTransform(CTransform::defaultPositive(), 2);
+  setStationary(true);
+}
+void CRatQuadardKern::setInitParam()
+{
+  nParams = 3+getInputDim();
+  alpha = 1.0;
+  lengthScale = 1.0;
+  variance = 1.0;
+
+  // input scales.
+  scales.resize(1, getInputDim());
+  gscales.resize(1, getInputDim());
+  scales.setVals(0.5);
+  for(unsigned int i=3; i<getInputDim()+3; i++)
+  {
+    string name = "inputScale";
+    setParamName(name, i);
+  }
+  for(unsigned int i=3; i<getInputDim()+3; i++)
+  {
+    addTransform(CTransform::defaultZeroOne(), i);
+  }
+}
+
+inline double CRatQuadardKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+// Parameters are kernel parameters
+void CRatQuadardKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    alpha=val;
+    break;
+  case 1:
+    lengthScale=val;
+    break;
+  case 2:
+    variance=val;
+    break;
+  default:
+    if(paramNo<nParams)
+      scales.setVal(val, paramNo-3);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }    
+  }
+}
+double CRatQuadardKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo<nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return alpha;
+    break;
+  case 1:
+    return lengthScale;
+    break;
+  case 2:
+    return variance;
+    break;
+  default:
+    if(paramNo<nParams)
+      return scales.getVal(paramNo-3);
+    else
+    {
+      throw ndlexceptions::Error("Requested parameter doesn't exist.");
+    }  
+  }
+}
+void CRatQuadardKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  double wi2 = 0.5/(lengthScale*lengthScale*alpha);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r2 = 0.0;
+    for(unsigned int j=0; j<getInputDim(); j++)
+    {
+      double dx = X.getVal(row, j)-X2.getVal(k, j);
+      r2 += scales.getVal(j)*dx*dx;
+    }
+    double ratquadPart = variance*pow((1+r2*wi2),-(alpha+1))/(lengthScale*lengthScale);
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double val = ratquadPart*scales.getVal(j)*(X2.getVal(k, j)-X.getVal(row, j));
+      if(addG)
+	gX.addVal(val, k, j);
+      else 
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CRatQuadardKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CRatQuadardKern::getWhite() const
+{
+  return 0.0;
+}
+
+double CRatQuadardKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				     const CMatrix& X2, unsigned int index2) const
+{
+  double r2 = 0.0;
+  for(unsigned int j=0; j<getInputDim(); j++)
+  {
+    double dx = X1.getVal(index1, j)-X2.getVal(index2, j);
+    r2 += scales.getVal(j)*dx*dx;
+  }
+  double wi2 = 0.5/(lengthScale*lengthScale*alpha);
+  return variance*pow(1+r2*wi2, -alpha);
+}
+
+void CRatQuadardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1=0.0;
+  double g2=0.0;
+  double g3=0.0;
+  gscales.zeros();
+  double wi2=0.5/(lengthScale*lengthScale*alpha);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<X2.getRows(); i++)
+    {
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X2.getVal(i, k)-X.getVal(j, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double baseVal = (1+r2*wi2);
+      double kbase = pow(baseVal, -alpha);
+      double kbase2 = -alpha*kbase/baseVal;
+      double cgVal = covGrad.getVal(j,i);
+      g1 -= cgVal*(r2*wi2/alpha*kbase2 + log(baseVal)*kbase); 
+      g2 -= cgVal*(r2*kbase2);
+      g3 += kbase*cgVal;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X2.getVal(i, k);
+	double gs = gscales.getVal(k);
+	gs += cgVal*kbase2*dx*dx;
+	gscales.setVal(gs, k);
+      }
+    }
+  }
+  g.setVal(g1*variance, 0);
+  g.setVal(g2*variance*2*wi2/lengthScale, 1);
+  g.setVal(g3, 2);
+  for(unsigned int k=0; k<getInputDim(); k++)
+    g.setVal(gscales.getVal(k)*variance*wi2, k+3);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CRatQuadardKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  MATRIXPROPERTIES(covGrad.isSymmetric());
+  double g1=0.0;
+  double g2=0.0;
+  double g3=0.0;
+  gscales.zeros();
+  double wi2=0.5/(lengthScale*lengthScale*alpha);
+  unsigned int nrows = X.getRows();
+  for(unsigned int j=0; j<nrows; j++)
+  {
+    for(unsigned int i=0; i<j; i++)
+    {
+      double r2 = 0.0;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(i, k)-X.getVal(j, k);
+	r2 += scales.getVal(k)*dx*dx;
+      }
+      double baseVal = (1+r2*wi2);
+      double kbase = pow(baseVal, -alpha);
+      double kbase2 = -alpha*kbase/baseVal;
+      double cgVal = covGrad.getVal(j,i);
+      g1 -= cgVal*(r2*wi2/alpha*kbase2 + log(baseVal)*kbase); 
+      g2 -= cgVal*(r2*kbase2);
+      g3 += kbase*cgVal;
+      for(unsigned int k=0; k<getInputDim(); k++)
+      {
+	double dx = X.getVal(j, k)-X.getVal(i, k);
+	double gs = gscales.getVal(k);
+	gs += cgVal*kbase2*dx*dx;
+	gscales.setVal(gs, k);
+      }
+    }
+    g3 += 0.5*covGrad.getVal(j, j);
+  }
+  gscales.scale(2.0*variance*wi2);
+  g.setVal(2.0*g1*variance, 0);
+  g.setVal(4.0*g2*variance*wi2/lengthScale, 1);
+  g.setVal(2.0*g3, 2);
+  for(unsigned int k=0; k<getInputDim(); k++)
+    g.setVal(gscales.getVal(k), k+3);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CRatQuadardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CRatQuadardKern");
+}
+double CRatQuadardKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CRatQuadardKern");
+}
+
+// the Standard Periodic kernel (GPy-aligned, isotropic period/lengthScale: CIP-000C v1).
+CStdPeriodicKern::CStdPeriodicKern() : CKern()
+{
+  _init();
+}
+CStdPeriodicKern::CStdPeriodicKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CStdPeriodicKern::CStdPeriodicKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CStdPeriodicKern::CStdPeriodicKern(const CStdPeriodicKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+  period = kern.period;
+}
+// Class destructor
+CStdPeriodicKern::~CStdPeriodicKern()
+{
+}
+double CStdPeriodicKern::getVariance() const
+{
+  return variance;
+}
+void CStdPeriodicKern::_init()
+{
+  nParams = 3;
+  setType("stdperiodic");
+  setName("Standard Periodic");
+  setParamName("period", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("lengthScale", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setParamName("variance", 2);
+  addTransform(CTransform::defaultPositive(), 2);
+  setStationary(true);
+}
+void CStdPeriodicKern::setInitParam()
+{
+  period = 1.0;
+  lengthScale = 1.0;
+  variance = 1.0;
+}
+
+inline double CStdPeriodicKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+void CStdPeriodicKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(d.getCols()==1);
+  DIMENSIONMATCH(X.rowsMatch(d));
+  d.setVals(variance);
+}
+// Parameters are kernel parameters
+void CStdPeriodicKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    period = val;
+    break;
+  case 1:
+    lengthScale = val;
+    break;
+  case 2:
+    variance = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CStdPeriodicKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return period;
+    break;
+  case 1:
+    return lengthScale;
+    break;
+  case 2:
+    return variance;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CStdPeriodicKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				      const CMatrix& X2, unsigned int index2) const
+{
+  double term = 0.0;
+  for(unsigned int j=0; j<getInputDim(); j++)
+  {
+    double base = M_PI*(X1.getVal(index1, j)-X2.getVal(index2, j))/period;
+    double s = sin(base)/lengthScale;
+    term += s*s;
+  }
+  return variance*exp(-0.5*term);
+}
+// gradient of the kernel function w.r.t. the data (derivative with respect to X, the `row' point).
+void CStdPeriodicKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  double factor = M_PI/(period*lengthScale*lengthScale);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double kval = computeElement(X, row, X2, k);
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double base = M_PI*(X.getVal(row, j)-X2.getVal(k, j))/period;
+      double val = -kval*factor*sin(base)*cos(base);
+      if(addG)
+	gX.addVal(val, k, j);
+      else 
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CStdPeriodicKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CStdPeriodicKern::getWhite() const
+{
+  return 0.0;
+}
+// gradient of the kernel function w.r.t. the parameters (0:period, 1:lengthScale, 2:variance, two data matrices given)
+void CStdPeriodicKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double gPeriod=0.0;
+  double gLs=0.0;
+  double gVar=0.0;
+  unsigned int nrows = X.getRows();
+  for(unsigned int i=0; i<nrows; i++)
+  {
+    for(unsigned int j=0; j<X2.getRows(); j++)
+    {
+      double term = 0.0;
+      double sumBaseSin2Base = 0.0;
+      for(unsigned int d=0; d<getInputDim(); d++)
+      {
+	double base = M_PI*(X.getVal(i, d)-X2.getVal(j, d))/period;
+	double s = sin(base);
+	term += (s*s)/(lengthScale*lengthScale);
+	sumBaseSin2Base += base*sin(2.0*base);
+      }
+      double expTerm = exp(-0.5*term);
+      double k = variance*expTerm;
+      double cgVal = covGrad.getVal(i,j);
+      gVar += cgVal*expTerm;
+      gLs += cgVal*k*term/lengthScale;
+      gPeriod += cgVal*k*0.5/(period*lengthScale*lengthScale)*sumBaseSin2Base;
+    }
+  }
+  g.setVal(gPeriod, 0);
+  g.setVal(gLs, 1);
+  g.setVal(gVar, 2);
+  if(regularise)
+    addPriorGrad(g);
+}
+// gradient of the kernel function w.r.t. the parameters (one data matrix given)
+void CStdPeriodicKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise); // just call it like the non-sym. case
+  return; // it could be sped up by exploiting the fact it's symmetric
+}
+
+double CStdPeriodicKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CStdPeriodicKern");
+}
+double CStdPeriodicKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CStdPeriodicKern");
+}
+
+// the Cosine kernel (GPy-aligned, stationary: k(r)=variance*cos(r)).
+CCosineKern::CCosineKern() : CKern()
+{
+  _init();
+}
+CCosineKern::CCosineKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CCosineKern::CCosineKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CCosineKern::CCosineKern(const CCosineKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+}
+// Class destructor
+CCosineKern::~CCosineKern()
+{
+}
+double CCosineKern::getVariance() const
+{
+  return variance;
+}
+void CCosineKern::_init()
+{
+  nParams = 2;
+  setType("cosine");
+  setName("Cosine");
+  setParamName("lengthScale", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setStationary(true);
+}
+void CCosineKern::setInitParam()
+{
+  lengthScale = 1.0;
+  variance = 1.0;
+}
+
+inline double CCosineKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+void CCosineKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(d.getCols()==1);
+  DIMENSIONMATCH(X.rowsMatch(d));
+  d.setVals(variance);
+}
+// Parameters are kernel parameters
+void CCosineKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    lengthScale = val;
+    break;
+  case 1:
+    variance = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CCosineKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return lengthScale;
+    break;
+  case 1:
+    return variance;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CCosineKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				   const CMatrix& X2, unsigned int index2) const
+{
+  double r2 = 0.0;
+  for(unsigned int j=0; j<getInputDim(); j++)
+  {
+    double dx = (X1.getVal(index1, j)-X2.getVal(index2, j))/lengthScale;
+    r2 += dx*dx;
+  }
+  return variance*cos(sqrt(r2));
+}
+// gradient of the kernel function w.r.t. the data (derivative with respect to X, the `row' point).
+void CCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r2 = 0.0;
+    for(unsigned int j=0; j<getInputDim(); j++)
+    {
+      double dx = (X.getVal(row, j)-X2.getVal(k, j))/lengthScale;
+      r2 += dx*dx;
+    }
+    double r = sqrt(r2);
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double val = 0.0;
+      if(r != 0.0)
+      {
+	double dx = X.getVal(row, j)-X2.getVal(k, j);
+	val = -variance*sin(r)*dx/(lengthScale*lengthScale*r);
+      }
+      if(addG)
+	gX.addVal(val, k, j);
+      else 
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CCosineKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CCosineKern::getWhite() const
+{
+  return 0.0;
+}
+// gradient of the kernel function w.r.t. the parameters (0:lengthScale, 1:variance, two data matrices given)
+void CCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1=0.0;
+  double g2=0.0;
+  unsigned int nrows = X.getRows();
+  for(unsigned int i=0; i<nrows; i++)
+  {
+    for(unsigned int j=0; j<X2.getRows(); j++)
+    {
+      double d2 = X2.dist2Row(j, X, i);
+      double r = sqrt(d2)/lengthScale;
+      double cgVal = covGrad.getVal(i,j);
+      g1 += cgVal*sin(r)*r;
+      g2 += cgVal*cos(r);
+    }
+  }
+  g.setVal(g1*variance/lengthScale, 0);
+  g.setVal(g2, 1);
+  if(regularise)
+    addPriorGrad(g);
+}
+// gradient of the kernel function w.r.t. the parameters (one data matrix given)
+void CCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise); // just call it like the non-sym. case
+  return; // it could be sped up by exploiting the fact it's symmetric
+}
+
+double CCosineKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CCosineKern");
+}
+double CCosineKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CCosineKern");
+}
+
+// the Brownian motion kernel (GPy-aligned, non-stationary, 1-D index: k(x,x')=variance*min(x,x') for same-signed, non-zero x, x').
+CBrownianKern::CBrownianKern() : CKern()
+{
+  _init();
+}
+CBrownianKern::CBrownianKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CBrownianKern::CBrownianKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}  
+CBrownianKern::CBrownianKern(const CBrownianKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+}
+// Class destructor
+CBrownianKern::~CBrownianKern()
+{
+}
+double CBrownianKern::getVariance() const
+{
+  return variance;
+}
+void CBrownianKern::_init()
+{
+  nParams = 1;
+  setType("brownian");
+  setName("Brownian motion");
+  setParamName("variance", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setStationary(false);
+}
+void CBrownianKern::setInitParam()
+{
+  if(getInputDim()!=1)
+    throw ndlexceptions::Error("The Brownian kernel is only defined for a single (1-D) input dimension.");
+  variance = 1.0;
+}
+
+double CBrownianKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance*fabs(X.getVal(index, 0));
+}
+// Parameters are kernel parameters
+void CBrownianKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo==0);
+  switch(paramNo)
+  {
+  case 0:
+    variance = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CBrownianKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo==0);
+  switch(paramNo)
+  {
+  case 0:
+    return variance;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+double CBrownianKern::computeElement(const CMatrix& X1, unsigned int index1, 
+				     const CMatrix& X2, unsigned int index2) const
+{
+  double x = X1.getVal(index1, 0);
+  double y = X2.getVal(index2, 0);
+  bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+  if(!sameSign)
+    return 0.0;
+  double ax = fabs(x);
+  double ay = fabs(y);
+  return variance*(ax<ay?ax:ay);
+}
+// gradient of the kernel function w.r.t. the data (derivative with respect to X, the `row' point).
+void CBrownianKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  double x = X.getVal(row, 0);
+  double sgnX = (x>0.0) - (x<0.0);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double y = X2.getVal(k, 0);
+    bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+    double val = 0.0;
+    if(sameSign && fabs(x)<fabs(y))
+      val = variance*sgnX;
+    if(addG)
+      gX.addVal(val, k, 0);
+    else 
+      gX.setVal(val, k, 0);
+  }
+}
+// gradient of the diagonal of the kernel matrix w.r.t. the data: d(variance*|x|)/dx = variance*sign(x).
+void CBrownianKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    double x = X.getVal(i, 0);
+    double sgnX = (x>0.0) - (x<0.0);
+    double val = variance*sgnX;
+    if(addG)
+      gX.addVal(val, i, 0);
+    else
+      gX.setVal(val, i, 0);
+  }
+}
+double CBrownianKern::getWhite() const
+{
+  return 0.0;
+}
+// gradient of the kernel function w.r.t. the parameters (0:variance, two data matrices given)
+void CBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1 = 0.0;
+  unsigned int nrows = X.getRows();
+  for(unsigned int i=0; i<nrows; i++)
+  {
+    double x = X.getVal(i, 0);
+    for(unsigned int j=0; j<X2.getRows(); j++)
+    {
+      double y = X2.getVal(j, 0);
+      bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+      double base = 0.0;
+      if(sameSign)
+      {
+	double ax = fabs(x);
+	double ay = fabs(y);
+	base = (ax<ay?ax:ay);
+      }
+      g1 += covGrad.getVal(i,j)*base;
+    }
+  }
+  g.setVal(g1, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+// gradient of the kernel function w.r.t. the parameters (one data matrix given)
+void CBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise); // just call it like the non-sym. case
+  return; // it could be sped up by exploiting the fact it's symmetric
+}
+
+double CBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CBrownianKern");
+}
+double CBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CBrownianKern");
+}
+
 // Functions that operate on CKern.
 ostream& operator<<(ostream& out, const CKern& kern)
 {
@@ -4225,7 +5609,18 @@ CKern* readKernFromStream(istream& in)
     pkern = new CPolyardKern();
   else if(type=="mlpard")
     pkern = new CMlpardKern();
-  // Periodic / ARD Matérn-RatQuad / Gibbs stream types: CIP-000C.
+  else if(type=="matern32ard")
+    pkern = new CMatern32ardKern();
+  else if(type=="matern52ard")
+    pkern = new CMatern52ardKern();
+  else if(type=="ratquadard")
+    pkern = new CRatQuadardKern();
+  else if(type=="stdperiodic")
+    pkern = new CStdPeriodicKern();
+  else if(type=="cosine")
+    pkern = new CCosineKern();
+  else if(type=="brownian")
+    pkern = new CBrownianKern();
   else if(type=="cmpnd")
     pkern = new CCmpndKern();
   else if(type=="tensor")

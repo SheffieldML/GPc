@@ -38,7 +38,7 @@ jobs:
         run: |
           # lcov 2.x treats unused exclude patterns and inconsistent gcov
           # counts as hard errors unless ignored.
-          lcov --ignore-errors inconsistent \
+          lcov --ignore-errors inconsistent,empty \
             --capture --directory . --output-file coverage.info
           # Drop system headers, test drivers, and local fixture helpers.
           lcov --ignore-errors unused \
@@ -48,12 +48,17 @@ jobs:
             '*/diagDtcvar.cpp' \
             '*/genTestGpDtcvar.cpp' \
             --output-file coverage.info
-          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm)\.cpp'; then
+          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
             echo "ERROR: test drivers still present in coverage.info" >&2
             lcov --list coverage.info
             exit 1
           fi
           lcov --list coverage.info
+
+      - name: Enforce CGp.cpp line-rate gate (CIP-0011)
+        run: |
+          chmod +x scripts/check_cgp_coverage.sh
+          CGP_COVERAGE_THRESHOLD=95 ./scripts/check_cgp_coverage.sh coverage.info cgp_coverage.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7

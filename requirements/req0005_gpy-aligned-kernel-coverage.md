@@ -1,7 +1,7 @@
 ---
 id: "0005"
 title: "Kernel library covers finished ARD stubs and high-value GPy stationary/periodic primitives"
-status: "Proposed"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-15"
 last_updated: "2026-11-15"
@@ -22,11 +22,11 @@ GPc exposes, through the existing `CKern` contracts and composition (`cmpnd` / `
 
 ## Acceptance Criteria
 
-- [ ] Matérn 3/2, Matérn 5/2, and rational quadratic ARD kernels are implemented, stream-loadable, and covered by reference tests
-- [ ] Exponential kernel is exercised in the reference suite (not only present in source)
-- [ ] Standard periodic, cosine, and Brownian kernels are implemented as `CKern` types with stream I/O and reference tests
-- [ ] New types appear in the kernel stream factory with stable type strings
-- [ ] Out of scope remains explicit: Gibbs, ODE/LFM/SDE, integral-observation, and multi-output coregionalization (see REQ-0006)
+- [x] Matérn 3/2, Matérn 5/2, and rational quadratic ARD kernels are implemented, stream-loadable, and covered by reference tests
+- [x] Exponential kernel is exercised in the reference suite (not only present in source)
+- [x] Standard periodic, cosine, and Brownian kernels are implemented as `CKern` types with stream I/O and reference tests
+- [x] New types appear in the kernel stream factory with stable type strings
+- [x] Out of scope remains explicit: Gibbs, ODE/LFM/SDE, integral-observation, and multi-output coregionalization (see REQ-0006)
 
 ## Notes (Optional)
 

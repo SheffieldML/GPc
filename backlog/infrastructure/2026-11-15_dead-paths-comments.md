@@ -36,9 +36,10 @@ Accept and implement CIP-000B: inventory unreachable / commented archives and co
 - CIP: 000B
 - REQ: 0002
 - Related CIP: 000C, 0011
+- PR: https://github.com/SheffieldML/GPc/pull/36
 
 ## Progress Updates
 
 ### 2026-11-15
 
-Task created on `cip000B-dead-paths`. Local `make USE_MATIO=1 run-matio-tests` green (0 failures). CIP-000B → Implemented; PR next.
+Task created on `cip000B-dead-paths`. Local `make USE_MATIO=1 run-matio-tests` green (0 failures). CIP-000B → Implemented; PR #36 opened.

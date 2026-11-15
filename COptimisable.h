@@ -156,7 +156,7 @@ class COptimisable {
       defaultOptimiser = CG;
     else if(val == "scg")
       defaultOptimiser = SCG;
-    else if(val == "quasinew")
+    else if(val == "quasinew" || val == "lbfgs")
       defaultOptimiser = BFGS;
     else if(val == "graddesc")
       defaultOptimiser = GD;

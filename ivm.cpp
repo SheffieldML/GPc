@@ -169,7 +169,7 @@ void CClivm::relearn()
 	  pmodel->setDefaultOptimiser(CIvm::CG);
   else if(optimiser=="graddesc")
 	  pmodel->setDefaultOptimiser(CIvm::GD);
-  else if(optimiser=="quasinew")
+  else if(optimiser=="quasinew" || optimiser=="lbfgs")
 	  pmodel->setDefaultOptimiser(CIvm::BFGS);
   else
 	  exitError("Unrecognised optimiser type: " + optimiser);
@@ -636,7 +636,7 @@ void CClivm::learn() {
   {
 	  model.setDefaultOptimiser(CIvm::GD);
   }
-   else if(optimiser=="quasinew")
+   else if(optimiser=="quasinew" || optimiser=="lbfgs")
   {
 	  model.setDefaultOptimiser(CIvm::BFGS);
   }
@@ -1245,7 +1245,7 @@ void CClivm::helpInfo()
     helpArgument("-e, --external-iterations int", "Number of external iterations for reselecting active set. Default is 4.");
     helpArgument("-l, --labelled-indices-file string", "File containing indices of labelled points. The index starts from 1.");
     helpArgument("-n, --noise-iterations int", "Number of iterations for optimising noise model. Default is 20.");
-    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew and graddesc. Default is scg.");
+    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew (or lbfgs) and graddesc. Default is scg.");
     helpArgument("-#, --#kernel-iterations int", "Number of iterations for optimising kernel. Default is 100.");
     string m=getMode();
     setMode("kern");
@@ -1267,7 +1267,7 @@ void CClivm::helpInfo()
     helpArgument("-e, --external-iterations int", "Number of external iterations for reselecting active set. Default is 4.");
     helpArgument("-l, --labelled-indices-file string", "File containing indices of labelled points. The index starts from 1.");
     helpArgument("-n, --noise-iterations int", "Number of iterations for optimising noise model. Default is 20.");
-    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew and graddesc. Default is scg.");
+    helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew (or lbfgs) and graddesc. Default is scg.");
     helpArgument("-#, --#kernel-iterations int", "Number of iterations for optimising kernel. Default is 100.");
   }
   else if(command=="kern") {

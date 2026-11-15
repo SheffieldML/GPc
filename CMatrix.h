@@ -208,6 +208,43 @@ public:
     copy(A);
       
   }
+  // Move constructor: takes ownership of A's buffer; A becomes empty (destructible / assignable).
+  CMatrix(CMatrix&& A) noexcept
+    : vals(A.vals), nrows(A.nrows), ncols(A.ncols),
+      symmetric(A.symmetric), triangular(A.triangular)
+  {
+    A.vals = NULL;
+    A.nrows = 0;
+    A.ncols = 0;
+    A.symmetric = false;
+    A.triangular = false;
+  }
+  // Deep copy assignment (Rule of Five). Self-assignment safe.
+  CMatrix& operator=(const CMatrix& A)
+  {
+    if(this != &A)
+      deepCopy(A);
+    return *this;
+  }
+  // Move assignment: release our buffer, take A's; A becomes empty.
+  CMatrix& operator=(CMatrix&& A) noexcept
+  {
+    if(this != &A)
+    {
+      memDeAllocate();
+      vals = A.vals;
+      nrows = A.nrows;
+      ncols = A.ncols;
+      symmetric = A.symmetric;
+      triangular = A.triangular;
+      A.vals = NULL;
+      A.nrows = 0;
+      A.ncols = 0;
+      A.symmetric = false;
+      A.triangular = false;
+    }
+    return *this;
+  }
   // The class destructor, it deallocates the memory.
   virtual ~CMatrix()
   {
@@ -1211,6 +1248,7 @@ private:
 
   void _init()
   {
+    vals = NULL;
   }
 
   static unsigned int totalAlloc;

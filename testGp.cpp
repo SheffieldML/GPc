@@ -47,11 +47,11 @@ int main(int argc, char* argv[])
     // CIP-0009: cache flags after mutators (no .mat fixture).
     fail += testCacheInvalidation();
     // Exercise the main CGp approximation arms under matio (coverage + verify).
-    // PITC has no matfiles/testGppitc.mat yet.
     fail += testGaussian("ftc");
     fail += testGaussian("dtc");
     fail += testGaussian("dtcvar");
     fail += testGaussian("fitc");
+    fail += testGaussian("pitc");
     if(fail)
       command.exitError("testGp failures: " + ndlstrutil::itoa(fail));
     command.exitNormal();

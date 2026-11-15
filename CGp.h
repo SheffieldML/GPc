@@ -262,6 +262,12 @@ public:
       throw ndlexceptions::Error("Unknown approximation type");
     invalidateCache();
   }
+
+  // CIP-000F: GPmat-compatible contiguous PITC blocks (0-based inclusive ends).
+  void initDefaultBlockEnd();
+  unsigned int getNumBlocks() const { return (unsigned int)blockEnd.size(); }
+  void getBlockRange(unsigned int block, unsigned int& start, unsigned int& endInclusive) const;
+
   // Flag which indicates if a sparse approximation is used.
   bool isSparseApproximation() const 
   {
@@ -401,6 +407,17 @@ public:
   mutable CMatrix diagK_ufdAinvplusAinvEETAinvK_fu; // numData*1 storage matrix.
   mutable CMatrix K_ufdotTimesAinvEMT; // numActive*numData storage matrix.
   mutable CMatrix diagK_ufAinvEMT; // numData*1 storage matrix.
+
+  // PITC block state ([CIP-000F](cip/cip000F.md)).
+  vector<unsigned int> blockEnd; // inclusive 0-based end index per block
+  mutable vector<CMatrix> blockK;
+  mutable vector<CMatrix> blockD;
+  mutable vector<CMatrix> blockDinv;
+  mutable vector<CMatrix> blockLcholD;
+  mutable vector<double> logDetD;
+  mutable vector<CMatrix> gLambdaBlock; // covGrad w.r.t. each block kernel
+  mutable CMatrix pitcKufDinvm; // numActive * outputDim
+  mutable double logDetDSum;
   
   
   CMatrix beta;

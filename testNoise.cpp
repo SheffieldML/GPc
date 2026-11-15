@@ -11,8 +11,7 @@ int main()
     fail += testType("probit");
     fail += testType("ordered");
     fail += testType("ncnm");
-    //fail += testType("mgaussian");
-    //fail += testType("cmpnd");
+    // mgaussian / cmpnd noise: no matio fixtures yet (leave untested).
     cout << "Number of failures: " << fail << "." << endl;
     return fail > 0 ? 1 : 0;
   }

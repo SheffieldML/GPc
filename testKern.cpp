@@ -23,21 +23,13 @@ int main()
     fail += testType("lin");
     fail += testType("poly");
     fail += testType("mlp");
-    //fail += testType("gibbs");
+    // Gibbs / rbfperiodic / *ard Matérn-RatQuad: enable under CIP-000C once implemented.
 
-    //fail += testType("rbfperiodic");
-    //fail += testType("gibbsperiodic");
- 
     fail += testType("rbfard");
-    // fail += testType("ratquadard");
-    // fail += testType("matern32ard");
-    // fail += testType("matern52ard");
-
     fail += testType("linard");
     fail += testType("polyard");
     fail += testType("mlpard");
-    // fail += testType("gibbsard");
-   
+
     fail += testType("cmpnd");
     fail += testType("tensor");
     cout << "Number of failures: " << fail << "." << endl;
@@ -135,41 +127,11 @@ int testType(const string kernelType)
     kern = new CMlpKern(X);
     kern2 = new CMlpKern(X);
   }
-  // else if(kernelType=="gibbs")
-  // { 
-  //   kern = new CGibbsKern(X);
-  //   kern2 = new CGibbsKern(X);
-  // }
-  // else if(kernelType=="rbfperiodic")
-  // { 
-  //   kern = new CRbfPeriodicKern(X);
-  //   kern2 = new CRbfPeriodicKern(X);
-  // }
-  // else if(kernelType=="gibbsperiodic")
-  // { 
-  //   kern = new CGibbsPeriodicKern(X);
-  //   kern2 = new CGibbsPeriodicKern(X);
-  // }
   else if(kernelType=="rbfard")
   {
     kern = new CRbfardKern(X);
     kern2 = new CRbfardKern(X);
   }
-  // else if(kernelType=="ratquadard")
-  // { 
-  //   kern = new CRatQuadardKern(X);
-  //   kern2 = new CRatQuadardKern(X);
-  // }
-  // else if(kernelType=="matern32ard")
-  // { 
-  //   kern = new CMatern32ardKern(X);
-  //   kern2 = new CMatern32ardKern(X);
-  // }
-  // else if(kernelType=="matern52ard")
-  // { 
-  //   kern = new CMatern52ardKern(X);
-  //   kern2 = new CMatern52ardKern(X);
-  // }
   else if(kernelType=="linard")
   {
     kern = new CLinardKern(X);
@@ -185,11 +147,7 @@ int testType(const string kernelType)
     kern = new CMlpardKern(X);
     kern2 = new CMlpardKern(X);
   }
-  // else if(kernelType=="gibbsard")
-  // { 
-  //   kern = new CGibbsardKern(X);
-  //   kern2 = new CGibbsardKern(X);
-  // }
+  // Additional types (periodic / ARD Matérn / Gibbs): CIP-000C.
 
   else if(kernelType=="cmpnd")
   {

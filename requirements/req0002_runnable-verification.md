@@ -4,7 +4,7 @@ title: "Reference verification suite is runnable"
 status: "Validated"
 priority: "High"
 created: "2026-11-13"
-last_updated: "2026-11-13"
+last_updated: "2026-11-15"
 related_tenets: ["assert-and-verify", "ecosystem-interoperability"]
 stakeholders: ["maintainers"]
 tags: ["testing", "verification", "stabilization"]
@@ -35,11 +35,14 @@ Non-goals for this requirement: introducing a new test framework, replacing `.ma
 
 Delivered via `_NDLMATIO` / `make USE_MATIO=1 matio-tests` and the Reference tests workflow. Matrix LAPACK, ncnm noise, and tensor kernel gradient mismatches remain in `backlog/bugs/` and do not block the hard gate.
 
+A correctness-gated wall-time comparison against an independent reference is [REQ-0007](req0007_competitive-default-build.md). This requirement is met when the reference suite runs and its pass/fail is trustworthy.
+
 ## References
 
 - **Related Tenets**: assert-and-verify, ecosystem-interoperability
 - **Related**: REQ-0003 (future MATLAB bridge retirement)
 - **CIP**: [CIP-0001](../cip/cip0001.md)
+- **Timing outcome**: [REQ-0007](req0007_competitive-default-build.md) ([CIP-0013](../cip/cip0013.md))
 
 ## Progress Updates
 
@@ -48,3 +51,6 @@ Requirement created. Makefile comment: "To compile tests, the MATLAB interface m
 
 ### 2026-11-13 (later)
 libmatio path restored; Reference tests CI green on `cip0001-runnable-verification` (PR #15). Hard gate: dist, noise (sans ncnm), kern (sans tensor). `testMatrix` runs with `continue-on-error`.
+
+### 2026-11-15
+Cross-link only. The GPy timing harness is REQ-0007, not an extension of this requirement. Status stays Validated.

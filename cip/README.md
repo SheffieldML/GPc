@@ -31,6 +31,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0010](./cip0010.md): Dedicated testOptimisable suite (**Closed**)
 - [CIP-0011](./cip0011.md): Drive near-complete line coverage of `CGp.cpp` (**Implemented** — close after CI)
 - [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Proposed**)
+- [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Proposed**). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
 
 ## Creating a Good CIP
 

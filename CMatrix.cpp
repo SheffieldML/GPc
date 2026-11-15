@@ -674,10 +674,9 @@ void CMatrix::memDeAllocate()
 //   if (nrows*ncols > 10)
 //     cout << "Deallocating " << nrows*ncols << " memory. Total " << totalAlloc << endl;
 
+  // NULL is a valid empty / moved-from state (CIP-0008).
   if(vals==NULL)
-  {
-    throw ndlexceptions::Error("De-allocation attempted before allocation");
-  }
+    return;
   switch(allocation)
   {
   case NEW:
@@ -692,6 +691,7 @@ void CMatrix::memDeAllocate()
   default:
     throw ndlexceptions::NotImplementedError("Memory allocation method not known.");
   }
+  vals = NULL;
 }
 void CMatrix::memReAllocate(int rowIncrease, int colIncrease)
 {

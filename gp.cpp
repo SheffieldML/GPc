@@ -739,24 +739,33 @@ void CClgp::gnuplot()
     outGnuplot << "set nosurface" << endl;
     outGnuplot << "set contour base" << endl;
     outGnuplot << "set cntrparam levels discrete 0.5" << endl;
-    outGnuplot << "set term table # set output type to tables" << endl;
-    outGnuplot << "set out '" << name << "_decision.dat'" << endl;
+    outGnuplot << "set table '" << name << "_decision.dat'" << endl;
     outGnuplot << "splot \"" << name << "_prob_matrix.dat\"" << endl;
     outGnuplot << "set cntrparam levels discrete 0.25, 0.75" << endl;
-    outGnuplot << "set out '" << name << "_contours.dat'" << endl;
+    outGnuplot << "set table '" << name << "_contours.dat'" << endl;
     outGnuplot << "splot \"" << name << "_prob_matrix.dat\"" << endl;
+    outGnuplot << "unset table" << endl;
     outGnuplot << "reset" << endl;
-    outGnuplot << "set term x11" << endl;
+    writeGnuplotTermSelect(outGnuplot);
+    writeGnuplotStyleHeader(outGnuplot);
     outGnuplot << "plot ";
-    if(numPos>0)
-      outGnuplot << "\"" << name << "_positive.dat\" with points ps " << pointSize << ", ";
-    if(numNeg>0)
-      outGnuplot << "\"" << name << "_negative.dat\" with points ps " << pointSize << ", ";
-    outGnuplot << "\"" << name << "_active_set.dat\" with points ps " << pointSize*2 << ", ";
+    bool firstPlot = true;
+    if(numPos>0) {
+      outGnuplot << "\"" << name << "_positive.dat\" with points ls 5 ps " << pointSize << " title \"positive\"";
+      firstPlot = false;
+    }
+    if(numNeg>0) {
+      if(!firstPlot) outGnuplot << ", ";
+      outGnuplot << "\"" << name << "_negative.dat\" with points ls 6 ps " << pointSize << " title \"negative\"";
+      firstPlot = false;
+    }
+    if(!firstPlot) outGnuplot << ", ";
+    outGnuplot << "\"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize*2 << " title \"active\"";
     if(numUnlab>0)
-      outGnuplot << "\"" << name << "_unlabelled.dat\" with points ps " << pointSize << ", ";
-    outGnuplot << "\"" << name << "_decision.dat\" with lines lw " << lineWidth << ", \"" << name << "_contours.dat\" with lines lw " << lineWidth << endl;
-    outGnuplot << "pause -1" << endl;
+      outGnuplot << ", \"" << name << "_unlabelled.dat\" with points ls 7 ps " << pointSize << " title \"unlabelled\"";
+    outGnuplot << ", \"" << name << "_decision.dat\" with lines ls 8 lw " << lineWidth << " title \"decision\"";
+    outGnuplot << ", \"" << name << "_contours.dat\" with lines ls 9 lw " << lineWidth << " title \"0.25/0.75\"" << endl;
+    writeGnuplotFinish(outGnuplot);
     outGnuplot.close();
     
     
@@ -844,13 +853,17 @@ void CClgp::gnuplot()
       string plotFileName = name + "_plot.gp";
       ofstream outGnuplot(plotFileName.c_str());
       if(!outGnuplot) throw ndlexceptions::FileWriteError(plotFileName);
-      outGnuplot << "splot \"" << name << "_output_matrix.dat\"  with lines lw " << lineWidth;
-      outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ps " << pointSize;
+      writeGnuplotTermSelect(outGnuplot);
+      writeGnuplotStyleHeader(outGnuplot);
+      outGnuplot << "set hidden3d" << endl;
+      outGnuplot << "splot \"" << name << "_output_matrix.dat\" with lines ls 1 lw " << lineWidth << " title \"mean\"";
+      outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ls 3 ps " << pointSize << " title \"data\"";
       if(pmodel->isSparseApproximation())
       {
-      	outGnuplot << ", \"" << name << "_active_set.dat\" with points ps " << pointSize << endl;
+      	outGnuplot << ", \"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize << " title \"inducing\"";
       }
-      outGnuplot << "pause -1";
+      outGnuplot << endl;
+      writeGnuplotFinish(outGnuplot);
       outGnuplot.close();
     }
 	 
@@ -887,26 +900,33 @@ void CClgp::gnuplot()
       }
       string lineFile = name + "_line_data.dat";
       regressOut.toUnheadedFile(lineFile);
+      // Three columns: x, ymin (−2σ), ymax (+2σ) for filledcurves.
       string errorFile = name + "_error_bar_data.dat";
       ofstream out(errorFile.c_str());
       if(!out) throw ndlexceptions::FileWriteError(errorFile);
       out << setiosflags(ios::scientific);
       out << setprecision(17);
-      out << "# Prepared plot of model file " << endl;
-      errorBarPlus.toUnheadedStream(out);
-      out << endl;
-      errorBarMinus.toUnheadedStream(out);
+      out << "# x ymin ymax (±2σ) for filledcurves" << endl;
+      for(int j=0; j<numx; j++) {
+	out << errorBarMinus.getVal(j, 0) << " "
+	    << errorBarMinus.getVal(j, 1) << " "
+	    << errorBarPlus.getVal(j, 1) << endl;
+      }
+      out.close();
       string plotFileName = name + "_plot.gp";
       ofstream outGnuplot(plotFileName.c_str());
       if(!outGnuplot) throw ndlexceptions::FileWriteError(plotFileName);
-      outGnuplot << "plot \"" << name << "_line_data.dat\" with lines lw " << lineWidth;
-      outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ps " << pointSize;
+      writeGnuplotTermSelect(outGnuplot);
+      writeGnuplotStyleHeader(outGnuplot);
+      outGnuplot << "plot \"" << name << "_error_bar_data.dat\" using 1:2:3 with filledcurves fc rgb \"#729fcf\" title \"±2σ\"";
+      outGnuplot << ", \"" << name << "_line_data.dat\" with lines ls 1 lw " << lineWidth << " title \"mean\"";
+      outGnuplot << ", \"" << name << "_scatter_data.dat\" with points ls 3 ps " << pointSize << " title \"data\"";
       if(pmodel->isSparseApproximation())
       {
-        outGnuplot << ", \"" << name << "_active_set.dat\" with points ps " << pointSize;
+        outGnuplot << ", \"" << name << "_active_set.dat\" with points ls 4 ps " << pointSize << " title \"inducing\"";
       }
-      outGnuplot << ", \"" << name << "_error_bar_data.dat\" with lines lw " << lineWidth << endl;
-      outGnuplot << "pause -1";
+      outGnuplot << endl;
+      writeGnuplotFinish(outGnuplot);
       outGnuplot.close();
     }      
     
@@ -984,7 +1004,7 @@ void CClgp::helpInfo()
     cout << "Arguments:" << endl;
     helpArgument("data_file", "The data to plot, it can be test or training data, whatever you want to visualise. It should be in SVM light format.");
     helpArgument("model_file", "The GP model you want to use for generating the plot. The default is gp_model.");
-    helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gp\". Requires gnuplot vs 4.0 or later.");
+    helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gp\". Uses qt by default; set GPLOT_PNG='file.png' for pngcairo output.");
     cout << "Command Options:" << endl;
     helpArgument("-?, -h, --help", "This help.");
     helpArgument("-l, --labels string", "Label file name for visualisation of the data. If you wish to add labels to the data you can specify a file containing a vector of those labels here. By default any labels in the original data file are used.");

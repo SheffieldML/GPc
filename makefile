@@ -48,10 +48,11 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp
+# testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -61,6 +62,7 @@ run-matio-tests: matio-tests
 	./testNoise
 	./testKern
 	./testMatrix
+	./testOptimisable
 	./testGp
 
 
@@ -107,6 +109,12 @@ testMatrix: testMatrix.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o CClctrl.o
 
 testMatrix.o: testMatrix.cpp CMatrix.h CClctrl.h
 	$(CC) -c testMatrix.cpp  -o testMatrix.o $(CCFLAGS)
+
+testOptimisable: testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testOptimisable testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o ndlassert.o $(LDFLAGS)
+
+testOptimisable.o: testOptimisable.cpp COptimisable.h CMatrix.h
+	$(CC) -c testOptimisable.cpp -o testOptimisable.o $(CCFLAGS)
 
 testMltools: testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testMltools  testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o $(LDFLAGS)

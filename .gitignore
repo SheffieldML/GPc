@@ -46,6 +46,7 @@ matfiles/_gen_*.mat
 matfiles/_ll_gpmat.npy
 matfiles/_grads_gpmat.npy
 crap_gp
+crap_cgp_cip0011
 crap.mat
 *.gp
 *.model

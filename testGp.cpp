@@ -6,6 +6,7 @@
 #include <cmath>
 
 int testGaussian(string type);
+int testCacheInvalidation();
 
 // MATLAB-era fixtures and C++ disagree by ±(N/2)log(2π) on LL for some
 // approximations (grads unaffected). Accept either convention.
@@ -16,6 +17,17 @@ static bool logLikMatchesFixture(double llCpp, double llFile, int nData, double 
     return true;
   const double twoPiTerm = (double)nData * ndlutil::HALFLOGTWOPI;
   return fabs(diff - twoPiTerm) <= tol;
+}
+
+static int failTrue(bool cond, const string& what)
+{
+  if(cond)
+  {
+    cout << what << " matches." << endl;
+    return 0;
+  }
+  cout << "FAILURE: " << what << "." << endl;
+  return 1;
 }
 
 class CClgptest : public CClctrl 
@@ -32,6 +44,8 @@ int main(int argc, char* argv[])
   int fail = 0;
   try 
   {
+    // CIP-0009: cache flags after mutators (no .mat fixture).
+    fail += testCacheInvalidation();
     // Exercise the main CGp approximation arms under matio (coverage + verify).
     // PITC has no matfiles/testGppitc.mat yet.
     fail += testGaussian("ftc");
@@ -56,6 +70,56 @@ int main(int argc, char* argv[])
     command.exitError("Unhandled exception: " + what);
   }
 
+}
+
+int testCacheInvalidation()
+{
+  int fail = 0;
+  cout << "==== testGp cache invalidation (CIP-0009) ====" << endl;
+
+  CMatrix X(4, 1);
+  CMatrix y(4, 1);
+  for(unsigned int i=0; i<4; i++)
+  {
+    X.setVal(0.25*(double)i, i, 0);
+    y.setVal(sin(0.25*(double)i), i, 0);
+  }
+
+  CCmpndKern kern(X);
+  kern.addKern(new CRbfKern(X));
+  kern.addKern(new CWhiteKern(X));
+  CGaussianNoise noise(&y);
+  for(int i=0; i<noise.getOutputDim(); i++)
+    noise.setBiasVal(0.0, i);
+
+  CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+  model.setBetaVal(1.0);
+
+  const double ll0 = model.logLikelihood();
+  fail += failTrue(model.isKupToDate(), "KupToDate after logLikelihood");
+  fail += failTrue(model.isMupToDate(), "MupToDate after logLikelihood");
+
+  CMatrix params(1, model.getOptNumParams());
+  model.getOptParams(params);
+  params.setVal(params.getVal(0) + 0.15, 0);
+  model.setOptParams(params);
+
+  fail += failTrue(!model.isKupToDate(), "KupToDate false after setOptParams");
+  fail += failTrue(!model.isMupToDate(), "MupToDate false after setOptParams");
+  fail += failTrue(!model.isAlphaUpToDate(), "AlphaUpToDate false after setOptParams");
+  fail += failTrue(!model.isADupToDate(), "ADupToDate false after setOptParams");
+
+  model.ensureKUpToDate();
+  fail += failTrue(model.isKupToDate(), "KupToDate after ensureKUpToDate");
+
+  const double ll1 = model.logLikelihood();
+  fail += failTrue(fabs(ll1 - ll0) > 1e-12, "logLikelihood changes after param write");
+
+  model.invalidateCache();
+  fail += failTrue(!model.isKupToDate() && !model.isMupToDate(),
+                   "invalidateCache clears K and M flags");
+
+  return fail;
 }
 
 int testGaussian(string type)

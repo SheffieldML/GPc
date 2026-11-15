@@ -49,6 +49,10 @@ public:
   virtual void updateX();
   // update K and dynK and all derived quantities if they are dirty.
   void updateK() const;
+
+  // Explicit cache protocol ([CIP-0009](cip/cip0009.md)). Single-threaded.
+  void invalidateCache();
+  void ensureKUpToDate() const { updateK(); }
   // compute the approximation to the log likelihood.
   virtual double logLikelihood() const;
   // compute the gradients of the approximation wrt parameters.

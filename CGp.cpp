@@ -285,9 +285,16 @@ void CGp::initVals()
 }
 
 
+void CGp::invalidateCache()
+{
+  // Clears K and M; each cascades Alpha and AD via the flag setters.
+  setKupToDate(false);
+  setMupToDate(false);
+}
+
 void CGp::updateX()
 {
-  setKupToDate(false);
+  invalidateCache();
 }
 string CGp::getNoiseType() const
 {
@@ -386,7 +393,7 @@ void CGp::getOptParams(CMatrix& param) const
 
 void CGp::setOptParams(const CMatrix& param)
 {
-  setKupToDate(false);
+  invalidateCache();
   int counter=0;
   if(isOptimiseX())
   {
@@ -909,8 +916,9 @@ void CGp::_updateInvK(unsigned int dim) const
 // compute the approximation to the log likelihood.
 double CGp::logLikelihood() const
 {
-  updateK();
-  updateAD();
+  ensureMUpToDate();
+  ensureKUpToDate();
+  ensureADUpToDate();
   double L=0.0;
   switch(getApproximationType()) 
   {
@@ -1012,6 +1020,7 @@ double CGp::logLikelihood() const
 // compute the gradients wrt parameters and latent variables.
 double CGp::logLikelihoodGradient(CMatrix& g) const 
 {
+  ensureMUpToDate();
   updateG();
   g.zeros();
   int counter = 0;
@@ -1081,8 +1090,8 @@ void CGp::updateG() const
   unsigned int numKernParams = pkern->getNumParams();
   unsigned int numParams = numKernParams;
   
-  updateK();
-  updateAD();
+  ensureKUpToDate();
+  ensureADUpToDate();
   CMatrix tempG(1, numKernParams);
   CMatrix tempG2(1, numKernParams);
   CMatrix tmpV(getOutputDim(), 1);

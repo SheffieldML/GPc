@@ -1087,10 +1087,7 @@ double CGp::logLikelihood() const
       if(getApproximationType()==DTCVAR)
 	L += (double)getOutputDim()*diagD.sum();
     }
-    else 
-    {
-      throw ndlexceptions::Error("Non-spherical implementations not yet in place");
-    }
+    // Non-spherical: updateAD() throws before this switch (CIP-000B / CIP-0011).
     break;
     
   case FITC:
@@ -1113,10 +1110,6 @@ double CGp::logLikelihood() const
 	L+= getBetaVal()*(scaledM.dotColCol(j, scaledM, j)-bet.dotColCol(j, bet, j));
 	
       }
-    }
-    else 
-    {
-      throw ndlexceptions::NotImplementedError("Non-spherical implementations not yet in place");
     }
     break;
 
@@ -1145,10 +1138,6 @@ double CGp::logLikelihood() const
           L += betaValP * Dinvm.dotColCol(j, mb, j);
       }
       // 2π term applied once below with other approximations.
-    }
-    else 
-    {
-      throw ndlexceptions::NotImplementedError("Non-spherical implementations not yet in place");
     }
     break;
     
@@ -1480,10 +1469,7 @@ void CGp::gpCovGrads() const
 	gLambda.setVals(-0.5*(double)getOutputDim()*getBetaVal());
       }
     }
-    else 
-    {
-      throw ndlexceptions::Error("Non-spherical implementations not yet in place for DTC and DTCVAR");
-    }
+    // Non-spherical: updateAD() throws first (CIP-0011).
     break;
 
   case FITC:
@@ -1558,10 +1544,6 @@ void CGp::gpCovGrads() const
       gLambda.dotDivide(diagD);
       gBeta.setVal(-gLambda.sum()/(getBetaVal()*getBetaVal()), 0, 0);
 
-    }
-    else 
-    {
-      throw ndlexceptions::Error("Non-spherical implementations not yet in place for FITC");
     }
     break;
     
@@ -1691,10 +1673,6 @@ void CGp::gpCovGrads() const
       gK_uu.scale(0.5);
       gK_uu.setSymmetric(true);
       gBeta.setVal(gBetaAcc, 0);
-    }
-    else 
-    {
-      throw ndlexceptions::Error("Non-spherical implementations not yet in place for PITC");
     }
     break;
   }

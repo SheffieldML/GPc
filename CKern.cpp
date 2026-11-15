@@ -4211,39 +4211,21 @@ CKern* readKernFromStream(istream& in)
     pkern = new CMatern32Kern();
   else if(type=="matern52")
     pkern = new CMatern52Kern();
-
-  //else if(type="rbfperiodic")
-  //  pkern = new CRbfPeriodicKern();
-  //else if(type="gibbsperiodic")
-  //  pkern = new CGibbsPeriodicKern();
-  
   else if(type=="lin")
     pkern = new CLinKern();
   else if(type=="poly")
     pkern = new CPolyKern();
   else if(type=="mlp")
     pkern = new CMlpKern();
-  //else if(type="gibbs")
-  //  pkern = new CGibbsKern():
-
   else if(type=="rbfard")
     pkern = new CRbfardKern();
-  //else if(type=="ratquadard")
-  //  pkern = new CRatQuadardKern();
-  //else if(type=="matern32ard")
-  //  pkern = new CMatern32ardKern();
-  //else if(type=="matern52ard")
-  //  pkern = new CMatern52ardKern();
-
   else if(type=="linard")
     pkern = new CLinardKern();
   else if(type=="polyard")
     pkern = new CPolyardKern();
   else if(type=="mlpard")
     pkern = new CMlpardKern();
-  //else if(type="gibbsard")
-  //  pkern = new CGibbsardKern():
-
+  // Periodic / ARD Matérn-RatQuad / Gibbs stream types: CIP-000C.
   else if(type=="cmpnd")
     pkern = new CCmpndKern();
   else if(type=="tensor")

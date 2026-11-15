@@ -48,11 +48,12 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testCGp
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable
+# testCGp is synthetic CGp surface coverage (CIP-0011).
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testCGp
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -64,6 +65,7 @@ run-matio-tests: matio-tests
 	./testMatrix
 	./testOptimisable
 	./testGp
+	./testCGp
 
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
@@ -127,6 +129,12 @@ testOptimisable: testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil
 
 testOptimisable.o: testOptimisable.cpp COptimisable.h CMatrix.h
 	$(CC) -c testOptimisable.cpp -o testOptimisable.o $(CCFLAGS)
+
+testCGp: testCGp.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c testCGp.cpp -o testCGp.o $(CCFLAGS)
 
 testMltools: testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testMltools  testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o $(LDFLAGS)

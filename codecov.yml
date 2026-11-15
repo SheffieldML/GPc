@@ -24,3 +24,5 @@ ignore:
   # Local DTCVAR diagnostic / fixture stampers (not part of matio-tests).
   - "diagDtcvar.cpp"
   - "genTestGpDtcvar.cpp"
+  - "diagPitc.cpp"
+  - "genTestGpPitc.cpp"

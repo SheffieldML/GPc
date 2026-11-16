@@ -16,7 +16,7 @@ endif
 all: gplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-0015 Stage 1 API demos (docs/tutorials/)
-demos: demo_regression_1d demo_sparse_dtcvar
+demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm
 
 demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
@@ -29,6 +29,13 @@ demo_sparse_dtcvar: demo_sparse_dtcvar.o CClctrl.o CGp.o CMatrix.o ndlfortran.o 
 
 demo_sparse_dtcvar.o: examples/demo_sparse_dtcvar.cpp CGp.h CKern.h CNoise.h CClctrl.h
 	$(CC) -c examples/demo_sparse_dtcvar.cpp -o demo_sparse_dtcvar.o $(CCFLAGS)
+
+# CIP-0017 Phase 2: Bayesian GP-LVM demo.
+demo_bayes_gplvm: demo_bayes_gplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_bayes_gplvm demo_bayes_gplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+demo_bayes_gplvm.o: examples/demo_bayes_gplvm.cpp CBayesGplvm.h CKern.h
+	$(CC) -c examples/demo_bayes_gplvm.cpp -o demo_bayes_gplvm.o $(CCFLAGS)
 
 gplvm: gplvm.o CClctrl.o CGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o gplvm gplvm.o CGplvm.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
@@ -63,13 +70,13 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
 # testParamPaths is CIP-0014 Phase A (no .mat). testCGp is CIP-0011.
-# testCoregionalize is CIP-000D (no .mat). testPsi is CIP-0017 Phase 1 (no .mat).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize testPsi
+# testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -85,6 +92,7 @@ run-matio-tests: matio-tests
 	./testCGp
 	./testCoregionalize
 	./testPsi
+	./testBayesGplvm
 
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
@@ -143,6 +151,16 @@ testPsi: testPsi.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CD
 
 testPsi.o: testPsi.cpp CKern.h CDist.h CTransform.h CMatrix.h
 	$(CC) -c testPsi.cpp -o testPsi.o $(CCFLAGS)
+
+# CIP-0017 Phase 2: Bayesian GP-LVM.
+CBayesGplvm.o: CBayesGplvm.cpp CBayesGplvm.h CKern.h COptimisable.h CTransform.h CMatrix.h
+	$(CC) -c CBayesGplvm.cpp -o CBayesGplvm.o $(CCFLAGS)
+
+testBayesGplvm: testBayesGplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testBayesGplvm testBayesGplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testBayesGplvm.o: testBayesGplvm.cpp CBayesGplvm.h CKern.h
+	$(CC) -c testBayesGplvm.cpp -o testBayesGplvm.o $(CCFLAGS)
 
 testCoregionalize: testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testCoregionalize testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)

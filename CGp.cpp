@@ -99,6 +99,7 @@ void CGp::_init()
   setOutputBiasLearnt(false);
   jitter = 1e-6;
   inducingFixed=false;
+  betaFixed=false;
   spherical=true;
   optimiseX = false;
   backConstrained = false;
@@ -112,6 +113,7 @@ void CGp::_init()
 void CGp::initKernStoreage() 
 {
   g_param.resize(1, pkern->getNumParams());
+  kernParamFixed.assign(pkern->getNumParams(), false);
 }
 
 void CGp::initOptimiseXStoreage()
@@ -357,9 +359,134 @@ string CGp::getNoiseType() const
   return pnoise->getType();
 }
 
+void CGp::ensureKernFixedSize()
+{
+  const unsigned int n = pkern->getNumParams();
+  if(kernParamFixed.size()!=n)
+    kernParamFixed.assign(n, false);
+}
+
+void CGp::resolveFixPath(const string& path, int& kind, unsigned int& index) const
+{
+  string p=path;
+  if(p.compare(0, 5, "kern.")==0)
+    p=p.substr(5);
+  if(p=="beta")
+  {
+    if(!isSparseApproximation())
+      throw ndlexceptions::Error("beta fix path only valid for sparse approximations.");
+    kind=1;
+    index=0;
+    return;
+  }
+  if(p.compare(0, 6, "scale.")==0)
+  {
+    if(!isOutputScaleLearnt())
+      throw ndlexceptions::Error("scale fix path only valid when output scales are learnt.");
+    index=static_cast<unsigned int>(atoi(p.substr(6).c_str()));
+    if(index>=getOutputDim())
+      throw ndlexceptions::Error("scale index out of range in path '"+path+"'.");
+    kind=2;
+    return;
+  }
+  kind=0;
+  index=pkern->paramIndex(p);
+}
+
+void CGp::fixKernParam(unsigned int index)
+{
+  ensureKernFixedSize();
+  BOUNDCHECK(index<kernParamFixed.size());
+  kernParamFixed[index]=true;
+}
+
+void CGp::unfixKernParam(unsigned int index)
+{
+  ensureKernFixedSize();
+  BOUNDCHECK(index<kernParamFixed.size());
+  kernParamFixed[index]=false;
+}
+
+bool CGp::isKernParamFixed(unsigned int index) const
+{
+  if(index>=kernParamFixed.size())
+    return false;
+  return kernParamFixed[index];
+}
+
+void CGp::fixBeta(bool val)
+{
+  if(val && !isSparseApproximation())
+    throw ndlexceptions::Error("Cannot fix beta on a non-sparse GP.");
+  betaFixed=val;
+}
+
+void CGp::clearFixes()
+{
+  ensureKernFixedSize();
+  for(size_t i=0; i<kernParamFixed.size(); i++)
+    kernParamFixed[i]=false;
+  betaFixed=false;
+  for(size_t i=0; i<scaleParamFixed.size(); i++)
+    scaleParamFixed[i]=false;
+}
+
+void CGp::fix(const string& path)
+{
+  int kind=0;
+  unsigned int index=0;
+  resolveFixPath(path, kind, index);
+  if(kind==0)
+    fixKernParam(index);
+  else if(kind==1)
+    fixBeta(true);
+  else
+  {
+    if(scaleParamFixed.size()!=getOutputDim())
+      scaleParamFixed.assign(getOutputDim(), false);
+    scaleParamFixed[index]=true;
+  }
+}
+
+void CGp::unfix(const string& path)
+{
+  int kind=0;
+  unsigned int index=0;
+  resolveFixPath(path, kind, index);
+  if(kind==0)
+    unfixKernParam(index);
+  else if(kind==1)
+    fixBeta(false);
+  else
+  {
+    if(scaleParamFixed.size()!=getOutputDim())
+      scaleParamFixed.assign(getOutputDim(), false);
+    scaleParamFixed[index]=false;
+  }
+}
+
+bool CGp::isFixed(const string& path) const
+{
+  int kind=0;
+  unsigned int index=0;
+  resolveFixPath(path, kind, index);
+  if(kind==0)
+    return isKernParamFixed(index);
+  if(kind==1)
+    return betaFixed;
+  if(index>=scaleParamFixed.size())
+    return false;
+  return scaleParamFixed[index];
+}
+
 unsigned int CGp::getOptNumParams() const
 {
-  int tot = pkern->getNumParams();
+  int tot = 0;
+  for(unsigned int i=0; i<pkern->getNumParams(); i++)
+  {
+    if(!isKernParamFixed(i))
+      tot++;
+  }
   
   // for GP-LVM
   if(isOptimiseX())
@@ -380,12 +507,17 @@ unsigned int CGp::getOptNumParams() const
     {
       tot += numActive*getInputDim();
     }
-    tot++; // for beta value.
+    if(!betaFixed)
+      tot++; // for beta value.
   }
   // for learning scales.
   if(isOutputScaleLearnt()) 
   {
-    tot+=getOutputDim();
+    for(unsigned int j=0; j<getOutputDim(); j++)
+    {
+      if(j>=scaleParamFixed.size() || !scaleParamFixed[j])
+        tot++;
+    }
   }
   return tot;
 }
@@ -429,6 +561,8 @@ void CGp::getOptParams(CMatrix& param) const
   }
   for(unsigned int i=0; i<pkern->getNumParams(); i++)
   {
+    if(isKernParamFixed(i))
+      continue;
     param.setVal(pkern->getTransParam(i), counter);
     counter++;
   }
@@ -436,14 +570,19 @@ void CGp::getOptParams(CMatrix& param) const
   {
     for(unsigned int j=0; j<getOutputDim(); j++) 
     {
+      if(j<scaleParamFixed.size() && scaleParamFixed[j])
+        continue;
       param.setVal(getScaleVal(j), counter);
       counter++;
     }
   }
   if(isSparseApproximation()) 
   {
-    param.setVal(betaTransform->xtoa(beta.getVal(0, 0)), counter);
-    counter++;
+    if(!betaFixed)
+    {
+      param.setVal(betaTransform->xtoa(beta.getVal(0, 0)), counter);
+      counter++;
+    }
   }
 }
 
@@ -484,7 +623,9 @@ void CGp::setOptParams(const CMatrix& param)
     }
   }
   for(unsigned int i=0; i<pkern->getNumParams(); i++) 
-  {	  
+  {
+    if(isKernParamFixed(i))
+      continue;
     pkern->setTransParam(param.getVal(counter), i);
     counter++;
   }
@@ -492,6 +633,8 @@ void CGp::setOptParams(const CMatrix& param)
   {
     for(unsigned int j=0; j<getOutputDim(); j++) 
     {
+      if(j<scaleParamFixed.size() && scaleParamFixed[j])
+        continue;
       scale.setVal(param.getVal(counter), j);
       counter++;
     }      
@@ -499,8 +642,11 @@ void CGp::setOptParams(const CMatrix& param)
   }
   if(isSparseApproximation()) 
   {
-    beta.setVal(betaTransform->atox(param.getVal(counter)), 0);
-    counter++;
+    if(!betaFixed)
+    {
+      beta.setVal(betaTransform->atox(param.getVal(counter)), 0);
+      counter++;
+    }
   }
   
 }
@@ -1200,6 +1346,8 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   }
   for(unsigned int i=0; i<pkern->getNumParams(); i++) 
   {
+    if(isKernParamFixed(i))
+      continue;
     g.setVal(g_param.getVal(0, i), 0, counter);
     counter++;
   }
@@ -1207,15 +1355,20 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   {
     for(unsigned int i=0; i<getOutputDim(); i++) 
     {
+      if(i<scaleParamFixed.size() && scaleParamFixed[i])
+        continue;
       g.setVal(g_scaleBias.getVal(0, i), 0, counter);
+      counter++;
     }
-    counter++;
   }
   if(isSparseApproximation()) 
   {
-    double gBetaVal = gBeta.getVal(0);
-    g.setVal(gBetaVal*betaTransform->gradfact(getBetaVal(0,0)), 0, counter);
-    counter++;
+    if(!betaFixed)
+    {
+      double gBetaVal = gBeta.getVal(0);
+      g.setVal(gBetaVal*betaTransform->gradfact(getBetaVal(0,0)), 0, counter);
+      counter++;
+    }
   }
   //setADupToDate(false);
   return logLikelihood();

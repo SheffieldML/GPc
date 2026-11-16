@@ -182,6 +182,10 @@ public:
   }
   void setOutputScaleLearnt(const bool val) {
     outputScaleLearnt=val;
+    if(outputScaleLearnt)
+      scaleParamFixed.assign(getOutputDim(), false);
+    else
+      scaleParamFixed.clear();
   }
   bool isOutputBiasLearnt() const 
   {
@@ -328,6 +332,18 @@ public:
   {
     inducingFixed = val;
   }
+
+  // Per-parameter fix masks (CIP-0014 Phase B). Paths use Phase A kernel
+  // names (e.g. rbf.variance); also beta and scale.j. Not stream-persisted yet.
+  void fix(const string& path);
+  void unfix(const string& path);
+  bool isFixed(const string& path) const;
+  void fixKernParam(unsigned int index);
+  void unfixKernParam(unsigned int index);
+  bool isKernParamFixed(unsigned int index) const;
+  void fixBeta(bool val=true);
+  bool isBetaFixed() const { return betaFixed; }
+  void clearFixes();
   // Flag which indicates if K/Kinv/DynK/DynKInv need recomputation.
   bool isKupToDate() const 
   {
@@ -537,6 +553,12 @@ public:
   bool loadedModel;
   bool spherical;
   bool inducingFixed;
+  bool betaFixed;
+  vector<bool> kernParamFixed;
+  vector<bool> scaleParamFixed;
+  void ensureKernFixedSize();
+  void resolveFixPath(const string& path, int& kind, unsigned int& index) const;
+  // kind: 0=kern, 1=beta, 2=scale
   mutable bool KupToDate;
   mutable bool AlphaUpToDate;
   mutable bool ADupToDate;

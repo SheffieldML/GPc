@@ -136,6 +136,13 @@ diagDtcvar: diagDtcvar.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o nd
 diagDtcvar.o: diagDtcvar.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c diagDtcvar.cpp -o diagDtcvar.o $(CCFLAGS)
 
+# CIP-0012: Legacy vs StableFactor γ×M stress sweep (pair with scripts/sparse_mp_reference.py).
+diagSparseStable: diagSparseStable.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagSparseStable diagSparseStable.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+diagSparseStable.o: diagSparseStable.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c diagSparseStable.cpp -o diagSparseStable.o $(CCFLAGS)
+
 diagPitc: diagPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 

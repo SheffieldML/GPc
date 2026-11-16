@@ -1,7 +1,7 @@
 ---
 id: "000B"
 title: "Users can train a Bayesian GP-LVM with psi statistics (GPy-parity subset)"
-status: "In Progress"
+status: "Ready"
 priority: "Medium"
 created: "2026-11-16"
 last_updated: "2026-11-16"

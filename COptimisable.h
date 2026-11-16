@@ -126,6 +126,16 @@ class COptimisable {
   {
     return maxIters;
   }
+  /// Completed algorithm / reverse-communication steps in the last optimiser run.
+  unsigned int getIter() const
+  {
+    return iter;
+  }
+  /// Objective/gradient evaluations in the last optimiser run.
+  unsigned int getFuncEval() const
+  {
+    return funcEval;
+  }
   void setObjectiveTol(double val)
   {
     objectiveTol = val;

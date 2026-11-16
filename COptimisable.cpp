@@ -206,9 +206,16 @@ void COptimisable::lbfgsOptimise()
   }
   double f = 0.0;
   getOptParams(X);
+  // Nocedal LBFGS (ndlfortran.f) has no budget args. GPy/paramz opt_lbfgsb passes
+  // max_iters as both SciPy maxiter and maxfun; mirror that in this C++ loop.
+  // See docs/optimisers.md.
+  iter = 0;
+  funcEval = 0;
+  const unsigned int budget = getMaxIters();
   while(true)
   {
     f = computeObjectiveGradParams(g);
+    funcEval++;
     X.toArray(&Xvals[0]);
     g.toArray(&gvals[0]);
     lbfgs_(nParams, memSize, &Xvals[0], f, &gvals[0], 0, &diagVals[0], iPrint, getObjectiveTol(), getParamTol(), &work[0], iflag);
@@ -242,7 +249,19 @@ void COptimisable::lbfgsOptimise()
     {
       X.fromArray(&Xvals[0]);
       setOptParams(X);
-      funcEval++;
+      iter++;
+      // GPy-aligned budget: stop on algorithm steps or function evaluations.
+      if(iter >= budget || funcEval >= budget)
+      {
+	if(getVerbosity()>1)
+	{
+	  if(iter >= budget)
+	    cout << "Warning: Maximum number of iterations has been exceeded" << endl;
+	  if(funcEval >= budget)
+	    cout << "Warning: Maximum number of function evaluations has been exceeded" << endl;
+	}
+	break;
+      }
     }
     else
     {

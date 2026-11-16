@@ -14,6 +14,7 @@ How planning artefacts relate to day-to-day work on GPc.
 | DO | `backlog/` | Dated tasks linked to CIPs |
 | DOCUMENT | `docs/` + [README](../README.md) | Compressed outcomes for maintainers and users |
 | TUTORIALS | [`docs/tutorials/`](tutorials/) | Native CLI/demo tutorials (CIP-0015 Stage 1) |
+| OPTIMISERS | [`docs/optimisers.md`](optimisers.md) | `-#` / max_iters vs GPy L-BFGS and SCG |
 
 ## Day-to-day
 

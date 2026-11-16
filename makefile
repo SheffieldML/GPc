@@ -16,7 +16,7 @@ endif
 all: gplvm bgplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-0015 Stage 1 API demos (docs/tutorials/)
-demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm
+demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm demo_mrd
 
 demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
@@ -77,13 +77,14 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
 # testParamPaths is CIP-0014 Phase A (no .mat). testCGp is CIP-0011.
 # testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm
+# testMrd is CIP-0018.
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -100,6 +101,7 @@ run-matio-tests: matio-tests
 	./testCoregionalize
 	./testPsi
 	./testBayesGplvm
+	./testMrd
 
 # CIP-0017: CLI smoke for ./bgplvm (also used under COVERAGE=1 for Codecov).
 run-bgplvm-smoke: bgplvm
@@ -173,6 +175,22 @@ testBayesGplvm: testBayesGplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CT
 
 testBayesGplvm.o: testBayesGplvm.cpp CBayesGplvm.h CKern.h
 	$(CC) -c testBayesGplvm.cpp -o testBayesGplvm.o $(CCFLAGS)
+
+# CIP-0018: Manifold Relevance Determination.
+CMrd.o: CMrd.cpp CMrd.h CBayesGplvm.h CKern.h COptimisable.h CTransform.h CMatrix.h
+	$(CC) -c CMrd.cpp -o CMrd.o $(CCFLAGS)
+
+testMrd: testMrd.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testMrd testMrd.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testMrd.o: testMrd.cpp CMrd.h CBayesGplvm.h CKern.h
+	$(CC) -c testMrd.cpp -o testMrd.o $(CCFLAGS)
+
+demo_mrd: examples/demo_mrd.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_mrd examples/demo_mrd.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+examples/demo_mrd.o: examples/demo_mrd.cpp CMrd.h CBayesGplvm.h CKern.h
+	$(CC) -c examples/demo_mrd.cpp -o examples/demo_mrd.o $(CCFLAGS)
 
 testCoregionalize: testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testCoregionalize testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)

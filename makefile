@@ -101,6 +101,11 @@ run-matio-tests: matio-tests
 	./testPsi
 	./testBayesGplvm
 
+# CIP-0017: CLI smoke for ./bgplvm (also used under COVERAGE=1 for Codecov).
+run-bgplvm-smoke: bgplvm
+	chmod +x scripts/smoke_bgplvm.sh
+	./scripts/smoke_bgplvm.sh
+
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testDist testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

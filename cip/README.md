@@ -32,7 +32,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0011](./cip0011.md): Drive near-complete line coverage of `CGp.cpp` (**Implemented** — close after CI)
 - [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Proposed**)
 - [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Proposed**). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
-- [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**In Progress**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). Backlog: Phase A/B/C under `backlog/features/2026-11-16_cip0014-*`.
+- [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
 
 ## Creating a Good CIP
 

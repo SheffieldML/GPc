@@ -44,6 +44,10 @@ Three cases were deferred from the first matio gate and then fixed so Reference 
 - Prefer BLAS/LAPACK `trans` / `uplo` flags over physically flipping Cholesky factors in `CGp` / `CGplvm` when an upper factor can stay upper.
 - A blocked C++ square-transpose rewrite is measurement-gated; most model sites already hit the `M == N` fast path inside `DTRANSR`.
 
+## Parameter paths ([CIP-0014](../cip/cip0014.md))
+
+GPy-style `getByPath` / `setByPath` / `fix` on kernels and `CGp`, plus `gp learn -P/--set`. See [param-paths.md](param-paths.md).
+
 ## Coverage of library vs drivers
 
 Instrument with `COVERAGE=1`. Strip system paths and `test*.cpp` from lcov uploads so Codecov patch status reflects library changes, not unhit `FAILURE:` branches in test drivers ([CIP-0004](../cip/cip0004.md)).

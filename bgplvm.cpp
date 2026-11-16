@@ -103,6 +103,17 @@ CKern* makeKernComponent(const string& type, unsigned int q,
       rbf->setVariance(variance);
     k = rbf;
   }
+  else if(type == "rbfard")
+  {
+    // Per-dimension scales (ARD) — used for latent relevance / dimension selection.
+    CRbfardKern* rbf = new CRbfardKern(q);
+    rbf->setInitParam();
+    if(rbfInvWidth > 0.0)
+      rbf->setParam(rbfInvWidth, 0); // inverseWidth
+    if(variance > 0.0)
+      rbf->setParam(variance, 1); // variance
+    k = rbf;
+  }
   else if(type == "lin" || type == "linear")
   {
     CLinKern* lin = new CLinKern(q);
@@ -130,7 +141,7 @@ CKern* makeKernComponent(const string& type, unsigned int q,
   else
     throw ndlexceptions::Error(
       "Unknown or unsupported kernel for Bayesian GPLVM (need psi): " + type
-      + ". Use rbf, lin, bias, white.");
+      + ". Use rbf, rbfard, lin, bias, white.");
   return k;
 }
 
@@ -150,6 +161,7 @@ void CClbgplvm::learn()
   vector<string> kernelTypes;
   vector<double> rbfInvWidths;
   vector<double> variances;
+  vector<bool> selectInputs;
   string optimiser = "scg";
   bool centreData = true;
   int iters = 100;
@@ -194,14 +206,22 @@ void CClbgplvm::learn()
         kernelTypes.push_back(getCurrentArgument());
         rbfInvWidths.push_back(-1.0);
         variances.push_back(-1.0);
+        selectInputs.push_back(false);
+      }
+      else if(isCurrentArg("-i", "--input-select"))
+      {
+        incrementArgument();
+        if(kernelTypes.size() == 0)
+          exitError("Input-select (-i) must follow a -k.");
+        selectInputs.back() = getBoolFromCurrentArgument();
       }
       else if(isCurrentArg("-g", "--gamma"))
       {
         incrementArgument();
         if(kernelTypes.size() == 0)
-          exitError("Inverse width (-g) must follow a -k rbf.");
-        if(kernelTypes.back() != "rbf")
-          exitError("Inverse width (-g) only valid for RBF.");
+          exitError("Inverse width (-g) must follow a -k rbf/rbfard.");
+        if(kernelTypes.back() != "rbf" && kernelTypes.back() != "rbfard")
+          exitError("Inverse width (-g) only valid for RBF / RBF-ARD.");
         // Match ./gplvm: CLI gamma is half inverse-width.
         rbfInvWidths.back() = 2.0 * getDoubleFromCurrentArgument();
       }
@@ -257,9 +277,11 @@ void CClbgplvm::learn()
 
   if(kernelTypes.size() == 0)
   {
-    kernelTypes.push_back("rbf");
+    // GPy BayesianGPLVM default is RBF with ARD (latent dimension selection).
+    kernelTypes.push_back("rbfard");
     rbfInvWidths.push_back(-1.0);
     variances.push_back(-1.0);
+    selectInputs.push_back(true);
   }
 
   CMatrix Xmeta(1, (unsigned int)latentDim);
@@ -267,7 +289,17 @@ void CClbgplvm::learn()
   CCmpndKern kern(Xmeta);
   for(size_t i = 0; i < kernelTypes.size(); i++)
   {
-    CKern* comp = makeKernComponent(kernelTypes[i], (unsigned int)latentDim,
+    string ktype = kernelTypes[i];
+    if(selectInputs[i])
+    {
+      if(ktype == "rbf")
+        ktype = "rbfard";
+      else if(ktype == "lin" || ktype == "linear")
+        exitError("Linear-ARD psi is not implemented; use -k rbfard (or -k rbf -i true).");
+      else if(ktype != "rbfard")
+        exitError("Input-select (-i) only applies to rbf (maps to rbfard).");
+    }
+    CKern* comp = makeKernComponent(ktype, (unsigned int)latentDim,
                                     rbfInvWidths[i], variances[i]);
     kern.addKern(comp);
   }
@@ -598,8 +630,9 @@ void CClbgplvm::helpInfo()
     helpArgument("-?, -h, --help", "This help.");
     helpArgument("-x, --latent-dim int", "Latent dimension q (default 2).");
     helpArgument("-M, --num-inducing int", "Inducing points M (default min(10,N)).");
-    helpArgument("-k, --kernel string", "Add kernel with psi support: rbf, lin, bias, white. Repeatable. Default: rbf.");
-    helpArgument("-g, --gamma float", "RBF gamma as in ./gplvm (inverseWidth=2*gamma). Follows -k rbf.");
+    helpArgument("-k, --kernel string", "Add kernel with psi support: rbf, rbfard, lin, bias, white. Repeatable. Default: rbfard (ARD for latent dimension selection).");
+    helpArgument("-i, --input-select bool", "After -k rbf, true maps to rbfard (same as ./gplvm).");
+    helpArgument("-g, --gamma float", "RBF/RBF-ARD gamma as in ./gplvm (inverseWidth=2*gamma). Follows -k.");
     helpArgument("-v, --variance float", "Kernel variance; follows -k.");
     helpArgument("-#, --#iterations int", "Optimiser iterations (default 100).");
     helpArgument("-O, --optimiser string", "scg (default), conjgrad, quasinew/lbfgs, graddesc.");

@@ -24,16 +24,16 @@ Existing MAP `CGplvm` remains available. Uncertain-input expectations live on th
 
 ## Acceptance Criteria
 
-- [ ] Callers can form diagonal Gaussian \(q(\mathbf{X})\) (mean and positive variance per latent dimension) and optimise its parameters jointly with kernel, inducing inputs, and noise precision
-- [ ] Psi statistics \(\psi_0, \psi_1, \psi_2\) (and gradients needed for training) exist as a `CKern` contract for at least RBF/RBF-ARD, Linear, Bias, and White; compounds compose correctly
-- [ ] A trainable Bayesian GP-LVM model exposes a collapsed Titsias-style ELBO plus \(\mathrm{KL}(q(\mathbf{X})\|p(\mathbf{X}))\), with `checkGradients` green on a small problem
-- [ ] Verification artefacts compare psi values and/or ELBO (and selected gradients) to an independent reference (GPy-generated text fixtures and/or Monte Carlo), without requiring MATLAB at runtime
-- [ ] Stream or documented save/load round-trips \(\boldsymbol{\mu}\), \(\mathbf{S}\), inducing inputs, and kernel parameters
-- [ ] Non-goals are explicit for the first delivery: MRD, SSGPLVM, SVI/SVGP, HMC, dynamics / GPDM priors on \(q(\mathbf{X})\), Matérn closed-form psi, full tensor-product psi, EP/Laplace, Python bindings
+- [x] Callers can form diagonal Gaussian \(q(\mathbf{X})\) (mean and positive variance per latent dimension) and optimise its parameters jointly with kernel, inducing inputs, and noise precision
+- [x] Psi statistics \(\psi_0, \psi_1, \psi_2\) (and gradients needed for training) exist as a `CKern` contract for at least RBF/RBF-ARD, Linear, Bias, and White; compounds compose correctly
+- [x] A trainable Bayesian GP-LVM model exposes a collapsed Titsias-style ELBO plus \(\mathrm{KL}(q(\mathbf{X})\|p(\mathbf{X}))\), with `checkGradients` green on a small problem
+- [x] Verification artefacts compare psi values and/or ELBO (and selected gradients) to an independent reference (GPy-generated text fixtures and/or Monte Carlo), without requiring MATLAB at runtime
+- [x] Stream or documented save/load round-trips \(\boldsymbol{\mu}\), \(\mathbf{S}\), inducing inputs, and kernel parameters
+- [x] Non-goals are explicit for the first delivery: MRD, SSGPLVM, SVI/SVGP, HMC, dynamics / GPDM priors on \(q(\mathbf{X})\), Matérn closed-form psi, full tensor-product psi, EP/Laplace, Python bindings
 
 ## Notes (Optional)
 
-HOW is [CIP-0017](../cip/cip0017.md). Amends the non-goal lists in [REQ-0009](./req0009_gpy-tutorial-parity-native.md) and [CIP-0015](../cip/cip0015.md) once Accepted: Bayesian GPLVM moves from “future CIP” to this requirement. Builds on MAP [CGplvm](../CGplvm.h), DTCVAR / inducing machinery in `CGp`, and the whitened sparse algebra of [CIP-0012](../cip/cip0012.md).
+HOW is [CIP-0017](../cip/cip0017.md). [REQ-0009](./req0009_gpy-tutorial-parity-native.md) and [CIP-0015](../cip/cip0015.md) already point Bayesian GPLVM here. Builds on MAP [CGplvm](../CGplvm.h), DTCVAR / inducing machinery in `CGp`, and the whitened sparse algebra of [CIP-0012](../cip/cip0012.md).
 
 ## References
 
@@ -44,3 +44,6 @@ HOW is [CIP-0017](../cip/cip0017.md). Amends the non-goal lists in [REQ-0009](./
 
 ### 2026-11-16
 Requirement created with CIP-0017 (Proposed). Feasibility review: no psi or \(q(\mathbf{X})\) in tree today; MAP GPLVM and DTCVAR are the reusable base.
+
+### 2026-11-16 (Phase 3)
+GPy fixture compare green in `testBayesGplvm` (`testdata/cip0017/bayes_gplvm_rbf_tiny.txt`); acceptance criteria met pending CIP close / compression.

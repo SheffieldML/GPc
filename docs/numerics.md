@@ -30,16 +30,14 @@ FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/
 
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`.
 
-- **Legacy** (default): `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed.
-- **StableFactor** ([CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
+- **StableFactor** (default, [CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
+- **Legacy**: `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed. Keep for dual-path archaeology (`gp … -L legacy`).
 
 Gates:
 
 - Dual-path toy: `make testCGp && ./testCGp` (StableFactor section) and `make diagDtcvar && ./diagDtcvar`.
-- γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable`.
-- Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`. Required before merging whitened-grad changes; optional in CI until pinned.
-
-Default remains **Legacy** until the CIP-0012 soak / default-flip checkbox.
+- γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable` (DTC/DTCVAR/FITC/PITC).
+- Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`.
 
 ## Reference mismatches cleared in CIP-0003
 

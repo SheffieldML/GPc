@@ -33,7 +33,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Proposed**)
 - [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Proposed**). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
-- [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1: current README examples; Phase A helpers in parallel. Notebooks are checklist only.
+- [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 tutorials/demos done; Phase A helpers next. Notebooks are checklist only.
 
 ## Creating a Good CIP
 

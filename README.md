@@ -16,7 +16,7 @@ Compile and Reference tests run on **Ubuntu** and **macOS** (CIP-0006); both are
 
 Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
 
-**Tutorials (CIP-0015):** step-by-step CLI recipes for the shipped `examples/*.svml` workflows live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md). Optional API demos: `make demos`.
+**Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md). Optional API demos: `make demos`.
 
 Gaussian Process Software
 =========================
@@ -540,7 +540,9 @@ The way the software operates is through the command line. MAP GP-LVM
 uses `./gplvm`. Bayesian GP-LVM (CIP-0017) uses a separate binary
 `./bgplvm` so MAP defaults stay unchanged. Manifold Relevance
 Determination (CIP-0018) is the library class `CMrd` (shared
-\(q(\mathbf{X})\) across views); try `make demo_mrd && ./demo_mrd`. Help for the single-view CLI:
+\(q(\mathbf{X})\) across views); try `make demo_mrd && ./demo_mrd`
+(see [`docs/tutorials/mrd.md`](docs/tutorials/mrd.md)). Bayesian oil-100 CLI walk:
+[`docs/tutorials/bgplvm_oil100.md`](docs/tutorials/bgplvm_oil100.md). Help for the single-view CLI:
 
 ```sh
 $ ./gplvm -h

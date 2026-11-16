@@ -48,3 +48,6 @@ Requirement created from the CIP-0017 vs GPy / MRD assessment. Status Proposed; 
 
 ### 2026-11-16 (implementation)
 `CMrd` + `testMrd` / `demo_mrd` on branch `cip0018-mrd`. Fixture generator added; committed GPy ELBO compare still open.
+
+### 2026-11-16 (docs)
+Tutorial pointer at [docs/tutorials/mrd.md](../docs/tutorials/mrd.md). Status remains In Progress until the GPy fixture acceptance criterion is checked.

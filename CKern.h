@@ -871,7 +871,7 @@ class CRbfKern: public CStationaryKern {
 };
 
 // Exponential Kernel, written by Karel Lebeda with no guarantees whatsoever...
-class CExpKern: public CKern {
+class CExpKern: public CStationaryKern {
  public:
   CExpKern();
   CExpKern(unsigned int inDim);
@@ -886,10 +886,12 @@ class CExpKern: public CKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
   }
   void setInverseWidth(double val)
   {
     inverseWidth = val;
+    invalidateWorkspace();
   }
   double getInverseWidth() const
   {
@@ -898,11 +900,14 @@ class CExpKern: public CKern {
   void setLengthScale(double val)
   {
     inverseWidth = 1/(val*val);
+    invalidateWorkspace();
   }
   double getLengthScale() const
   {
     return 1/sqrt(inverseWidth);
   }
+  double scaleFactor() const { return inverseWidth; }
+  double K_of_r(double r) const { return variance * exp(-r); }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
   void diagCompute(CMatrix& d, const CMatrix& X) const;
@@ -911,7 +916,6 @@ class CExpKern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
@@ -925,7 +929,7 @@ class CExpKern: public CKern {
 };
 
 // Rational Quadratic Kernel
-class CRatQuadKern: public CKern {
+class CRatQuadKern: public CStationaryKern {
  public:
   CRatQuadKern();
   CRatQuadKern(unsigned int inDim);
@@ -940,6 +944,12 @@ class CRatQuadKern: public CKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
+  }
+  double scaleFactor() const { return 1.0 / lengthScale; }
+  double K_of_r(double r) const
+  {
+    return variance * pow(1.0 + 0.5 * r * r / alpha, -alpha);
   }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
@@ -949,25 +959,21 @@ class CRatQuadKern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, 
-			const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  void updateX(const CMatrix& X);
   
  private:
   void _init();
   double variance;
   double alpha;
   double lengthScale;
-  mutable CMatrix Xdists;
   
 };
 
 // Matern kernel with dof=3/2.
-class CMatern32Kern: public CKern {
+class CMatern32Kern: public CStationaryKern {
  public:
   CMatern32Kern();
   CMatern32Kern(unsigned int inDim);
@@ -982,7 +988,10 @@ class CMatern32Kern: public CKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
   }
+  double scaleFactor() const { return sqrt(3.0) / lengthScale; }
+  double K_of_r(double r) const { return variance * (1.0 + r) * exp(-r); }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
   void diagCompute(CMatrix& d, const CMatrix& X) const;
@@ -991,24 +1000,20 @@ class CMatern32Kern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, 
-			const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  void updateX(const CMatrix& X);
   
  private:
   void _init();
   double variance;
   double lengthScale;
-  mutable CMatrix Xdists;
   
 };
 
 // Matern kernel with dof=5/2.
-class CMatern52Kern: public CKern {
+class CMatern52Kern: public CStationaryKern {
  public:
   CMatern52Kern();
   CMatern52Kern(unsigned int inDim);
@@ -1023,6 +1028,12 @@ class CMatern52Kern: public CKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
+  }
+  double scaleFactor() const { return sqrt(5.0) / lengthScale; }
+  double K_of_r(double r) const
+  {
+    return variance * (1.0 + r + r * r / 3.0) * exp(-r);
   }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
@@ -1032,19 +1043,15 @@ class CMatern52Kern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, 
-			const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  void updateX(const CMatrix& X);
   
  private:
   void _init();
   double variance;
   double lengthScale;
-  mutable CMatrix Xdists;
   
 };
 
@@ -1520,7 +1527,7 @@ class CStdPeriodicKern: public CKern {
 };
 
 // Cosine Kernel --- GPy-aligned stationary Cosine kernel: k(r)=variance*cos(r).
-class CCosineKern: public CKern {
+class CCosineKern: public CStationaryKern {
  public:
   CCosineKern();
   CCosineKern(unsigned int inDim);
@@ -1535,7 +1542,10 @@ class CCosineKern: public CKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
   }
+  double scaleFactor() const { return 1.0 / lengthScale; }
+  double K_of_r(double r) const { return variance * cos(r); }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
   void diagCompute(CMatrix& d, const CMatrix& X) const;
@@ -1544,8 +1554,6 @@ class CCosineKern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, 
-			const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;

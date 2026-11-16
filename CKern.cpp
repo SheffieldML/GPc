@@ -89,6 +89,62 @@ bool CKern::equals(const CKern& kern, double tol) const
     return false;
   return true;
 }
+void CKern::initDefaultActiveDims()
+{
+  activeDims.resize(inputDim);
+  for(unsigned int i=0; i<inputDim; i++)
+    activeDims[i] = i;
+}
+bool CKern::isDefaultActiveDims() const
+{
+  if(activeDims.size()!=inputDim)
+    return false;
+  for(unsigned int i=0; i<inputDim; i++)
+  {
+    if(activeDims[i]!=i)
+      return false;
+  }
+  return true;
+}
+void CKern::setActiveDims(const vector<unsigned int>& dims)
+{
+  DIMENSIONMATCH(dims.size()==inputDim);
+  for(unsigned int i=0; i<dims.size(); i++)
+  {
+    for(unsigned int j=i+1; j<dims.size(); j++)
+      BOUNDCHECK(dims[i]!=dims[j]);
+  }
+  activeDims = dims;
+}
+double CKern::dist2Active(const CMatrix& X1, unsigned int i1,
+                          const CMatrix& X2, unsigned int i2) const
+{
+  BOUNDCHECK(i1<X1.getRows());
+  BOUNDCHECK(i2<X2.getRows());
+  if(isDefaultActiveDims()
+     && X1.getCols()==inputDim
+     && X2.getCols()==inputDim)
+    return X1.dist2Row(i1, X2, i2);
+  double val = 0.0;
+  for(unsigned int d=0; d<activeDims.size(); d++)
+  {
+    unsigned int col = activeDims[d];
+    BOUNDCHECK(col<X1.getCols());
+    BOUNDCHECK(col<X2.getCols());
+    double diff = X1.getVal(i1, col) - X2.getVal(i2, col);
+    val += diff*diff;
+  }
+  return val;
+}
+unsigned int CKern::indexFromDouble(double x, unsigned int outputDim)
+{
+  long long rounded = llround(x);
+  BOUNDCHECK(fabs(x - static_cast<double>(rounded)) < ndlutil::MATCHTOL);
+  BOUNDCHECK(rounded >= 0);
+  unsigned int i = static_cast<unsigned int>(rounded);
+  BOUNDCHECK(i < outputDim);
+  return i;
+}
 // The Component kernel
 void CComponentKern::readParamsFromStream(istream& in) 
 {
@@ -386,6 +442,10 @@ unsigned int CTensorKern::addKern(const CKern* kern)
   {
     throw ndlexceptions::Error("Components of a tensor kernel should not contain white noise");
 
+  }
+  if(kern->getType()=="indexwhite")
+  {
+    throw ndlexceptions::Error("indexwhite must be summed outside a tensor (CIP-000D), not multiplied inside it");
   }
   return CComponentKern::addKern(kern);
 }
@@ -1037,6 +1097,7 @@ CRbfKern::CRbfKern(const CRbfKern& kern) : CKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
+  activeDims = kern.activeDims;
   variance = kern.variance;
   inverseWidth = kern.inverseWidth;
 }
@@ -1114,16 +1175,17 @@ void CRbfKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const C
   double wi2 = 0.5*inverseWidth;
   double pf = variance*inverseWidth;
   DIMENSIONMATCH(gX.getCols()==X2.getCols());
+  if(!addG)
+    gX.zeros();
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    double n2 = X.dist2Row(row, X2, k);
-    for(unsigned int j=0; j<X2.getCols(); j++)
+    double n2 = dist2Active(X, row, X2, k);
+    for(unsigned int d=0; d<activeDims.size(); d++)
     {
+      unsigned int j = activeDims[d];
+      BOUNDCHECK(j<X2.getCols());
       double val = pf*(X2.getVal(k, j)-X.getVal(row, j))*exp(-n2*wi2);
-      if(addG)
-	gX.addVal(val, k, j);
-      else 
-	gX.setVal(val, k, j);
+      gX.addVal(val, k, j);
     }
   }
 }
@@ -1141,7 +1203,7 @@ double CRbfKern::getWhite() const
 double CRbfKern::computeElement(const CMatrix& X1, unsigned int index1, 
 				const CMatrix& X2, unsigned int index2) const
 {
-  double k = X1.dist2Row(index1, X2, index2);
+  double k = dist2Active(X1, index1, X2, index2);
   k = 0.5*k*inverseWidth;
   k = variance*exp(-k);
   return k;
@@ -1149,6 +1211,12 @@ double CRbfKern::computeElement(const CMatrix& X1, unsigned int index1,
 
 void CRbfKern::updateX(const CMatrix& X)
 {
+  // Cache only for the default full-width path; activeDims ICM layouts skip it.
+  if(!isDefaultActiveDims() || X.getCols()!=getInputDim())
+  {
+    setUpdateXused(false);
+    return;
+  }
   setUpdateXused(true);
   Xdists.resize(X.getRows(),X.getRows());
   double halfInverseWidth=0.5*inverseWidth;
@@ -1158,7 +1226,7 @@ void CRbfKern::updateX(const CMatrix& X)
     Xdists.setVal(0,j,j);
     for(unsigned int i=0; i<j; i++)
     {
-      double dist2 = X.dist2Row(i, X, j);
+      double dist2 = dist2Active(X, i, X, j);
       Xdists.setVal(dist2,i,j);
       Xdists.setVal(exp(-dist2*halfInverseWidth),j,i);
     }
@@ -1182,7 +1250,7 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
     {
       double k = 0;
       double dist2 = 0;
-      dist2 = X2.dist2Row(i, X, j);
+      dist2 = dist2Active(X, j, X2, i);
       k = exp(-dist2*halfInverseWidth);
       double kcg_ij = k*covGrad.getVal(j,i);
       g1 -= halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
@@ -1220,7 +1288,7 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGra
       }
       else
       {
-	dist2 = X.dist2Row(i, X, j);
+	dist2 = dist2Active(X, i, X, j);
 	k = exp(-dist2*halfInverseWidth);
       }
       double kcg_ij = k*covGrad.getVal(i,j);
@@ -5558,6 +5626,457 @@ double CBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const C
   throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CBrownianKern");
 }
 
+// Coregionalize kernel (CIP-000D / GPy Coregionalize).
+CCoregionalizeKern::CCoregionalizeKern() : CKern(), outputDim(1), rank(1)
+{
+  _init();
+  setInputDim(1);
+}
+CCoregionalizeKern::CCoregionalizeKern(unsigned int outDim, unsigned int r)
+  : CKern(), outputDim(outDim), rank(r)
+{
+  _init();
+  setInputDim(1);
+}
+CCoregionalizeKern::CCoregionalizeKern(unsigned int inDim, unsigned int outDim, unsigned int r)
+  : CKern(), outputDim(outDim), rank(r)
+{
+  _init();
+  setInputDim(inDim);
+}
+CCoregionalizeKern::CCoregionalizeKern(const CMatrix& X, unsigned int outDim, unsigned int r)
+  : CKern(X), outputDim(outDim), rank(r)
+{
+  _init();
+  setInputDim(1);
+}
+CCoregionalizeKern::CCoregionalizeKern(const CCoregionalizeKern& kern)
+  : CKern(kern), outputDim(kern.outputDim), rank(kern.rank),
+    W(kern.W), kappa(kern.kappa), B(kern.B)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  activeDims = kern.activeDims;
+  W = kern.W;
+  kappa = kern.kappa;
+  _rebuildB();
+}
+CCoregionalizeKern::~CCoregionalizeKern()
+{
+}
+void CCoregionalizeKern::_init()
+{
+  BOUNDCHECK(outputDim>=1);
+  BOUNDCHECK(rank>=1);
+  nParams = outputDim*rank + outputDim;
+  setType("coregionalize");
+  setName("coregionalize");
+  setStationary(false);
+  W.resize(outputDim, rank);
+  kappa.resize(1, outputDim);
+  B.resize(outputDim, outputDim);
+  paramNames.clear();
+  clearTransforms();
+  for(unsigned int d=0; d<outputDim; d++)
+  {
+    for(unsigned int r=0; r<rank; r++)
+      setParamName("W_" + ndlstrutil::itoa(d) + "_" + ndlstrutil::itoa(r), d*rank + r);
+  }
+  for(unsigned int d=0; d<outputDim; d++)
+  {
+    unsigned int idx = outputDim*rank + d;
+    setParamName("kappa_" + ndlstrutil::itoa(d), idx);
+    addTransform(CTransform::defaultPositive(), idx);
+  }
+}
+void CCoregionalizeKern::setInitParam()
+{
+  // GPy defaults: W ~ 0.5 N(0,1)/sqrt(rank), kappa = 0.5. Deterministic fill for tests.
+  for(unsigned int d=0; d<outputDim; d++)
+  {
+    for(unsigned int r=0; r<rank; r++)
+      W.setVal(0.5/sqrt(static_cast<double>(rank)), d, r);
+    kappa.setVal(0.5, d);
+  }
+  _rebuildB();
+}
+void CCoregionalizeKern::_rebuildB()
+{
+  B.resize(outputDim, outputDim);
+  B.gemm(W, W, 1.0, 0.0, "n", "t");
+  for(unsigned int d=0; d<outputDim; d++)
+    B.setVal(B.getVal(d, d) + kappa.getVal(d), d, d);
+  B.setSymmetric(true);
+}
+void CCoregionalizeKern::setW(const CMatrix& Win)
+{
+  DIMENSIONMATCH(Win.getRows()==outputDim);
+  DIMENSIONMATCH(Win.getCols()==rank);
+  W.deepCopy(Win);
+  _rebuildB();
+}
+void CCoregionalizeKern::setKappa(const CMatrix& kappaIn)
+{
+  DIMENSIONMATCH(kappaIn.getRows()==1 || kappaIn.getCols()==outputDim || kappaIn.getRows()==outputDim);
+  if(kappaIn.getRows()==1 && kappaIn.getCols()==outputDim)
+    kappa.deepCopy(kappaIn);
+  else if(kappaIn.getCols()==1 && kappaIn.getRows()==outputDim)
+  {
+    for(unsigned int d=0; d<outputDim; d++)
+      kappa.setVal(kappaIn.getVal(d, 0), d);
+  }
+  else
+    throw ndlexceptions::Error("kappa must be length outputDim");
+  _rebuildB();
+}
+double CCoregionalizeKern::getVariance() const
+{
+  double s = 0.0;
+  for(unsigned int d=0; d<outputDim; d++)
+    s += B.getVal(d, d);
+  return s/static_cast<double>(outputDim);
+}
+void CCoregionalizeKern::setVariance(double val)
+{
+  double cur = getVariance();
+  if(cur<=0.0)
+    return;
+  double scale = val/cur;
+  for(unsigned int d=0; d<outputDim; d++)
+  {
+    for(unsigned int r=0; r<rank; r++)
+      W.setVal(W.getVal(d, r)*sqrt(scale), d, r);
+    kappa.setVal(kappa.getVal(d)*scale, d);
+  }
+  _rebuildB();
+}
+unsigned int CCoregionalizeKern::_indexOf(const CMatrix& X, unsigned int row) const
+{
+  BOUNDCHECK(activeDims.size()==1);
+  unsigned int col = activeDims[0];
+  BOUNDCHECK(col<X.getCols());
+  return indexFromDouble(X.getVal(row, col), outputDim);
+}
+double CCoregionalizeKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  unsigned int i = _indexOf(X, index);
+  return B.getVal(i, i);
+}
+double CCoregionalizeKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                         const CMatrix& X2, unsigned int index2) const
+{
+  unsigned int i = _indexOf(X1, index1);
+  unsigned int j = _indexOf(X2, index2);
+  return B.getVal(i, j);
+}
+void CCoregionalizeKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo<nParams);
+  if(paramNo < outputDim*rank)
+  {
+    unsigned int d = paramNo / rank;
+    unsigned int r = paramNo % rank;
+    W.setVal(val, d, r);
+  }
+  else
+    kappa.setVal(val, paramNo - outputDim*rank);
+  _rebuildB();
+}
+double CCoregionalizeKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo<nParams);
+  if(paramNo < outputDim*rank)
+  {
+    unsigned int d = paramNo / rank;
+    unsigned int r = paramNo % rank;
+    return W.getVal(d, r);
+  }
+  return kappa.getVal(paramNo - outputDim*rank);
+}
+void CCoregionalizeKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows()==X2.getRows());
+  DIMENSIONMATCH(gX.getCols()==X2.getCols());
+  if(!addG)
+    gX.zeros();
+}
+void CCoregionalizeKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+void CCoregionalizeKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  // Reduce covGrad onto B indices (GPy _gradient_reduce), then
+  // dkappa = diag(dL); dL = dL + dL'; dW[j,r] = sum_i W[i,r]*dL[i,j].
+  CMatrix dL(outputDim, outputDim);
+  dL.zeros();
+  for(unsigned int n=0; n<X.getRows(); n++)
+  {
+    unsigned int i = _indexOf(X, n);
+    for(unsigned int m=0; m<X2.getRows(); m++)
+    {
+      unsigned int j = _indexOf(X2, m);
+      dL.addVal(covGrad.getVal(n, m), j, i);
+    }
+  }
+  for(unsigned int d=0; d<outputDim; d++)
+    g.setVal(dL.getVal(d, d), outputDim*rank + d);
+  CMatrix dLsym(outputDim, outputDim);
+  for(unsigned int i=0; i<outputDim; i++)
+    for(unsigned int j=0; j<outputDim; j++)
+      dLsym.setVal(dL.getVal(i, j) + dL.getVal(j, i), i, j);
+  for(unsigned int j=0; j<outputDim; j++)
+  {
+    for(unsigned int r=0; r<rank; r++)
+    {
+      double acc = 0.0;
+      for(unsigned int i=0; i<outputDim; i++)
+        acc += W.getVal(i, r) * dLsym.getVal(i, j);
+      g.setVal(acc, j*rank + r);
+    }
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
+void CCoregionalizeKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise);
+}
+double CCoregionalizeKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const
+{
+  CMatrix g(1, nParams);
+  getGradParams(g, X, X2, cvGrd, false);
+  return g.getVal(index);
+}
+double CCoregionalizeKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const
+{
+  return getGradParam(index, X, X, cvGrd);
+}
+void CCoregionalizeKern::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "inputDim", getInputDim());
+  writeToStream(out, "outputDim", outputDim);
+  writeToStream(out, "rank", rank);
+  writeToStream(out, "numParams", getNumParams());
+  CMatrix par(1, getNumParams());
+  getParams(par);
+  par.toStream(out);
+  writeToStream(out, "numPriors", getNumPriors());
+  writePriorsToStream(out);
+}
+void CCoregionalizeKern::readParamsFromStream(istream& in)
+{
+  setInputDim(readIntFromStream(in, "inputDim"));
+  outputDim = readIntFromStream(in, "outputDim");
+  rank = readIntFromStream(in, "rank");
+  _init();
+  unsigned int nPars = readIntFromStream(in, "numParams");
+  CMatrix par(1, nPars);
+  par.fromStream(in);
+  if(nPars!=getNumParams())
+    throw ndlexceptions::StreamFormatError("numParams", "Listed number of parameters does not match computed number of parameters.");
+  setParams(par);
+  unsigned int numPriors = readIntFromStream(in, "numPriors");
+  readPriorsFromStream(in, numPriors);
+}
+
+// Index-white kernel (CIP-000D).
+CIndexWhiteKern::CIndexWhiteKern() : CKern(), outputDim(1)
+{
+  _init();
+  setInputDim(1);
+}
+CIndexWhiteKern::CIndexWhiteKern(unsigned int outDim) : CKern(), outputDim(outDim)
+{
+  _init();
+  setInputDim(1);
+}
+CIndexWhiteKern::CIndexWhiteKern(unsigned int inDim, unsigned int outDim)
+  : CKern(), outputDim(outDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CIndexWhiteKern::CIndexWhiteKern(const CMatrix& X, unsigned int outDim)
+  : CKern(X), outputDim(outDim)
+{
+  _init();
+  setInputDim(1);
+}
+CIndexWhiteKern::CIndexWhiteKern(const CIndexWhiteKern& kern)
+  : CKern(kern), outputDim(kern.outputDim), variances(kern.variances)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  activeDims = kern.activeDims;
+  variances = kern.variances;
+}
+CIndexWhiteKern::~CIndexWhiteKern()
+{
+}
+void CIndexWhiteKern::_init()
+{
+  BOUNDCHECK(outputDim>=1);
+  nParams = outputDim;
+  setType("indexwhite");
+  setName("index white");
+  setStationary(false);
+  variances.resize(1, outputDim);
+  paramNames.clear();
+  clearTransforms();
+  for(unsigned int i=0; i<nParams; i++)
+  {
+    setParamName("variance_" + ndlstrutil::itoa(i), i);
+    addTransform(CTransform::defaultPositive(), i);
+  }
+}
+void CIndexWhiteKern::setInitParam()
+{
+  for(unsigned int d=0; d<outputDim; d++)
+    variances.setVal(exp(-2.0), d);
+}
+unsigned int CIndexWhiteKern::_indexOf(const CMatrix& X, unsigned int row) const
+{
+  BOUNDCHECK(activeDims.size()==1);
+  unsigned int col = activeDims[0];
+  BOUNDCHECK(col<X.getCols());
+  return indexFromDouble(X.getVal(row, col), outputDim);
+}
+double CIndexWhiteKern::getVariance() const
+{
+  double s = 0.0;
+  for(unsigned int d=0; d<outputDim; d++)
+    s += variances.getVal(d);
+  return s/static_cast<double>(outputDim);
+}
+void CIndexWhiteKern::setVariance(double val)
+{
+  for(unsigned int d=0; d<outputDim; d++)
+    variances.setVal(val, d);
+}
+double CIndexWhiteKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variances.getVal(_indexOf(X, index));
+}
+double CIndexWhiteKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                       const CMatrix& X2, unsigned int index2) const
+{
+  return 0.0;
+}
+void CIndexWhiteKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo<nParams);
+  variances.setVal(val, paramNo);
+}
+double CIndexWhiteKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo<nParams);
+  return variances.getVal(paramNo);
+}
+void CIndexWhiteKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows()==X2.getRows());
+  DIMENSIONMATCH(gX.getCols()==X2.getCols());
+  if(!addG)
+    gX.zeros();
+}
+void CIndexWhiteKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CIndexWhiteKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  return 0.0;
+}
+double CIndexWhiteKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  double g = 0.0;
+  for(unsigned int n=0; n<X.getRows(); n++)
+  {
+    if(_indexOf(X, n)==index)
+      g += covGrad.getVal(n, n);
+  }
+  return g;
+}
+void CIndexWhiteKern::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "inputDim", getInputDim());
+  writeToStream(out, "outputDim", outputDim);
+  writeToStream(out, "numParams", getNumParams());
+  CMatrix par(1, getNumParams());
+  getParams(par);
+  par.toStream(out);
+  writeToStream(out, "numPriors", getNumPriors());
+  writePriorsToStream(out);
+}
+void CIndexWhiteKern::readParamsFromStream(istream& in)
+{
+  setInputDim(readIntFromStream(in, "inputDim"));
+  outputDim = readIntFromStream(in, "outputDim");
+  _init();
+  unsigned int nPars = readIntFromStream(in, "numParams");
+  CMatrix par(1, nPars);
+  par.fromStream(in);
+  if(nPars!=getNumParams())
+    throw ndlexceptions::StreamFormatError("numParams", "Listed number of parameters does not match computed number of parameters.");
+  setParams(par);
+  unsigned int numPriors = readIntFromStream(in, "numPriors");
+  readPriorsFromStream(in, numPriors);
+}
+
+CTensorKern* createIcmKern(const CKern& spatial, unsigned int numOutputs, unsigned int rank)
+{
+  unsigned int q = spatial.getInputDim();
+  if(!spatial.isDefaultActiveDims())
+  {
+    // Still OK if caller already set active dims on spatial; we clone and keep them.
+  }
+  CKern* space = spatial.clone();
+  if(space->isDefaultActiveDims())
+  {
+    vector<unsigned int> spaceDims(q);
+    for(unsigned int i=0; i<q; i++)
+      spaceDims[i] = i;
+    space->setActiveDims(spaceDims);
+  }
+  CCoregionalizeKern* coreg = new CCoregionalizeKern(numOutputs, rank);
+  vector<unsigned int> idx(1, q);
+  coreg->setActiveDims(idx);
+  CTensorKern* icm = new CTensorKern(q+1);
+  icm->addKern(space);
+  icm->addKern(coreg);
+  delete space;
+  delete coreg;
+  return icm;
+}
+CCmpndKern* createLcmKern(const vector<const CKern*>& spatials, unsigned int numOutputs, unsigned int rank)
+{
+  if(spatials.empty())
+    throw ndlexceptions::Error("LCM requires at least one spatial kernel");
+  unsigned int q = spatials[0]->getInputDim();
+  CCmpndKern* lcm = new CCmpndKern(q+1);
+  for(size_t i=0; i<spatials.size(); i++)
+  {
+    DIMENSIONMATCH(spatials[i]->getInputDim()==q);
+    CTensorKern* icm = createIcmKern(*spatials[i], numOutputs, rank);
+    lcm->addKern(icm);
+    delete icm;
+  }
+  return lcm;
+}
+
 // Functions that operate on CKern.
 ostream& operator<<(ostream& out, const CKern& kern)
 {
@@ -5621,6 +6140,10 @@ CKern* readKernFromStream(istream& in)
     pkern = new CCosineKern();
   else if(type=="brownian")
     pkern = new CBrownianKern();
+  else if(type=="coregionalize")
+    pkern = new CCoregionalizeKern();
+  else if(type=="indexwhite")
+    pkern = new CIndexWhiteKern();
   else if(type=="cmpnd")
     pkern = new CCmpndKern();
   else if(type=="tensor")

@@ -30,8 +30,8 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-000F](./cip000F.md): Implement spherical PITC and ship a matio reference fixture (**Implemented** — close after CI)
 - [CIP-0010](./cip0010.md): Dedicated testOptimisable suite (**Closed**)
 - [CIP-0011](./cip0011.md): Drive near-complete line coverage of `CGp.cpp` (**Implemented** — close after CI)
-- [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Accepted** — Murray Level-3 blocked `_cholAdjoint`). Implementation deferred relative to CIP-0013 kernel/BLAS work.
-- [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**In Progress**). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
+- [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**In Progress** — Murray Level-3 blocked `_cholAdjoint`).
+- [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Implemented** on main via #60). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
 - [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 tutorials/demos done; Phase A helpers next. Notebooks are checklist only.
 - [CIP-0017](./cip0017.md): Psi statistics and Bayesian GP-LVM, GPy-parity subset (**Implemented**). Implements [REQ-000B](../requirements/req000B_bayesian-gplvm-psi.md). CLI: `./bgplvm`.

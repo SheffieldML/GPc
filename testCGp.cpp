@@ -1,5 +1,6 @@
 /* Synthetic CGp surface coverage (CIP-0011).
    Fail-count + expect-throw drivers; no .mat fixtures. */
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -215,12 +216,39 @@ int testStableSparse()
   cout << "==== testCGp StableFactor ====" << endl;
   ToyGp toy(CGp::DTCVAR);
   const double llLeg = toy.model->logLikelihood();
+  CMatrix gLeg(1, toy.model->getOptNumParams());
+  fail += failTrue(std::isfinite(toy.model->logLikelihoodGradient(gLeg)),
+                   "Legacy DTCVAR gradient");
   toy.model->setStableSparseLinalg(true);
   const double llStab = toy.model->logLikelihood();
   fail += failTrue(fabs(llLeg - llStab) < 1e-6, "Legacy vs StableFactor LL");
   CMatrix g(1, toy.model->getOptNumParams());
   fail += failTrue(std::isfinite(toy.model->logLikelihoodGradient(g)),
                    "StableFactor gradient");
+  double gDiff = 0.0;
+  for(unsigned int i = 0; i < g.getCols(); i++)
+    gDiff = max(gDiff, fabs(g.getVal(i) - gLeg.getVal(i)));
+  fail += failTrue(gDiff < 1e-5, "Legacy vs StableFactor DTCVAR grads");
+  ToyGp toyD(CGp::DTC);
+  CMatrix gDLeg(1, toyD.model->getOptNumParams());
+  toyD.model->logLikelihoodGradient(gDLeg);
+  toyD.model->setStableSparseLinalg(true);
+  CMatrix gD(1, toyD.model->getOptNumParams());
+  toyD.model->logLikelihoodGradient(gD);
+  double gDDiff = 0.0;
+  for(unsigned int i = 0; i < gD.getCols(); i++)
+    gDDiff = max(gDDiff, fabs(gD.getVal(i) - gDLeg.getVal(i)));
+  fail += failTrue(gDDiff < 1e-5, "Legacy vs StableFactor DTC grads");
+  ToyGp toyF(CGp::FITC);
+  const double fL = toyF.model->logLikelihood();
+  toyF.model->setStableSparseLinalg(true);
+  const double fS = toyF.model->logLikelihood();
+  fail += failTrue(fabs(fL - fS) < 1e-6, "Legacy vs StableFactor FITC LL");
+  ToyGp toyP(CGp::PITC);
+  const double pL = toyP.model->logLikelihood();
+  toyP.model->setStableSparseLinalg(true);
+  const double pS = toyP.model->logLikelihood();
+  fail += failTrue(fabs(pL - pS) < 1e-6, "Legacy vs StableFactor PITC LL");
   toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   try
   {

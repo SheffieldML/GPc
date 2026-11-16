@@ -538,7 +538,9 @@ for allowing me to make this available.
 
 The way the software operates is through the command line. MAP GP-LVM
 uses `./gplvm`. Bayesian GP-LVM (CIP-0017) uses a separate binary
-`./bgplvm` so MAP defaults stay unchanged. Help:
+`./bgplvm` so MAP defaults stay unchanged. Manifold Relevance
+Determination (CIP-0018) is the library class `CMrd` (shared
+\(q(\mathbf{X})\) across views); try `make demo_mrd && ./demo_mrd`. Help for the single-view CLI:
 
 ```sh
 $ ./gplvm -h

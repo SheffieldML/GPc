@@ -29,7 +29,7 @@ Existing MAP `CGplvm` remains available. Uncertain-input expectations live on th
 - [x] A trainable Bayesian GP-LVM model exposes a collapsed Titsias-style ELBO plus \(\mathrm{KL}(q(\mathbf{X})\|p(\mathbf{X}))\), with `checkGradients` green on a small problem
 - [x] Verification artefacts compare psi values and/or ELBO (and selected gradients) to an independent reference (GPy-generated text fixtures and/or Monte Carlo), without requiring MATLAB at runtime
 - [x] Stream or documented save/load round-trips \(\boldsymbol{\mu}\), \(\mathbf{S}\), inducing inputs, and kernel parameters
-- [x] Non-goals are explicit for the first delivery: MRD, SSGPLVM, SVI/SVGP, HMC, dynamics / GPDM priors on \(q(\mathbf{X})\), Matérn closed-form psi, full tensor-product psi, EP/Laplace, Python bindings
+- [x] Non-goals are explicit for the first delivery: MRD (see [REQ-000C](./req000C_manifold-relevance-determination.md)), SSGPLVM, SVI/SVGP, HMC, dynamics / GPDM priors on \(q(\mathbf{X})\), Matérn closed-form psi, full tensor-product psi, EP/Laplace, Python bindings
 
 ## Notes (Optional)
 
@@ -47,3 +47,6 @@ Requirement created with CIP-0017 (Proposed). Feasibility review: no psi or \(q(
 
 ### 2026-11-16 (Phase 3)
 GPy fixture compare green in `testBayesGplvm` (`testdata/cip0017/bayes_gplvm_rbf_tiny.txt`); acceptance criteria met pending CIP close / compression.
+
+### 2026-11-16 (MRD follow-on)
+Assessment vs GPy: single-view path is the MRD engine. Multi-view work tracked as [REQ-000C](./req000C_manifold-relevance-determination.md) / [CIP-0018](../cip/cip0018.md).

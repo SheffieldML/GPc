@@ -20,6 +20,9 @@ public:
   virtual ~CBayesGplvm();
 
   CKern* getKern() const { return pkern; }
+  // When true, destructor deletes pkern (default false for borrowed kernels).
+  void setOwnKern(bool val) { ownKern = val; }
+  bool isOwnKern() const { return ownKern; }
 
   void initStoreage();
   void initVals();
@@ -29,12 +32,25 @@ public:
   double logLikelihood() const;
   double logLikelihoodGradient(CMatrix& g) const;
 
+  // VarDTC bound without KL (CIP-0018 multi-view assembly).
+  double varDtcBound() const;
+  // Natural grads for Z/mu/S; unconstrained (transform-scaled) grads for kern and beta.
+  // If includeKl, subtracts KL grads from gMu/gS. Returns varDtcBound() [- KL if includeKl].
+  double computeVarDtcGrads(CMatrix& gKern, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                            double& gBeta, bool includeKl) const;
+
+  // Copy shared latents into this view (MRD).
+  void setLatents(const CMatrix& muIn, const CMatrix& SIn, const CMatrix& ZIn);
+
   // Predictive mean/var of Y at fixed latent points Xstar (N* x q).
   void posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
 
   unsigned int getOptNumParams() const;
   void getOptParams(CMatrix& param) const;
   void setOptParams(const CMatrix& param);
+
+  double klDivergence() const;
+  void klGradient(CMatrix& gMu, CMatrix& gS) const;
 
   void optimise(unsigned int iters = 100);
   void display(ostream& os) const;
@@ -49,6 +65,7 @@ public:
   double getBeta() const { return beta; }
   void setBeta(double val) { beta = val; setKupToDate(false); }
 
+  const CMatrix& getY() const { return Y; }
   const CMatrix& getMu() const { return mu; }
   const CMatrix& getS() const { return S; }
   const CMatrix& getZ() const { return Z; }
@@ -67,8 +84,6 @@ public:
 
 private:
   void updateCaches() const;
-  double klDivergence() const;
-  void klGradient(CMatrix& gMu, CMatrix& gS) const;
 
   CKern* pkern;
   bool ownKern;

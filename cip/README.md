@@ -35,6 +35,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
 - [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 tutorials/demos done; Phase A helpers next. Notebooks are checklist only.
 - [CIP-0017](./cip0017.md): Psi statistics and Bayesian GP-LVM, GPy-parity subset (**Implemented**). Implements [REQ-000B](../requirements/req000B_bayesian-gplvm-psi.md). CLI: `./bgplvm`.
+- [CIP-0018](./cip0018.md): Manifold Relevance Determination, GPy-parity subset (**In Progress**). Implements [REQ-000C](../requirements/req000C_manifold-relevance-determination.md). `CMrd` + `testMrd` / `demo_mrd`.
 
 ## Creating a Good CIP
 

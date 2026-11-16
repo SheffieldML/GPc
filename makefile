@@ -48,12 +48,13 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
 # testParamPaths is CIP-0014 Phase A (no .mat). testCGp is CIP-0011.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp
+# testCoregionalize is CIP-000D (no .mat).
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -67,6 +68,7 @@ run-matio-tests: matio-tests
 	./testParamPaths
 	./testGp
 	./testCGp
+	./testCoregionalize
 
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
@@ -118,6 +120,12 @@ testKern: testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o 
 
 testKern.o: testKern.cpp CKern.h CDist.h CTransform.h CMatrix.h CClctrl.h
 	$(CC) -c testKern.cpp -o testKern.o $(CCFLAGS)
+
+testCoregionalize: testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testCoregionalize testCoregionalize.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testCoregionalize.o: testCoregionalize.cpp CKern.h CDist.h CTransform.h CMatrix.h
+	$(CC) -c testCoregionalize.cpp -o testCoregionalize.o $(CCFLAGS)
 
 testMatrix: testMatrix.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testMatrix testMatrix.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

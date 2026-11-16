@@ -425,16 +425,20 @@ class CArdKern : public CKern {
 class CStationaryKern : public CKern {
  public:
   CStationaryKern()
-    : CKern(), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+    : CKern(), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0),
+      m_symX(0), m_rectX(0), m_rectX2(0), m_symValid(false), m_rectValid(false)
   { setStationary(true); }
   CStationaryKern(const CMatrix& X)
-    : CKern(X), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+    : CKern(X), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0),
+      m_symX(0), m_rectX(0), m_rectX2(0), m_symValid(false), m_rectValid(false)
   { setStationary(true); }
   CStationaryKern(unsigned int inDim)
-    : CKern(inDim), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+    : CKern(inDim), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0),
+      m_symX(0), m_rectX(0), m_rectX2(0), m_symValid(false), m_rectValid(false)
   { setStationary(true); }
   CStationaryKern(const CKern& kern)
-    : CKern(kern), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+    : CKern(kern), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0),
+      m_symX(0), m_rectX(0), m_rectX2(0), m_symValid(false), m_rectValid(false)
   { setStationary(true); }
   virtual ~CStationaryKern() {}
 
@@ -450,13 +454,15 @@ class CStationaryKern : public CKern {
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
   // CIP-0013 P5: fill the symmetric (X,X) workspace (GPLVM still calls this
   // after element-wise K). Parameter changes bump the epoch so a stale
-  // workspace cannot survive into the next evaluation.
+  // workspace cannot survive into the next evaluation. Validity is also
+  // bound to the X / X2 addresses used when filling (PITC block grads must
+  // not reuse an Xu-sized workspace).
   void updateX(const CMatrix& X);
   void invalidateWorkspace();
 
  protected:
-  bool hasSymWorkspace(unsigned int n) const;
-  bool hasRectWorkspace(unsigned int n, unsigned int m) const;
+  bool hasSymWorkspace(const CMatrix& X) const;
+  bool hasRectWorkspace(const CMatrix& X, const CMatrix& X2) const;
   double symR2(unsigned int i, unsigned int j) const { return m_workR2Sym.getVal(i, j); }
   double symK(unsigned int i, unsigned int j) const { return m_workKSym.getVal(i, j); }
   double rectR2(unsigned int i, unsigned int j) const { return m_workR2Rect.getVal(i, j); }
@@ -474,6 +480,9 @@ class CStationaryKern : public CKern {
   unsigned int m_wsEpoch;
   mutable unsigned int m_symEpoch;
   mutable unsigned int m_rectEpoch;
+  mutable const CMatrix* m_symX;
+  mutable const CMatrix* m_rectX;
+  mutable const CMatrix* m_rectX2;
   mutable bool m_symValid;
   mutable bool m_rectValid;
 };

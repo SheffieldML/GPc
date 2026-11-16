@@ -1499,17 +1499,23 @@ void CStationaryKern::invalidateWorkspace()
   ++m_wsEpoch;
   m_symValid = false;
   m_rectValid = false;
+  m_symX = 0;
+  m_rectX = 0;
+  m_rectX2 = 0;
   setUpdateXused(false);
 }
-bool CStationaryKern::hasSymWorkspace(unsigned int n) const
+bool CStationaryKern::hasSymWorkspace(const CMatrix& X) const
 {
-  return m_symValid && m_symEpoch == m_wsEpoch
+  const unsigned int n = X.getRows();
+  return m_symValid && m_symEpoch == m_wsEpoch && m_symX == &X
     && m_workR2Sym.getRows() == n && m_workR2Sym.getCols() == n
     && m_workKSym.getRows() == n && m_workKSym.getCols() == n;
 }
-bool CStationaryKern::hasRectWorkspace(unsigned int n, unsigned int m) const
+bool CStationaryKern::hasRectWorkspace(const CMatrix& X, const CMatrix& X2) const
 {
-  return m_rectValid && m_rectEpoch == m_wsEpoch
+  const unsigned int n = X.getRows();
+  const unsigned int m = X2.getRows();
+  return m_rectValid && m_rectEpoch == m_wsEpoch && m_rectX == &X && m_rectX2 == &X2
     && m_workR2Rect.getRows() == n && m_workR2Rect.getCols() == m
     && m_workKRect.getRows() == n && m_workKRect.getCols() == m;
 }
@@ -1533,6 +1539,7 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
       m_workKSym.setVal(k, j, i);
     }
   }
+  m_symX = &X;
   m_symEpoch = m_wsEpoch;
   m_symValid = true;
 }
@@ -1553,6 +1560,8 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
       m_workKRect.setVal(k, i, j);
     }
   }
+  m_rectX = &X;
+  m_rectX2 = &X2;
   m_rectEpoch = m_wsEpoch;
   m_rectValid = true;
 }
@@ -1563,6 +1572,7 @@ void CStationaryKern::updateX(const CMatrix& X)
   {
     setUpdateXused(false);
     m_symValid = false;
+    m_symX = 0;
     return;
   }
   fillSymWorkspace(X);
@@ -1742,7 +1752,7 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
   double halfVariance=0.5*variance;
   const unsigned int nrows = X.getRows();
   const unsigned int ncols = X2.getRows();
-  const bool useWork = hasRectWorkspace(nrows, ncols);
+  const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -1782,7 +1792,7 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGra
   double halfInverseWidth=0.5*inverseWidth;
   double halfVariance=0.5*variance;
   const unsigned int nrows = X.getRows();
-  const bool useWork = hasSymWorkspace(nrows);
+  const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -1971,7 +1981,7 @@ void CExpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
 	double g2=0.0;
 	const unsigned int nrows = X.getRows();
 	const unsigned int ncols = X2.getRows();
-	const bool useWork = hasRectWorkspace(nrows, ncols);
+	const bool useWork = hasRectWorkspace(X, X2);
 	const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
 	for(unsigned int j=0; j<nrows; j++)
@@ -2166,7 +2176,7 @@ void CRatQuadKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2
   double wi2=0.5/(lengthScale*lengthScale*alpha);
   const unsigned int nrows = X.getRows();
   const unsigned int ncols = X2.getRows();
-  const bool useWork = hasRectWorkspace(nrows, ncols);
+  const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -2211,7 +2221,7 @@ void CRatQuadKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& co
   double g3=0.0;
   double wi2=0.5/(lengthScale*lengthScale*alpha);
   const unsigned int nrows = X.getRows();
-  const bool useWork = hasSymWorkspace(nrows);
+  const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -2400,7 +2410,7 @@ void CMatern32Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X
   double wi2=3.0/(lengthScale*lengthScale);
   const unsigned int nrows = X.getRows();
   const unsigned int ncols = X2.getRows();
-  const bool useWork = hasRectWorkspace(nrows, ncols);
+  const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int j=0; j<nrows; j++)
   {
@@ -2447,7 +2457,7 @@ void CMatern32Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   double g2=0.0;
   double wi2=3.0/(lengthScale*lengthScale);
   const unsigned int nrows = X.getRows();
-  const bool useWork = hasSymWorkspace(nrows);
+  const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -2646,7 +2656,7 @@ void CMatern52Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X
   double wi2=5.0/(lengthScale*lengthScale);
   const unsigned int nrows = X.getRows();
   const unsigned int ncols = X2.getRows();
-  const bool useWork = hasRectWorkspace(nrows, ncols);
+  const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int j=0; j<nrows; j++)
   {
@@ -2693,7 +2703,7 @@ void CMatern52Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   double g2=0.0;
   double wi2=5.0/(lengthScale*lengthScale);
   const unsigned int nrows = X.getRows();
-  const bool useWork = hasSymWorkspace(nrows);
+  const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
   for(unsigned int j=0; j<nrows; j++)
@@ -5873,7 +5883,7 @@ void CCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
   double g2=0.0;
   const unsigned int nrows = X.getRows();
   const unsigned int ncols = X2.getRows();
-  const bool useWork = hasRectWorkspace(nrows, ncols);
+  const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int i=0; i<nrows; i++)
   {

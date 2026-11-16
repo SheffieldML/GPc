@@ -48,12 +48,12 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testCGp
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
-# testCGp is synthetic CGp surface coverage (CIP-0011).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testCGp
+# testParamPaths is CIP-0014 Phase A (no .mat). testCGp is CIP-0011.
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -64,6 +64,7 @@ run-matio-tests: matio-tests
 	./testKern
 	./testMatrix
 	./testOptimisable
+	./testParamPaths
 	./testGp
 	./testCGp
 
@@ -129,6 +130,13 @@ testOptimisable: testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil
 
 testOptimisable.o: testOptimisable.cpp COptimisable.h CMatrix.h
 	$(CC) -c testOptimisable.cpp -o testOptimisable.o $(CCFLAGS)
+
+# CIP-0014 Phase A: GPy-like parameter paths (no matio fixtures).
+testParamPaths: testParamPaths.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testParamPaths testParamPaths.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o ndlassert.o $(LDFLAGS)
+
+testParamPaths.o: testParamPaths.cpp CKern.h CTransform.h CMatrix.h
+	$(CC) -c testParamPaths.cpp -o testParamPaths.o $(CCFLAGS)
 
 testCGp: testCGp.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)

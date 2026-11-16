@@ -314,6 +314,19 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
       BOUNDCHECK(index<paramNames.size());
       return paramNames[index];
     }
+
+  // GPy-aligned path façade (CIP-0014 / REQ-0008). Indexed setParam remains
+  // native storage; these methods use GPy names/units at the boundary.
+  virtual vector<string> paramPaths() const;
+  virtual unsigned int paramIndex(const string& path) const;
+  virtual double getByPath(const string& path) const;
+  virtual void setByPath(const string& path, double val);
+  virtual void constrainPositive(const string& path);
+  virtual void constrainZeroOne(const string& path);
+  virtual void constrainNone(const string& path);
+  // GPy default component name for this kernel type (e.g. Mat32, rbf).
+  virtual string gpyComponentName() const;
+
   // Write out the kernel parameters to a stream.
   virtual void writeParamsToStream(ostream& out) const;
   // Read in the kernel parameters from a stream.
@@ -418,19 +431,19 @@ class CComponentKern : public CKern
     }
     return -1;
   }
-  virtual string getParamName(unsigned int paramNo) const
-  {
-    unsigned int start = 0;
-    unsigned int end = 0;
-    for(size_t i=0; i<components.size(); i++)
-    {
-      end = start+components[i]->getNumParams()-1;
-      if(paramNo <= end)
-	return components[i]->getType() + components[i]->getParamName(paramNo-start);
-      start = end + 1;
-    }
-    return "";
-  }
+  virtual string getParamName(unsigned int paramNo) const;
+  virtual vector<string> paramPaths() const;
+  virtual unsigned int paramIndex(const string& path) const;
+  virtual double getByPath(const string& path) const;
+  virtual void setByPath(const string& path, double val);
+  virtual void constrainPositive(const string& path);
+  virtual void constrainZeroOne(const string& path);
+  virtual void constrainNone(const string& path);
+  // Rebuild parent transform list from children (shared pointers, no delete).
+  void syncTransformsFromComponents();
+  string componentPathLabel(unsigned int componentIndex) const;
+  unsigned int findComponent(const string& comp) const;
+  void splitComponentPath(const string& path, unsigned int& componentIndex, string& leaf) const;
   virtual void updateX(const CMatrix& X)
   {
     for(size_t i=0; i<components.size(); i++)

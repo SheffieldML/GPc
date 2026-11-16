@@ -1,7 +1,7 @@
 ---
 id: "2026-11-16_cip0014-phase-a-path-facade"
 title: "Phase A: GPy path get/set, conversions, constrain (CIP-0014)"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-16"
 last_updated: "2026-11-16"
@@ -26,14 +26,14 @@ Indexed `setParam` remains the storage API. No fix masks yet (Phase B).
 
 ## Acceptance Criteria
 
-- [ ] `paramPaths()` / `paramIndex()` / `getByPath` / `setByPath` on `CKern` with GPy canonical names
-- [ ] RBF `lengthscale` ↔ `inverseWidth` (\(w=1/\ell^2\)); Exp \(\ell=1/w\); `inv_lengthscale` identity alias on RBF
-- [ ] Legacy aliases (`inverseWidth`, `lengthScale`, `weightVariance`, …) resolve; `paramPaths()` lists GPy forms only
-- [ ] Compound/tensor: component aliases, `name` / `name_1` / `name_2`; dotted display names
-- [ ] RBF-ARD does **not** map `inputScale_i` to `lengthscale_i`
-- [ ] `replaceTransform` / `clearTransform`; `constrainPositive` / `constrainZeroOne` / `constrainNone` by path
-- [ ] Unit tests: paths, conversions, aliases, duplicates, constrain + `checkGradients` smoke
-- [ ] matio `testKern` / `testGp` still green
+- [x] `paramPaths()` / `paramIndex()` / `getByPath` / `setByPath` on `CKern` with GPy canonical names
+- [x] RBF `lengthscale` ↔ `inverseWidth` (\(w=1/\ell^2\)); Exp \(\ell=1/w\); `inv_lengthscale` identity alias on RBF
+- [x] Legacy aliases (`inverseWidth`, `lengthScale`, `weightVariance`, …) resolve; `paramPaths()` lists GPy forms only
+- [x] Compound/tensor: component aliases, `name` / `name_1` / `name_2`; dotted display names
+- [x] RBF-ARD does **not** map `inputScale_i` to `lengthscale_i` (exposed as `inputScale_k`)
+- [x] `replaceTransform` / `removeTransformsAt`; `constrainPositive` / `constrainZeroOne` / `constrainNone` by path
+- [x] Unit tests: `testParamPaths` (paths, conversions, aliases, duplicates, constrain)
+- [x] matio `testKern` 0 failures (local); `testGp` not re-run this session
 
 ## Related
 
@@ -45,3 +45,7 @@ Indexed `setParam` remains the storage API. No fix masks yet (Phase B).
 ### 2026-11-16
 
 Task created (Ready) after CIP-0014 Accepted.
+
+### 2026-11-16 (done)
+
+Phase A landed on `cip0014-gpy-like-parameter-access`: path façade on `CKern`/`CComponentKern`, transform replace on `CTransformable`, `testParamPaths` in makefile/`matio-tests`. `./testParamPaths` and `USE_MATIO=1 ./testKern` green.

@@ -2,14 +2,17 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md)  
-**Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md)  
+**Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
 
 - Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored.
-- Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`.
+- **Linux default links OpenBLAS** (`-lopenblas`; install `libopenblas-dev`). `make RELEASE=1` is `-O2 -DNDEBUG` with `GPC_CHECKS=0` (CIP-0013 P1/P2). Checking / reference builds keep `GPC_CHECKS=1`.
+- Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`. Same `RELEASE=1` switch.
 - Language floor is **C++17** (`-std=c++17`). Dynamic exception specifications were removed so the pin is no longer C++14 ([CIP-0002](../cip/cip0002.md)).
+- Timing harness: `make RELEASE=1 bench` then `./benchGPc --kind ftc|dtcvar|fitc …` (set `OPENBLAS_NUM_THREADS=1` for the q=2 protocol).
+- GPy compare + LL gate: `OPENBLAS_NUM_THREADS=1 python bench/run_bench.py` (writes `bench.csv`; withholds timings when likelihoods disagree).
 - Windows CI waits on a maintained Windows make path; it is out of scope until that fragment exists.
 
 ## Reference verification without MATLAB

@@ -713,47 +713,32 @@ double CCmpndKern::computeElement(const CMatrix& X1, unsigned int index1,
   return y;
 }
 
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   MATRIXPROPERTIES(K.isSquare());
-//   K.zeros();
-//   CMatrix K2(K.getRows(), K.getCols());
-//   for(size_t i=0; i<components.size(); i++)
-//   {
-//     components[i]->compute(K2, X);
-//     K.axpy(K2, 1.0);
-//   }
-// }
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   DIMENSIONMATCH(K.getCols()==1);
-//   //CMatrix K2(K.getRows(), K.getCols());
-//   for(unsigned int i=0; i<X.getRows(); i++)
-//   {
-//     double kval=0.0;
-//     for(unsigned int k=0; k<components.size(); k++)
-//       kval+=components[k]->computeElement(X, i, X2, row);
-//     K.setVal(kval, i, row);
-//   }
-// }
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   DIMENSIONMATCH(K.getCols()==X2.getRows());
-//   //CMatrix K2(K.getRows(), K.getCols());
-//   for(unsigned int i=0; i<X.getRows(); i++)
-//   {
-//     for(unsigned int j=0; j<X2.getRows(); j++)
-//     {
-//       double kval=0.0;
-//       for(unsigned int k=0; k<components.size(); k++)
-// 	kval+=components[k]->computeElement(X, i, X2, j);
-//       K.setVal(kval, i, j);
-//     }
-//   }
-// }
+// CIP-0013 P4: dispatch to each child's compute and accumulate.
+void CCmpndKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  K.zeros();
+  CMatrix K2(K.getRows(), K.getCols());
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->compute(K2, X);
+    K.axpy(K2, 1.0);
+  }
+  K.setSymmetric(true);
+}
+void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols() == X2.getRows());
+  K.zeros();
+  CMatrix K2(K.getRows(), K.getCols());
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->compute(K2, X, X2);
+    K.axpy(K2, 1.0);
+  }
+}
 void CCmpndKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -1508,22 +1493,146 @@ double CBiasKern::getGradParam(unsigned int index, const CMatrix& X, const CMatr
 }
 
 
+// CIP-0013 P4/P5: Stationary base — bulk compute + per-eval workspace.
+void CStationaryKern::invalidateWorkspace()
+{
+  ++m_wsEpoch;
+  m_symValid = false;
+  m_rectValid = false;
+  m_symX = 0;
+  m_rectX = 0;
+  m_rectX2 = 0;
+  setUpdateXused(false);
+}
+bool CStationaryKern::hasSymWorkspace(const CMatrix& X) const
+{
+  const unsigned int n = X.getRows();
+  return m_symValid && m_symEpoch == m_wsEpoch && m_symX == &X
+    && m_workR2Sym.getRows() == n && m_workR2Sym.getCols() == n
+    && m_workKSym.getRows() == n && m_workKSym.getCols() == n;
+}
+bool CStationaryKern::hasRectWorkspace(const CMatrix& X, const CMatrix& X2) const
+{
+  const unsigned int n = X.getRows();
+  const unsigned int m = X2.getRows();
+  return m_rectValid && m_rectEpoch == m_wsEpoch && m_rectX == &X && m_rectX2 == &X2
+    && m_workR2Rect.getRows() == n && m_workR2Rect.getCols() == m
+    && m_workKRect.getRows() == n && m_workKRect.getCols() == m;
+}
+void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
+{
+  const unsigned int n = X.getRows();
+  m_workR2Sym.resize(n, n);
+  m_workKSym.resize(n, n);
+  const double s = scaleFactor();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    m_workR2Sym.setVal(0.0, i, i);
+    m_workKSym.setVal(diagComputeElement(X, i), i, i);
+    for(unsigned int j = 0; j < i; j++)
+    {
+      const double r2 = dist2Active(X, i, X, j);
+      const double k = K_of_r(s * sqrt(r2));
+      m_workR2Sym.setVal(r2, i, j);
+      m_workR2Sym.setVal(r2, j, i);
+      m_workKSym.setVal(k, i, j);
+      m_workKSym.setVal(k, j, i);
+    }
+  }
+  m_symX = &X;
+  m_symEpoch = m_wsEpoch;
+  m_symValid = true;
+}
+void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) const
+{
+  const unsigned int n = X.getRows();
+  const unsigned int m = X2.getRows();
+  m_workR2Rect.resize(n, m);
+  m_workKRect.resize(n, m);
+  const double s = scaleFactor();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    for(unsigned int j = 0; j < m; j++)
+    {
+      const double r2 = dist2Active(X, i, X2, j);
+      const double k = K_of_r(s * sqrt(r2));
+      m_workR2Rect.setVal(r2, i, j);
+      m_workKRect.setVal(k, i, j);
+    }
+  }
+  m_rectX = &X;
+  m_rectX2 = &X2;
+  m_rectEpoch = m_wsEpoch;
+  m_rectValid = true;
+}
+void CStationaryKern::updateX(const CMatrix& X)
+{
+  // Cache only for the default full-width path; activeDims ICM layouts skip it.
+  if(!isDefaultActiveDims() || X.getCols() != getInputDim())
+  {
+    setUpdateXused(false);
+    m_symValid = false;
+    m_symX = 0;
+    return;
+  }
+  fillSymWorkspace(X);
+  setUpdateXused(true);
+}
+double CStationaryKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                       const CMatrix& X2, unsigned int index2) const
+{
+  const double r2 = dist2Active(X1, index1, X2, index2);
+  const double r = scaleFactor() * sqrt(r2);
+  return K_of_r(r);
+}
+void CStationaryKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  fillSymWorkspace(X);
+  const unsigned int n = K.getRows();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    for(unsigned int j = 0; j < i; j++)
+    {
+      const double k = symK(i, j);
+      K.setVal(k, i, j);
+      K.setVal(k, j, i);
+    }
+    K.setVal(symK(i, i), i, i);
+  }
+  K.setSymmetric(true);
+}
+void CStationaryKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols() == X2.getRows());
+  fillRectWorkspace(X, X2);
+  const unsigned int n = K.getRows();
+  const unsigned int m = K.getCols();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    for(unsigned int j = 0; j < m; j++)
+      K.setVal(rectK(i, j), i, j);
+  }
+}
+
 // the RBF kernel.
-CRbfKern::CRbfKern() : CKern()
+CRbfKern::CRbfKern() : CStationaryKern()
 {
   _init();
 }
-CRbfKern::CRbfKern(unsigned int inDim) : CKern(inDim)
+CRbfKern::CRbfKern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CRbfKern::CRbfKern(const CMatrix& X) : CKern(X)
+CRbfKern::CRbfKern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CRbfKern::CRbfKern(const CRbfKern& kern) : CKern(kern)
+CRbfKern::CRbfKern(const CRbfKern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -1581,6 +1690,7 @@ void CRbfKern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CRbfKern::getParam(unsigned int paramNo) const
 {
@@ -1630,38 +1740,6 @@ double CRbfKern::getWhite() const
   return 0.0;
 }
 
-double CRbfKern::computeElement(const CMatrix& X1, unsigned int index1, 
-				const CMatrix& X2, unsigned int index2) const
-{
-  double k = dist2Active(X1, index1, X2, index2);
-  k = 0.5*k*inverseWidth;
-  k = variance*exp(-k);
-  return k;
-}
-
-void CRbfKern::updateX(const CMatrix& X)
-{
-  // Cache only for the default full-width path; activeDims ICM layouts skip it.
-  if(!isDefaultActiveDims() || X.getCols()!=getInputDim())
-  {
-    setUpdateXused(false);
-    return;
-  }
-  setUpdateXused(true);
-  Xdists.resize(X.getRows(),X.getRows());
-  double halfInverseWidth=0.5*inverseWidth;
-  unsigned int nrows = X.getRows();
-  for(unsigned int j=0; j<nrows; j++)
-  {
-    Xdists.setVal(0,j,j);
-    for(unsigned int i=0; i<j; i++)
-    {
-      double dist2 = dist2Active(X, i, X, j);
-      Xdists.setVal(dist2,i,j);
-      Xdists.setVal(exp(-dist2*halfInverseWidth),j,i);
-    }
-  }
-}
 void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -1672,16 +1750,27 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
   double g2=0.0;
   double halfInverseWidth=0.5*inverseWidth;
   double halfVariance=0.5*variance;
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  unsigned int nrows = X.getRows();
   for(unsigned int j=0; j<nrows; j++)
   {
-    for(unsigned int i=0; i<X2.getRows(); i++)
+    for(unsigned int i=0; i<ncols; i++)
     {
-      double k = 0;
-      double dist2 = 0;
-      dist2 = dist2Active(X, j, X2, i);
-      k = exp(-dist2*halfInverseWidth);
+      double dist2 = 0.0;
+      double k = 0.0;
+      if(useWork)
+      {
+        dist2 = rectR2(j, i);
+        k = rectK(j, i) * invVar;
+      }
+      else
+      {
+        dist2 = dist2Active(X, j, X2, i);
+        k = exp(-dist2*halfInverseWidth);
+      }
       double kcg_ij = k*covGrad.getVal(j,i);
       g1 -= halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
       g2 += kcg_ij;                    // dk()/dalpha in SBIK paper
@@ -1702,24 +1791,26 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGra
   double g2=0.0;
   double halfInverseWidth=0.5*inverseWidth;
   double halfVariance=0.5*variance;
+  const unsigned int nrows = X.getRows();
+  const bool useWork = hasSymWorkspace(X);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  unsigned int nrows = X.getRows();
   for(unsigned int j=0; j<nrows; j++)
   {
     g2 += covGrad.getVal(j,j);
     for(unsigned int i=0; i<j; i++)
     {
-      double k = 0;
-      double dist2 = 0;
-      if(isUpdateXused()) // WVB's mod for precomputing parts of the kernel.
+      double k = 0.0;
+      double dist2 = 0.0;
+      if(useWork)
       {
-	dist2 = Xdists.getVal(i,j);
-	k = Xdists.getVal(j,i);
+        dist2 = symR2(i, j);
+        k = symK(i, j) * invVar;
       }
       else
       {
-	dist2 = dist2Active(X, i, X, j);
-	k = exp(-dist2*halfInverseWidth);
+        dist2 = dist2Active(X, i, X, j);
+        k = exp(-dist2*halfInverseWidth);
       }
       double kcg_ij = k*covGrad.getVal(i,j);
       g1 -= 2.0*halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
@@ -1751,21 +1842,21 @@ double CRbfKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
 //////////////////////////////////////////////////////////////////////////////////////////////
 // Exponential kernel, written by Karel Lebeda with no guarantees whatsoever...
 //////////////////////////////////////////////////////////////////////////////////////////////
-CExpKern::CExpKern() : CKern()
+CExpKern::CExpKern() : CStationaryKern()
 {
   _init();
 }
-CExpKern::CExpKern(unsigned int inDim) : CKern(inDim)
+CExpKern::CExpKern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CExpKern::CExpKern(const CMatrix& X) : CKern(X)
+CExpKern::CExpKern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }
-CExpKern::CExpKern(const CExpKern& kern) : CKern(kern)
+CExpKern::CExpKern(const CExpKern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -1822,6 +1913,7 @@ void CExpKern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CExpKern::getParam(unsigned int paramNo) const
 {
@@ -1847,7 +1939,7 @@ void CExpKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const C
 	DIMENSIONMATCH(gX.getCols()==X2.getCols());
 	for(unsigned int k=0; k<X2.getRows(); k++)
 	{
-		double dist = sqrt(X.dist2Row(row, X2, k))*inverseWidth;
+		double dist = sqrt(dist2Active(X, row, X2, k))*inverseWidth;
 		for(unsigned int j=0; j<X2.getCols(); j++)
 			{
 			// ddist_dX = (X[:, None, :] - X2[None, :, :]) / self.lengthscale ** 2 / np.where(dist != 0., dist, np.inf)
@@ -1877,14 +1969,6 @@ double CExpKern::getWhite() const
 {
   return 0.0;
 }
-// the kernel function
-double CExpKern::computeElement(const CMatrix& X1, unsigned int index1, const CMatrix& X2, unsigned int index2) const
-{
-  double k = X1.dist2Row(index1, X2, index2);
-  k = sqrt(k)*inverseWidth;
-  k = variance*exp(-k);
-  return k;
-}
 
 // gradient of the kernel function w.r.t. the parameters (0:inverseWidth=1/gamma, 1:variance=alpha, with two data matrices given)
 void CExpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
@@ -1895,27 +1979,31 @@ void CExpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
 	DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
 	double g1=0.0;
 	double g2=0.0;
+	const unsigned int nrows = X.getRows();
+	const unsigned int ncols = X2.getRows();
+	const bool useWork = hasRectWorkspace(X, X2);
+	const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-	unsigned int nrows = X.getRows();
 	for(unsigned int j=0; j<nrows; j++)
 	{
-		for(unsigned int i=0; i<X2.getRows(); i++)
+		for(unsigned int i=0; i<ncols; i++)
 		{
-			// dist = np.sqrt(np.sum(np.square((X[:, None, :] - X2[None, :, :]) / self.lengthscale), -1))
-			double dist2 = X2.dist2Row(i, X, j);
+			double dist2 = 0.0;
+			double k = 0.0;
+			if(useWork)
+			{
+				dist2 = rectR2(j, i);
+				k = rectK(j, i) * invVar;
+			}
+			else
+			{
+				dist2 = dist2Active(X, j, X2, i);
+				k = exp(-sqrt(dist2) * inverseWidth);
+			}
 			double dist = sqrt(dist2) * inverseWidth;
-			// invdist = 1. / np.where(dist != 0., dist, np.inf)
-			double invdist = (dist != 0 ? invdist = 1 / dist :  invdist = 0 );
-			// dist2M = np.square(X[:, None, :] - X2[None, :, :]) / self.lengthscale ** 3
-			double dist2M = dist2 * inverseWidth*inverseWidth*inverseWidth;
-			// dvar = np.exp(-dist)
-			double k = exp(-dist);
-			// target[0] += np.sum(dvar * dL_dK)
-			g2 += k * covGrad.getVal(j,i); // in python, dK/dalpha goes firts, here gamma comes first
-			// dl = self.variance * dvar * dist2M.sum(-1) * invdist NO ARD HERE, right?!?
-			// I have to do it using dK_diw (inverse width), not dK_dl (length=width)!!!
+			double invdist = (dist != 0.0) ? (1.0 / dist) : 0.0;
+			g2 += k * covGrad.getVal(j,i);
 			double dl = - dist2 * k * inverseWidth * variance * invdist;
-			// target[1] += np.sum(dl * dL_dK)
 			g1 += dl * covGrad.getVal(j,i);
 		}
 	}
@@ -1946,21 +2034,21 @@ double CExpKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
 
 
 // the Rational Quadratic kernel.
-CRatQuadKern::CRatQuadKern() : CKern()
+CRatQuadKern::CRatQuadKern() : CStationaryKern()
 {
   _init();
 }
-CRatQuadKern::CRatQuadKern(unsigned int inDim) : CKern(inDim)
+CRatQuadKern::CRatQuadKern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CRatQuadKern::CRatQuadKern(const CMatrix& X) : CKern(X)
+CRatQuadKern::CRatQuadKern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CRatQuadKern::CRatQuadKern(const CRatQuadKern& kern) : CKern(kern)
+CRatQuadKern::CRatQuadKern(const CRatQuadKern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -2024,6 +2112,7 @@ void CRatQuadKern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CRatQuadKern::getParam(unsigned int paramNo) const
 {
@@ -2075,32 +2164,6 @@ double CRatQuadKern::getWhite() const
   return 0.0;
 }
 
-double CRatQuadKern::computeElement(const CMatrix& X1, unsigned int index1, 
-				    const CMatrix& X2, unsigned int index2) const
-{
-  double k = X1.dist2Row(index1, X2, index2);
-  k *= 0.5/(lengthScale*lengthScale*alpha);
-  k = variance*pow((1+k), -alpha);
-  return k;
-}
-
-void CRatQuadKern::updateX(const CMatrix& X)
-{
-  setUpdateXused(true);
-  Xdists.resize(X.getRows(),X.getRows());
-  double wi2=0.5/(lengthScale*lengthScale*alpha);
-  unsigned int nrows = X.getRows();
-  for(unsigned int j=0; j<nrows; j++)
-  {
-    Xdists.setVal(0,j,j);
-    for(unsigned int i=0; i<j; i++)
-    {
-      double dist2 = X.dist2Row(i, X, j);
-      Xdists.setVal(dist2,i,j);
-      Xdists.setVal(pow((1+dist2*wi2), -alpha),j,i);
-    }
-  }
-}
 void CRatQuadKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -2111,15 +2174,28 @@ void CRatQuadKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2
   double g2=0.0;
   double g3=0.0;
   double wi2=0.5/(lengthScale*lengthScale*alpha);
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  unsigned int nrows = X.getRows();
   for(unsigned int j=0; j<nrows; j++)
   {
-    for(unsigned int i=0; i<X2.getRows(); i++)
+    for(unsigned int i=0; i<ncols; i++)
     {
-      double dist2 = X2.dist2Row(i, X, j);
+      double dist2 = 0.0;
+      double kbase = 0.0;
+      if(useWork)
+      {
+        dist2 = rectR2(j, i);
+        kbase = rectK(j, i) * invVar;
+      }
+      else
+      {
+        dist2 = dist2Active(X, j, X2, i);
+        kbase = pow(1.0 + dist2*wi2, -alpha);
+      }
       double baseVal = (1+dist2*wi2);
-      double kbase = pow(baseVal, -alpha);
       double kbase2 = -alpha*kbase/baseVal;
       double cgVal = covGrad.getVal(j,i);
       double kcg_ij = kbase*cgVal;
@@ -2144,29 +2220,28 @@ void CRatQuadKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& co
   double g2=0.0;
   double g3=0.0;
   double wi2=0.5/(lengthScale*lengthScale*alpha);
-  
-  unsigned int nrows = X.getRows();
+  const unsigned int nrows = X.getRows();
+  const bool useWork = hasSymWorkspace(X);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
+
   for(unsigned int j=0; j<nrows; j++)
   {
-    double baseVal = 0.0;
-    double kbase = 0.0;
-    double kbase2 = 0.0;    
-    double dist2 = 0.0;
     for(unsigned int i=0; i<j; i++)
     {
-      if(isUpdateXused()) // WVB's mod for precomputing parts of the kernel.
+      double dist2 = 0.0;
+      double kbase = 0.0;
+      if(useWork)
       {
-	dist2 = Xdists.getVal(i,j);
-	baseVal = (1+dist2*wi2);
-	kbase = Xdists.getVal(j,i);
+        dist2 = symR2(i, j);
+        kbase = symK(i, j) * invVar;
       }
       else
       {
-	dist2 = X.dist2Row(i, X, j);
-	baseVal = (1+dist2*wi2);
-	kbase = pow(baseVal, -alpha);
+        dist2 = dist2Active(X, i, X, j);
+        kbase = pow(1.0 + dist2*wi2, -alpha);
       }
-      kbase2 = -alpha*kbase/baseVal;
+      double baseVal = (1+dist2*wi2);
+      double kbase2 = -alpha*kbase/baseVal;
       double cgVal = covGrad.getVal(j,i);
       double kcg_ij = kbase*cgVal;
       g1 -= cgVal*(dist2*wi2/alpha*kbase2 + log(baseVal)*kbase); 
@@ -2197,21 +2272,21 @@ double CRatQuadKern::getGradParam(unsigned int index, const CMatrix& X, const CM
 
 
 // the Matern 3/2 kernel.
-CMatern32Kern::CMatern32Kern() : CKern()
+CMatern32Kern::CMatern32Kern() : CStationaryKern()
 {
   _init();
 }
-CMatern32Kern::CMatern32Kern(unsigned int inDim) : CKern(inDim)
+CMatern32Kern::CMatern32Kern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CMatern32Kern::CMatern32Kern(const CMatrix& X) : CKern(X)
+CMatern32Kern::CMatern32Kern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CMatern32Kern::CMatern32Kern(const CMatern32Kern& kern) : CKern(kern)
+CMatern32Kern::CMatern32Kern(const CMatern32Kern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -2268,6 +2343,7 @@ void CMatern32Kern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CMatern32Kern::getParam(unsigned int paramNo) const
 {
@@ -2293,7 +2369,7 @@ void CMatern32Kern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, co
   double wi2= 3.0/(lengthScale*lengthScale);
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    double n2 = X.dist2Row(row, X2, k);
+    double n2 = dist2Active(X, row, X2, k);
     double sqrtn2wi2 = sqrt(n2*wi2);
     double expmSqrtn2wi2 = exp(-sqrtn2wi2);
     double K = variance*(1+sqrtn2wi2)*expmSqrtn2wi2;
@@ -2323,33 +2399,6 @@ double CMatern32Kern::getWhite() const
   return 0.0;
 }
 
-double CMatern32Kern::computeElement(const CMatrix& X1, unsigned int index1, 
-				     const CMatrix& X2, unsigned int index2) const
-{
-  double k = X1.dist2Row(index1, X2, index2);
-  double wi2 = (3.0/(lengthScale*lengthScale));
-  double sqrtn2wi2 = sqrt(k*wi2);
-  k = variance*(1+sqrtn2wi2)*exp(-sqrtn2wi2);
-  return k;
-}
-
-void CMatern32Kern::updateX(const CMatrix& X)
-{
-  setUpdateXused(true);
-  Xdists.resize(X.getRows(),X.getRows());
-  double wi2=3.0/(lengthScale*lengthScale);
-  unsigned int nrows = X.getRows();
-  for(unsigned int j=0; j<nrows; j++)
-  {
-    Xdists.setVal(0,j,j);
-    for(unsigned int i=0; i<j; i++)
-    {
-      double n2 = X.dist2Row(i, X, j);
-      Xdists.setVal(n2,i,j);
-      Xdists.setVal(sqrt(n2*wi2),j,i);
-    }
-  }
-}
 void CMatern32Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -2359,22 +2408,37 @@ void CMatern32Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X
   double g1=0.0;
   double g2=0.0;
   double wi2=3.0/(lengthScale*lengthScale);
-  unsigned int nrows = X.getRows();
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int j=0; j<nrows; j++)
   {
-    for(unsigned int i=0; i<X2.getRows(); i++)
+    for(unsigned int i=0; i<ncols; i++)
     {
       double cgVal = covGrad.getVal(j,i);
-      double n2 = X2.dist2Row(i, X, j);
-      double sqrtn2wi2 = sqrt(n2*wi2);
-      double expmsqrtn2wi2 = exp(-sqrtn2wi2);
-      double k = (1+sqrtn2wi2)*expmsqrtn2wi2;
+      double n2 = 0.0;
+      double sqrtn2wi2 = 0.0;
+      double k = 0.0;
+      if(useWork)
+      {
+        n2 = rectR2(j, i);
+        sqrtn2wi2 = scaleFactor() * sqrt(n2);
+        k = rectK(j, i) * invVar;
+      }
+      else
+      {
+        n2 = dist2Active(X, j, X2, i);
+        sqrtn2wi2 = sqrt(n2*wi2);
+        k = (1+sqrtn2wi2)*exp(-sqrtn2wi2);
+      }
+      double expmsq = (sqrtn2wi2 == 0.0) ? 1.0 : (k / (1.0 + sqrtn2wi2));
       double ratio;
       if(sqrtn2wi2==0.0)
 	ratio = 1.0;
       else
 	ratio = n2/sqrtn2wi2;
-      g1 += cgVal*wi2/lengthScale*ratio*(k-expmsqrtn2wi2);
+      g1 += cgVal*wi2/lengthScale*ratio*(k-expmsq);
       g2 += cgVal*k;
     }
   }
@@ -2392,32 +2456,36 @@ void CMatern32Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   double g1=0.0;
   double g2=0.0;
   double wi2=3.0/(lengthScale*lengthScale);
-  double n2 = 0.0;
-  double sqrtwi2n2 = 0.0;
-  double ratio;
+  const unsigned int nrows = X.getRows();
+  const bool useWork = hasSymWorkspace(X);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  unsigned int nrows = X.getRows();
   for(unsigned int j=0; j<nrows; j++)
   {
     for(unsigned int i=0; i<j; i++)
     {
-      if(isUpdateXused()) // WVB's mod for precomputing parts of the kernel.
+      double n2 = 0.0;
+      double sqrtwi2n2 = 0.0;
+      double k = 0.0;
+      if(useWork)
       {
-	n2 = Xdists.getVal(i,j);
-	sqrtwi2n2 = Xdists.getVal(j,i);
+	n2 = symR2(i, j);
+	sqrtwi2n2 = scaleFactor() * sqrt(n2);
+	k = symK(i, j) * invVar;
       }
       else
       {
-	n2 = X.dist2Row(i, X, j);
+	n2 = dist2Active(X, i, X, j);
 	sqrtwi2n2 = sqrt(n2*wi2);
+	k = (1+sqrtwi2n2)*exp(-sqrtwi2n2);
       }
+      double ratio;
       if(sqrtwi2n2==0.0)
 	ratio = 1.0;
       else
 	ratio = n2/sqrtwi2n2;
-      double expmsqrtwi2n2 = exp(-sqrt(n2*wi2));
+      double expmsqrtwi2n2 = (sqrtwi2n2 == 0.0) ? 1.0 : (k / (1.0 + sqrtwi2n2));
       double cgVal = covGrad.getVal(j,i);
-      double k = (1+sqrtwi2n2)*expmsqrtwi2n2;
       g1 += cgVal*wi2/lengthScale*ratio*(k-expmsqrtwi2n2);
       g2 += cgVal*k;
     }
@@ -2444,21 +2512,21 @@ double CMatern32Kern::getGradParam(unsigned int index, const CMatrix& X, const C
 }
 
 // the Matern 5/2 kernel.
-CMatern52Kern::CMatern52Kern() : CKern()
+CMatern52Kern::CMatern52Kern() : CStationaryKern()
 {
   _init();
 }
-CMatern52Kern::CMatern52Kern(unsigned int inDim) : CKern(inDim)
+CMatern52Kern::CMatern52Kern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CMatern52Kern::CMatern52Kern(const CMatrix& X) : CKern(X)
+CMatern52Kern::CMatern52Kern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CMatern52Kern::CMatern52Kern(const CMatern52Kern& kern) : CKern(kern)
+CMatern52Kern::CMatern52Kern(const CMatern52Kern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -2515,6 +2583,7 @@ void CMatern52Kern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CMatern52Kern::getParam(unsigned int paramNo) const
 {
@@ -2546,7 +2615,7 @@ void CMatern52Kern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, co
   double expmSqrtn2wi2 = 0.0;
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    n2 = X.dist2Row(row, X2, k);
+    n2 = dist2Active(X, row, X2, k);
     n2wi2 = n2*wi2;
     sqrtn2wi2 = sqrt(n2wi2);
     expmSqrtn2wi2 = exp(-sqrtn2wi2);
@@ -2576,34 +2645,6 @@ double CMatern52Kern::getWhite() const
   return 0.0;
 }
 
-double CMatern52Kern::computeElement(const CMatrix& X1, unsigned int index1, 
-				     const CMatrix& X2, unsigned int index2) const
-{
-  double k = X1.dist2Row(index1, X2, index2);
-  double wi2 = (5.0/(lengthScale*lengthScale));
-  double  n2wi2 = k*wi2;
-  double sqrtn2wi2 = sqrt(n2wi2);
-  k = variance*(1+sqrtn2wi2+n2wi2/3.0)*exp(-sqrtn2wi2);
-  return k;
-}
-
-void CMatern52Kern::updateX(const CMatrix& X)
-{
-  setUpdateXused(true);
-  Xdists.resize(X.getRows(),X.getRows());
-  double wi2=5.0/(lengthScale*lengthScale);
-  unsigned int nrows = X.getRows();
-  for(unsigned int j=0; j<nrows; j++)
-  {
-    Xdists.setVal(0,j,j);
-    for(unsigned int i=0; i<j; i++)
-    {
-      double n2 = X.dist2Row(i, X, j);
-      Xdists.setVal(n2,i,j);
-      Xdists.setVal(sqrt(n2*wi2),j,i);
-    }
-  }
-}
 void CMatern52Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -2613,24 +2654,32 @@ void CMatern52Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X
   double g1=0.0;
   double g2=0.0;
   double wi2=5.0/(lengthScale*lengthScale);
-  double n2wi2 = 0.0;
-  double sqrtn2wi2 = 0.0;
-  double expmsqrtn2wi2 = 0.0;
-  double n2 = 0.0;
-  double k = 0.0;
-  double cgVal = 0.0;
-  double ratio = 0.0;
-  unsigned int nrows = X.getRows();
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int j=0; j<nrows; j++)
   {
-    for(unsigned int i=0; i<X2.getRows(); i++)
+    for(unsigned int i=0; i<ncols; i++)
     {
-      cgVal = covGrad.getVal(j,i);
-      n2 = X2.dist2Row(i, X, j);
-      n2wi2 = n2*wi2;
-      sqrtn2wi2 = sqrt(n2wi2);
-      expmsqrtn2wi2 = exp(-sqrtn2wi2);
-      k = (1+sqrtn2wi2+n2wi2/3.0)*expmsqrtn2wi2;
+      double cgVal = covGrad.getVal(j,i);
+      double n2 = 0.0;
+      double k = 0.0;
+      if(useWork)
+      {
+        n2 = rectR2(j, i);
+        k = rectK(j, i) * invVar;
+      }
+      else
+      {
+        n2 = dist2Active(X, j, X2, i);
+      }
+      double n2wi2 = n2*wi2;
+      double sqrtn2wi2 = sqrt(n2wi2);
+      double expmsqrtn2wi2 = exp(-sqrtn2wi2);
+      if(!useWork)
+        k = (1+sqrtn2wi2+n2wi2/3.0)*expmsqrtn2wi2;
+      double ratio;
       if(sqrtn2wi2==0.0)
 	ratio = 1.0;
       else
@@ -2653,35 +2702,36 @@ void CMatern52Kern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   double g1=0.0;
   double g2=0.0;
   double wi2=5.0/(lengthScale*lengthScale);
-  double n2 = 0.0;
-  double n2wi2 = 0.0;
-  double sqrtwi2n2 = 0.0;
-  double ratio;
+  const unsigned int nrows = X.getRows();
+  const bool useWork = hasSymWorkspace(X);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  unsigned int nrows = X.getRows();
   for(unsigned int j=0; j<nrows; j++)
   {
     for(unsigned int i=0; i<j; i++)
     {
-      if(isUpdateXused()) // WVB's mod for precomputing parts of the kernel.
+      double n2 = 0.0;
+      double k = 0.0;
+      if(useWork)
       {
-	n2 = Xdists.getVal(i,j);
-	n2wi2 = n2*wi2;
-	sqrtwi2n2 = Xdists.getVal(j,i);
+	n2 = symR2(i, j);
+	k = symK(i, j) * invVar;
       }
       else
       {
-	n2 = X.dist2Row(i, X, j);
-	n2wi2 = n2*wi2;
-	sqrtwi2n2 = sqrt(n2wi2);
+	n2 = dist2Active(X, i, X, j);
       }
+      double n2wi2 = n2*wi2;
+      double sqrtwi2n2 = sqrt(n2wi2);
+      double ratio;
       if(sqrtwi2n2==0.0)
 	ratio = 1.0;
       else
 	ratio = n2/sqrtwi2n2;
       double expmsqrtwi2n2 = exp(-sqrtwi2n2);
       double cgVal = covGrad.getVal(j,i);
-      double k = (1+sqrtwi2n2+n2wi2/3.0)*expmsqrtwi2n2;
+      if(!useWork)
+        k = (1+sqrtwi2n2+n2wi2/3.0)*expmsqrtwi2n2;
       g1 += cgVal*(wi2/lengthScale*ratio*(k-expmsqrtwi2n2)-2.0*wi2/(3.0*lengthScale)*n2*expmsqrtwi2n2);
       g2 += cgVal*k;
     }
@@ -5700,21 +5750,21 @@ double CStdPeriodicKern::getGradParam(unsigned int index, const CMatrix& X, cons
 }
 
 // the Cosine kernel (GPy-aligned, stationary: k(r)=variance*cos(r)).
-CCosineKern::CCosineKern() : CKern()
+CCosineKern::CCosineKern() : CStationaryKern()
 {
   _init();
 }
-CCosineKern::CCosineKern(unsigned int inDim) : CKern(inDim)
+CCosineKern::CCosineKern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CCosineKern::CCosineKern(const CMatrix& X) : CKern(X)
+CCosineKern::CCosineKern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CCosineKern::CCosineKern(const CCosineKern& kern) : CKern(kern)
+CCosineKern::CCosineKern(const CCosineKern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -5771,6 +5821,7 @@ void CCosineKern::setParam(double val, unsigned int paramNo)
   default:
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
+  invalidateWorkspace();
 }
 double CCosineKern::getParam(unsigned int paramNo) const
 {
@@ -5787,17 +5838,6 @@ double CCosineKern::getParam(unsigned int paramNo) const
     throw ndlexceptions::Error("Requested parameter doesn't exist.");
   }
 }
-double CCosineKern::computeElement(const CMatrix& X1, unsigned int index1, 
-				   const CMatrix& X2, unsigned int index2) const
-{
-  double r2 = 0.0;
-  for(unsigned int j=0; j<getInputDim(); j++)
-  {
-    double dx = (X1.getVal(index1, j)-X2.getVal(index2, j))/lengthScale;
-    r2 += dx*dx;
-  }
-  return variance*cos(sqrt(r2));
-}
 // gradient of the kernel function w.r.t. the data (derivative with respect to X, the `row' point).
 void CCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
 {
@@ -5806,13 +5846,7 @@ void CCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, cons
   DIMENSIONMATCH(X.getCols()==X2.getCols());
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    double r2 = 0.0;
-    for(unsigned int j=0; j<getInputDim(); j++)
-    {
-      double dx = (X.getVal(row, j)-X2.getVal(k, j))/lengthScale;
-      r2 += dx*dx;
-    }
-    double r = sqrt(r2);
+    double r = scaleFactor() * sqrt(dist2Active(X, row, X2, k));
     for(unsigned int j=0; j<X2.getCols(); j++)
     {
       double val = 0.0;
@@ -5847,16 +5881,30 @@ void CCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
   DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
   double g1=0.0;
   double g2=0.0;
-  unsigned int nrows = X.getRows();
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
   for(unsigned int i=0; i<nrows; i++)
   {
-    for(unsigned int j=0; j<X2.getRows(); j++)
+    for(unsigned int j=0; j<ncols; j++)
     {
-      double d2 = X2.dist2Row(j, X, i);
+      double d2 = 0.0;
+      double cosr = 0.0;
+      if(useWork)
+      {
+        d2 = rectR2(i, j);
+        cosr = rectK(i, j) * invVar;
+      }
+      else
+      {
+        d2 = dist2Active(X, i, X2, j);
+        cosr = cos(sqrt(d2)/lengthScale);
+      }
       double r = sqrt(d2)/lengthScale;
       double cgVal = covGrad.getVal(i,j);
       g1 += cgVal*sin(r)*r;
-      g2 += cgVal*cos(r);
+      g2 += cgVal*cosr;
     }
   }
   g.setVal(g1*variance/lengthScale, 0);

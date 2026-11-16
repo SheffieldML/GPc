@@ -5,6 +5,8 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 **Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000F](../cip/cip000F.md)  
 **Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
+Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimisers.md).
+
 ## CMatrix ownership ([CIP-0008](../cip/cip0008.md))
 
 `CMatrix` owns its column-major `double* vals` buffer under the Rule of Five: deep copy construction/assignment, move construction/assignment that transfer the buffer, and a destructor that frees it. Do not rely on compiler-generated assignment (that aliases pointers). Prefer `deepCopy` when an existing object must take on another matrix’s values without using `operator=`; moved-from matrices are empty (`vals == NULL`) and may only be destroyed or assigned into.

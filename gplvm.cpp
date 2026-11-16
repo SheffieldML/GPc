@@ -875,7 +875,7 @@ void CClgplvm::helpInfo()
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");
       helpArgument("-l, --labelled-indices-file string", "File containing indices of labelled points. The index starts from 1.");
-      helpArgument("-#, --#iterations int", "Number of iterations for optimisation by scaled conjugate gradient. Default is 1000.");
+      helpArgument("-#, --#iterations int", "Optimiser budget (setMaxIters). For scg/conjgrad/graddesc: algorithm iterations. For lbfgs/quasinew: both reverse-comm steps and function evaluations (GPy-aligned). Default 1000. See docs/optimisers.md.");
       helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew (or lbfgs) and graddesc. Default is scg.");
       helpArgument("-x, --latent-dim int", "Dimension for latent variable space. Deafult is 2.");
       helpArgument("-C, --Centre-data bool", "Centre the data by removing the mean value. Default value is 1 (true).");

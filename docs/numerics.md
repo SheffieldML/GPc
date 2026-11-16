@@ -31,7 +31,7 @@ FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`.
 
 - **Legacy** (default): `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed.
-- **StableFactor** ([CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC block \(Q_b=B_b^\top B_b\)). Reverse-mode grads for DTC/DTCVAR/FITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). PITC grads still use Legacy `gpCovGrads` on the whitened-\(Q\) factors. Prediction for DTC/DTCVAR/FITC uses \(U,C\) factors.
+- **StableFactor** ([CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
 
 Gates:
 

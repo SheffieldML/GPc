@@ -980,7 +980,7 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, exp, ratquad, mlp (default rbf). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian, plus bias/white/ard variants.");
+    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, exp, ratquad, mlp (default rbf). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-000D): coregionalize, indexwhite; plus bias/white/ard/tensor/cmpnd.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
     helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");
     helpArgument("-v, --variance float", "Variance parameter for covariance function.");

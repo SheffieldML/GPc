@@ -1,7 +1,7 @@
 ---
 id: "0006"
 title: "Users can model correlated multiple outputs via coregionalization"
-status: "Proposed"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-15"
 last_updated: "2026-11-15"
@@ -46,3 +46,6 @@ Requirement created alongside CIP-000D.
 
 ### 2026-11-15 (later)
 CIP-000D’s open stacking and composition choices were replaced by GPy’s `build_XY`, `ICM`, and `LCM`. Requirement text is unchanged. Status stays Proposed.
+
+### 2026-11-16
+CIP-000D implemented: `activeDims`, `coregionalize`, `indexwhite`, ICM/LCM helpers, `testCoregionalize`. Status → Implemented (validate/close after CI).

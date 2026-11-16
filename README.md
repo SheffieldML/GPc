@@ -16,7 +16,9 @@ Compile and Reference tests run on **Ubuntu** and **macOS** (CIP-0006); both are
 
 Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
 
-**Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md). Optional API demos: `make demos`.
+**Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md).
+
+**Binaries / demos:** `make gp ivm gplvm bgplvm` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
 
 Gaussian Process Software
 =========================
@@ -99,13 +101,16 @@ One of the advantages of interfacing to the LAPACK and BLAS libraries is that th
 
 ## General Information
 
-The way the software operates is through the command line. There is one executable, `gp`. Help can be obtained by writing 
+The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
 
 ```sh
 $ ./gp -h
+$ ./ivm -h
+$ ./gplvm -h
+$ ./bgplvm -h
 ```
 
-which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
+Help for each command, for example:
 
 ```sh
 $ ./gp learn -h
@@ -117,12 +122,11 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="https://github.com/SheffieldML/GPmat/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
 
-For the maintained tutorial versions of these walks (GPy checklist mapping, DTCVAR sparse path, IVM/GPLVM), see [`docs/tutorials/`](docs/tutorials/).
+For the maintained tutorial versions of these walks (GPy checklist mapping, DTCVAR sparse path, IVM / MAP GPLVM / Bayesian GPLVM / MRD), see [`docs/tutorials/`](docs/tutorials/).
 
-## One Dimensional Data Data
+## One Dimensional Data
 
-
-Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `spgp1d.svml`. 
+Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `sinc.svml` (see also [`docs/tutorials/regression_1d.md`](docs/tutorials/regression_1d.md)).
 
 First we will learn the data using the following command,
 
@@ -130,7 +134,7 @@ First we will learn the data using the following command,
 $ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model
 ```
 
-The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` terminates the optimisation after 100 iterations so that you can quickly move on with the rest of the tutorial.
+The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` is the optimiser budget (`setMaxIters`): for SCG (default) that is algorithm iterations; for `-O lbfgs` / `quasinew` it caps both reverse-communication steps and function evaluations (GPy-aligned). See [`docs/optimisers.md`](docs/optimisers.md).
 
 The software will load the data in `sinc.svml`. The labels are included in this file but they are <i>not</i> used in the optimisation of the model. They are for visualisation purposes only.
 
@@ -195,13 +199,23 @@ Gaussian process applied to sinc data.</center><br>
 
 The other files created are `sinc_error_bar_data.dat` (x, ymin, ymax for the ±2σ band), `sinc_line_data.dat` (posterior mean), and `sinc_scatter_data.dat` (training data). Colours follow the GPy Tango palette.
 
-### Other Data
+### Other Data / Sparse DTCVAR
 
-You might also want to try a larger data set.
+You might also want to try a larger 1D set, `examples/spgp1d.svml`. Full GP:
 
 ```sh
 $ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
 ```
+
+Sparse variational (DTCVAR) with an inducing set — the maintained sparse tutorial path (prefer this over FITC; CLI FITC still errors out):
+
+```sh
+$ ./gp -v 3 learn -# 100 -A dtcvar -a 20 examples/spgp1d.svml spgp1d_dtcvar.model
+$ ./gp display spgp1d_dtcvar.model
+$ ./gp gnuplot -r 400 examples/spgp1d.svml spgp1d_dtcvar.model spgp1d_dtcvar
+```
+
+See [`docs/tutorials/sparse_regression_1d.md`](docs/tutorials/sparse_regression_1d.md) and optional `make demo_sparse_dtcvar`.
 
 ### MATLAB and OCTAVE
 
@@ -228,42 +242,38 @@ The software is mainly written in C++ but relies for some functions on FORTRAN c
 
 ## Compiling the Software
 
-The software was written with gcc vs 3.2.2. There are definitely Standard Template Library issues on Solaris with gcc 2.95, so I suggest that at least version 3.2 or above is used.
-
-Part of the reason for using gcc is the ease of interoperability with FORTRAN. The code base makes fairly extensive use of FORTRAN so you need to have g77 installed.
-The software is compiled by writing 
+Use the contemporary build notes at the top of this README (`make.linux` /
+`make.osx`, Homebrew on macOS, C++17). Then:
 
 ```sh
 $ make ivm
 ```
 
-at the command line. Architecture specific options are included in the `make.ARCHITECTURE` files. Rename the file with the relevant architecture to `make.inc` for it to be included.
+Historical notes about gcc 3.2 / g77, Cygwin, and MSVC below describe older packaging; the `cygwin/` and `MSVC/` trees are not in the current checkout.
 
 ### Optimisation
 
 One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file `make.atlas` includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
 
-### Cygwin
+### Cygwin / Microsoft Visual C++
 
-For Windows users the code compiles under cygwin. However you will need version s of the lapack and blas libraries available (see <a href="http://www.netlib.org">www.netlib.org</a>). This can take some time to compile, and in the absence of any pre-compiled versions on the web I've provided some pre-compiled versions you may want to make use of (see the cygwin directory). Note that these pre-compiled versions are <i>not</i> optimised for the specific architecture and therefore do not give the speed up you would hope for from using lapack and blas.
-
-### Microsoft Visual C++
-
-As of Release 0.101 the code compiles under Microsoft Visual Studio 7.1. A project file is provided in the current release in the directory `MSVC/ivm`. The compilation makes use of f2c versions of the FORTRAN code and the C version of LAPACK/BLAS, CLAPACK. Detailed instructions on how to compile are in the readme.msvc file. Much of the work to convert the code (which included ironing out several bugs) was done by William V. Baxter for the GPLVM code. 
+Historical Windows packaging notes (Cygwin LAPACK/BLAS; MSVC under `MSVC/ivm`) apply to older releases; those trees are not in the current checkout. See [`docs/build-and-ci.md`](docs/build-and-ci.md).
 
 ## General Information
 
-The way the software operates is through the command line. There is one executable, `ivm`. Help can be obtained by writing 
+The way the software operates is through the command line. The IVM executable is `./ivm` (classification / null-category noise). Help:
 
 ```sh
 $ ./ivm -h
 ```
 
-which lists the commands available under the software. Help for each command can then be obtained by writing, for example, 
+Help for each command, for example:
 
 ```sh
 $ ./ivm learn -h
 ```
+
+Maintained IVM tutorials: [`docs/tutorials/ivm_unitsquare.md`](docs/tutorials/ivm_unitsquare.md), [`ivm_ard_clusters`](docs/tutorials/ivm_ard_clusters.md), [`ivm_semisupervised`](docs/tutorials/ivm_semisupervised.md).
 
 All the tutorial optimisations are suggested take less than 1/2 hour to run on my less than 2GHz Pentium IV machine. The first oil example runs in a couple of minutes. Below I suggest using the highest verbosity options `-v 3` in each of the examples so that you can track the iterations.
 
@@ -278,7 +288,7 @@ as: "Unknown noise model!". When I test this function with IVMCPP0p11 IVM,
 its fine, but IVMCPP0p11 has another problem that it gives "out of memory"
 error in test mode! So I use two vesions simultaneously. "</i> 
 
-I'm working (as of 31/12/2007) on a major rewrite, so it's unlikely that these bugs will be fixed in the near future, however if anyone makes a fix I'll be happy to incorporate it! Please let me know.
+Historical note (31/12/2007). Prefer the current `./ivm gnuplot` path and the maintained tutorials under [`docs/tutorials/`](docs/tutorials/) if you hit issues; please open a GitHub issue with a reproducer.
 
 
 ## Examples
@@ -342,7 +352,7 @@ and obtain the plot shown below
 <center><img src="unitsquaregp_plot.png"><br>
 The decision boundary learnt for the data sampled from a Gaussian process classification. Note the active points (dark red) typically lie along the decision boundary.</center><br>
 
-The other files created are `oil100_variance_matrix.dat`, which produces the grayscale map of the log precisions and `oil100_latent_data1-3.dat` which are files containing the latent data positions associated with each label.
+Generated plot artefacts for this 2-D IVM example follow the stub name (for example `unitsquaregp_*.dat`); see the gnuplot script header for the exact list. Maintained walk-through: [`docs/tutorials/ivm_unitsquare.md`](docs/tutorials/ivm_unitsquare.md).
 
 ### Feature Selection
 
@@ -429,7 +439,9 @@ $ gnuplot -e "GPLOT_PNG='semisupercrescent_plot.png'" semisupercrescent_plot.gp
 
 The result of the visualisation being,
 
-<center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data; dark-red markers are the active set. <center>
+<center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data; dark-red markers are the active set.</center>
+
+Maintained walk-through: [`docs/tutorials/ivm_semisupervised.md`](docs/tutorials/ivm_semisupervised.md).
 
 
 GP-LVM Software
@@ -474,9 +486,11 @@ performance hit. This was difficult to do in MATLAB as users who have
 tried version 1 (which was fast but inflexible) and version 2 (which
 was flexible but slow) of the MATLAB software will appreciate.
 
-The sparsification algorithm has not been implemented in the C++
-software so this software is mainly for smaller data sets (up to
-around a thousand points).
+MAP `./gplvm` remains a dense latent-variable path and is still aimed at
+smaller data sets (on the order of a thousand points). Sparse variational
+inducing approximations live in `CGp` (DTCVAR; see the sparse GP section
+above) and in the Bayesian GP-LVM (`./bgplvm`, CIP-0017). Multi-view MRD
+(`CMrd` / `demo_mrd`, CIP-0018) reuses that Bayesian inducing path.
 
 The software is mainly written in C++ but relies for some functions
 on FORTRAN code by other authors and the LAPACK and BLAS libraries.
@@ -486,22 +500,16 @@ for visualising the results.
 
 ## Compiling the Software
 
-The software was written with gcc vs 3.2.2. There are definitely
-Standard Template Library issues on Solaris with gcc 2.95, so I
-suggest that at least version 3.2 or above is used.
-
-Part of the reason for using gcc is the ease of interoperability
-with FORTRAN. The code base makes fairly extensive use of FORTRAN so
-you need to have g77 installed.  The software is compiled by
-writing
+Use the contemporary build notes at the top of this README (`make.linux` /
+`make.osx`, Homebrew on macOS, C++17). Then:
 
 ```sh
 $ make gplvm
+$ make bgplvm
 ```
 
-at the command line. Architecture specific options are included in
-the `make.ARCHITECTURE` files. Rename the file with the
-relevant architecture to `make.inc` for it to be included.
+Historical notes about gcc 3.2 / g77 and `make.ARCHITECTURE` files below the
+GP section still describe older packaging; prefer `make.linux` / `make.osx`.
 
 ### Optimisation
 
@@ -511,28 +519,13 @@ file `make.atlas` includes options for compiling the ATLAS
 optimised versions of lapack and blas that are available on a server I
 have access to. These options may vary for particular machines.
 
-### Cygwin
+### Cygwin / Microsoft Visual C++
 
-For Windows users the code compiles under cygwin. However you will
-need version s of the lapack and blas libraries available (see <a
-href="http://www.netlib.org">www.netlib.org</a>. This can take some
-time to compile, and in the absence of any pre-compiled versions on
-the web I've provided some pre-compiled versions you may want to make
-use of (see the cygwin directory). Note that these pre-compiled
-versions are <i>not</i> optimised for the specific architecture and
-therefore do not give the speed up you would hope for from using
-lapack and blas.
-
-### Microsoft Visual C++
-
-As of Release 0.101 the code compiles under Microsoft Visual Studio
-7.1. A project file is provided in the current release in the
-directory `MSVC/gplvm`. The compilation makes use of f2c
-versions of the FORTRAN code and the C version of LAPACK/BLAS,
-CLAPACK. Detailed instructions on how to compile are in the
-readme.msvc file. The work to convert the code (which included ironing
-out several bugs) was done by William V. Baxter. Many thanks to Bill
-for allowing me to make this available.
+Historical Windows packaging (Cygwin prebuilt LAPACK/BLAS; MSVC 7.1 /
+CLAPACK under `MSVC/gplvm`) is described in older releases. Those trees are
+not in the current checkout; Windows CI waits on a maintained make path
+([`docs/build-and-ci.md`](docs/build-and-ci.md)). Thanks to William V. Baxter
+for the original MSVC port.
 
 ## General Information
 
@@ -589,6 +582,8 @@ First we will learn the data using the following command,
 $ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model
 ```
 
+Maintained MAP walk-through: [`docs/tutorials/gplvm_oil100.md`](docs/tutorials/gplvm_oil100.md).
+
 The same data with the Bayesian GP-LVM (`q=2`, `M=10` inducing points):
 
 ```sh
@@ -614,18 +609,32 @@ For \(q>2\), choose the plane with `-d i j` (zero-based; default `0 1`);
 other latent dims are fixed at the mean of \(\boldsymbol{\mu}\) for the
 variance map — typically the two largest ARD input scales.
 
+Maintained Bayesian walk-through: [`docs/tutorials/bgplvm_oil100.md`](docs/tutorials/bgplvm_oil100.md).
+
+### Manifold Relevance Determination (MRD)
+
+Multi-view MRD (CIP-0018) shares one \(q(\mathbf{X})\) and inducing set \(Z\)
+across aligned views, each with its own RBF-ARD kernel. There is no dedicated
+`./mrd` CLI yet; use the library demo:
+
+```sh
+$ make demo_mrd
+$ ./demo_mrd
+```
+
+See [`docs/tutorials/mrd.md`](docs/tutorials/mrd.md). GPy ELBO/scale fixtures for CI compare are still outstanding on [REQ-000C](requirements/req000C_manifold-relevance-determination.md).
+
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate
 gradient algorithm to be shown. The flag `-# 100`
-terminates the optimisation after 100 iterations so that you can
-quickly move on with the rest of the tutorial.
+is the optimiser budget (see [`docs/optimisers.md`](docs/optimisers.md)).
 
 The software will load the data in
 `oilTrain100.svml`. The labels are included in this file
 but they are <i>not</i> used in the optimisation of the model. They
 are for visualisation purposes only.
 
-### Gnuplot
+### Gnuplot (MAP oil-100)
 
 The learned model is saved in a file called
 `oil100.model`. This file has a plain text format to make
@@ -863,11 +872,11 @@ model. To solve this problem Wang suggests using a particular prior on
 the hyper parameters of the GP-LVM (see pg 58 of his <a
 href="http://www.dgp.toronto.edu/~jmwang/gpdmthesis.pdf">Master's
 thesis</a>). This prior is unusual as it is improper, but it is not
-the standard uninformative 1/x prior. This approach can be recreated
-using the `-dh` flag when running the code. An alternative
-approach of scaling the portion of the likelihood associated with the
-dynamics up by a factor has also been suggested. This approach can be
-recreated by using the `-ds` flag.
+the standard uninformative 1/x prior. The historical `-dh` (Wang
+weighting) switch is commented out in the current `gplvm` CLI. An
+alternative approach of scaling the portion of the likelihood associated
+with the dynamics up by a factor uses `-ds`. Prefer `-dr` (below) for
+most runs.
 
 My own preference is to avoid either of these approaches. A key
 motivation of the GP-LVM as a probabilistic model was to design an
@@ -878,15 +887,20 @@ modelling the dynamics. However it is also true that a non-linear
 model is needed. As an alternative approach we suggest fixing the
 hyper parameters. The level of noise can be fixed by suggesting a
 signal to noise ratio. This approach has also been implemented in the
-code using the `-dr` flag.
+code using the `-dr` flag (`-ds` scales the dynamics likelihood;
+`-dh` is historical and not exposed in the current CLI help).
+
+Motion-capture MATLAB helpers remain deferred relative to the native
+CLI tutorials (see CIP-0015 non-goals / Swagger notes in
+[`docs/tutorials/`](docs/tutorials/)).
 
 ```sh
 $ ./gplvm -v 3 learn -L true -D rbf -g 0.01 -dr 20 examples/swagger.svml swagger_dynamics.model
 ```
 
-where the `-M` flag sets the parameter associated with
-Wang's prior. Here the dynamics GP is given a linear and an RBF
-kernel. The results of the visualisation are shown below.
+Here `-D rbf` selects the dynamics kernel, `-g` sets its inverse width, and
+`-dr 20` fixes a signal-to-noise ratio for the dynamics GP (preferable to
+`-dh` / `-ds` for most runs). The results of the visualisation are shown below.
 
 <center><img src="swagger_dynamics_plot.png"> <br>Latent space for
 the Swagger data with the dynamics. By constraining the GP-LVM with an

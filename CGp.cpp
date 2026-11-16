@@ -1305,7 +1305,10 @@ double CGp::logLikelihood() const
   case FITC:
     if(isSpherical()) 
     {
-      L+=((double)numActive - (double)getNumData())*log(getBetaVal()) + (double)getNumData()*ndlutil::LOGTWOPI;
+      // 2π term applied once below with other approximations (do not add
+      // N*LOGTWOPI here — that double-counted after L*=-0.5 and the common
+      // d*N*HALFLOGTWOPI tail; backlog 2026-11-15_fitc-logtwopi-double-count).
+      L+=((double)numActive - (double)getNumData())*log(getBetaVal());
       for(unsigned int i=0; i<getNumData(); i++) 
       {
 	L += log(diagD.getVal(i));

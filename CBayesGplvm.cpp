@@ -5,7 +5,7 @@
 
 using namespace std;
 
-const double CBayesGplvm::JITTER = 1e-6;
+const double CBayesGplvm::JITTER = 1e-8; // match GPy VarDTC.const_jitter
 
 namespace {
 

@@ -333,6 +333,11 @@ public:
     inducingFixed = val;
   }
 
+  // Model-level GPy-style paths (CIP-0014 Phase C): kern.*, beta, scale.j.
+  vector<string> paramPaths() const;
+  double getByPath(const string& path) const;
+  void setByPath(const string& path, double val);
+
   // Per-parameter fix masks (CIP-0014 Phase B). Paths use Phase A kernel
   // names (e.g. rbf.variance); also beta and scale.j. Not stream-persisted yet.
   void fix(const string& path);

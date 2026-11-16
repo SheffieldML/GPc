@@ -13,6 +13,7 @@ How planning artefacts relate to day-to-day work on GPc.
 | HOW | `cip/` | Code Improvement Plans (hex ids: `cip0001.md`, …) |
 | DO | `backlog/` | Dated tasks linked to CIPs |
 | DOCUMENT | `docs/` + [README](../README.md) | Compressed outcomes for maintainers and users |
+| TUTORIALS | [`docs/tutorials/`](tutorials/) | Native CLI/demo tutorials (CIP-0015 Stage 1) |
 
 ## Day-to-day
 

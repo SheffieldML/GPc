@@ -1,7 +1,7 @@
 ---
 id: "0007"
 title: "Default Linux build and kernel evaluations stay within stated factors of a tuned reference"
-status: "Ready"
+status: "In Progress"
 priority: "High"
 created: "2026-11-15"
 last_updated: "2026-11-15"
@@ -49,3 +49,6 @@ The 2026-11-15 table compares OpenBLAS with reference BLAS under `-O2 -DNDEBUG`.
 
 ### 2026-11-15
 Requirement added so CIP-0013 implements a performance outcome. REQ-0001 and REQ-0002 stay validated for build and reference tests.
+
+### 2026-11-16
+CIP-0013 Accepted → In Progress. P1 (OpenBLAS + `RELEASE=1`) and P2 (`GPC_CHECKS`) landed; GPc `benchGPc` driver in tree. GPy compare gate and P3–P5 still open.

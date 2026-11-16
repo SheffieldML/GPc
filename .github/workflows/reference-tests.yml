@@ -28,8 +28,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             g++ \
             gfortran \
-            liblapack-dev \
-            libblas-dev \
+            libopenblas-dev \
             libmatio-dev \
             make
 

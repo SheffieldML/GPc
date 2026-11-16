@@ -987,7 +987,7 @@ void CClgp::helpInfo()
     cout << "Command Options:" << endl;
     helpArgument("-?, -h, --help", "This help.");
     helpArgument("-O, --optimiser string", "Optimiser to be used, valid options are scg, conjgrad, quasinew (or lbfgs) and graddesc. Default is scg.");
-    helpArgument("-#, --#iterations int", "Number of iterations for optimisation by scaled conjugate gradient. Default is 1000.");
+    helpArgument("-#, --#iterations int", "Optimiser budget (setMaxIters). For scg/conjgrad/graddesc: algorithm iterations. For lbfgs/quasinew: both reverse-comm steps and function evaluations (GPy-aligned). Default 1000. See docs/optimisers.md.");
     helpArgument("-x, --input-dim int", "Dimension for input space.");
     helpArgument("-C, --Centre-data bool", "Centre the data by removing the mean value. Default value is 1 (true).");
     helpArgument("-L, --Learn-scales bool", "Whether or not to learn the scaling on the input data. Default value is 0 (false).");

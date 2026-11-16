@@ -146,6 +146,34 @@ int runDriver(CQuadOptimisable& model, const string& name, void (COptimisable::*
   return fail;
 }
 
+int testLbfgsHonoursMaxIters()
+{
+  int fail = 0;
+  CQuadOptimisable model;
+  model.setParamsTo(0.0, 0.0, 0.0);
+  model.setVerbosity(0);
+  model.setMaxIters(3);
+  model.setObjectiveTol(1e-30);
+  model.setParamTol(1e-30);
+  model.lbfgsOptimise();
+  // GPy-aligned: budget caps reverse-comm steps and f-evals; with tiny
+  // tolerances the Fortran driver would otherwise continue.
+  if(model.getIter() > 3 || model.getFuncEval() > 3)
+  {
+    cout << "FAILURE: lbfgs exceeded budget (iter=" << model.getIter()
+         << " funcEval=" << model.getFuncEval() << ")." << endl;
+    fail++;
+  }
+  else if(model.getIter() < 1 && model.getFuncEval() < 1)
+  {
+    cout << "FAILURE: lbfgs did not run under budget." << endl;
+    fail++;
+  }
+  else
+    cout << "lbfgs honours maxIters as iter/f-eval budget (GPy-aligned)." << endl;
+  return fail;
+}
+
 int testDrivers()
 {
   int fail = 0;
@@ -154,6 +182,7 @@ int testDrivers()
   fail += runDriver(model, "conjgrad", &COptimisable::cgOptimise);
   fail += runDriver(model, "graddesc", &COptimisable::gdOptimise);
   fail += runDriver(model, "lbfgs", &COptimisable::lbfgsOptimise);
+  fail += testLbfgsHonoursMaxIters();
   return fail;
 }
 

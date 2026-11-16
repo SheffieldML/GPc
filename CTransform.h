@@ -339,10 +339,45 @@ class CTransformable
     transArray.addTransform(trans, index);
   }
 
+  // Remove transform entries for paramNo. If destroy is true, delete the
+  // CTransform objects (unique ownership). If false, only unlink pointers
+  // (used when a parent compound shares transforms with child kernels).
+  void removeTransformsAt(unsigned int paramNo, bool destroy=true)
+  {
+    BOUNDCHECK(paramNo<getNumParams());
+    for(size_t i=0; i<transArray.transIndex.size(); )
+    {
+      if(transArray.transIndex[i]==paramNo)
+      {
+        if(destroy)
+          delete transArray.transforms[i];
+        transArray.transforms.erase(transArray.transforms.begin()+static_cast<long>(i));
+        transArray.transIndex.erase(transArray.transIndex.begin()+static_cast<long>(i));
+      }
+      else
+        ++i;
+    }
+  }
+
+  // Replace (or clear, if trans is null) the transform for a parameter index.
+  void replaceTransform(const CTransform* trans, unsigned int paramNo)
+  {
+    removeTransformsAt(paramNo, true);
+    if(trans!=0)
+      addTransform(trans, paramNo);
+  }
+
   void clearTransforms() 
   {
     for(size_t i = 0; i<transArray.transforms.size(); i++)
       delete transArray.transforms[i];
+    transArray.transIndex.clear();
+    transArray.transforms.clear();
+  }
+
+  // Drop transform pointer lists without deleting (compound rebuild).
+  void unlinkTransforms()
+  {
     transArray.transIndex.clear();
     transArray.transforms.clear();
   }

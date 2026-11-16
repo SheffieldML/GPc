@@ -770,6 +770,129 @@ int testExpectThrows()
   return fail;
 }
 
+int testModelPaths()
+{
+  int fail = 0;
+  cout << "==== testCGp model paths (CIP-0014 Phase C) ====" << endl;
+
+  ToyGp toy(CGp::FTC);
+  toy.model->setByPath("rbf.variance", 2.5);
+  fail += failTrue(fabs(toy.model->getByPath("rbf.variance") - 2.5) < 1e-14,
+                   "model set/get rbf.variance");
+  fail += failTrue(fabs(toy.model->getByPath("kern.rbf.variance") - 2.5) < 1e-14,
+                   "kern. prefix get");
+  toy.model->setByPath("kern.rbf.lengthscale", 2.0);
+  fail += failTrue(fabs(toy.kern.getParam(0) - 0.25) < 1e-14,
+                   "lengthscale via model stores inverseWidth");
+  fail += failTrue(fabs(toy.model->getByPath("rbf.lengthscale") - 2.0) < 1e-14,
+                   "get lengthscale recovers");
+
+  vector<string> paths = toy.model->paramPaths();
+  fail += failTrue(paths.size() >= 2 && paths[0].compare(0, 5, "kern.") == 0,
+                   "paramPaths use kern. prefix");
+  bool sawRbfVar = false;
+  for(size_t i = 0; i < paths.size(); i++)
+    if(paths[i] == "kern.rbf.variance")
+      sawRbfVar = true;
+  fail += failTrue(sawRbfVar, "paramPaths includes kern.rbf.variance");
+
+  ToyGp sparse(CGp::FITC);
+  sparse.model->setByPath("beta", 7.0);
+  fail += failTrue(fabs(sparse.model->getByPath("beta") - 7.0) < 1e-14,
+                   "beta path get/set");
+  vector<string> sparsePaths = sparse.model->paramPaths();
+  bool sawBeta = false;
+  for(size_t i = 0; i < sparsePaths.size(); i++)
+    if(sparsePaths[i] == "beta")
+      sawBeta = true;
+  fail += failTrue(sawBeta, "paramPaths includes beta when sparse");
+
+  toy.model->setOutputScaleLearnt(true);
+  toy.model->initStoreage();
+  toy.model->setByPath("scale.0", 1.5);
+  fail += failTrue(fabs(toy.model->getByPath("scale.0") - 1.5) < 1e-14,
+                   "scale.0 path get/set");
+  {
+    vector<string> scalePaths = toy.model->paramPaths();
+    bool sawScale = false;
+    for(size_t i = 0; i < scalePaths.size(); i++)
+      if(scalePaths[i] == "scale.0")
+        sawScale = true;
+    fail += failTrue(sawScale, "paramPaths includes scale.0 when learnt");
+  }
+  // OOB scale index while scales are learnt.
+  try
+  {
+    toy.model->getByPath("scale.99");
+    cout << "FAILURE: getByPath scale.99 should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "getByPath scale OOB throws Error." << endl;
+  }
+  try
+  {
+    toy.model->setByPath("scale.99", 1.0);
+    cout << "FAILURE: setByPath scale.99 should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "setByPath scale OOB throws Error." << endl;
+  }
+  toy.model->clearFixes(); // hits scaleParamFixed clear loop while learnt
+  toy.model->setOutputScaleLearnt(false);
+
+  try
+  {
+    toy.model->setByPath("beta", 1.0);
+    cout << "FAILURE: FTC setByPath beta should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "FTC setByPath beta throws Error." << endl;
+  }
+  try
+  {
+    toy.model->getByPath("beta");
+    cout << "FAILURE: FTC getByPath beta should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "FTC getByPath beta throws Error." << endl;
+  }
+  try
+  {
+    toy.model->getByPath("scale.0");
+    cout << "FAILURE: getByPath scale without learnScales should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "getByPath scale without learnScales throws Error." << endl;
+  }
+  try
+  {
+    toy.model->setByPath("scale.0", 1.0);
+    cout << "FAILURE: setByPath scale without learnScales should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "setByPath scale without learnScales throws Error." << endl;
+  }
+
+  // isKernParamFixed before any fix() keeps mask empty → false for OOB index.
+  fail += failTrue(!toy.model->isKernParamFixed(0)
+                   && !toy.model->isKernParamFixed(999),
+                   "isKernParamFixed false when mask unset/OOB");
+
+  return fail;
+}
+
 int testFixMask()
 {
   int fail = 0;
@@ -951,6 +1074,7 @@ int main()
     fail += testExpectThrows();
     fail += testBlocksAndApi();
     fail += testFixMask();
+    fail += testModelPaths();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

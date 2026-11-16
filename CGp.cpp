@@ -393,6 +393,72 @@ void CGp::resolveFixPath(const string& path, int& kind, unsigned int& index) con
   index=pkern->paramIndex(p);
 }
 
+vector<string> CGp::paramPaths() const
+{
+  vector<string> paths;
+  const vector<string> kpaths=pkern->paramPaths();
+  paths.reserve(kpaths.size()+getOutputDim()+1);
+  for(size_t i=0; i<kpaths.size(); i++)
+    paths.push_back(string("kern.")+kpaths[i]);
+  if(isSparseApproximation())
+    paths.push_back("beta");
+  if(isOutputScaleLearnt())
+  {
+    for(unsigned int j=0; j<getOutputDim(); j++)
+      paths.push_back(string("scale.")+ndlstrutil::itoa(j));
+  }
+  return paths;
+}
+
+double CGp::getByPath(const string& path) const
+{
+  string p=path;
+  if(p.compare(0, 5, "kern.")==0)
+    p=p.substr(5);
+  if(p=="beta")
+  {
+    if(!isSparseApproximation())
+      throw ndlexceptions::Error("beta path only valid for sparse approximations.");
+    return getBetaVal();
+  }
+  if(p.compare(0, 6, "scale.")==0)
+  {
+    if(!isOutputScaleLearnt())
+      throw ndlexceptions::Error("scale path only valid when output scales are learnt.");
+    const unsigned int index=static_cast<unsigned int>(atoi(p.substr(6).c_str()));
+    if(index>=getOutputDim())
+      throw ndlexceptions::Error("scale index out of range in path '"+path+"'.");
+    return getScaleVal(index);
+  }
+  return pkern->getByPath(p);
+}
+
+void CGp::setByPath(const string& path, double val)
+{
+  string p=path;
+  if(p.compare(0, 5, "kern.")==0)
+    p=p.substr(5);
+  if(p=="beta")
+  {
+    if(!isSparseApproximation())
+      throw ndlexceptions::Error("beta path only valid for sparse approximations.");
+    setBetaVal(val);
+    return;
+  }
+  if(p.compare(0, 6, "scale.")==0)
+  {
+    if(!isOutputScaleLearnt())
+      throw ndlexceptions::Error("scale path only valid when output scales are learnt.");
+    const unsigned int index=static_cast<unsigned int>(atoi(p.substr(6).c_str()));
+    if(index>=getOutputDim())
+      throw ndlexceptions::Error("scale index out of range in path '"+path+"'.");
+    setScaleVal(val, index);
+    return;
+  }
+  pkern->setByPath(p, val);
+  setKupToDate(false);
+}
+
 void CGp::fixKernParam(unsigned int index)
 {
   ensureKernFixedSize();

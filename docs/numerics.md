@@ -2,7 +2,7 @@
 
 Decisions that keep the matio reference suite trustworthy against MATLAB-era fixtures.
 
-**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000F](../cip/cip000F.md)  
+**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md)  
 **Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
 Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimisers.md).
@@ -26,14 +26,20 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 
 FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/DTCVAR/PITC. An earlier FITC-only `+ N log 2π` before `L *= -0.5` double-counted that constant (offset \(\tfrac{d N}{2}\log 2\pi\); gradients unaffected). Removed 2026-11-16 — see backlog `2026-11-15_fitc-logtwopi-double-count`. MATLAB-era FITC fixtures may still differ by that amount; `testGp` accepts either convention via `logLikMatchesFixture`.
 
-## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md))
+## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md))
 
-DTC / DTCVAR / FITC paths that need \(K_{uu}^{-1}K_{uf}\) can run under two schedules (runtime only; not stored in `.model` files):
+Runtime flag only (not stored in `.model` files). Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`.
 
-- **Legacy** (default): `pdinv` of \(K_{uu}\) then `gemm(invK_uu, K_uf)`.
-- **StableFactor**: upper `jitChol(K_uu)` then two `trsm` solves (`U^{-T}` then `U^{-1}`).
+- **Legacy** (default): `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed.
+- **StableFactor** ([CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC block \(Q_b=B_b^\top B_b\)). Reverse-mode grads for DTC/DTCVAR/FITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). PITC grads still use Legacy `gpCovGrads` on the whitened-\(Q\) factors. Prediction for DTC/DTCVAR/FITC uses \(U,C\) factors.
 
-Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`. Dual-path LL/grad agreement on the synthetic DTC/DTCVAR problem is gated by `make diagDtcvar && ./diagDtcvar`.
+Gates:
+
+- Dual-path toy: `make testCGp && ./testCGp` (StableFactor section) and `make diagDtcvar && ./diagDtcvar`.
+- γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable`.
+- Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`. Required before merging whitened-grad changes; optional in CI until pinned.
+
+Default remains **Legacy** until the CIP-0012 soak / default-flip checkbox.
 
 ## Reference mismatches cleared in CIP-0003
 

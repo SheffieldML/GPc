@@ -26,11 +26,11 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0001](./cip0001.md)–[CIP-000B](./cip000B.md): see individual files (0005 transpose; 0006 macOS CI; …)
 - [CIP-000C](./cip000C.md): Finish ARD stubs and import StdPeriodic, Cosine, Brownian (**Implemented** — close after CI)
 - [CIP-000D](./cip000D.md): Multi-output covariance via Coregionalize (**Implemented** — close after CI). GPy `build_XY` / `ICM` / `LCM`. Implements [REQ-0006](../requirements/req0006_multioutput-covariance.md).
-- [CIP-000E](./cip000E.md): Stable sparse-GP factorisation path with dual-path compare flag (**Implemented** — superseded-complete by 0012 when that lands)
+- [CIP-000E](./cip000E.md): Stable sparse-GP factorisation path with dual-path compare flag (**Closed** — superseded-complete by [CIP-0012](./cip0012.md))
 - [CIP-000F](./cip000F.md): Implement spherical PITC and ship a matio reference fixture (**Implemented** — close after CI)
 - [CIP-0010](./cip0010.md): Dedicated testOptimisable suite (**Closed**)
 - [CIP-0011](./cip0011.md): Drive near-complete line coverage of `CGp.cpp` (**Implemented** — close after CI)
-- [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**In Progress** — Murray Level-3 blocked `_cholAdjoint`).
+- [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**In Progress** — forward/grads/predict/docs; default flip open).
 - [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Implemented** on main via #60). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
 - [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 tutorials/demos done; Phase A helpers next. Notebooks are checklist only.

@@ -1,7 +1,7 @@
 ---
 id: "0008"
 title: "Users can set and constrain parameters by GPy-like paths"
-status: "In Progress"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-16"
 last_updated: "2026-11-16"
@@ -22,19 +22,19 @@ GPc exposes a documented path-based parameter API so callers can set values and 
 
 ## Acceptance Criteria
 
-- [ ] Documented path grammar resolves unique parameters on single and compound kernels using GPy-style names (and model-level fields where implemented)
-- [ ] Duplicate components follow paramz-style `name`, `name_1`, `name_2`, …
-- [ ] Get/set by path uses GPy natural units, with documented conversions where storage differs (at least iso RBF `lengthscale` ↔ `inverseWidth`)
-- [ ] Legacy GPc leaf names remain accepted as aliases; `paramPaths()` lists GPy canonical names
-- [ ] Callers can apply or replace positivity / unit-interval constraints by path without rewriting constructors
-- [ ] Ambiguous or missing paths fail loudly (assert or typed error); no silent truncation
-- [ ] Indexed APIs and stream I/O remain valid; old `.model` files still load
-- [ ] Reference or unit tests cover path resolution, unit conversion round-trips, and constraint changes
-- [ ] Non-goals are explicit for the first delivery: full GPy `Parameterized` tree, regex `m['.*']`, tied parameters, pretending RBF-ARD `inputScale` is GPy `lengthscale_i`, and rich priors; per-parameter `fix`/`unfix` may be phased
+- [x] Documented path grammar resolves unique parameters on single and compound kernels using GPy-style names (and model-level fields where implemented)
+- [x] Duplicate components follow paramz-style `name`, `name_1`, `name_2`, …
+- [x] Get/set by path uses GPy natural units, with documented conversions where storage differs (at least iso RBF `lengthscale` ↔ `inverseWidth`)
+- [x] Legacy GPc leaf names remain accepted as aliases; `paramPaths()` lists GPy canonical names
+- [x] Callers can apply or replace positivity / unit-interval constraints by path without rewriting constructors
+- [x] Ambiguous or missing paths fail loudly (assert or typed error); no silent truncation
+- [x] Indexed APIs and stream I/O remain valid; old `.model` files still load
+- [x] Reference or unit tests cover path resolution, unit conversion round-trips, and constraint changes
+- [x] Non-goals are explicit for the first delivery: full GPy `Parameterized` tree, regex `m['.*']`, tied parameters, pretending RBF-ARD `inputScale` is GPy `lengthscale_i`, and rich priors; per-parameter `fix`/`unfix` may be phased
 
 ## Notes (Optional)
 
-HOW is sketched in [CIP-0014](../cip/cip0014.md). CIP-000D already notes that fixing parameters for a GPy-style `Private` coregionalization can come after a fix API exists.
+HOW was [CIP-0014](../cip/cip0014.md) (Closed). Durable usage notes: [docs/param-paths.md](../docs/param-paths.md). Stream persistence of fix masks / non-default transforms remains deferred.
 
 ## References
 
@@ -51,3 +51,6 @@ Canonical paths and units locked to GPy/`paramz` where sensible; legacy GPc name
 
 ### 2026-11-16 (accept)
 CIP-0014 Accepted; requirement moved to In Progress.
+
+### 2026-11-16 (complete)
+Phases A–C merged (PRs #44, #45); CIP-0014 Closed and compressed; requirement Validated.

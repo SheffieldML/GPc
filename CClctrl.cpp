@@ -243,9 +243,34 @@ void CClctrl::writeGnuplotTermSelect(ostream& out)
   // Do not honour the GNUTERM environment variable: many shells still export
   // GNUTERM=x11, which Homebrew gnuplot no longer provides.
   out << "# Terminal: interactive qt by default (Homebrew gnuplot)." << endl;
-  out << "# PNG for docs: gnuplot -e \"GPLOT_PNG='name.png'\" name_plot.gp" << endl;
+  out << "# File output (any one of):" << endl;
+  out << "#   gnuplot -e \"GPLOT_OUT='name.pdf'\" name_plot.gp   # .pdf/.svg/.png from extension" << endl;
+  out << "#   gnuplot -e \"GPLOT_PDF='name.pdf'\" name_plot.gp" << endl;
+  out << "#   gnuplot -e \"GPLOT_SVG='name.svg'\" name_plot.gp" << endl;
+  out << "#   gnuplot -e \"GPLOT_PNG='name.png'\" name_plot.gp" << endl;
   out << "# Override interactive term: gnuplot -e \"GPC_GNUTERM='aqua'\" name_plot.gp" << endl;
-  out << "if (exists(\"GPLOT_PNG\")) {" << endl;
+  out << "gpc_file = 0" << endl;
+  out << "if (exists(\"GPLOT_OUT\")) {" << endl;
+  out << "  gpc_out = GPLOT_OUT" << endl;
+  out << "  gpc_file = 1" << endl;
+  out << "  if (strstrt(gpc_out, \".pdf\") > 0 || strstrt(gpc_out, \".PDF\") > 0) {" << endl;
+  out << "    set terminal pdfcairo size 9in,6in enhanced font \",11\"" << endl;
+  out << "  } else if (strstrt(gpc_out, \".svg\") > 0 || strstrt(gpc_out, \".SVG\") > 0) {" << endl;
+  out << "    set terminal svg size 900,600 enhanced dynamic font \",11\"" << endl;
+  out << "  } else {" << endl;
+  out << "    set terminal pngcairo size 900,600 enhanced font \",11\"" << endl;
+  out << "  }" << endl;
+  out << "  set output gpc_out" << endl;
+  out << "} else if (exists(\"GPLOT_PDF\")) {" << endl;
+  out << "  gpc_file = 1" << endl;
+  out << "  set terminal pdfcairo size 9in,6in enhanced font \",11\"" << endl;
+  out << "  set output GPLOT_PDF" << endl;
+  out << "} else if (exists(\"GPLOT_SVG\")) {" << endl;
+  out << "  gpc_file = 1" << endl;
+  out << "  set terminal svg size 900,600 enhanced dynamic font \",11\"" << endl;
+  out << "  set output GPLOT_SVG" << endl;
+  out << "} else if (exists(\"GPLOT_PNG\")) {" << endl;
+  out << "  gpc_file = 1" << endl;
   out << "  set terminal pngcairo size 900,600 enhanced font \",11\"" << endl;
   out << "  set output GPLOT_PNG" << endl;
   out << "} else {" << endl;
@@ -259,7 +284,7 @@ void CClctrl::writeGnuplotTermSelect(ostream& out)
 
 void CClctrl::writeGnuplotFinish(ostream& out)
 {
-  out << "if (exists(\"GPLOT_PNG\")) {" << endl;
+  out << "if (gpc_file != 0) {" << endl;
   out << "  unset output" << endl;
   out << "} else {" << endl;
   out << "  pause mouse close" << endl;

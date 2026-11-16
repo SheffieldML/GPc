@@ -226,6 +226,20 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // precomputation it needs to do per value of X.
   virtual void updateX(const CMatrix& X) {}
 
+  // Psi statistics under diagonal Gaussian q(X)=N(mu, diag(S)) ([CIP-0017]).
+  // mu, S: N x Q; Z: M x Q. Defaults throw NotImplementedError.
+  // psi0 = sum_n E[k(x_n,x_n)]; psi1 = E[K_fu] (N x M); psi2 = sum_n E[k(x_n,Z)k(Z,x_n)^T] (M x M).
+  virtual double psi0(const CMatrix& mu, const CMatrix& S) const;
+  virtual void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  virtual void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  // Gradients of a scalar that depends on (psi0, psi1, psi2).
+  // dL_dpsi0: N x 1; dL_dpsi1: N x M; dL_dpsi2: M x M. Outputs gParams (1 x nParams),
+  // gZ (M x Q), gMu (N x Q), gS (N x Q). If add, accumulate into existing outputs.
+  virtual void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                          const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                          const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                          bool add=false) const;
+
   virtual bool isUpdateXused() const
   {
     return updateXused;
@@ -547,6 +561,13 @@ class CCmpndKern: public CComponentKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
 private:
   void _init();
 };
@@ -628,7 +649,13 @@ class CWhiteKern: public CKern {
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
 
  private:
   void _init();
@@ -708,8 +735,13 @@ class CBiasKern: public CKern {
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-
-
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
 
  private:
   void _init();
@@ -765,6 +797,13 @@ class CRbfKern: public CKern {
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   void updateX(const CMatrix& X);
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
 
  private:
   void _init();
@@ -983,7 +1022,13 @@ class CLinKern: public CKern {
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
 
  private:
   void _init();
@@ -1150,8 +1195,14 @@ class CRbfardKern: public CArdKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  
-  
+  double psi0(const CMatrix& mu, const CMatrix& S) const;
+  void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
+  void getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                  const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                  const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                  bool add=false) const;
+
  private:
   void _init();
   double variance;

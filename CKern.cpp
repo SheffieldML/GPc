@@ -1,5 +1,6 @@
 #include "CKern.h"
 #include <cmath>
+#include <vector>
 
 using namespace std;
 
@@ -6771,3 +6772,929 @@ void CComponentKern::addParamToMxArray(mxArray* matlabArray) const
   
 }
 #endif /* _NDLMATLAB */
+
+/* Psi statistics under diagonal Gaussian q(X) — CIP-0017 Phase 1.
+   Closed forms follow GPy kern.src.psi_comp (rbf / linear) and kern.src.add. */
+namespace {
+
+void checkPsiInputs(const CMatrix& mu, const CMatrix& S, unsigned int inputDim)
+{
+  DIMENSIONMATCH(mu.dimensionsMatch(S));
+  DIMENSIONMATCH(mu.getCols() == inputDim);
+  for(unsigned int n = 0; n < mu.getRows(); n++)
+    for(unsigned int q = 0; q < inputDim; q++)
+      BOUNDCHECK(S.getVal(n, q) > 0.0);
+}
+
+void checkPsiZ(const CMatrix& Z, unsigned int inputDim)
+{
+  DIMENSIONMATCH(Z.getCols() == inputDim);
+}
+
+void zeroGradOutputs(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                     unsigned int nParams, unsigned int N, unsigned int M, unsigned int Q,
+                     bool add)
+{
+  if(!add)
+  {
+    gParams.resize(1, nParams);
+    gParams.zeros();
+    gZ.resize(M, Q);
+    gZ.zeros();
+    gMu.resize(N, Q);
+    gMu.zeros();
+    gS.resize(N, Q);
+    gS.zeros();
+  }
+  else
+  {
+    DIMENSIONMATCH(gParams.getRows() == 1 && gParams.getCols() == nParams);
+    DIMENSIONMATCH(gZ.getRows() == M && gZ.getCols() == Q);
+    DIMENSIONMATCH(gMu.dimensionsMatch(gS));
+    DIMENSIONMATCH(gMu.getRows() == N && gMu.getCols() == Q);
+  }
+}
+
+// lengthscale2[q] = ℓ_q². Gradients returned w.r.t. variance and ℓ_q (GPy convention).
+void rbfPsi1(CMatrix& Psi1, double variance, const vector<double>& lengthscale2,
+             const CMatrix& mu, const CMatrix& S, const CMatrix& Z)
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = mu.getCols();
+  Psi1.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    double logdenom = 0.0;
+    for(unsigned int q = 0; q < Q; q++)
+      logdenom += log(S.getVal(n, q) / lengthscale2[q] + 1.0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double quad = 0.0;
+      for(unsigned int q = 0; q < Q; q++)
+      {
+        const double d = mu.getVal(n, q) - Z.getVal(m, q);
+        quad += d * d / (S.getVal(n, q) + lengthscale2[q]);
+      }
+      Psi1.setVal(variance * exp(-0.5 * (logdenom + quad)), n, m);
+    }
+  }
+}
+
+void rbfPsi2(CMatrix& Psi2, double variance, const vector<double>& lengthscale2,
+             const CMatrix& mu, const CMatrix& S, const CMatrix& Z)
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = mu.getCols();
+  Psi2.resize(M, M);
+  Psi2.zeros();
+  const double var2 = variance * variance;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    double logdenom = 0.0;
+    for(unsigned int q = 0; q < Q; q++)
+      logdenom += log(2.0 * S.getVal(n, q) / lengthscale2[q] + 1.0);
+    logdenom *= -0.5;
+    for(unsigned int m1 = 0; m1 < M; m1++)
+    {
+      for(unsigned int m2 = 0; m2 <= m1; m2++)
+      {
+        double exp1 = 0.0;
+        double exp2 = 0.0;
+        for(unsigned int q = 0; q < Q; q++)
+        {
+          const double z1 = Z.getVal(m1, q);
+          const double z2 = Z.getVal(m2, q);
+          const double l2 = lengthscale2[q];
+          const double Snq = S.getVal(n, q);
+          const double dZ = z1 - z2;
+          const double zhat = 0.5 * (z1 + z2);
+          const double muq = mu.getVal(n, q);
+          exp1 += (dZ * dZ) / l2;
+          const double denom = 1.0 / (2.0 * Snq + l2);
+          exp2 += -(muq - zhat) * (muq - zhat) * denom;
+        }
+        exp1 *= -0.25;
+        const double val = var2 * exp(logdenom + exp1 + exp2);
+        Psi2.addVal(val, m1, m2);
+        if(m1 != m2)
+          Psi2.addVal(val, m2, m1);
+      }
+    }
+  }
+  Psi2.setSymmetric(true);
+}
+
+// Per-n psi2 element (for gradients); returns var^2 * exp(...).
+double rbfPsi2nElement(double variance, const vector<double>& lengthscale2,
+                       const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                       unsigned int n, unsigned int m1, unsigned int m2)
+{
+  const unsigned int Q = mu.getCols();
+  double logdenom = 0.0;
+  double exp1 = 0.0;
+  double exp2 = 0.0;
+  for(unsigned int q = 0; q < Q; q++)
+  {
+    const double l2 = lengthscale2[q];
+    const double Snq = S.getVal(n, q);
+    logdenom += log(2.0 * Snq / l2 + 1.0);
+    const double z1 = Z.getVal(m1, q);
+    const double z2 = Z.getVal(m2, q);
+    const double dZ = z1 - z2;
+    const double zhat = 0.5 * (z1 + z2);
+    const double muq = mu.getVal(n, q);
+    exp1 += (dZ * dZ) / l2;
+    const double denom = 1.0 / (2.0 * Snq + l2);
+    exp2 += -(muq - zhat) * (muq - zhat) * denom;
+  }
+  logdenom *= -0.5;
+  exp1 *= -0.25;
+  return variance * variance * exp(logdenom + exp1 + exp2);
+}
+
+void rbfGradPsi(vector<double>& gLengthscale,
+                CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                double& gVariance,
+                const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                double variance, const vector<double>& lengthscale2,
+                const CMatrix& mu, const CMatrix& S, const CMatrix& Z)
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = mu.getCols();
+  gVariance = 0.0;
+  gLengthscale.assign(Q, 0.0);
+  gZ.zeros();
+  gMu.zeros();
+  gS.zeros();
+
+  CMatrix Psi1(N, M);
+  rbfPsi1(Psi1, variance, lengthscale2, mu, S, Z);
+
+  // psi0: each diagonal is variance → dL/dvar += sum_n dL_dpsi0_n
+  for(unsigned int n = 0; n < N; n++)
+    gVariance += dL_dpsi0.getVal(n);
+
+  // psi1 grads (GPy _psi1compDer)
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double Lpsi1 = dL_dpsi1.getVal(n, m) * Psi1.getVal(n, m);
+      gVariance += Lpsi1 / variance;
+      for(unsigned int q = 0; q < Q; q++)
+      {
+        const double l2 = lengthscale2[q];
+        const double l = sqrt(l2);
+        const double Snq = S.getVal(n, q);
+        const double denom = 1.0 / (Snq + l2);
+        const double Zmu = Z.getVal(m, q) - mu.getVal(n, q);
+        const double Zmu2_denom = Zmu * Zmu * denom;
+        gMu.addVal(Lpsi1 * Zmu * denom, n, q); // wait: GPy uses (Z-mu)? _dL_dmu = einsum Lpsi1, Zmu, denom with Zmu=Z-mu
+        // GPy: Zmu = Z[None,:,:] - mu[:,None,:] so Z - mu
+        // _dL_dmu = einsum("nm,nmq,nq->nq", Lpsi1, Zmu, denom)  → contributes (Z-mu)*denom
+        // But then they return that as dmu — actually derivative of exp(-0.5 (mu-Z)^2/(S+l2)) w.r.t mu is
+        // -(mu-Z)/(S+l2) * psi1 = (Z-mu)/(S+l2) * psi1. Yes Zmu = Z-mu.
+        gS.addVal(0.5 * Lpsi1 * (Zmu2_denom - 1.0) * denom, n, q);
+        gZ.addVal(-Lpsi1 * Zmu * denom, m, q);
+        // dL/dl : einsum Lpsi1, (Zmu2_denom + S/l2), denom * lengthscale
+        gLengthscale[q] += Lpsi1 * (Zmu2_denom + Snq / l2) * denom * l;
+      }
+    }
+  }
+  // Fix: I used addVal for gMu incorrectly in comment block — set the mu grad properly in loop.
+  // The loop above already did gMu.addVal(Lpsi1 * Zmu * denom) — correct.
+
+  // psi2 grads — accumulate over n without storing N x M x M
+  // Symmetrise dL_dpsi2
+  CMatrix dL2(M, M);
+  for(unsigned int m1 = 0; m1 < M; m1++)
+    for(unsigned int m2 = 0; m2 < M; m2++)
+      dL2.setVal(0.5 * (dL_dpsi2.getVal(m1, m2) + dL_dpsi2.getVal(m2, m1)), m1, m2);
+
+  vector<double> lengthscale(Q);
+  for(unsigned int q = 0; q < Q; q++)
+    lengthscale[q] = sqrt(lengthscale2[q]);
+
+  for(unsigned int n = 0; n < N; n++)
+  {
+    // Build psi2_n (M x M) and Lpsi2 = dL2 * psi2_n
+    CMatrix psi2n(M, M);
+    CMatrix Lpsi2(M, M);
+    double Lpsi2sum = 0.0;
+    for(unsigned int m1 = 0; m1 < M; m1++)
+    {
+      for(unsigned int m2 = 0; m2 <= m1; m2++)
+      {
+        const double p = rbfPsi2nElement(variance, lengthscale2, mu, S, Z, n, m1, m2);
+        psi2n.setVal(p, m1, m2);
+        if(m1 != m2)
+          psi2n.setVal(p, m2, m1);
+      }
+    }
+    for(unsigned int m1 = 0; m1 < M; m1++)
+      for(unsigned int m2 = 0; m2 < M; m2++)
+      {
+        const double Lp = dL2.getVal(m1, m2) * psi2n.getVal(m1, m2);
+        Lpsi2.setVal(Lp, m1, m2);
+        Lpsi2sum += Lp;
+      }
+
+    gVariance += Lpsi2sum * 2.0 / variance;
+
+    // Accumulators per GPy _psi2compDer
+    vector<double> Lpsi2Z(Q, 0.0);
+    vector<double> Lpsi2Z2(Q, 0.0);
+    vector<double> Lpsi2Z2p(Q, 0.0);
+    for(unsigned int m1 = 0; m1 < M; m1++)
+    {
+      for(unsigned int m2 = 0; m2 < M; m2++)
+      {
+        const double Lp = Lpsi2.getVal(m1, m2);
+        for(unsigned int q = 0; q < Q; q++)
+        {
+          const double z2 = Z.getVal(m2, q);
+          const double z1 = Z.getVal(m1, q);
+          Lpsi2Z[q] += Lp * z2;           // sum_{m1,m2} Lpsi2[m1,m2] * Z[m2,q] then... GPy: tmp=Lpsi2.reshape(N*M,M).dot(Z) then sum over m1
+          // Actually GPy: tmp[n,m1,q] = sum_m2 Lpsi2[n,m1,m2]*Z[m2,q]; Lpsi2Z = tmp.sum(1) = sum_{m1,m2} L*Z[m2]
+          Lpsi2Z2[q] += Lp * z2 * z2;
+          Lpsi2Z2p[q] += Lp * z1 * z2;
+        }
+      }
+    }
+    // Fix Lpsi2Z: should be sum_{m1,m2} Lpsi2[m1,m2] * Z[m2,q]
+    // Already correct as written.
+
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      const double l2 = lengthscale2[q];
+      const double l = lengthscale[q];
+      const double Snq = S.getVal(n, q);
+      const double denom = 1.0 / (2.0 * Snq + l2);
+      const double denom2 = denom * denom;
+      const double muq = mu.getVal(n, q);
+      const double Lpsi2Zhat = Lpsi2Z[q];
+      const double Lpsi2Zhat2 = 0.5 * (Lpsi2Z2[q] + Lpsi2Z2p[q]);
+
+      gMu.addVal((-2.0 * denom) * (muq * Lpsi2sum - Lpsi2Zhat), n, q);
+      gS.addVal(2.0 * denom2 * (muq * muq * Lpsi2sum - 2.0 * muq * Lpsi2Zhat + Lpsi2Zhat2)
+                - denom * Lpsi2sum, n, q);
+
+      gLengthscale[q] += 2.0 * l * (
+        (Snq / l2 * denom + (muq * denom) * (muq * denom)) * Lpsi2sum
+        + (Lpsi2Z2[q] - Lpsi2Z2p[q]) / (2.0 * l2 * l2)
+        - (2.0 * muq * denom2) * Lpsi2Zhat
+        + denom2 * Lpsi2Zhat2);
+    }
+
+    // dL/dZ from psi2 — GPy formula
+    for(unsigned int m = 0; m < M; m++)
+    {
+      for(unsigned int q = 0; q < Q; q++)
+      {
+        const double l2 = lengthscale2[q];
+        const double Snq = S.getVal(n, q);
+        const double denom = 1.0 / (2.0 * Snq + l2);
+        const double muq = mu.getVal(n, q);
+        const double Zm = Z.getVal(m, q);
+
+        // Terms from GPy (per n, accumulate):
+        // -Lpsi2_N.sum(0)[:,None]*Z/l2 + Lpsi2_N.dot(Z)/l2 + 2*Lpsi2_M.T.dot(mu*denom)
+        // - Lpsi2_M.T.dot(denom)*Z - (Lpsi2.reshape ... denom * Z).sum(1)
+        double Lpsi2_N_row_sum = 0.0; // sum over m2 of Lpsi2[m, m2]  → for fixed first index as row of Lpsi2_N
+        double Lpsi2_N_dot_Z = 0.0;
+        double Lpsi2_M_col = 0.0; // sum over m1 of Lpsi2[m1, m]
+        double cross = 0.0;
+        for(unsigned int m2 = 0; m2 < M; m2++)
+        {
+          Lpsi2_N_row_sum += Lpsi2.getVal(m, m2);
+          Lpsi2_N_dot_Z += Lpsi2.getVal(m, m2) * Z.getVal(m2, q);
+          Lpsi2_M_col += Lpsi2.getVal(m2, m);
+          cross += Lpsi2.getVal(m, m2) * denom * Z.getVal(m2, q);
+        }
+        // Also need -Lpsi2_N.sum(0) * Z / l2 where Lpsi2_N.sum(0) is sum_{m1} Lpsi2[m1,m] wait
+        // Lpsi2_N = Lpsi2.sum(0) in numpy for NxMxM → for our MxM, Lpsi2_N[m2,q related] = sum_m1 Lpsi2[m1,m2]
+        double sum_over_m1 = 0.0;
+        for(unsigned int m1 = 0; m1 < M; m1++)
+          sum_over_m1 += Lpsi2.getVal(m1, m);
+
+        double g = -sum_over_m1 * Zm / l2
+                   + Lpsi2_N_dot_Z / l2
+                   + 2.0 * Lpsi2_M_col * muq * denom
+                   - Lpsi2_M_col * denom * Zm
+                   - cross;
+        gZ.addVal(g, m, q);
+      }
+    }
+  }
+}
+
+} // namespace
+
+// ---- CKern defaults ----
+double CKern::psi0(const CMatrix& /*mu*/, const CMatrix& /*S*/) const
+{
+  throw ndlexceptions::NotImplementedError("psi0 not implemented for kernel type " + getType());
+}
+void CKern::psi1(CMatrix& /*Psi1*/, const CMatrix& /*mu*/, const CMatrix& /*S*/, const CMatrix& /*Z*/) const
+{
+  throw ndlexceptions::NotImplementedError("psi1 not implemented for kernel type " + getType());
+}
+void CKern::psi2(CMatrix& /*Psi2*/, const CMatrix& /*mu*/, const CMatrix& /*S*/, const CMatrix& /*Z*/) const
+{
+  throw ndlexceptions::NotImplementedError("psi2 not implemented for kernel type " + getType());
+}
+void CKern::getGradPsi(CMatrix& /*gParams*/, CMatrix& /*gZ*/, CMatrix& /*gMu*/, CMatrix& /*gS*/,
+                       const CMatrix& /*dL_dpsi0*/, const CMatrix& /*dL_dpsi1*/, const CMatrix& /*dL_dpsi2*/,
+                       const CMatrix& /*mu*/, const CMatrix& /*S*/, const CMatrix& /*Z*/,
+                       bool /*add*/) const
+{
+  throw ndlexceptions::NotImplementedError("getGradPsi not implemented for kernel type " + getType());
+}
+
+// ---- White ----
+double CWhiteKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  return variance * static_cast<double>(mu.getRows());
+}
+void CWhiteKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  Psi1.resize(mu.getRows(), Z.getRows());
+  Psi1.zeros();
+}
+void CWhiteKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  Psi2.resize(Z.getRows(), Z.getRows());
+  Psi2.zeros();
+  Psi2.setSymmetric(true);
+}
+void CWhiteKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                            const CMatrix& dL_dpsi0, const CMatrix& /*dL_dpsi1*/, const CMatrix& /*dL_dpsi2*/,
+                            const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                            bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  checkPsiInputs(mu, S, Q);
+  checkPsiZ(Z, Q);
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+  double g = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    g += dL_dpsi0.getVal(n);
+  gParams.addVal(g, 0);
+}
+
+// ---- Bias ----
+double CBiasKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  return variance * static_cast<double>(mu.getRows());
+}
+void CBiasKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  Psi1.resize(mu.getRows(), Z.getRows());
+  Psi1.setVals(variance);
+}
+void CBiasKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  Psi2.resize(Z.getRows(), Z.getRows());
+  Psi2.setVals(variance * variance * static_cast<double>(mu.getRows()));
+  Psi2.setSymmetric(true);
+}
+void CBiasKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                           const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                           const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                           bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  checkPsiInputs(mu, S, Q);
+  checkPsiZ(Z, Q);
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+  double g = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    g += dL_dpsi0.getVal(n);
+    for(unsigned int m = 0; m < M; m++)
+      g += dL_dpsi1.getVal(n, m);
+  }
+  // psi2 = N * var^2 * ones → d/dvar = 2 N var * sum(dL_dpsi2)
+  double sum2 = 0.0;
+  for(unsigned int m1 = 0; m1 < M; m1++)
+    for(unsigned int m2 = 0; m2 < M; m2++)
+      sum2 += dL_dpsi2.getVal(m1, m2);
+  g += 2.0 * variance * static_cast<double>(N) * sum2;
+  gParams.addVal(g, 0);
+}
+
+// ---- Linear ----
+double CLinKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  double s = 0.0;
+  for(unsigned int n = 0; n < mu.getRows(); n++)
+    for(unsigned int q = 0; q < getInputDim(); q++)
+      s += variance * (mu.getVal(n, q) * mu.getVal(n, q) + S.getVal(n, q));
+  return s;
+}
+void CLinKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  Psi1.resize(mu.getRows(), Z.getRows());
+  Psi1.gemm(mu, Z, variance, 0.0, "n", "t");
+}
+void CLinKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  CMatrix Psi1(N, M);
+  psi1(Psi1, mu, S, Z);
+  // psi2 = Psi1^T Psi1 + Z (var^2 diag(sum_n S_nq)) Z^T  — GPy: tdot(psi1.T) + (S.sum(0)*Zv) @ Zv.T
+  Psi2.resize(M, M);
+  Psi2.gemm(Psi1, Psi1, 1.0, 0.0, "t", "n");
+  vector<double> Ssum(Q, 0.0);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < Q; q++)
+      Ssum[q] += S.getVal(n, q);
+  for(unsigned int m1 = 0; m1 < M; m1++)
+  {
+    for(unsigned int m2 = 0; m2 <= m1; m2++)
+    {
+      double extra = 0.0;
+      for(unsigned int q = 0; q < Q; q++)
+        extra += Ssum[q] * (variance * Z.getVal(m1, q)) * (variance * Z.getVal(m2, q));
+      Psi2.addVal(extra, m1, m2);
+      if(m1 != m2)
+        Psi2.addVal(extra, m2, m1);
+    }
+  }
+  Psi2.setSymmetric(true);
+}
+void CLinKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                          const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                          const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                          bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  checkPsiInputs(mu, S, Q);
+  checkPsiZ(Z, Q);
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+
+  // Symmetrise dL_dpsi2
+  CMatrix dL2(M, M);
+  for(unsigned int i = 0; i < M; i++)
+    for(unsigned int j = 0; j < M; j++)
+      dL2.setVal(0.5 * (dL_dpsi2.getVal(i, j) + dL_dpsi2.getVal(j, i)), i, j);
+
+  double gVar = 0.0;
+  // psi0 + psi1 contributions (GPy linear_psi_comp)
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double d0 = dL_dpsi0.getVal(n);
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      const double muq = mu.getVal(n, q);
+      const double Snq = S.getVal(n, q);
+      gVar += d0 * (muq * muq + Snq);
+      gMu.addVal(2.0 * d0 * variance * muq, n, q);
+      gS.addVal(d0 * variance, n, q);
+    }
+  }
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double d1 = dL_dpsi1.getVal(n, m);
+      for(unsigned int q = 0; q < Q; q++)
+      {
+        gVar += d1 * mu.getVal(n, q) * Z.getVal(m, q);
+        gMu.addVal(d1 * variance * Z.getVal(m, q), n, q);
+        gZ.addVal(d1 * variance * mu.getVal(n, q), m, q);
+      }
+    }
+  }
+
+  // psi2: common_sum = mu @ (var Z)^T = Psi1
+  CMatrix Psi1(N, M);
+  psi1(Psi1, mu, S, Z);
+  const double var2 = variance * variance;
+  for(unsigned int q = 0; q < Q; q++)
+  {
+    double Z_expect = 0.0;
+    for(unsigned int m1 = 0; m1 < M; m1++)
+      for(unsigned int m2 = 0; m2 < M; m2++)
+        Z_expect += dL2.getVal(m1, m2) * Z.getVal(m1, q) * Z.getVal(m2, q);
+
+    double Ssum = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      Ssum += S.getVal(n, q);
+    gVar += 2.0 * Ssum * variance * Z_expect;
+
+    for(unsigned int n = 0; n < N; n++)
+    {
+      double common_expect_q = 0.0;
+      for(unsigned int m1 = 0; m1 < M; m1++)
+      {
+        double row = 0.0;
+        for(unsigned int m2 = 0; m2 < M; m2++)
+          row += (dL2.getVal(m1, m2) + dL2.getVal(m2, m1)) * Z.getVal(m2, q);
+        common_expect_q += Psi1.getVal(n, m1) * row;
+      }
+      // GPy: common_expect = common_sum @ (dL2T @ Z); dL_dmu = common_expect * var
+      // Simpler path matching _psiDerivativecomputations_block for 2d dL_dpsi2:
+      gMu.addVal(0.0, n, q); // filled below
+    }
+  }
+
+  // Clearer psi2 grads following GPy 2d branch
+  CMatrix dL2T(M, M);
+  for(unsigned int i = 0; i < M; i++)
+    for(unsigned int j = 0; j < M; j++)
+      dL2T.setVal(dL2.getVal(i, j) + dL2.getVal(j, i), i, j);
+
+  CMatrix Zv(M, Q);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int q = 0; q < Q; q++)
+      Zv.setVal(variance * Z.getVal(m, q), m, q);
+
+  // common_sum = Psi1 (N x M)
+  CMatrix common_expect(N, Q); // (common_sum @ (dL2T @ Z)) 
+  CMatrix dL2TZ(M, Q);
+  dL2TZ.gemm(dL2T, Z, 1.0, 0.0, "n", "n");
+  common_expect.gemm(Psi1, dL2TZ, 1.0, 0.0, "n", "n");
+
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      gVar += common_expect.getVal(n, q) * mu.getVal(n, q);
+      gMu.addVal(common_expect.getVal(n, q) * variance, n, q);
+      // dS from psi2: Z_expect * var^2 for each n
+    }
+
+  for(unsigned int q = 0; q < Q; q++)
+  {
+    double Z_expect = 0.0;
+    for(unsigned int m1 = 0; m1 < M; m1++)
+      for(unsigned int m2 = 0; m2 < M; m2++)
+        Z_expect += dL2.getVal(m1, m2) * Z.getVal(m1, q) * Z.getVal(m2, q);
+    for(unsigned int n = 0; n < N; n++)
+      gS.addVal(Z_expect * var2, n, q);
+  }
+
+  // dZ from psi2: var2 * S.sum * (dL2T @ Z) + (Z2_expect)^T @ (var * mu)
+  // Z2_expect = common_sum.T @ dL2T  → (M x N)(N?) GPy: Z2_expect = inner(common_sum, dL2T) → N x M
+  CMatrix Z2_expect(N, M);
+  Z2_expect.gemm(Psi1, dL2T, 1.0, 0.0, "n", "n");
+  CMatrix Z1_expect(M, Q);
+  Z1_expect.gemm(dL2T, Z, 1.0, 0.0, "n", "n");
+
+  vector<double> Ssum(Q, 0.0);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < Q; q++)
+      Ssum[q] += S.getVal(n, q);
+
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      double g = var2 * Ssum[q] * Z1_expect.getVal(m, q);
+      for(unsigned int n = 0; n < N; n++)
+        g += Z2_expect.getVal(n, m) * variance * mu.getVal(n, q);
+      gZ.addVal(g, m, q);
+    }
+
+  // Remove double-counting of Z_expect in gVar from the incomplete first psi2 loop —
+  // the first loop already added 2*Ssum*var*Z_expect; second adds common_expect*mu. Good.
+  // But first incomplete loop also had empty gMu.addVal(0) — harmless.
+
+  gParams.addVal(gVar, 0);
+}
+
+// ---- RBF isotropic ----
+static vector<double> isoLengthscale2(double inverseWidth, unsigned int Q)
+{
+  vector<double> l2(Q, 1.0 / inverseWidth);
+  return l2;
+}
+
+double CRbfKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  return variance * static_cast<double>(mu.getRows());
+}
+void CRbfKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  rbfPsi1(Psi1, variance, isoLengthscale2(inverseWidth, getInputDim()), mu, S, Z);
+}
+void CRbfKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  rbfPsi2(Psi2, variance, isoLengthscale2(inverseWidth, getInputDim()), mu, S, Z);
+}
+void CRbfKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                          const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                          const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                          bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  checkPsiInputs(mu, S, Q);
+  checkPsiZ(Z, Q);
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+
+  vector<double> l2 = isoLengthscale2(inverseWidth, Q);
+  vector<double> gL(Q, 0.0);
+  double gVar = 0.0;
+  CMatrix gZloc(M, Q);
+  CMatrix gMuloc(N, Q);
+  CMatrix gSloc(N, Q);
+  rbfGradPsi(gL, gZloc, gMuloc, gSloc, gVar, dL_dpsi0, dL_dpsi1, dL_dpsi2, variance, l2, mu, S, Z);
+
+  // Map dL/dℓ → dL/dγ with ℓ = γ^{-1/2}, ∂ℓ/∂γ = -0.5 ℓ / γ
+  double gGamma = 0.0;
+  const double ell = 1.0 / sqrt(inverseWidth);
+  for(unsigned int q = 0; q < Q; q++)
+    gGamma += gL[q] * (-0.5 * ell / inverseWidth);
+
+  gParams.addVal(gGamma, 0);
+  gParams.addVal(gVar, 1);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int q = 0; q < Q; q++)
+      gZ.addVal(gZloc.getVal(m, q), m, q);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      gMu.addVal(gMuloc.getVal(n, q), n, q);
+      gS.addVal(gSloc.getVal(n, q), n, q);
+    }
+}
+
+// ---- RBF ARD ----
+static vector<double> ardLengthscale2(double inverseWidth, const CMatrix& scales)
+{
+  vector<double> l2(scales.getCols());
+  for(unsigned int q = 0; q < scales.getCols(); q++)
+  {
+    const double s = scales.getVal(q);
+    BOUNDCHECK(s > 0.0);
+    l2[q] = 1.0 / (inverseWidth * s);
+  }
+  return l2;
+}
+
+double CRbfardKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  return variance * static_cast<double>(mu.getRows());
+}
+void CRbfardKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  rbfPsi1(Psi1, variance, ardLengthscale2(inverseWidth, scales), mu, S, Z);
+}
+void CRbfardKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  checkPsiInputs(mu, S, getInputDim());
+  checkPsiZ(Z, getInputDim());
+  rbfPsi2(Psi2, variance, ardLengthscale2(inverseWidth, scales), mu, S, Z);
+}
+void CRbfardKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                             const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                             const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                             bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  checkPsiInputs(mu, S, Q);
+  checkPsiZ(Z, Q);
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+
+  vector<double> l2 = ardLengthscale2(inverseWidth, scales);
+  vector<double> gL(Q, 0.0);
+  double gVar = 0.0;
+  CMatrix gZloc(M, Q);
+  CMatrix gMuloc(N, Q);
+  CMatrix gSloc(N, Q);
+  rbfGradPsi(gL, gZloc, gMuloc, gSloc, gVar, dL_dpsi0, dL_dpsi1, dL_dpsi2, variance, l2, mu, S, Z);
+
+  // ℓ_q = (γ s_q)^{-1/2}; ∂ℓ/∂γ = -0.5 ℓ/γ; ∂ℓ/∂s = -0.5 ℓ/s
+  double gGamma = 0.0;
+  for(unsigned int q = 0; q < Q; q++)
+  {
+    const double s = scales.getVal(q);
+    const double ell = sqrt(l2[q]);
+    gGamma += gL[q] * (-0.5 * ell / inverseWidth);
+    gParams.addVal(gL[q] * (-0.5 * ell / s), q + 2);
+  }
+  gParams.addVal(gGamma, 0);
+  gParams.addVal(gVar, 1);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int q = 0; q < Q; q++)
+      gZ.addVal(gZloc.getVal(m, q), m, q);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < Q; q++)
+    {
+      gMu.addVal(gMuloc.getVal(n, q), n, q);
+      gS.addVal(gSloc.getVal(n, q), n, q);
+    }
+}
+
+// ---- Compound ----
+double CCmpndKern::psi0(const CMatrix& mu, const CMatrix& S) const
+{
+  double s = 0.0;
+  for(size_t i = 0; i < components.size(); i++)
+    s += components[i]->psi0(mu, S);
+  return s;
+}
+void CCmpndKern::psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  components[0]->psi1(Psi1, mu, S, Z);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->psi1(tmp, mu, S, Z);
+    Psi1.axpy(tmp, 1.0);
+  }
+}
+void CCmpndKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  components[0]->psi2(Psi2, mu, S, Z);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->psi2(tmp, mu, S, Z);
+    Psi2.axpy(tmp, 1.0);
+  }
+  // Cross terms (GPy Add.psi2): skip White; Bias x other → var * (psi1_sum[:,None]+psi1_sum[None,:]);
+  // else einsum psi1_i, psi1_j
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    for(size_t j = i + 1; j < components.size(); j++)
+    {
+      CKern* p1 = components[i];
+      CKern* p2 = components[j];
+      if(p1->getType() == "white" || p2->getType() == "white")
+        continue;
+      if(p1->getType() == "bias" && (p2->getType() == "rbf" || p2->getType() == "rbfard" || p2->getType() == "lin"))
+      {
+        CMatrix P1;
+        p2->psi1(P1, mu, S, Z);
+        for(unsigned int m1 = 0; m1 < M; m1++)
+        {
+          double s1 = 0.0;
+          for(unsigned int n = 0; n < N; n++)
+            s1 += P1.getVal(n, m1);
+          for(unsigned int m2 = 0; m2 < M; m2++)
+          {
+            double s2 = 0.0;
+            for(unsigned int n = 0; n < N; n++)
+              s2 += P1.getVal(n, m2);
+            const double addv = p1->getVariance() * (s1 + s2);
+            Psi2.addVal(addv, m1, m2);
+          }
+        }
+      }
+      else if(p2->getType() == "bias" && (p1->getType() == "rbf" || p1->getType() == "rbfard" || p1->getType() == "lin"))
+      {
+        CMatrix P1;
+        p1->psi1(P1, mu, S, Z);
+        for(unsigned int m1 = 0; m1 < M; m1++)
+        {
+          double s1 = 0.0;
+          for(unsigned int n = 0; n < N; n++)
+            s1 += P1.getVal(n, m1);
+          for(unsigned int m2 = 0; m2 < M; m2++)
+          {
+            double s2 = 0.0;
+            for(unsigned int n = 0; n < N; n++)
+              s2 += P1.getVal(n, m2);
+            const double addv = p2->getVariance() * (s1 + s2);
+            Psi2.addVal(addv, m1, m2);
+          }
+        }
+      }
+      else if(p1->getType() != "bias" && p2->getType() != "bias")
+      {
+        CMatrix A, B;
+        p1->psi1(A, mu, S, Z);
+        p2->psi1(B, mu, S, Z);
+        // sum_n (A[n,:]^T B[n,:] + B[n,:]^T A[n,:])
+        for(unsigned int n = 0; n < N; n++)
+        {
+          for(unsigned int m1 = 0; m1 < M; m1++)
+          {
+            for(unsigned int m2 = 0; m2 < M; m2++)
+            {
+              const double v = A.getVal(n, m1) * B.getVal(n, m2) + B.getVal(n, m1) * A.getVal(n, m2);
+              Psi2.addVal(v, m1, m2);
+            }
+          }
+        }
+      }
+      else
+      {
+        throw ndlexceptions::NotImplementedError("psi2 cross term not implemented for these compound parts");
+      }
+    }
+  }
+  Psi2.setSymmetric(true);
+}
+
+void CCmpndKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
+                            const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
+                            const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
+                            bool add) const
+{
+  const unsigned int N = mu.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int Q = getInputDim();
+  zeroGradOutputs(gParams, gZ, gMu, gS, getNumParams(), N, M, Q, add);
+
+  // tmp = dL_dpsi2.sum(0) + dL_dpsi2.sum(1)  (M,)
+  vector<double> tmp(M, 0.0);
+  for(unsigned int m1 = 0; m1 < M; m1++)
+    for(unsigned int m2 = 0; m2 < M; m2++)
+    {
+      tmp[m1] += dL_dpsi2.getVal(m1, m2);
+      tmp[m2] += dL_dpsi2.getVal(m1, m2);
+    }
+
+  unsigned int paramOffset = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CKern* p1 = components[i];
+    CMatrix eff_dL_dpsi1 = dL_dpsi1;
+    // copy
+    eff_dL_dpsi1.deepCopy(dL_dpsi1);
+    for(size_t j = 0; j < components.size(); j++)
+    {
+      if(j == i)
+        continue;
+      CKern* p2 = components[j];
+      if(p2->getType() == "white")
+        continue;
+      if(p2->getType() == "bias")
+      {
+        const double v = p2->getVariance();
+        for(unsigned int n = 0; n < N; n++)
+          for(unsigned int m = 0; m < M; m++)
+            eff_dL_dpsi1.addVal(tmp[m] * v, n, m);
+      }
+      else
+      {
+        CMatrix P2;
+        p2->psi1(P2, mu, S, Z);
+        for(unsigned int n = 0; n < N; n++)
+          for(unsigned int m = 0; m < M; m++)
+            eff_dL_dpsi1.addVal(tmp[m] * P2.getVal(n, m), n, m);
+      }
+    }
+
+    CMatrix gP(1, p1->getNumParams());
+    CMatrix gZc(M, Q);
+    CMatrix gMuc(N, Q);
+    CMatrix gSc(N, Q);
+    p1->getGradPsi(gP, gZc, gMuc, gSc, dL_dpsi0, eff_dL_dpsi1, dL_dpsi2, mu, S, Z, false);
+    for(unsigned int p = 0; p < p1->getNumParams(); p++)
+      gParams.addVal(gP.getVal(p), paramOffset + p);
+    for(unsigned int m = 0; m < M; m++)
+      for(unsigned int q = 0; q < Q; q++)
+        gZ.addVal(gZc.getVal(m, q), m, q);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int q = 0; q < Q; q++)
+      {
+        gMu.addVal(gMuc.getVal(n, q), n, q);
+        gS.addVal(gSc.getVal(n, q), n, q);
+      }
+    paramOffset += p1->getNumParams();
+  }
+}

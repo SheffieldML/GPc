@@ -1,5 +1,9 @@
 #include "ndlassert.h"
+#include <stdexcept>
+#include "ndlexceptions.h"
 
+/* Bodies always compiled so RELEASE and checking objects can link together.
+ * Macros in ndlassert.h select assert vs these helpers via GPC_CHECKS. */
 void ndlCheckBounds(bool cond)
 {
   if(cond)

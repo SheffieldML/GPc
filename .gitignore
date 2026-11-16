@@ -110,3 +110,7 @@ docs/yaml_frontmatter_examples.md
 diagPitc
 genTestGpPitc
 .venv/
+benchGPc
+demo_bayes_gplvm
+demo_mrd
+bgplvm

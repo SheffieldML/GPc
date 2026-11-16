@@ -812,6 +812,36 @@ int testModelPaths()
   toy.model->setByPath("scale.0", 1.5);
   fail += failTrue(fabs(toy.model->getByPath("scale.0") - 1.5) < 1e-14,
                    "scale.0 path get/set");
+  {
+    vector<string> scalePaths = toy.model->paramPaths();
+    bool sawScale = false;
+    for(size_t i = 0; i < scalePaths.size(); i++)
+      if(scalePaths[i] == "scale.0")
+        sawScale = true;
+    fail += failTrue(sawScale, "paramPaths includes scale.0 when learnt");
+  }
+  // OOB scale index while scales are learnt.
+  try
+  {
+    toy.model->getByPath("scale.99");
+    cout << "FAILURE: getByPath scale.99 should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "getByPath scale OOB throws Error." << endl;
+  }
+  try
+  {
+    toy.model->setByPath("scale.99", 1.0);
+    cout << "FAILURE: setByPath scale.99 should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "setByPath scale OOB throws Error." << endl;
+  }
+  toy.model->clearFixes(); // hits scaleParamFixed clear loop while learnt
   toy.model->setOutputScaleLearnt(false);
 
   try
@@ -824,6 +854,41 @@ int testModelPaths()
   {
     cout << "FTC setByPath beta throws Error." << endl;
   }
+  try
+  {
+    toy.model->getByPath("beta");
+    cout << "FAILURE: FTC getByPath beta should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "FTC getByPath beta throws Error." << endl;
+  }
+  try
+  {
+    toy.model->getByPath("scale.0");
+    cout << "FAILURE: getByPath scale without learnScales should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "getByPath scale without learnScales throws Error." << endl;
+  }
+  try
+  {
+    toy.model->setByPath("scale.0", 1.0);
+    cout << "FAILURE: setByPath scale without learnScales should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "setByPath scale without learnScales throws Error." << endl;
+  }
+
+  // isKernParamFixed before any fix() keeps mask empty → false for OOB index.
+  fail += failTrue(!toy.model->isKernParamFixed(0)
+                   && !toy.model->isKernParamFixed(999),
+                   "isKernParamFixed false when mask unset/OOB");
 
   return fail;
 }

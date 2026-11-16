@@ -133,6 +133,52 @@ static void testBlockedMatchesUnblocked()
   const double diff = maxAbsDiffSym(Kb1, Kb2);
   expect(diff < 1e-8, "blocked matches unblocked (block=4)");
   cout << "  max|Δ|=" << diff << endl;
+
+  // Default blockSize (128) takes the n <= blockSize symbolic early-return.
+  CMatrix Kb3;
+  cholAdjointUpperBlocked(Kb3, U, Ubar);
+  expect(maxAbsDiffSym(Kb1, Kb3) < 1e-8, "blocked default blockSize matches unblocked");
+}
+
+static void testBlockSizeThrows()
+{
+  CMatrix K = makeSpd(4, 2.0);
+  CMatrix U(4, 4);
+  U.jitChol(K);
+  U.setTriangular(true);
+  CMatrix Ubar(4, 4);
+  Ubar.zeros();
+  Ubar.setTriangular(true);
+  CMatrix Kbar;
+  bool threw = false;
+  try
+  {
+    cholAdjointUpperBlocked(Kbar, U, Ubar, 0);
+  }
+  catch(ndlexceptions::Error&)
+  {
+    threw = true;
+  }
+  expect(threw, "blocked blockSize<1 throws Error");
+}
+
+static void testTrsmAdjointUT()
+{
+  const unsigned int M = 6, N = 9;
+  CMatrix K = makeSpd(M, 4.0);
+  CMatrix U(M, M);
+  U.jitChol(K);
+  U.setTriangular(true);
+  CMatrix B(M, N);
+  B.randn(0.2, 0.0);
+  CMatrix Bbar(M, N);
+  Bbar.randn(0.05, 0.0);
+  CMatrix KufBar, Ubar;
+  trsmAdjointUT(KufBar, Ubar, U, B, Bbar);
+  expect(KufBar.getRows() == M && KufBar.getCols() == N, "trsmAdjointUT KufBar shape");
+  expect(Ubar.getRows() == M && Ubar.getCols() == M, "trsmAdjointUT Ubar shape");
+  expect(std::isfinite(KufBar.max()) && std::isfinite(Ubar.max()),
+         "trsmAdjointUT finite");
 }
 
 int main()
@@ -140,6 +186,8 @@ int main()
   cout << "==== testCholAdjoint (CIP-0012) ====" << endl;
   testUnblockedMatchesFD();
   testBlockedMatchesUnblocked();
+  testBlockSizeThrows();
+  testTrsmAdjointUT();
   cout << "Number of failures: " << fails << "." << endl;
   return fails ? 1 : 0;
 }

@@ -92,7 +92,8 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testParamPaths is CIP-0014 Phase A (no .mat). testCGp is CIP-0011.
 # testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
 # testMrd is CIP-0018.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd
+# testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testCoregionalize testPsi testBayesGplvm testMrd
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -106,6 +107,7 @@ run-matio-tests: matio-tests
 	./testParamPaths
 	./testGp
 	./testCGp
+	./testCholAdjoint
 	./testCoregionalize
 	./testPsi
 	./testBayesGplvm

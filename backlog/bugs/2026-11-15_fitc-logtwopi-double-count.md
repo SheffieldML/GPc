@@ -1,10 +1,10 @@
 ---
 id: "2026-11-15_fitc-logtwopi-double-count"
 title: "FITC log-likelihood double-counts N log 2π"
-status: "Proposed"
+status: "Completed"
 priority: "High"
 created: "2026-11-15"
-last_updated: "2026-11-15"
+last_updated: "2026-11-16"
 category: "bugs"
 related_cips: ["0012"]
 owner: "Neil Lawrence"
@@ -29,11 +29,19 @@ Tracked out of [CIP-0012](../../cip/cip0012.md) (F5) so the whitened-path CIP st
 
 ## Acceptance Criteria
 
-- [ ] FITC branch no longer double-counts the \(2\pi\) term (match DTC/DTCVAR/PITC convention)
-- [ ] `testGp` FITC arm still green (update fixture and/or the existing \(\pm N/2\log 2\pi\) tolerance helper if needed)
-- [ ] Note in `docs/numerics.md`; CIP-0012 F5 item can be marked fixed
+- [x] FITC branch no longer double-counts the \(2\pi\) term (match DTC/DTCVAR/PITC convention)
+- [x] `testGp` FITC arm still green (update fixture and/or the existing \(\pm N/2\log 2\pi\) tolerance helper if needed)
+- [x] Note in `docs/numerics.md`; CIP-0012 F5 item can be marked fixed
 
 ## Related
 
 - CIP: 0012
 - Code: `CGp.cpp` FITC `logLikelihood` case + common tail
+
+## Progress Updates
+
+### 2026-11-15
+Task created (Proposed).
+
+### 2026-11-16
+Removed FITC-only `N*LOGTWOPI` so the common `d*N*HALFLOGTWOPI` tail owns the constant. `testGp` already accepts \(\pm N/2\log 2\pi\) vs MATLAB fixtures.

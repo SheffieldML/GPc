@@ -36,6 +36,8 @@ make.inc
 gp
 gplvm
 ivm
+demo_regression_1d
+demo_sparse_dtcvar
 testGp
 testOptimisable
 diagDtcvar

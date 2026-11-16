@@ -16,6 +16,8 @@ Compile and Reference tests run on **Ubuntu** and **macOS** (CIP-0006); both are
 
 Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
 
+**Tutorials (CIP-0015):** step-by-step CLI recipes for the shipped `examples/*.svml` workflows live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md). Optional API demos: `make demos`.
+
 Gaussian Process Software
 =========================
 
@@ -114,6 +116,8 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 ## Examples
 
 The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="https://github.com/SheffieldML/GPmat/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
+
+For the maintained tutorial versions of these walks (GPy checklist mapping, DTCVAR sparse path, IVM/GPLVM), see [`docs/tutorials/`](docs/tutorials/).
 
 ## One Dimensional Data Data
 

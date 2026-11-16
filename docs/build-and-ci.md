@@ -26,7 +26,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 
 | Workflow | Role |
 | --- | --- |
-| **Compile** | Ubuntu + macOS hard gate: build `gp` / `ivm` / `gplvm`, help smoke |
+| **Compile** | Ubuntu + macOS hard gate: build `gp` / `ivm` / `gplvm` / `bgplvm`, help smoke |
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
 

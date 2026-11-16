@@ -606,6 +606,9 @@ RBF, or `-k rbf -i true` (same as `./gplvm`). Psi statistics for ARD are on
 mean and diagonal variance of \(q(\mathbf{X})\)). `gnuplot` plots the
 variational means \(\boldsymbol{\mu}\) (coloured by SVM-light labels when
 present) over a predictive-variance background, same style as `./gplvm gnuplot`.
+For \(q>2\), choose the plane with `-d i j` (zero-based; default `0 1`);
+other latent dims are fixed at the mean of \(\boldsymbol{\mu}\) for the
+variance map — typically the two largest ARD input scales.
 
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate

@@ -196,6 +196,11 @@ int testStreamRoundTrip()
   kern.setInitParam();
   CBayesGplvm model(&kern, Y, Q, M, 0);
   model.setBeta(1.7);
+  vector<int> labs(N);
+  for(unsigned int i = 0; i < N; i++)
+    labs[i] = (int)(i % 3) + 1;
+  model.setLabels(labs);
+
   stringstream ss;
   model.toStream(ss);
   CBayesGplvm model2(&kern, Y, Q, M, 0);
@@ -210,7 +215,231 @@ int testStreamRoundTrip()
     cout << "FAILURE: mu stream mismatch" << endl;
     return 1;
   }
-  cout << "OK: stream round-trip beta/mu" << endl;
+  if(!model2.isLabels() || model2.getMinLabelVal() != 1 || model2.getMaxLabelVal() != 3)
+  {
+    cout << "FAILURE: label stream min/max" << endl;
+    return 1;
+  }
+  if(model2.getLabel(0) != labs[0] || model2.getLabel(N - 1) != labs[N - 1])
+  {
+    cout << "FAILURE: label stream values" << endl;
+    return 1;
+  }
+  cout << "OK: stream round-trip beta/mu/labels" << endl;
+  return 0;
+}
+
+int testFileRoundTrip()
+{
+  CMatrix Y = makeY();
+  CRbfKern kern(Q);
+  kern.setInitParam();
+  CBayesGplvm model(&kern, Y, Q, M, 0);
+  model.setBeta(2.3);
+  const string path = "/tmp/bayes_gplvm_roundtrip.model";
+  model.toFile(path, "testBayesGplvm");
+  CRbfKern kern2(Q);
+  kern2.setInitParam();
+  CBayesGplvm loaded(&kern2, Y, Q, M, 0);
+  loaded.fromFile(path);
+  if(fabs(loaded.getBeta() - 2.3) > 1e-12
+     || loaded.getLatentDim() != Q
+     || loaded.getNumActive() != M
+     || loaded.getMu().maxAbsDiff(model.getMu()) > 1e-12)
+  {
+    cout << "FAILURE: file round-trip" << endl;
+    return 1;
+  }
+  cout << "OK: file round-trip" << endl;
+  return 0;
+}
+
+int testLabelsErrors()
+{
+  CMatrix Y = makeY();
+  CRbfKern kern(Q);
+  kern.setInitParam();
+  CBayesGplvm model(&kern, Y, Q, M, 0);
+  int fail = 0;
+  try
+  {
+    vector<int> bad(N - 1, 1);
+    model.setLabels(bad);
+    cout << "FAILURE: setLabels length mismatch should throw" << endl;
+    fail++;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    // expected
+  }
+  try
+  {
+    (void)model.getMaxLabelVal();
+    cout << "FAILURE: getMaxLabelVal without labels should throw" << endl;
+    fail++;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    // expected
+  }
+  try
+  {
+    (void)model.getMinLabelVal();
+    cout << "FAILURE: getMinLabelVal without labels should throw" << endl;
+    fail++;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    // expected
+  }
+  if(fail == 0)
+    cout << "OK: label error paths" << endl;
+  return fail;
+}
+
+int testPosteriorMeanVar()
+{
+  CMatrix Y = makeY();
+  CRbfKern kern(Q);
+  kern.setInitParam();
+  kern.setInverseWidth(1.0);
+  kern.setVariance(1.0);
+  CBayesGplvm model(&kern, Y, Q, M, 0);
+  model.setBeta(2.0);
+
+  const unsigned int nStar = 4;
+  CMatrix Xstar(nStar, Q);
+  for(unsigned int i = 0; i < nStar; i++)
+    for(unsigned int q = 0; q < Q; q++)
+      Xstar.setVal(0.2 * (double)i - 0.3 * (double)q, i, q);
+
+  CMatrix means(nStar, D);
+  CMatrix vars(nStar, D);
+  model.posteriorMeanVar(means, vars, Xstar);
+  for(unsigned int i = 0; i < nStar; i++)
+  {
+    for(unsigned int d = 0; d < D; d++)
+    {
+      const double m = means.getVal(i, d);
+      const double v = vars.getVal(i, d);
+      if(std::isnan(m) || std::isinf(m) || std::isnan(v) || std::isinf(v) || v < 0.0)
+      {
+        cout << "FAILURE: posteriorMeanVar not finite/nonneg at ("
+             << i << "," << d << ")" << endl;
+        return 1;
+      }
+    }
+    // Homoscedastic noise: variance identical across outputs.
+    if(fabs(vars.getVal(i, 0) - vars.getVal(i, D - 1)) > 1e-12)
+    {
+      cout << "FAILURE: posterior var should match across outputs" << endl;
+      return 1;
+    }
+  }
+  cout << "OK: posteriorMeanVar finite" << endl;
+  return 0;
+}
+
+int testOptimiseAndDisplay()
+{
+  CMatrix Y = makeY();
+  CRbfKern kern(Q);
+  kern.setInitParam();
+  CBayesGplvm model(&kern, Y, Q, M, 0);
+  const double L0 = model.logLikelihood();
+  model.setVerbosity(0);
+  model.optimise(5);
+  const double L1 = model.logLikelihood();
+  if(std::isnan(L1) || std::isinf(L1))
+  {
+    cout << "FAILURE: ELBO after optimise not finite" << endl;
+    return 1;
+  }
+  // SCG maximises ELBO; allow tiny numerical wobble.
+  if(L1 + 1e-6 < L0)
+  {
+    cout << "FAILURE: optimise decreased ELBO " << L0 << " -> " << L1 << endl;
+    return 1;
+  }
+  stringstream ss;
+  model.display(ss);
+  if(ss.str().find("Bayesian GPLVM") == string::npos
+     || ss.str().find("ELBO=") == string::npos)
+  {
+    cout << "FAILURE: display missing expected text" << endl;
+    return 1;
+  }
+  cout << "OK: optimise (ELBO " << L0 << " -> " << L1 << ") + display" << endl;
+  return 0;
+}
+
+int testArdElboAndGrads()
+{
+  // RBF-ARD path through CBayesGplvm (psi + ELBO + packed grads).
+  // Full FD vs analytic for ARD input scales is covered in testPsi; here we
+  // check the model wiring and that ELBO / grad vector stay finite.
+  CMatrix Y = makeY();
+  const unsigned int qArd = 3;
+  CRbfardKern kern(qArd);
+  kern.setInitParam();
+  CBayesGplvm model(&kern, Y, qArd, M, 0);
+  model.setBeta(1.5);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int q = 0; q < qArd; q++)
+      model.getS().setVal(0.25, n, q);
+
+  const double L = model.logLikelihood();
+  if(std::isnan(L) || std::isinf(L))
+  {
+    cout << "FAILURE: ARD ELBO not finite: " << L << endl;
+    return 1;
+  }
+
+  CMatrix g(1, model.getOptNumParams());
+  const double L2 = model.logLikelihoodGradient(g);
+  if(std::isnan(L2) || std::isinf(L2) || fabs(L2 - L) > 1e-8)
+  {
+    cout << "FAILURE: ARD logLikelihoodGradient inconsistent" << endl;
+    return 1;
+  }
+  for(unsigned int j = 0; j < g.getCols(); j++)
+  {
+    const double v = g.getVal(j);
+    if(std::isnan(v) || std::isinf(v))
+    {
+      cout << "FAILURE: ARD grad NaN/Inf at " << j << endl;
+      return 1;
+    }
+  }
+  cout << "OK: ARD ELBO+grad finite (ELBO=" << L << " nParams="
+       << model.getOptNumParams() << ")" << endl;
+  return 0;
+}
+
+int testPcaQExceedsD()
+{
+  // initXpca pads unused latent dims when q > D.
+  CMatrix Y(N, 2);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    Y.setVal(0.4 * n, n, 0);
+    Y.setVal(-0.2 * n, n, 1);
+  }
+  CRbfKern kern(4);
+  kern.setInitParam();
+  CBayesGplvm model(&kern, Y, 4, 2, 0);
+  if(model.getLatentDim() != 4 || model.getMu().getCols() != 4)
+  {
+    cout << "FAILURE: q>D latent shape" << endl;
+    return 1;
+  }
+  const double L = model.logLikelihood();
+  if(std::isnan(L) || std::isinf(L))
+  {
+    cout << "FAILURE: q>D ELBO not finite" << endl;
+    return 1;
+  }
+  cout << "OK: PCA init with q>D" << endl;
   return 0;
 }
 
@@ -348,6 +577,12 @@ int main()
   {
     fail += testElboFinite();
     fail += testStreamRoundTrip();
+    fail += testFileRoundTrip();
+    fail += testLabelsErrors();
+    fail += testPosteriorMeanVar();
+    fail += testOptimiseAndDisplay();
+    fail += testArdElboAndGrads();
+    fail += testPcaQExceedsD();
     fail += testCheckGradients();
     fail += testGpyFixture("testdata/cip0017/bayes_gplvm_rbf_tiny.txt");
     cout << "Number of failures: " << fail << "." << endl;

@@ -244,11 +244,53 @@ int testStableSparse()
   toyF.model->setStableSparseLinalg(true);
   const double fS = toyF.model->logLikelihood();
   fail += failTrue(fabs(fL - fS) < 1e-6, "Legacy vs StableFactor FITC LL");
+  CMatrix gFLeg(1, toyF.model->getOptNumParams());
+  toyF.model->setStableSparseLinalg(false);
+  toyF.model->logLikelihoodGradient(gFLeg);
+  toyF.model->setStableSparseLinalg(true);
+  CMatrix gF(1, toyF.model->getOptNumParams());
+  toyF.model->logLikelihoodGradient(gF);
+  double gFDiff = 0.0;
+  for(unsigned int i = 0; i < gF.getCols(); i++)
+    gFDiff = max(gFDiff, fabs(gF.getVal(i) - gFLeg.getVal(i)));
+  fail += failTrue(gFDiff < 1e-5, "Legacy vs StableFactor FITC grads");
   ToyGp toyP(CGp::PITC);
   const double pL = toyP.model->logLikelihood();
   toyP.model->setStableSparseLinalg(true);
   const double pS = toyP.model->logLikelihood();
   fail += failTrue(fabs(pL - pS) < 1e-6, "Legacy vs StableFactor PITC LL");
+  CMatrix gPLeg(1, toyP.model->getOptNumParams());
+  toyP.model->setStableSparseLinalg(false);
+  toyP.model->logLikelihoodGradient(gPLeg);
+  toyP.model->setStableSparseLinalg(true);
+  CMatrix gP(1, toyP.model->getOptNumParams());
+  toyP.model->logLikelihoodGradient(gP);
+  double gPDiff = 0.0;
+  for(unsigned int i = 0; i < gP.getCols(); i++)
+    gPDiff = max(gPDiff, fabs(gP.getVal(i) - gPLeg.getVal(i)));
+  // PITC grads still Legacy algebra on A/D blocks; dual-path should agree on the toy.
+  fail += failTrue(gPDiff < 1e-5, "Legacy vs StableFactor PITC grads");
+  CMatrix Xtest(2, Q);
+  Xtest.setVal(0.1, 0, 0);
+  Xtest.setVal(-0.5, 1, 0);
+  const int predApprox[] = {CGp::DTC, CGp::DTCVAR, CGp::FITC};
+  const char* predName[] = {"DTC", "DTCVAR", "FITC"};
+  for(unsigned int k = 0; k < 3; k++)
+  {
+    ToyGp tp(predApprox[k]);
+    CMatrix muL(2, 1), varL(2, 1), muS(2, 1), varS(2, 1);
+    tp.model->posteriorMeanVar(muL, varL, Xtest);
+    tp.model->setStableSparseLinalg(true);
+    tp.model->posteriorMeanVar(muS, varS, Xtest);
+    double pdiff = 0.0;
+    for(unsigned int i = 0; i < 2; i++)
+    {
+      pdiff = max(pdiff, fabs(muL.getVal(i) - muS.getVal(i)));
+      pdiff = max(pdiff, fabs(varL.getVal(i) - varS.getVal(i)));
+    }
+    fail += failTrue(pdiff < 1e-6,
+                     string("Legacy vs StableFactor ") + predName[k] + " predict");
+  }
   toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   try
   {

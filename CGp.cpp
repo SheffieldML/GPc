@@ -773,14 +773,28 @@ void CGp::updateAlpha() const
     case DTCVAR:
       if(isSpherical())
       {
+        if(isStableSparseLinalg())
+        {
+          // Alpha = β U^{-1} C^{-1} B m  (CIP-0012; equiv. A^{-1} K_uf m).
+          CMatrix u(numActive, getOutputDim());
+          u.gemm(B, m, 1.0, 0.0, "n", "n");
+          Alpha.deepCopy(u);
+          Alpha.trsm(LcholC, 1.0, "l", "u", "t", "n");
+          Alpha.trsm(LcholC, 1.0, "l", "u", "n", "n");
+          Alpha.trsm(LcholK, 1.0, "l", "u", "n", "n");
+          Alpha.scale(getBetaVal());
+        }
+        else
+        {
 	Alpha.gemm(K_uf, m, 1.0, 0.0, "n", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
+        }
       }
       else
       {
 	throw ndlexceptions::Error("Non-spherical implementations not yet in place for DTC");
-	
+
       }
       break;
     case FITC:
@@ -791,10 +805,24 @@ void CGp::updateAlpha() const
 	for(unsigned int i=0; i<getNumData(); i++)
 	  scaledM.scaleRow(i, 1/diagD.getVal(i));
 	/////////////
+        if(isStableSparseLinalg())
+        {
+          // Alpha = β U^{-1} C^{-1} B (m./D) with B, LcholC from updateAD().
+          CMatrix u(numActive, getOutputDim());
+          u.gemm(B, scaledM, 1.0, 0.0, "n", "n");
+          Alpha.deepCopy(u);
+          Alpha.trsm(LcholC, 1.0, "l", "u", "t", "n");
+          Alpha.trsm(LcholC, 1.0, "l", "u", "n", "n");
+          Alpha.trsm(LcholK, 1.0, "l", "u", "n", "n");
+          Alpha.scale(getBetaVal());
+        }
+        else
+        {
 	setADupToDate(false);
 	Alpha.gemm(K_uf, scaledM, 1.0, 0.0, "n", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
+        }
       }
       else
       {
@@ -867,6 +895,31 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
   // WARNING: destroys kX through in place operations.
   if(isSparseApproximation())
   {
+    if(isStableSparseLinalg()
+       && isSpherical()
+       && (getApproximationType() == DTC
+           || getApproximationType() == DTCVAR
+           || getApproximationType() == FITC))
+    {
+      // vs = kxx - ||b||^2 + b^T C^{-1} b + β^{-1}, b = U^{-T} k_xu (CIP-0012).
+      CMatrix bStar(kX);
+      bStar.trsm(LcholK, 1.0, "l", "u", "t", "n");
+      CMatrix CinvB(bStar);
+      CinvB.trsm(LcholC, 1.0, "l", "u", "t", "n");
+      CinvB.trsm(LcholC, 1.0, "l", "u", "n", "n");
+      for(unsigned int i = 0; i < kX.getCols(); i++)
+      {
+        double vsVal = pkern->diagComputeElement(Xin, i)
+          - bStar.dotColCol(i, bStar, i)
+          + bStar.dotColCol(i, CinvB, i);
+        CHECKZEROORPOSITIVE(vsVal >= 0);
+        vsVal += 1.0 / getBetaVal();
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+          varSigma.setVal(vsVal, i, j);
+      }
+    }
+    else
+    {
     CMatrix store(kX.getRows(), kX.getCols());
     EET.deepCopy(invK_uu);
     EET.axpy(Ainv, -1.0/getBetaVal());
@@ -881,6 +934,7 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
       {
 	varSigma.setVal(vsVal, i, j);
       }
+    }
     }
   }
   else 
@@ -1892,7 +1946,134 @@ void CGp::gpCovGrads() const
   case FITC:
     if(isSpherical())
     {
-      //double betaVal = beta.getVal(0, 0);
+      if(isStableSparseLinalg())
+      {
+        // CIP-0012 FITC reverse on C = I + β V V^T, V = B D^{-1/2}, D = diagD.
+        const double betaVal = getBetaVal();
+        const double dOut = (double)getOutputDim();
+        const unsigned int Mact = numActive;
+        const unsigned int Ndat = getNumData();
+
+        CMatrix Cinv(Mact, Mact);
+        Cinv.setSymmetric(true);
+        Cinv.pdinv(LcholC);
+
+        CMatrix Vfit(Mact, Ndat);
+        Vfit.deepCopy(B);
+        for(unsigned int j = 0; j < Ndat; j++)
+          Vfit.scaleCol(j, 1.0 / sqrt(diagD.getVal(j)));
+
+        CMatrix Cbar(Mact, Mact);
+        Cbar.deepCopy(Cinv);
+        Cbar.scale(dOut);
+        CMatrix Bbar(Mact, Ndat);
+        Bbar.zeros();
+        CMatrix Dbar(Ndat, 1);
+        for(unsigned int j = 0; j < Ndat; j++)
+          Dbar.setVal(dOut / diagD.getVal(j), j);
+
+        CMatrix w(Ndat, 1);
+        CMatrix u(Mact, 1);
+        CMatrix a(Mact, 1);
+        double gbetaM2L = -dOut * (double)Ndat / betaVal;
+        double mwSum = 0.0;
+        double uaSum = 0.0;
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+        {
+          for(unsigned int i = 0; i < Ndat; i++)
+            w.setVal(m.getVal(i, j) / diagD.getVal(i), i);
+          u.gemvColCol(0, B, w, 0, 1.0, 0.0, "n");
+          a.symvColCol(0, Cinv, u, 0, 1.0, 0.0, "u");
+          Cbar.gerColCol(a, 0, a, 0, betaVal * betaVal);
+          Bbar.gerColCol(a, 0, w, 0, -2.0 * betaVal * betaVal);
+          // wbar = B^T ubar + β m_j, ubar = -2 β² a
+          CMatrix wbar(Ndat, 1);
+          wbar.gemvColCol(0, B, a, 0, -2.0 * betaVal * betaVal, 0.0, "t");
+          for(unsigned int i = 0; i < Ndat; i++)
+          {
+            const double mi = m.getVal(i, j);
+            const double Di = diagD.getVal(i);
+            wbar.setVal(wbar.getVal(i) + betaVal * mi, i);
+            Dbar.setVal(Dbar.getVal(i) - wbar.getVal(i) * mi / (Di * Di), i);
+            mwSum += mi * w.getVal(i);
+          }
+          uaSum += u.dotColCol(0, a, 0);
+        }
+        // Symmetrise Cbar and Vbar = 2 β Cbar V
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j < i; j++)
+          {
+            const double v = 0.5 * (Cbar.getVal(i, j) + Cbar.getVal(j, i));
+            Cbar.setVal(v, i, j);
+            Cbar.setVal(v, j, i);
+          }
+        Cbar.setSymmetric(true);
+        CMatrix Vbar(Mact, Ndat);
+        Vbar.symm(Cbar, Vfit, 2.0 * betaVal, 0.0, "u", "l");
+        for(unsigned int j = 0; j < Ndat; j++)
+        {
+          const double s = sqrt(diagD.getVal(j));
+          double vDot = 0.0;
+          for(unsigned int i = 0; i < Mact; i++)
+          {
+            Bbar.setVal(Bbar.getVal(i, j) + Vbar.getVal(i, j) / s, i, j);
+            vDot += Vbar.getVal(i, j) * Vfit.getVal(i, j);
+          }
+          Dbar.setVal(Dbar.getVal(j) - vDot / (2.0 * diagD.getVal(j)), j);
+        }
+
+        // gBeta (-2L) before q→B: explicit β + Dbar·(k-q)
+        double vvT_Cbar = 0.0;
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j < Ndat; j++)
+            vvT_Cbar += Vbar.getVal(i, j) * Vfit.getVal(i, j) / (2.0 * betaVal);
+        // <Cbar, V V^T> = (1/(2β)) <Vbar, V> since Vbar = 2β Cbar V
+        gbetaM2L += vvT_Cbar + mwSum - 2.0 * betaVal * uaSum;
+        for(unsigned int j = 0; j < Ndat; j++)
+        {
+          double q = 0.0;
+          for(unsigned int i = 0; i < Mact; i++)
+          {
+            const double bij = B.getVal(i, j);
+            q += bij * bij;
+          }
+          gbetaM2L += Dbar.getVal(j) * (diagK.getVal(j) - q);
+        }
+
+        // q → B: Bbar -= 2β Dbar_j B_{:,j}
+        for(unsigned int j = 0; j < Ndat; j++)
+        {
+          const double s = -2.0 * betaVal * Dbar.getVal(j);
+          for(unsigned int i = 0; i < Mact; i++)
+            Bbar.setVal(Bbar.getVal(i, j) + s * B.getVal(i, j), i, j);
+        }
+
+        // gLambda = ∂L/∂k = -0.5 * Dbar * β
+        gLambda.resize(Ndat, 1);
+        for(unsigned int j = 0; j < Ndat; j++)
+          gLambda.setVal(-0.5 * Dbar.getVal(j) * betaVal, j);
+
+        Bbar.scale(-0.5);
+        gBeta.setVal(-0.5 * gbetaM2L, 0);
+
+        CMatrix Ubar;
+        CMatrix KufBar;
+        trsmAdjointUT(KufBar, Ubar, LcholK, B, Bbar);
+        gK_uf.deepCopy(KufBar);
+        CMatrix KuuBar;
+        cholAdjointUpperBlocked(KuuBar, LcholK, Ubar);
+        gK_uu.deepCopy(KuuBar);
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int jj = 0; jj < i; jj++)
+          {
+            const double v = 0.5 * gK_uu.getVal(i, jj);
+            gK_uu.setVal(v, i, jj);
+            gK_uu.setVal(v, jj, i);
+          }
+        gK_uu.setSymmetric(true);
+      }
+      else
+      {
       // using V as temp storage here.
       V.deepCopy(K_uf);
       for(unsigned int i=0; i<getNumData(); i++)
@@ -1960,7 +2141,7 @@ void CGp::gpCovGrads() const
       gLambda.scale(0.5*getBetaVal());
       gLambda.dotDivide(diagD);
       gBeta.setVal(-gLambda.sum()/(getBetaVal()*getBetaVal()), 0, 0);
-
+      }
     }
     break;
     

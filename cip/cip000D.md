@@ -68,7 +68,7 @@ From `GPy/util/multioutput.py` and `GPy/kern/src/coregionalize.py` (GPy devel, t
 
 5. **Noise.** `GPCoregionalizedRegression` uses `MixedNoise`: one Gaussian variance per output, selected by the index column. The marginal covariance is \(K_{\mathrm{ICM}} + \mathrm{diag}(\sigma^2_{i_n})\). A single shared white kernel is a different model. This CIP adds that diagonal as its own kernel, summed **outside** the product, so the comparison with GPy’s marginal covariance does not require a new likelihood class.
 
-`Private` in GPy is an ICM with \(W\) fixed at 0 and all but one \(\kappa\) fixed at 0. It is not a new class here. Fixing parameters can come later.
+`Private` in GPy is an ICM with \(W\) fixed at 0 and all but one \(\kappa\) fixed at 0. It is not a new class here. Per-parameter `fix` / `unfix` is available via [CIP-0014](./cip0014.md) path masks.
 
 ### Locked GPc design
 

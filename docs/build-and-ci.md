@@ -12,6 +12,7 @@ Maintainer notes for how GPc builds and how verification is gated. Short command
 - Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`. Same `RELEASE=1` switch.
 - Language floor is **C++17** (`-std=c++17`). Dynamic exception specifications were removed so the pin is no longer C++14 ([CIP-0002](../cip/cip0002.md)).
 - Timing harness: `make RELEASE=1 bench` then `./benchGPc --kind ftc|dtcvar|fitc …` (set `OPENBLAS_NUM_THREADS=1` for the q=2 protocol).
+- GPy compare + LL gate: `OPENBLAS_NUM_THREADS=1 python bench/run_bench.py` (writes `bench.csv`; withholds timings when likelihoods disagree).
 - Windows CI waits on a maintained Windows make path; it is out of scope until that fragment exists.
 
 ## Reference verification without MATLAB

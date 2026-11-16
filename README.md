@@ -72,6 +72,7 @@ $ make clean
 $ make RELEASE=1 gp
 $ OPENBLAS_NUM_THREADS=1 make RELEASE=1 bench
 $ OPENBLAS_NUM_THREADS=1 ./benchGPc --kind ftc --N 1000 --q 2
+$ OPENBLAS_NUM_THREADS=1 python bench/run_bench.py --kinds ftc,dtcvar,fitc --N 1000 --M 50
 ```
 
 A bare `make` keeps `-ggdb -DDBG` with bounds checks on (`GPC_CHECKS=1`). Reference tests stay on that checking build. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip0013.md`](cip/cip0013.md).

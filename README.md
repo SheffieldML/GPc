@@ -592,10 +592,15 @@ $ make bgplvm
 $ ./bgplvm -v 2 learn -x 2 -M 10 -# 100 -o oil100_bayes \
     examples/oilTrain100.svml oil100_bayes.model
 $ ./bgplvm display oil100_bayes.model
+$ ./bgplvm gnuplot oil100_bayes.model oil100_bayes
+$ gnuplot oil100_bayes_plot.gp
+# or: gnuplot -e "GPLOT_OUT='oil100_bayes.png'" oil100_bayes_plot.gp
 ```
 
 `-o` writes `oil100_bayes_mu.dat` and `oil100_bayes_S.dat` (variational
-mean and diagonal variance of \(q(\mathbf{X})\)).
+mean and diagonal variance of \(q(\mathbf{X})\)). `gnuplot` plots the
+variational means \(\boldsymbol{\mu}\) (coloured by SVM-light labels when
+present) over a predictive-variance background, same style as `./gplvm gnuplot`.
 
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate

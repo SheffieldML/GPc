@@ -52,3 +52,6 @@ Requirement added so CIP-0013 implements a performance outcome. REQ-0001 and REQ
 
 ### 2026-11-16
 CIP-0013 Accepted → In Progress. P1 (OpenBLAS + `RELEASE=1`) and P2 (`GPC_CHECKS`) landed; GPc `benchGPc` driver in tree. GPy compare gate and P3–P5 still open.
+
+### 2026-11-16 (later)
+P3–P5 landed (`CStationaryKern` workspace + isotropic reparent). `bench/run_bench.py` gates timings on GPc/GPy/NumPy LL agreement (FITC \(2\pi\) constant allowed). q=2 ratio close measurement still open.

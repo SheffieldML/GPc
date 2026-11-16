@@ -597,6 +597,11 @@ $ gnuplot oil100_bayes_plot.gp
 # or: gnuplot -e "GPLOT_OUT='oil100_bayes.png'" oil100_bayes_plot.gp
 ```
 
+Default kernel is **RBF-ARD** (`rbfard`) so latent input scales can shut off unused
+dimensions (GPy `BayesianGPLVM` default). Override with `-k rbf` for isotropic
+RBF, or `-k rbf -i true` (same as `./gplvm`). Psi statistics for ARD are on
+`CRbfardKern` and covered by `./testPsi`.
+
 `-o` writes `oil100_bayes_mu.dat` and `oil100_bayes_S.dat` (variational
 mean and diagonal variance of \(q(\mathbf{X})\)). `gnuplot` plots the
 variational means \(\boldsymbol{\mu}\) (coloured by SVM-light labels when

@@ -11,10 +11,13 @@ const string BAYESGPLVMVERSION = "0.1";
 class CBayesGplvm : public CProbabilisticOptimisable, public CStreamInterface
 {
 public:
-  // Owns copies of Y; borrows kernel (caller retains ownership).
+  // Owns a copy of Y. Borrows kernel unless readParamsFromStream replaces it
+  // (then the model owns the streamed kernel).
   CBayesGplvm(CKern* kernel, const CMatrix& Y, unsigned int latDim,
               unsigned int numInducing, int verbosity = 2);
   virtual ~CBayesGplvm();
+
+  CKern* getKern() const { return pkern; }
 
   void initStoreage();
   void initVals();
@@ -56,7 +59,8 @@ private:
   double klDivergence() const;
   void klGradient(CMatrix& gMu, CMatrix& gS) const;
 
-  CKern* pkern; // not owned
+  CKern* pkern;
+  bool ownKern;
   CMatrix Y;    // N x D
   CMatrix mu;   // N x q
   CMatrix S;    // N x q (variances)

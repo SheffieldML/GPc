@@ -20,6 +20,10 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 ## Spherical PITC ([CIP-000F](../cip/cip000F.md))
 
 `CGp::PITC` implements the GPmat spherical path: contiguous `blockEnd` partitions (default matching `gpCreate`), block \(D\) / \(A\) updates, log-likelihood, and `gpCovGrads`. Gate with `matfiles/testGppitc.mat` via `testGaussian("pitc")`. Regenerate with `make USE_MATIO=1 genTestGpPitc && python scripts/gen_testGppitc.py`. FD check: `make diagPitc && ./diagPitc`.
+## FITC log-likelihood 2π term
+
+FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/DTCVAR/PITC. An earlier FITC-only `+ N log 2π` before `L *= -0.5` double-counted that constant (offset \(\tfrac{d N}{2}\log 2\pi\); gradients unaffected). Removed 2026-11-16 — see backlog `2026-11-15_fitc-logtwopi-double-count`. MATLAB-era FITC fixtures may still differ by that amount; `testGp` accepts either convention via `logLikMatchesFixture`.
+
 ## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md))
 
 DTC / DTCVAR / FITC paths that need \(K_{uu}^{-1}K_{uf}\) can run under two schedules (runtime only; not stored in `.model` files):

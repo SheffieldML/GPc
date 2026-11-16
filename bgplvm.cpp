@@ -37,6 +37,8 @@ int main(int argc, char* argv[])
         command.learn();
       else if(argument == "display")
         command.display();
+      else if(argument == "gnuplot")
+        command.gnuplot();
       else
         command.exitError("Invalid bgplvm command provided.");
       command.incrementArgument();
@@ -273,6 +275,21 @@ void CClbgplvm::learn()
   CBayesGplvm model(&kern, Y, (unsigned int)latentDim,
                     (unsigned int)numInducing, getVerbosity());
 
+  // SVM-light first field is often a class label (oil 1/2/3); store for gnuplot.
+  if(labs.getCols() >= 1 && labs.getRows() == Y.getRows())
+  {
+    vector<int> classLabs(Y.getRows());
+    bool anyNonZero = false;
+    for(unsigned int i = 0; i < Y.getRows(); i++)
+    {
+      classLabs[i] = (int)labs.getVal(i, 0);
+      if(classLabs[i] != 0)
+        anyNonZero = true;
+    }
+    if(anyNonZero)
+      model.setLabels(classLabs);
+  }
+
   if(optimiser == "scg")
     model.setDefaultOptimiser(CBayesGplvm::SCG);
   else if(optimiser == "conjgrad")
@@ -352,6 +369,198 @@ void CClbgplvm::display()
   exitNormal();
 }
 
+void CClbgplvm::gnuplot()
+{
+  incrementArgument();
+  setMode("gnuplot");
+  double pointSize = 2;
+  int resolution = 80;
+  string name = "bgplvm";
+  string modelFileName = "bgplvm_model";
+  string labelFileName = "";
+  while(isFlags())
+  {
+    if(isCurrentArgumentFlag())
+    {
+      if(isCurrentArg("-?", "--?") || isCurrentArg("-h", "--help"))
+      {
+        helpInfo();
+        exitNormal();
+      }
+      else if(isCurrentArg("-l", "--labels"))
+      {
+        incrementArgument();
+        labelFileName = getStringFromCurrentArgument();
+      }
+      else if(isCurrentArg("-p", "--point-size"))
+      {
+        incrementArgument();
+        pointSize = getDoubleFromCurrentArgument();
+      }
+      else if(isCurrentArg("-r", "--resolution"))
+      {
+        incrementArgument();
+        resolution = getIntFromCurrentArgument();
+      }
+      else
+        unrecognisedFlag();
+      incrementArgument();
+    }
+    else
+      setFlags(false);
+  }
+  if(getCurrentArgumentNo() < argc)
+    modelFileName = argv[getCurrentArgumentNo()];
+  if((getCurrentArgumentNo() + 1) < argc)
+    name = argv[getCurrentArgumentNo() + 1];
+
+  CMatrix Ytmp(1, 1);
+  CRbfKern kernTmp(1);
+  kernTmp.setInitParam();
+  CBayesGplvm model(&kernTmp, Ytmp, 1, 1, getVerbosity());
+  model.fromFile(modelFileName);
+  if(model.getLatentDim() != 2)
+    exitError("Plotting is only implemented for 2 dimensional latent spaces.");
+
+  if(labelFileName.length() > 0)
+  {
+    ifstream in(labelFileName.c_str());
+    string line;
+    if(!in)
+      throw ndlexceptions::FileReadError(labelFileName);
+    vector<int> labels;
+    while(getline(in, line))
+    {
+      int index = atol(line.c_str());
+      if(index < 0)
+        throw ndlexceptions::FileFormatError(labelFileName);
+      labels.push_back(index);
+    }
+    in.close();
+    if(labels.size() != model.getNumData())
+      exitError("Incorrect number of labels.");
+    model.setLabels(labels);
+  }
+
+  vector<bool> labelFileWritten;
+  int maxVal = 0;
+  int minVal = 0;
+  const CMatrix& Xlat = model.getMu();
+  if(model.isLabels())
+  {
+    maxVal = model.getMaxLabelVal();
+    minVal = model.getMinLabelVal();
+    for(int j = minVal; j <= maxVal; j++)
+    {
+      vector<int> storeIndex;
+      for(unsigned int i = 0; i < model.getNumData(); i++)
+        if(model.getLabel(i) == j)
+          storeIndex.push_back((int)i);
+      if(storeIndex.size() > 0)
+      {
+        CMatrix Xtemp(storeIndex.size(), 3, 0.1);
+        for(size_t i = 0; i < storeIndex.size(); i++)
+          for(unsigned int k = 0; k < 2; k++)
+            Xtemp.setVal(Xlat.getVal(storeIndex[i], k), (unsigned int)i, k);
+        Xtemp.toUnheadedFile(name + "_latent_data" + ndlstrutil::itoa(j) + ".dat");
+        labelFileWritten.push_back(true);
+      }
+      else
+        labelFileWritten.push_back(false);
+    }
+  }
+  else
+  {
+    CMatrix Xext(Xlat.getRows(), 3, 0.1);
+    for(unsigned int i = 0; i < Xlat.getRows(); i++)
+      for(unsigned int j = 0; j < 2; j++)
+        Xext.setVal(Xlat.getVal(i, j), i, j);
+    Xext.toUnheadedFile(name + "_latent_data.dat");
+  }
+
+  CMatrix minVals(1, Xlat.getCols());
+  CMatrix maxVals(1, Xlat.getCols());
+  Xlat.maxRow(maxVals);
+  Xlat.minRow(minVals);
+  const int numx = resolution;
+  const int numy = resolution;
+  double xspan = maxVals.getVal(0, 0) - minVals.getVal(0, 0);
+  double yspan = maxVals.getVal(0, 1) - minVals.getVal(0, 1);
+  double xdiff = 1.1 * xspan / (double)(numx - 1);
+  double ydiff = 1.1 * yspan / (double)(numy - 1);
+  CMatrix Xgrid(numx * numy, 2);
+  vector<CMatrix*> matrixOut;
+  int i;
+  int j;
+  double y;
+  double x;
+  for(i = 0, y = minVals.getVal(0, 1) - 0.05 * yspan; i < numy; y += ydiff, i++)
+  {
+    matrixOut.push_back(new CMatrix(numx, 3));
+    for(j = 0, x = minVals.getVal(0, 0) - 0.05 * xspan; j < numx; x += xdiff, j++)
+    {
+      Xgrid.setVal(x, i * numy + j, 0);
+      matrixOut[i]->setVal(x, j, 0);
+      Xgrid.setVal(y, i * numy + j, 1);
+      matrixOut[i]->setVal(y, j, 1);
+    }
+  }
+  CMatrix means(Xgrid.getRows(), model.getOutputDim());
+  CMatrix variances(Xgrid.getRows(), model.getOutputDim());
+  model.posteriorMeanVar(means, variances, Xgrid);
+  for(i = 0; i < numy; i++)
+    for(j = 0; j < numx; j++)
+      matrixOut[i]->setVal(-log(variances.getVal(i * numy + j)), j, 2);
+
+  string matrixFile = name + "_variance_matrix.dat";
+  ofstream out(matrixFile.c_str());
+  if(!out)
+    throw ndlexceptions::FileWriteError(matrixFile);
+  out << setiosflags(ios::scientific);
+  out << setprecision(17);
+  out << "# Prepared plot of Bayesian GPLVM model file" << endl;
+  for(i = 0; i < numy; i++)
+  {
+    matrixOut[i]->toUnheadedStream(out);
+    out << endl;
+    delete matrixOut[i];
+  }
+  out.close();
+
+  string plotFileName = name + "_plot.gp";
+  ofstream outGnuplot(plotFileName.c_str());
+  if(!outGnuplot)
+    throw ndlexceptions::FileWriteError(plotFileName);
+  writeGnuplotTermSelect(outGnuplot);
+  writeGnuplotStyleHeader(outGnuplot);
+  outGnuplot << "set palette defined (0 \"#eeeeec\", 1 \"#2e3436\")" << endl;
+  outGnuplot << "set pm3d map" << endl;
+  outGnuplot << "set pm3d explicit" << endl;
+  outGnuplot << "unset key" << endl;
+  outGnuplot << "splot \"" << name << "_variance_matrix.dat\" with pm3d notitle";
+  const char* labelCols[] = {
+    "#204a87", "#a40000", "#4e9a06", "#ce5c00",
+    "#c4a000", "#5c3566", "#8f5902", "#2e3436"
+  };
+  const int nLabelCols = 8;
+  if(model.isLabels())
+  {
+    for(int lab = minVal, idx = 0; lab <= maxVal; lab++, idx++)
+      if(labelFileWritten[idx])
+        outGnuplot << ", \"" << name << "_latent_data" << lab
+                   << ".dat\" with points pt 7 ps " << pointSize
+                   << " lc rgb \"" << labelCols[(lab - minVal) % nLabelCols] << "\"";
+  }
+  else
+    outGnuplot << ", \"" << name << "_latent_data.dat\" with points ls 3 ps " << pointSize;
+  outGnuplot << endl;
+  writeGnuplotFinish(outGnuplot);
+  outGnuplot.close();
+  if(getVerbosity() > 0)
+    cout << "Wrote " << plotFileName << " (open with: gnuplot " << plotFileName << ")" << endl;
+  exitNormal();
+}
+
 void CClbgplvm::helpHeader()
 {
   cout << "Bayesian GP-LVM (bgplvm) Command Line Tool." << endl;
@@ -368,6 +577,7 @@ void CClbgplvm::helpInfo()
     cout << "Commands:" << endl;
     helpArgument("learn", "Train a Bayesian GP-LVM from SVM-light data.");
     helpArgument("display", "Show a saved bgplvm .model file.");
+    helpArgument("gnuplot", "Write gnuplot scripts for a 2-D latent visualisation.");
     helpDescriptor("For help on a specific command type bgplvm command --h");
     cout << endl;
     cout << "Options:" << endl;
@@ -402,5 +612,20 @@ void CClbgplvm::helpInfo()
     helpHeader();
     helpUsage("bgplvm [options] display model_file");
     helpDescriptor("Display parameters and ELBO for a saved Bayesian GP-LVM model.");
+  }
+  else if(command == "gnuplot")
+  {
+    helpHeader();
+    helpUsage("bgplvm [options] gnuplot [command-options] model_file [name]");
+    helpDescriptor("Write latent scatter (variational mean mu) and predictive-variance background for q=2.");
+    cout << "Arguments:" << endl;
+    helpArgument("model_file", "Saved Bayesian GPLVM model.");
+    helpArgument("name", "Stub for output files (default bgplvm).");
+    cout << endl;
+    cout << "Command Options:" << endl;
+    helpArgument("-?, -h, --help", "This help.");
+    helpArgument("-l, --labels string", "Optional labels file (one integer per line); overrides labels stored in the model.");
+    helpArgument("-p, --point-size float", "Point size (default 2).");
+    helpArgument("-r, --resolution int", "Grid resolution for variance map (default 80).");
   }
 }

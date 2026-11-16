@@ -13,6 +13,7 @@ public:
   CClbgplvm(int argc, char** argv);
   void learn();
   void display();
+  void gnuplot();
   void helpInfo();
   void helpHeader();
 };

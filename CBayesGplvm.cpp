@@ -37,7 +37,7 @@ CBayesGplvm::CBayesGplvm(CKern* kernel, const CMatrix& Yin, unsigned int latDim,
   : pkern(kernel), ownKern(false), Y(Yin), beta(1.0),
     numData(Yin.getRows()), outputDim(Yin.getCols()),
     latentDim(latDim), numActive(numInducing),
-    KupToDate(false)
+    labelsPresent(false), KupToDate(false)
 {
   setVerbosity(verbosity);
   betaTransform = CTransform::defaultPositive();
@@ -269,6 +269,78 @@ double CBayesGplvm::logLikelihood() const
   return lik1 + lik2 + lik3 + lik4 - klDivergence();
 }
 
+void CBayesGplvm::posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
+{
+  updateCaches();
+  DIMENSIONMATCH(Xstar.getCols() == latentDim);
+  DIMENSIONMATCH(means.getRows() == Xstar.getRows());
+  DIMENSIONMATCH(means.getCols() == outputDim);
+  DIMENSIONMATCH(vars.getRows() == Xstar.getRows());
+  DIMENSIONMATCH(vars.getCols() == outputDim);
+
+  const unsigned int nStar = Xstar.getRows();
+  // Woodbury vector (GPy Cpsi1Vf): U^{-1} U_B^{-1} Vf
+  CMatrix woodburyVec(LBiLmiPsi1Vf);
+  woodburyVec.trsm(LcholB, 1.0, "l", "u", "n", "n");
+  woodburyVec.trsm(LcholKmm, 1.0, "l", "u", "n", "n");
+
+  // woodbury_inv = U^{-1} (I - B^{-1}) U^{-T}
+  CMatrix eyeM(numActive, numActive);
+  eyeM.zeros();
+  eyeM.eye();
+  CMatrix Binv(numActive, numActive);
+  backsubBothSidesUpper(Binv, LcholB, eyeM);
+  CMatrix Bi(eyeM);
+  Bi.axpy(Binv, -1.0);
+  CMatrix woodburyInv(numActive, numActive);
+  backsubBothSidesUpper(woodburyInv, LcholKmm, Bi);
+  woodburyInv.setSymmetric(true);
+
+  CMatrix kX(numActive, nStar);
+  pkern->compute(kX, Z, Xstar);
+  means.gemm(kX, woodburyVec, 1.0, 0.0, "t", "n");
+
+  CMatrix Wk(numActive, nStar);
+  Wk.symm(woodburyInv, kX, 1.0, 0.0, "u", "l");
+  const double noise = 1.0 / beta;
+  for(unsigned int i = 0; i < nStar; i++)
+  {
+    double vs = pkern->diagComputeElement(Xstar, i) - kX.dotColCol(i, Wk, i) + noise;
+    if(vs < 0.0)
+      vs = 0.0;
+    for(unsigned int d = 0; d < outputDim; d++)
+      vars.setVal(vs, i, d);
+  }
+}
+
+void CBayesGplvm::setLabels(const vector<int>& labs)
+{
+  if(labs.size() != numData)
+    throw ndlexceptions::Error("Label count does not match number of data.");
+  labels = labs;
+  labelsPresent = true;
+}
+
+int CBayesGplvm::getLabel(unsigned int index) const
+{
+  BOUNDCHECK(index < labels.size());
+  return labels[index];
+}
+
+int CBayesGplvm::getMaxLabelVal() const
+{
+  if(!labelsPresent || labels.empty())
+    throw ndlexceptions::Error("No labels set.");
+  return *max_element(labels.begin(), labels.end());
+}
+
+int CBayesGplvm::getMinLabelVal() const
+{
+  if(!labelsPresent || labels.empty())
+    throw ndlexceptions::Error("No labels set.");
+  return *min_element(labels.begin(), labels.end());
+}
+
 double CBayesGplvm::logLikelihoodGradient(CMatrix& g) const
 {
   updateCaches();
@@ -443,6 +515,12 @@ void CBayesGplvm::writeParamsToStream(ostream& os) const
   S.toStream(os);
   Z.toStream(os);
   pkern->toStream(os);
+  writeToStream(os, "hasLabels", labelsPresent ? 1 : 0);
+  if(labelsPresent)
+  {
+    for(unsigned int i = 0; i < numData; i++)
+      os << labels[i] << (i + 1 == numData ? "\n" : " ");
+  }
 }
 
 void CBayesGplvm::readParamsFromStream(istream& is)
@@ -468,5 +546,17 @@ void CBayesGplvm::readParamsFromStream(istream& is)
     delete pkern;
   pkern = loaded;
   ownKern = true;
+  const int hasLabs = readIntFromStream(is, "hasLabels");
+  labelsPresent = (hasLabs != 0);
+  labels.clear();
+  if(labelsPresent)
+  {
+    labels.resize(numData);
+    for(unsigned int i = 0; i < numData; i++)
+    {
+      if(!(is >> labels[i]))
+        throw ndlexceptions::StreamFormatError("labels", "Failed to read labels");
+    }
+  }
   setKupToDate(false);
 }

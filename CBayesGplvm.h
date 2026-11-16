@@ -2,6 +2,8 @@
 #ifndef CBAYESGPLVM_H
 #define CBAYESGPLVM_H
 
+#include <vector>
+#include <algorithm>
 #include "CKern.h"
 #include "COptimisable.h"
 #include "CTransform.h"
@@ -27,6 +29,9 @@ public:
   double logLikelihood() const;
   double logLikelihoodGradient(CMatrix& g) const;
 
+  // Predictive mean/var of Y at fixed latent points Xstar (N* x q).
+  void posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
+
   unsigned int getOptNumParams() const;
   void getOptParams(CMatrix& param) const;
   void setOptParams(const CMatrix& param);
@@ -51,6 +56,12 @@ public:
   CMatrix& getS() { return S; }
   CMatrix& getZ() { return Z; }
 
+  void setLabels(const vector<int>& labs);
+  bool isLabels() const { return labelsPresent; }
+  int getLabel(unsigned int index) const;
+  int getMaxLabelVal() const;
+  int getMinLabelVal() const;
+
   void setKupToDate(bool val) const { KupToDate = val; }
   bool isKupToDate() const { return KupToDate; }
 
@@ -71,6 +82,9 @@ private:
   unsigned int outputDim;
   unsigned int latentDim;
   unsigned int numActive;
+
+  bool labelsPresent;
+  vector<int> labels;
 
   CTransform* betaTransform;
   CTransform* sTransform;

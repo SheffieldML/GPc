@@ -39,6 +39,7 @@ Indexed `setParam` remains the storage API. No fix masks yet (Phase B).
 
 - CIP: 0014
 - REQ: 0008
+- PR: https://github.com/SheffieldML/GPc/pull/44
 
 ## Progress Updates
 

@@ -770,6 +770,62 @@ int testExpectThrows()
   return fail;
 }
 
+int testFixMask()
+{
+  int fail = 0;
+  cout << "==== testCGp fix mask (CIP-0014 Phase B) ====" << endl;
+
+  ToyGp toy(CGp::FTC);
+  const unsigned int nAll = toy.model->getOptNumParams();
+  fail += failTrue(nAll == toy.model->getKernel()->getNumParams(),
+                   "FTC opt params == kernel params");
+
+  toy.model->fix("rbf.variance");
+  fail += failTrue(toy.model->isFixed("rbf.variance"), "isFixed after fix");
+  fail += failTrue(toy.model->getOptNumParams() == nAll - 1,
+                   "fix drops one opt param");
+
+  CMatrix params(1, toy.model->getOptNumParams());
+  toy.model->getOptParams(params);
+  const double varBefore = toy.kern.getByPath("rbf.variance");
+  // Perturb free params and write back; fixed variance must stay put.
+  for(unsigned int i = 0; i < params.getCols(); i++)
+    params.setVal(params.getVal(i) + 0.01, i);
+  toy.model->setOptParams(params);
+  fail += failTrue(fabs(toy.kern.getByPath("rbf.variance") - varBefore) < 1e-14,
+                   "fixed variance unchanged by setOptParams");
+
+  toy.model->setVerbosity(0);
+  try
+  {
+    toy.model->checkGradients();
+    cout << "checkGradients with fixed variance matches." << endl;
+  }
+  catch(...)
+  {
+    cout << "FAILURE: checkGradients with fixed variance." << endl;
+    fail += 1;
+  }
+
+  toy.model->unfix("rbf.variance");
+  fail += failTrue(!toy.model->isFixed("rbf.variance"), "unfix clears flag");
+  fail += failTrue(toy.model->getOptNumParams() == nAll,
+                   "unfix restores opt param count");
+
+  ToyGp sparse(CGp::FITC);
+  const unsigned int nSparse = sparse.model->getOptNumParams();
+  sparse.model->fix("beta");
+  fail += failTrue(sparse.model->isBetaFixed(), "fix beta");
+  fail += failTrue(sparse.model->getOptNumParams() == nSparse - 1,
+                   "fix beta drops one param");
+  sparse.model->clearFixes();
+  fail += failTrue(!sparse.model->isBetaFixed()
+                   && sparse.model->getOptNumParams() == nSparse,
+                   "clearFixes restores");
+
+  return fail;
+}
+
 int testBlocksAndApi()
 {
   int fail = 0;
@@ -800,6 +856,7 @@ int main()
     fail += testEqualsAndStream();
     fail += testExpectThrows();
     fail += testBlocksAndApi();
+    fail += testFixMask();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

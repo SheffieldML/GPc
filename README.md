@@ -536,18 +536,20 @@ for allowing me to make this available.
 
 ## General Information
 
-The way the software operates is through the command line. There is
-one executable, `gplvm`. Help can be obtained by writing
+The way the software operates is through the command line. MAP GP-LVM
+uses `./gplvm`. Bayesian GP-LVM (CIP-0017) uses a separate binary
+`./bgplvm` so MAP defaults stay unchanged. Help:
 
 ```sh
 $ ./gplvm -h
+$ ./bgplvm -h
 ```
 
-which lists the commands available under the software. Help for
-each command can then be obtained by writing, for example,
+Help for each command, for example:
 
 ```sh
 $ ./gplvm learn -h
+$ ./bgplvm learn -h
 ```
 
 All the tutorial optimisations suggested take less than 1/2 hour to
@@ -582,6 +584,18 @@ First we will learn the data using the following command,
 ```sh
 $ ./gplvm -v 3 learn -# 100 examples/oilTrain100.svml oil100.model
 ```
+
+The same data with the Bayesian GP-LVM (`q=2`, `M=10` inducing points):
+
+```sh
+$ make bgplvm
+$ ./bgplvm -v 2 learn -x 2 -M 10 -# 100 -o oil100_bayes \
+    examples/oilTrain100.svml oil100_bayes.model
+$ ./bgplvm display oil100_bayes.model
+```
+
+`-o` writes `oil100_bayes_mu.dat` and `oil100_bayes_S.dat` (variational
+mean and diagonal variance of \(q(\mathbf{X})\)).
 
 The flag `-v 3` sets the verbosity level to 3 (the
 highest level) which causes the iterations of the scaled conjugate

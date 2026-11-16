@@ -13,7 +13,7 @@ else
 include make.linux
 endif
 
-all: gplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
+all: gplvm bgplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-0015 Stage 1 API demos (docs/tutorials/)
 demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm
@@ -45,6 +45,13 @@ gplvm.o: gplvm.cpp gplvm.h ndlexceptions.h ndlstrutil.h CMatrix.h \
   CTransform.h CDataModel.h CDist.h CGplvm.h CMltools.h COptimisable.h \
   CNoise.h CClctrl.h
 	$(CC) -c gplvm.cpp -o gplvm.o $(CCFLAGS)
+
+# CIP-0017: Bayesian GP-LVM CLI.
+bgplvm: bgplvm.o CClctrl.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o bgplvm bgplvm.o CBayesGplvm.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+
+bgplvm.o: bgplvm.cpp bgplvm.h CBayesGplvm.h CClctrl.h CKern.h
+	$(CC) -c bgplvm.cpp -o bgplvm.o $(CCFLAGS)
 
 ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o ivm  ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)

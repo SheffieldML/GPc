@@ -920,7 +920,7 @@ void CClgplvm::helpInfo()
       helpDescriptor("This command creates files for displaying the visualisation in gnuplot.");
       cout << "Arguments:" << endl;
       helpArgument("model_file", "The GPLVM model you want to use for generating the plot. The default is gplvm_model");
-      helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gplvm\". Uses qt by default; set GPLOT_PNG='file.png' for pngcairo output.");
+      helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gplvm\". Uses qt by default; set GPLOT_OUT='file.pdf|.svg|.png' (or GPLOT_PDF / GPLOT_SVG / GPLOT_PNG) for file output.");
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");
       helpArgument("-l, --labels string", "Label file name for visualisation of the data. If you wish to add labels to the data you can specify a file containing a vector of those labels here. By default any labels in the original data file are used.");

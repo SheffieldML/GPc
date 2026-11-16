@@ -815,13 +815,107 @@ int testFixMask()
   ToyGp sparse(CGp::FITC);
   const unsigned int nSparse = sparse.model->getOptNumParams();
   sparse.model->fix("beta");
-  fail += failTrue(sparse.model->isBetaFixed(), "fix beta");
+  fail += failTrue(sparse.model->isBetaFixed() && sparse.model->isFixed("beta"),
+                   "fix beta");
   fail += failTrue(sparse.model->getOptNumParams() == nSparse - 1,
                    "fix beta drops one param");
+  sparse.model->unfix("beta");
+  fail += failTrue(!sparse.model->isBetaFixed() && !sparse.model->isFixed("beta"),
+                   "unfix beta");
+  sparse.model->fix("beta");
   sparse.model->clearFixes();
   fail += failTrue(!sparse.model->isBetaFixed()
                    && sparse.model->getOptNumParams() == nSparse,
                    "clearFixes restores");
+
+  // kern. prefix and scale.* paths (CIP-0014 coverage for CGp.cpp gate).
+  toy.model->fix("kern.rbf.variance");
+  fail += failTrue(toy.model->isFixed("rbf.variance"), "kern. prefix fix");
+  toy.model->unfix("kern.rbf.variance");
+  fail += failTrue(!toy.model->isFixed("rbf.variance"), "kern. prefix unfix");
+
+  toy.model->setOutputScaleLearnt(true);
+  toy.model->initStoreage();
+  const unsigned int nScale = toy.model->getOptNumParams();
+  fail += failTrue(nScale == toy.model->getKernel()->getNumParams() + 1,
+                   "scale learnt adds one opt param");
+  toy.model->fix("scale.0");
+  fail += failTrue(toy.model->isFixed("scale.0"), "isFixed scale.0");
+  fail += failTrue(toy.model->getOptNumParams() == nScale - 1,
+                   "fix scale.0 drops one param");
+  {
+    CMatrix g(1, toy.model->getOptNumParams());
+    fail += failTrue(std::isfinite(toy.model->logLikelihoodGradient(g)),
+                     "grad with scale.0 fixed");
+    CMatrix p(1, toy.model->getOptNumParams());
+    toy.model->getOptParams(p);
+    toy.model->setOptParams(p);
+  }
+  toy.model->unfix("scale.0");
+  fail += failTrue(!toy.model->isFixed("scale.0")
+                   && toy.model->getOptNumParams() == nScale,
+                   "unfix scale.0");
+  toy.model->setOutputScaleLearnt(false);
+
+  try
+  {
+    toy.model->fix("beta");
+    cout << "FAILURE: FTC fix beta should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "FTC fix beta throws Error." << endl;
+  }
+
+  try
+  {
+    toy.model->fix("scale.0");
+    cout << "FAILURE: fix scale without learnScales should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "fix scale without learnScales throws Error." << endl;
+  }
+
+  toy.model->setOutputScaleLearnt(true);
+  toy.model->initStoreage();
+  try
+  {
+    toy.model->fix("scale.99");
+    cout << "FAILURE: OOB scale fix should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "OOB scale fix throws Error." << endl;
+  }
+  toy.model->setOutputScaleLearnt(false);
+
+  try
+  {
+    sparse.model->fixBeta(true);
+    sparse.model->fixBeta(false);
+    cout << "fixBeta toggle matches." << endl;
+  }
+  catch(...)
+  {
+    cout << "FAILURE: fixBeta toggle." << endl;
+    fail += 1;
+  }
+
+  try
+  {
+    ToyGp ftc(CGp::FTC);
+    ftc.model->fixBeta(true);
+    cout << "FAILURE: FTC fixBeta should throw." << endl;
+    fail += 1;
+  }
+  catch(ndlexceptions::Error&)
+  {
+    cout << "FTC fixBeta throws Error." << endl;
+  }
 
   return fail;
 }

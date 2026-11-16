@@ -1,7 +1,7 @@
 ---
 id: "0009"
 title: "Users can recreate the documented GPy-tutorial subset via native C++ demos and markdown"
-status: "Proposed"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-16"
 last_updated: "2026-11-16"
@@ -46,3 +46,6 @@ HOW is [CIP-0015](../cip/cip0015.md). Builds on validated/implemented work: [REQ
 
 ### 2026-11-16
 Requirement created with CIP-0015 (Proposed). Sharing environment locked to native C++ demos + markdown/CLI; notebooks are the checklist only.
+
+### 2026-11-16 (accept / Stage 1 launch)
+CIP-0015 Accepted → In Progress. First delivery cut: redo current README/`examples/*.svml` tutorials (no `build_XY` required). Phase A helpers remain Ready in parallel for the later coreg demo. Status → In Progress.

@@ -407,6 +407,9 @@ void CClbgplvm::gnuplot()
   setMode("gnuplot");
   double pointSize = 2;
   int resolution = 80;
+  int plotDim0 = 0;
+  int plotDim1 = 1;
+  bool dimsSet = false;
   string name = "bgplvm";
   string modelFileName = "bgplvm_model";
   string labelFileName = "";
@@ -434,6 +437,15 @@ void CClbgplvm::gnuplot()
         incrementArgument();
         resolution = getIntFromCurrentArgument();
       }
+      else if(isCurrentArg("-d", "--dims"))
+      {
+        // Two zero-based latent indices to project onto the plot axes.
+        incrementArgument();
+        plotDim0 = getIntFromCurrentArgument();
+        incrementArgument();
+        plotDim1 = getIntFromCurrentArgument();
+        dimsSet = true;
+      }
       else
         unrecognisedFlag();
       incrementArgument();
@@ -451,8 +463,17 @@ void CClbgplvm::gnuplot()
   kernTmp.setInitParam();
   CBayesGplvm model(&kernTmp, Ytmp, 1, 1, getVerbosity());
   model.fromFile(modelFileName);
-  if(model.getLatentDim() != 2)
-    exitError("Plotting is only implemented for 2 dimensional latent spaces.");
+  const unsigned int q = model.getLatentDim();
+  if(q < 2)
+    exitError("Plotting needs at least 2 latent dimensions.");
+  if(!dimsSet && q > 2 && getVerbosity() > 0)
+    cout << "q=" << q << ": plotting latent dims 0 and 1 "
+         << "(override with -d i j)." << endl;
+  if(plotDim0 < 0 || plotDim1 < 0
+     || (unsigned int)plotDim0 >= q || (unsigned int)plotDim1 >= q)
+    exitError("Plot dims (-d) must be in [0, q-1].");
+  if(plotDim0 == plotDim1)
+    exitError("Plot dims (-d) must be distinct.");
 
   if(labelFileName.length() > 0)
   {
@@ -492,8 +513,12 @@ void CClbgplvm::gnuplot()
       {
         CMatrix Xtemp(storeIndex.size(), 3, 0.1);
         for(size_t i = 0; i < storeIndex.size(); i++)
-          for(unsigned int k = 0; k < 2; k++)
-            Xtemp.setVal(Xlat.getVal(storeIndex[i], k), (unsigned int)i, k);
+        {
+          Xtemp.setVal(Xlat.getVal(storeIndex[i], (unsigned int)plotDim0),
+                       (unsigned int)i, 0);
+          Xtemp.setVal(Xlat.getVal(storeIndex[i], (unsigned int)plotDim1),
+                       (unsigned int)i, 1);
+        }
         Xtemp.toUnheadedFile(name + "_latent_data" + ndlstrutil::itoa(j) + ".dat");
         labelFileWritten.push_back(true);
       }
@@ -505,9 +530,23 @@ void CClbgplvm::gnuplot()
   {
     CMatrix Xext(Xlat.getRows(), 3, 0.1);
     for(unsigned int i = 0; i < Xlat.getRows(); i++)
-      for(unsigned int j = 0; j < 2; j++)
-        Xext.setVal(Xlat.getVal(i, j), i, j);
+    {
+      Xext.setVal(Xlat.getVal(i, (unsigned int)plotDim0), i, 0);
+      Xext.setVal(Xlat.getVal(i, (unsigned int)plotDim1), i, 1);
+    }
     Xext.toUnheadedFile(name + "_latent_data.dat");
+  }
+
+  // Slice the predictive map in the selected plane; other latent dims
+  // are held at the mean of mu (GPy-style fixed slice).
+  CMatrix xFix(1, q);
+  xFix.zeros();
+  for(unsigned int d = 0; d < q; d++)
+  {
+    double sum = 0.0;
+    for(unsigned int n = 0; n < Xlat.getRows(); n++)
+      sum += Xlat.getVal(n, d);
+    xFix.setVal(sum / (double)Xlat.getRows(), 0, d);
   }
 
   CMatrix minVals(1, Xlat.getCols());
@@ -516,24 +555,31 @@ void CClbgplvm::gnuplot()
   Xlat.minRow(minVals);
   const int numx = resolution;
   const int numy = resolution;
-  double xspan = maxVals.getVal(0, 0) - minVals.getVal(0, 0);
-  double yspan = maxVals.getVal(0, 1) - minVals.getVal(0, 1);
+  double xspan = maxVals.getVal(0, (unsigned int)plotDim0)
+    - minVals.getVal(0, (unsigned int)plotDim0);
+  double yspan = maxVals.getVal(0, (unsigned int)plotDim1)
+    - minVals.getVal(0, (unsigned int)plotDim1);
   double xdiff = 1.1 * xspan / (double)(numx - 1);
   double ydiff = 1.1 * yspan / (double)(numy - 1);
-  CMatrix Xgrid(numx * numy, 2);
+  CMatrix Xgrid(numx * numy, q);
+  for(unsigned int n = 0; n < Xgrid.getRows(); n++)
+    for(unsigned int d = 0; d < q; d++)
+      Xgrid.setVal(xFix.getVal(0, d), n, d);
   vector<CMatrix*> matrixOut;
   int i;
   int j;
   double y;
   double x;
-  for(i = 0, y = minVals.getVal(0, 1) - 0.05 * yspan; i < numy; y += ydiff, i++)
+  for(i = 0, y = minVals.getVal(0, (unsigned int)plotDim1) - 0.05 * yspan;
+      i < numy; y += ydiff, i++)
   {
     matrixOut.push_back(new CMatrix(numx, 3));
-    for(j = 0, x = minVals.getVal(0, 0) - 0.05 * xspan; j < numx; x += xdiff, j++)
+    for(j = 0, x = minVals.getVal(0, (unsigned int)plotDim0) - 0.05 * xspan;
+        j < numx; x += xdiff, j++)
     {
-      Xgrid.setVal(x, i * numy + j, 0);
+      Xgrid.setVal(x, i * numy + j, (unsigned int)plotDim0);
       matrixOut[i]->setVal(x, j, 0);
-      Xgrid.setVal(y, i * numy + j, 1);
+      Xgrid.setVal(y, i * numy + j, (unsigned int)plotDim1);
       matrixOut[i]->setVal(y, j, 1);
     }
   }
@@ -609,7 +655,7 @@ void CClbgplvm::helpInfo()
     cout << "Commands:" << endl;
     helpArgument("learn", "Train a Bayesian GP-LVM from SVM-light data.");
     helpArgument("display", "Show a saved bgplvm .model file.");
-    helpArgument("gnuplot", "Write gnuplot scripts for a 2-D latent visualisation.");
+    helpArgument("gnuplot", "Write gnuplot scripts for a 2-D latent visualisation (any two dims via -d).");
     helpDescriptor("For help on a specific command type bgplvm command --h");
     cout << endl;
     cout << "Options:" << endl;
@@ -650,13 +696,14 @@ void CClbgplvm::helpInfo()
   {
     helpHeader();
     helpUsage("bgplvm [options] gnuplot [command-options] model_file [name]");
-    helpDescriptor("Write latent scatter (variational mean mu) and predictive-variance background for q=2.");
+    helpDescriptor("Write latent scatter (variational mean mu) and predictive-variance background in a 2-D plane.");
     cout << "Arguments:" << endl;
     helpArgument("model_file", "Saved Bayesian GPLVM model.");
     helpArgument("name", "Stub for output files (default bgplvm).");
     cout << endl;
     cout << "Command Options:" << endl;
     helpArgument("-?, -h, --help", "This help.");
+    helpArgument("-d, --dims int int", "Zero-based latent indices for the plot axes (default 0 1). For q>2, pick the ARD-active dims.");
     helpArgument("-l, --labels string", "Optional labels file (one integer per line); overrides labels stored in the model.");
     helpArgument("-p, --point-size float", "Point size (default 2).");
     helpArgument("-r, --resolution int", "Grid resolution for variance map (default 80).");

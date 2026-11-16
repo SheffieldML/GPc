@@ -62,6 +62,20 @@ $ ./gp -h
 
 `make.osx` uses Homebrew `g++-16` / `gfortran-16` and OpenBLAS. For the matio reference suite on the Mac: `make clean && make USE_MATIO=1 matio-tests` then `make run-matio-tests` (rebuild without `USE_MATIO` if you need `gp`/`ivm`/`gplvm` again, or link with matio as well).
 
+### Linux (Ubuntu) and `RELEASE=1` (CIP-0013)
+
+Default `make.linux` links **OpenBLAS** (`libopenblas-dev`). For a timed / documented run build:
+
+```sh
+$ sudo apt-get install -y g++ gfortran libopenblas-dev
+$ make clean
+$ make RELEASE=1 gp
+$ OPENBLAS_NUM_THREADS=1 make RELEASE=1 bench
+$ OPENBLAS_NUM_THREADS=1 ./benchGPc --kind ftc --N 1000 --q 2
+```
+
+A bare `make` keeps `-ggdb -DDBG` with bounds checks on (`GPC_CHECKS=1`). Reference tests stay on that checking build. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip0013.md`](cip/cip0013.md).
+
 ### Reference tests without MATLAB (libmatio)
 
 Numeric fixtures in `matfiles/` can be loaded with **libmatio** instead of a full MATLAB/`mex` install:

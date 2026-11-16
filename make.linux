@@ -2,10 +2,14 @@
 #
 #  The machine (platform) identifier to append to the library names
 #
+#  CIP-0013 P1: default link is OpenBLAS (libopenblas-dev on Ubuntu/CI).
+#  make RELEASE=1 selects -O2 -DNDEBUG and turns GPC_CHECKS off.
+#
 SHELL = /bin/sh
 
 PLAT = _LINUX
-LAPACKLIBS = -llapack -lblas
+# Tuned BLAS/LAPACK (REQ-0007 / CIP-0013). Override via make.inc if needed.
+LAPACKLIBS = -lopenblas
 F2CLIB = -lgfortran
 # commands to make statically&dynamically linked libraries and their extensions
 LIBSCOMMAND = ar rcs
@@ -46,8 +50,11 @@ LD=g++
 LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
 CC=g++
 # C++17: dynamic exception specifications removed from the sources (CIP-0002).
-CCFLAGS = -std=c++17 -ggdb -DDBG -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
-#CCFLAGS = -std=c++17 -O3 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG)
+# CIP-0013: RELEASE=1 is the timed / documented Linux run path.
+ifeq ($(RELEASE),1)
+CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+else
+CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+endif
 FC=gfortran
 FCFLAGS = -funroll-all-loops -O3 -fPIC
-

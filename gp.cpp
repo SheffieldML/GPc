@@ -1004,7 +1004,7 @@ void CClgp::helpInfo()
     cout << "Arguments:" << endl;
     helpArgument("data_file", "The data to plot, it can be test or training data, whatever you want to visualise. It should be in SVM light format.");
     helpArgument("model_file", "The GP model you want to use for generating the plot. The default is gp_model.");
-    helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gp\". Uses qt by default; set GPLOT_PNG='file.png' for pngcairo output.");
+    helpArgument("name", "The gnuplot script will be output as \"name_plot.gp\". Data files needed etc. will also be preceded by \"name\". Default is \"gp\". Uses qt by default; set GPLOT_OUT='file.pdf|.svg|.png' (or GPLOT_PDF / GPLOT_SVG / GPLOT_PNG) for file output.");
     cout << "Command Options:" << endl;
     helpArgument("-?, -h, --help", "This help.");
     helpArgument("-l, --labels string", "Label file name for visualisation of the data. If you wish to add labels to the data you can specify a file containing a vector of those labels here. By default any labels in the original data file are used.");

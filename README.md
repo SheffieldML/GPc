@@ -173,14 +173,16 @@ $ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc
 The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from. Generated scripts use the Qt terminal by default (works with a stock Homebrew `gnuplot`). For example:
 
 ```sh
-$ brew install gnuplot   # provides qt and pngcairo terminals
+$ brew install gnuplot   # provides qt, pngcairo, pdfcairo, and svg terminals
 $ gnuplot sinc_plot.gp
 ```
 
-To write a PNG for documentation (no interactive window):
+To write a file for documentation (no interactive window), use `GPLOT_OUT` (terminal chosen from the extension) or the explicit `GPLOT_PNG` / `GPLOT_PDF` / `GPLOT_SVG` variables:
 
 ```sh
-$ gnuplot -e "GPLOT_PNG='sinc.png'" sinc_plot.gp
+$ gnuplot -e "GPLOT_OUT='sinc.png'" sinc_plot.gp
+$ gnuplot -e "GPLOT_OUT='sinc.pdf'" sinc_plot.gp
+$ gnuplot -e "GPLOT_OUT='sinc.svg'" sinc_plot.gp
 ```
 
 Then you should obtain the plot shown below

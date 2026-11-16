@@ -82,8 +82,8 @@ public:
   void ensureADUpToDate() const { updateAD(); }
   void ensureAlphaUpToDate() const { updateAlpha(); }
 
-  // CIP-000E: Legacy uses gemm(invK_uu, …); StableFactor uses trsm on LcholK.
-  // Default Legacy. Not persisted in .model streams.
+  // CIP-0012: StableFactor (whitened C + Murray adjoints) is the default.
+  // Legacy remains for dual-path archaeology via -L legacy. Not persisted in .model streams.
   bool isStableSparseLinalg() const
   {
     return sparseLinalgMode == SparseLinalgStableFactor;
@@ -516,6 +516,12 @@ public:
   mutable CMatrix LcholA;
   mutable double logDetA;
 
+  // CIP-0012 whitened StableFactor state (spherical sparse).
+  mutable CMatrix B;       // U^{-T} K_uf (M × N)
+  mutable CMatrix Cmat;    // I + β B B^T
+  mutable CMatrix LcholC;  // upper chol(C)
+  mutable double logDetC;
+
   // Representations for intermediate gradients.
   mutable CMatrix dgKX;
   mutable CMatrix gKX;
@@ -537,6 +543,8 @@ public:
   void _updateInvK(unsigned int dim=0) const;
   // out := invK_uu * rhs (Legacy: gemm; StableFactor: two trsm against upper LcholK).
   void _multiplyInvKuu(CMatrix& out, const CMatrix& rhs) const;
+  // CIP-0012: B := U^{-T} K_uf (one trsm on upper LcholK).
+  void _whitenKuf(CMatrix& B, const CMatrix& Kuf) const;
   void _testComputeKx(CMatrix& kX, const CMatrix& Xin) const; /// compute the kernel for some test points.
   
   void _posteriorMean(CMatrix& mu, const CMatrix& kX) const; /// compute the posterior mean given the kernel evaluated at test points.

@@ -31,7 +31,7 @@ The first subset is the **easy and close** surface already enabled by the kernel
 - [ ] Markdown tutorials invoke demos or `./gp` / related CLIs and show how to produce plots (gnuplot path is sufficient)
 - [ ] CLI exposes kernel type strings needed by those demos where the types already exist in the stream/factory (e.g. Matérn / stdperiodic), without resurrecting broken FITC as a tutorial default
 - [ ] Demos fail loudly on shape/index misuse (dimension and bound checks), consistent with project asserts
-- [ ] Non-goals are explicit: Python bindings, Jupyter/Colab as the share format, EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, Bayesian GPLVM / MRD / SVI / HMC, integral kernels, FITC-as-default sparse tutorial
+- [ ] Non-goals are explicit: Python bindings, Jupyter/Colab as the share format, EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, MRD / SVI / HMC, integral kernels, FITC-as-default sparse tutorial. Bayesian GPLVM is owned by [REQ-000B](./req000B_bayesian-gplvm-psi.md) / [CIP-0017](../cip/cip0017.md), not this tutorial subset.
 
 ## Notes (Optional)
 

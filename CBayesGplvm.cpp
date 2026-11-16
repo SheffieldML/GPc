@@ -254,19 +254,34 @@ void CBayesGplvm::updateCaches() const
   KupToDate = true;
 }
 
-double CBayesGplvm::logLikelihood() const
+double CBayesGplvm::varDtcBound() const
 {
   updateCaches();
   const double D = (double)outputDim;
   const double N = (double)numData;
   const double trYYT = frobeniusSq(Y);
-  // GPy _compute_log_marginal_likelihood (homoscedastic)
+  // GPy _compute_log_marginal_likelihood (homoscedastic), without KL.
   const double lik1 = -0.5 * N * D * (ndlutil::LOGTWOPI - log(beta)) - 0.5 * beta * trYYT;
   const double lik2 = -0.5 * D * (beta * psi0Sum - A.trace());
-  // logDet(U) = 2 sum log diag(U) = log|B|; GPy uses -D * sum(log diag(LB)).
   const double lik3 = -0.5 * D * logDetB;
   const double lik4 = 0.5 * dataFit;
-  return lik1 + lik2 + lik3 + lik4 - klDivergence();
+  return lik1 + lik2 + lik3 + lik4;
+}
+
+double CBayesGplvm::logLikelihood() const
+{
+  return varDtcBound() - klDivergence();
+}
+
+void CBayesGplvm::setLatents(const CMatrix& muIn, const CMatrix& SIn, const CMatrix& ZIn)
+{
+  DIMENSIONMATCH(muIn.getRows() == numData && muIn.getCols() == latentDim);
+  DIMENSIONMATCH(SIn.getRows() == numData && SIn.getCols() == latentDim);
+  DIMENSIONMATCH(ZIn.getRows() == numActive && ZIn.getCols() == latentDim);
+  mu.deepCopy(muIn);
+  S.deepCopy(SIn);
+  Z.deepCopy(ZIn);
+  setKupToDate(false);
 }
 
 void CBayesGplvm::posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
@@ -341,24 +356,25 @@ int CBayesGplvm::getMinLabelVal() const
   return *min_element(labels.begin(), labels.end());
 }
 
-double CBayesGplvm::logLikelihoodGradient(CMatrix& g) const
+double CBayesGplvm::computeVarDtcGrads(CMatrix& gKern, CMatrix& gZ, CMatrix& gMu,
+                                       CMatrix& gS, double& gBeta, bool includeKl) const
 {
   updateCaches();
-  DIMENSIONMATCH(g.getRows() == 1);
-  DIMENSIONMATCH(g.getCols() == getOptNumParams());
-  g.zeros();
+  DIMENSIONMATCH(gKern.getRows() == 1 && gKern.getCols() == pkern->getNumParams());
+  DIMENSIONMATCH(gZ.getRows() == numActive && gZ.getCols() == latentDim);
+  DIMENSIONMATCH(gMu.getRows() == numData && gMu.getCols() == latentDim);
+  DIMENSIONMATCH(gS.getRows() == numData && gS.getCols() == latentDim);
 
-  CMatrix gParams(1, pkern->getNumParams());
-  CMatrix gZ(numActive, latentDim);
-  CMatrix gMu(numData, latentDim);
-  CMatrix gS(numData, latentDim);
-  pkern->getGradPsi(gParams, gZ, gMu, gS, dL_dpsi0, dL_dpsi1, dL_dpsi2, mu, S, Z, false);
+  gKern.zeros();
+  gZ.zeros();
+  gMu.zeros();
+  gS.zeros();
+  pkern->getGradPsi(gKern, gZ, gMu, gS, dL_dpsi0, dL_dpsi1, dL_dpsi2, mu, S, Z, false);
 
   CMatrix gKmmParams(1, pkern->getNumParams());
   pkern->getGradParams(gKmmParams, Z, dL_dKmm, false);
-  gParams.axpy(gKmmParams, 1.0);
+  gKern.axpy(gKmmParams, 1.0);
 
-  // Z from Kmm (CGp inducing pattern).
   CMatrix dgKX(numActive, latentDim);
   pkern->getDiagGradX(dgKX, Z);
   for(unsigned int i = 0; i < numActive; i++)
@@ -371,38 +387,53 @@ double CBayesGplvm::logLikelihoodGradient(CMatrix& g) const
       gZ.addVal(gKX.dotColCol(j, dL_dKmm, i), i, j);
   }
 
-  // ELBO = L_var - KL
-  CMatrix gMuKl(numData, latentDim);
-  CMatrix gSKl(numData, latentDim);
-  klGradient(gMuKl, gSKl);
-  for(unsigned int n = 0; n < numData; n++)
-    for(unsigned int q = 0; q < latentDim; q++)
-    {
-      gMu.addVal(-gMuKl.getVal(n, q), n, q);
-      gS.addVal(-gSKl.getVal(n, q), n, q);
-    }
+  if(includeKl)
+  {
+    CMatrix gMuKl(numData, latentDim);
+    CMatrix gSKl(numData, latentDim);
+    klGradient(gMuKl, gSKl);
+    for(unsigned int n = 0; n < numData; n++)
+      for(unsigned int q = 0; q < latentDim; q++)
+      {
+        gMu.addVal(-gMuKl.getVal(n, q), n, q);
+        gS.addVal(-gSKl.getVal(n, q), n, q);
+      }
+  }
 
   for(size_t t = 0; t < pkern->getNumTransforms(); t++)
   {
     const unsigned int ind = pkern->getTransformIndex(t);
     const double x = pkern->getParam(ind);
-    gParams.setVal(gParams.getVal(ind) * pkern->getTransform(t)->gradfact(x), ind);
+    gKern.setVal(gKern.getVal(ind) * pkern->getTransform(t)->gradfact(x), ind);
   }
+  gBeta = dL_dbeta * betaTransform->gradfact(beta);
+
+  return includeKl ? (varDtcBound() - klDivergence()) : varDtcBound();
+}
+
+double CBayesGplvm::logLikelihoodGradient(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getRows() == 1);
+  DIMENSIONMATCH(g.getCols() == getOptNumParams());
+  g.zeros();
+
+  CMatrix gParams(1, pkern->getNumParams());
+  CMatrix gZ(numActive, latentDim);
+  CMatrix gMu(numData, latentDim);
+  CMatrix gS(numData, latentDim);
+  double gBeta = 0.0;
+  computeVarDtcGrads(gParams, gZ, gMu, gS, gBeta, true);
 
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     g.setVal(gParams.getVal(i), counter++);
-
-  g.setVal(dL_dbeta * betaTransform->gradfact(beta), counter++);
-
+  g.setVal(gBeta, counter++);
   for(unsigned int m = 0; m < numActive; m++)
     for(unsigned int q = 0; q < latentDim; q++)
       g.setVal(gZ.getVal(m, q), counter++);
-
   for(unsigned int n = 0; n < numData; n++)
     for(unsigned int q = 0; q < latentDim; q++)
       g.setVal(gMu.getVal(n, q), counter++);
-
   for(unsigned int n = 0; n < numData; n++)
     for(unsigned int q = 0; q < latentDim; q++)
       g.setVal(gS.getVal(n, q) * sTransform->gradfact(S.getVal(n, q)), counter++);

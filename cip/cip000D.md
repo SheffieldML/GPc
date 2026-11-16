@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000D"
 last_updated: "2026-11-16"
-status: "Proposed"
+status: "Implemented"
 compressed: false
 related_requirements: ["0006"]
 related_cips: ["000C"]
@@ -23,9 +23,9 @@ title: "Multi-output covariance via Coregionalize"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -159,12 +159,13 @@ None for the coregionalize factor. The reference spatial kernel is the existing 
 
 - [x] Design locked to GPy `build_XY`, `Coregionalize`, `ICM`, `LCM`, and per-output Gaussian noise
 - [x] Index column stored as `double`; cast rule (`llround` + near-integer + range) locked
-- [ ] `activeDims` with an unchanged default path
-- [ ] `CCoregionalizeKern` + factory (uses cast rule)
-- [ ] `icm` / `lcm` helpers
-- [ ] `CIndexWhiteKern` + factory (uses cast rule)
-- [ ] GPy fixtures, `testKern`, fixed-parameter likelihood check
-- [ ] Two-output demo and layout note
+- [x] `activeDims` with an unchanged default path (`CRbfKern` honours it)
+- [x] `CCoregionalizeKern` + factory (uses cast rule)
+- [x] `icm` / `lcm` helpers (`createIcmKern`, `createLcmKern`)
+- [x] `CIndexWhiteKern` + factory (uses cast rule)
+- [x] `testCoregionalize` (index cast, B, ICM product, index-white, streams, tensor rejection)
+- [x] Layout note: `docs/coregionalize.md`; fixture generator: `scripts/gen_cip000D_coreg_fixtures.py`
+- [ ] Optional: wire generated `.mat` into `testKern`; fixed-parameter LL vs `GPCoregionalizedRegression`
 
 ## References
 

@@ -424,10 +424,18 @@ class CArdKern : public CKern {
 // Concrete isotropic kernels reparent here and supply radial maps only.
 class CStationaryKern : public CKern {
  public:
-  CStationaryKern() : CKern() { setStationary(true); }
-  CStationaryKern(const CMatrix& X) : CKern(X) { setStationary(true); }
-  CStationaryKern(unsigned int inDim) : CKern(inDim) { setStationary(true); }
-  CStationaryKern(const CKern& kern) : CKern(kern) { setStationary(true); }
+  CStationaryKern()
+    : CKern(), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+  { setStationary(true); }
+  CStationaryKern(const CMatrix& X)
+    : CKern(X), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+  { setStationary(true); }
+  CStationaryKern(unsigned int inDim)
+    : CKern(inDim), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+  { setStationary(true); }
+  CStationaryKern(const CKern& kern)
+    : CKern(kern), m_wsEpoch(0), m_symEpoch(0), m_rectEpoch(0), m_symValid(false), m_rectValid(false)
+  { setStationary(true); }
   virtual ~CStationaryKern() {}
 
   // Multiplier turning unscaled Euclidean distance into GPy-style scaled r
@@ -440,6 +448,34 @@ class CStationaryKern : public CKern {
                         const CMatrix& X2, unsigned int index2) const;
   void compute(CMatrix& K, const CMatrix& X) const;
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
+  // CIP-0013 P5: fill the symmetric (X,X) workspace (GPLVM still calls this
+  // after element-wise K). Parameter changes bump the epoch so a stale
+  // workspace cannot survive into the next evaluation.
+  void updateX(const CMatrix& X);
+  void invalidateWorkspace();
+
+ protected:
+  bool hasSymWorkspace(unsigned int n) const;
+  bool hasRectWorkspace(unsigned int n, unsigned int m) const;
+  double symR2(unsigned int i, unsigned int j) const { return m_workR2Sym.getVal(i, j); }
+  double symK(unsigned int i, unsigned int j) const { return m_workKSym.getVal(i, j); }
+  double rectR2(unsigned int i, unsigned int j) const { return m_workR2Rect.getVal(i, j); }
+  double rectK(unsigned int i, unsigned int j) const { return m_workKRect.getVal(i, j); }
+
+ private:
+  void fillSymWorkspace(const CMatrix& X) const;
+  void fillRectWorkspace(const CMatrix& X, const CMatrix& X2) const;
+
+  // Per-evaluation workspace: unscaled r^2 and K for (X,X) and (X,X2).
+  mutable CMatrix m_workR2Sym;
+  mutable CMatrix m_workKSym;
+  mutable CMatrix m_workR2Rect;
+  mutable CMatrix m_workKRect;
+  unsigned int m_wsEpoch;
+  mutable unsigned int m_symEpoch;
+  mutable unsigned int m_rectEpoch;
+  mutable bool m_symValid;
+  mutable bool m_rectValid;
 };
 
 // Component kernel (such as cmpnd or tensor)
@@ -785,10 +821,12 @@ class CRbfKern: public CStationaryKern {
   void setVariance(double val)
   {
     variance = val;
+    invalidateWorkspace();
   }
   void setInverseWidth(double val)
   {
     inverseWidth = val;
+    invalidateWorkspace();
   }
   double getInverseWidth() const
   {
@@ -797,6 +835,7 @@ class CRbfKern: public CStationaryKern {
   void setLengthScale(double val)
   {
     inverseWidth = 1/(val*val);
+    invalidateWorkspace();
   }
   double getLengthScale() const
   {
@@ -816,7 +855,6 @@ class CRbfKern: public CStationaryKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  void updateX(const CMatrix& X);
   double psi0(const CMatrix& mu, const CMatrix& S) const;
   void psi1(CMatrix& Psi1, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
   void psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const CMatrix& Z) const;
@@ -829,7 +867,6 @@ class CRbfKern: public CStationaryKern {
   void _init();
   double variance;
   double inverseWidth;
-  mutable CMatrix Xdists;
 
 };
 

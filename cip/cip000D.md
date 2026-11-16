@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000D"
-last_updated: "2026-11-15"
+last_updated: "2026-11-16"
 status: "Proposed"
 compressed: false
 related_requirements: ["0006"]
@@ -58,7 +58,7 @@ and the linear coregionalization model, which is a sum of such terms. Users who 
 
 From `GPy/util/multioutput.py` and `GPy/kern/src/coregionalize.py` (GPy devel, the same objects as the 1.x `GPCoregionalizedRegression` path):
 
-1. **`build_XY(X_list, Y_list)`.** One array per output. Row counts may differ; input dimension \(q\) may not. Stack vertically. Append one integer column, the output index \(0 \ldots D-1\) in list order, as the **last** column. \(Y\) is the same vertical stack. The index is not interleaved.
+1. **`build_XY(X_list, Y_list)`.** One array per output. Row counts may differ; input dimension \(q\) may not. Stack vertically. Append one column for the output index \(0 \ldots D-1\) in list order, as the **last** column. In NumPy that column is still a float array; `Coregionalize` casts with `np.asarray(X, dtype=int)` at use time. \(Y\) is the same vertical stack. The index is not interleaved.
 
 2. **`Coregionalize`.** \(B = WW^\top + \mathrm{diag}(\kappa)\), cached when parameters change. \(W\) is \(D \times R\), unconstrained. \(\kappa\) is length \(D\), constrained positive with GPy’s `Logexp`. The kernel’s own input is the index column (`input_dim=1`). \(K_{nm} = B_{i_n, i_m}\). Input gradients are identically zero. \(R > D\) is legal; GPy warns and continues. Defaults, when the caller does not pass values: \(W_{dr} = 0.5\, \mathcal{N}(0,1) / \sqrt{R}\), \(\kappa_d = 0.5\). Tests pass \(W\) and \(\kappa\) in, so they do not depend on that draw.
 
@@ -81,11 +81,21 @@ From `GPy/util/multioutput.py` and `GPy/kern/src/coregionalize.py` (GPy devel, t
 | `LCM(...)` | factory helper that sums those tensors | — |
 | `MixedNoise` of Gaussians | `CIndexWhiteKern`, added beside the ICM | `indexwhite` |
 
+**Index column storage (no typed matrix).** `CMatrix` remains all `double`. There is no parallel integer matrix and no change to the BLAS layout. GPy stores the same column as float and casts in `Coregionalize`; GPc does the same. Spatial columns stay ordinary doubles. The last column holds \(0, 1, \ldots, D-1\) as doubles. Only `CCoregionalizeKern` and `CIndexWhiteKern` interpret that column as an index. `activeDims` keeps the RBF (and any other spatial factor) from reading it, so a lengthscale never sees “output 2” as a continuous coordinate.
+
+**Index cast rule** (shared by `CCoregionalizeKern` and `CIndexWhiteKern`):
+
+1. \(i \leftarrow \mathrm{llround}(x)\) (nearest integer; exact integers and values within a rounding ulp of an integer both work).
+2. `BOUNDCHECK` that \(|x - i| < \varepsilon\) with \(\varepsilon =\) `ndlutil::MATCHTOL` (or a named constant next to it). Reject `1.7`; do not silently truncate as NumPy `dtype=int` would.
+3. `BOUNDCHECK` that \(i \in \{0,\ldots,D-1\}\).
+
+Fixtures and demos write exact integer values (`0.0`, `1.0`, …). Loaders (SVM-light and friends) write the index as an ordinary numeric feature; they do not need a new type.
+
 **`activeDims`.** `CKern` stores the columns it reads. The default is \(0 \ldots \mathrm{inputDim}-1\) with `X.ncols == inputDim`, and that path stays the current element code, so single-output models and the matio suite do not change. A non-default list means `X` may be wider than `inputDim`. Stationary `computeElement` / `dist2` calls use those columns and do not copy a submatrix on each entry. A kernel that does not honour `activeDims` cannot be placed in an ICM; constructing that product throws rather than silently folding the index into the lengthscale. `CCoregionalizeKern` always has `activeDims = [q]` and `inputDim = 1`. Its `getGradX` is zero on every column, including the index.
 
-**`CCoregionalizeKern`.** Parameters, in GPy’s link order: \(W\) row-major (\(D R\) values, no transform), then \(\kappa\) (\(D\) values, `CExpTransform`, the existing real-to-positive map). Stream fields: `outputDim`, `rank`, `W`, `kappa`. Rebuild \(B\) when those parameters change. \(B_{ij}\) is then \(O(1)\). An index outside \(0 \ldots D-1\) is a bounds failure. Shapes of \(W\) and \(\kappa\) are checked; nothing is truncated. \(R > D\) is allowed and warned, as in GPy.
+**`CCoregionalizeKern`.** Parameters, in GPy’s link order: \(W\) row-major (\(D R\) values, no transform), then \(\kappa\) (\(D\) values, `CExpTransform`, the existing real-to-positive map). Stream fields: `outputDim`, `rank`, `W`, `kappa`. Rebuild \(B\) when those parameters change. \(B_{ij}\) is then \(O(1)\). Index values follow the cast rule above. Shapes of \(W\) and \(\kappa\) are checked; nothing is truncated. \(R > D\) is allowed and warned, as in GPy.
 
-**`CIndexWhiteKern`.** `inputDim = 1`, `activeDims = [q]`, \(D\) positive variances. Diagonal entry \(\sigma^2_{i_n}\), off-diagonal 0, input gradient 0. It is added with `CCmpndKern`, never passed to `CTensorKern::addKern`. This is the marginal-covariance form of GPy’s per-output Gaussian noise. The existing single `CWhiteKern` remains the shared-noise model and is not the GPy default.
+**`CIndexWhiteKern`.** `inputDim = 1`, `activeDims = [q]`, \(D\) positive variances. Diagonal entry \(\sigma^2_{i_n}\), off-diagonal 0, input gradient 0. Same index cast rule as coregionalize. It is added with `CCmpndKern`, never passed to `CTensorKern::addKern`. This is the marginal-covariance form of GPy’s per-output Gaussian noise. The existing single `CWhiteKern` remains the shared-noise model and is not the GPy default.
 
 **`CGp`.** No new approximation and no new multi-output class. The GP sees the stacked \(X\) (\(N \times (q+1)\)) and stacked \(y\) (\(N \times 1\)). Prediction for output \(d\) uses rows whose last column is \(d\).
 
@@ -103,6 +113,8 @@ From `GPy/util/multioutput.py` and `GPy/kern/src/coregionalize.py` (GPy devel, t
 
 - **A private ICM class that slices \(X\) and never adds `activeDims`.** Same \(K\) for this one product, and a second composition graph the next kernel would have to know about. Rejected: GPy’s mechanism is `active_dims` on the children of `Prod`.
 - **Interleaved rows, or the index in the first column.** Rejected: `build_XY` appends the index and stacks blocks.
+- **A typed / heterogeneous `X` (int index column, double spatial columns).** Rejected: `CMatrix` and BLAS are double throughout; GPy itself stores the index as float and casts at use. Casting in the two index-reading kernels is enough.
+- **Silent NumPy-style truncation (`dtype=int`).** Rejected for GPc: require near-integer plus range checks so a mistyped `1.7` fails loudly.
 - **Shared white noise as the GPy comparison.** Rejected for the likelihood check. It remains available as today’s `CWhiteKern`.
 - **Full wrapper port.** Still rejected. `GPCoregionalizedRegression` adds nothing to the covariance beyond `ICM` and `MixedNoise`.
 
@@ -127,7 +139,7 @@ None for the coregionalize factor. The reference spatial kernel is the existing 
 
 ## Testing Strategy
 
-- `coregionalize` alone, against GPy, on integer indices, including an out-of-range index that must throw.
+- `coregionalize` alone, against GPy, on exact integer values stored as doubles, including an out-of-range index and a non-integer (`1.7`) that must throw.
 - ICM: `rbf` with `activeDims = [0]` times `coregionalize` with `activeDims = [1]`, against `GPy.util.multioutput.ICM`, for \(K\) and for gradients of \(W\), \(\kappa\), and the RBF parameters. The RBF lengthscale must not respond to the index column (`getGradX` on that column is zero from both factors).
 - LCM: two ICMs summed, against `LCM`, so the two \(B\) matrices are not tied.
 - `indexwhite` diagonal against a GPy `MixedNoise` marginal (or the equivalent \(\mathrm{diag}(\sigma^2_{i_n})\)).
@@ -146,10 +158,11 @@ None for the coregionalize factor. The reference spatial kernel is the existing 
 ## Implementation Status
 
 - [x] Design locked to GPy `build_XY`, `Coregionalize`, `ICM`, `LCM`, and per-output Gaussian noise
+- [x] Index column stored as `double`; cast rule (`llround` + near-integer + range) locked
 - [ ] `activeDims` with an unchanged default path
-- [ ] `CCoregionalizeKern` + factory
+- [ ] `CCoregionalizeKern` + factory (uses cast rule)
 - [ ] `icm` / `lcm` helpers
-- [ ] `CIndexWhiteKern` + factory
+- [ ] `CIndexWhiteKern` + factory (uses cast rule)
 - [ ] GPy fixtures, `testKern`, fixed-parameter likelihood check
 - [ ] Two-output demo and layout note
 

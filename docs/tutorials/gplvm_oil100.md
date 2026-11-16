@@ -23,5 +23,6 @@ Labels in the SVM-light file colour the latent scatter; they are not used as sup
 
 ## Notes
 
+- Bayesian sibling (variational \(q(\mathbf{X})\), RBF-ARD default): [bgplvm_oil100](./bgplvm_oil100.md) (`./bgplvm`).
 - Full oil set: `examples/oilTrain.svml` (longer run).
 - Swagger/BVH motion-capture tutorials remain deferred (MATLAB mocap helpers).

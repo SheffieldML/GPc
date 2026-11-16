@@ -35,10 +35,18 @@ const string KERNVERSION="0.1";
 
 class CKern : public CMatInterface, public CStreamInterface, public CTransformable, public CRegularisable {
  public:
-  CKern() : updateXused(false) {}
-  CKern(const CMatrix& X) : updateXused(false) {}
-  CKern(unsigned int inDim) : updateXused(false) {}
-  CKern(const CKern& kern) : updateXused(false) {}
+  CKern() : updateXused(false), inputDim(0), stationary(false) {}
+  CKern(const CMatrix& X) : updateXused(false), inputDim(0), stationary(false) {}
+  CKern(unsigned int inDim) : updateXused(false), inputDim(0), stationary(false) {}
+  CKern(const CKern& kern)
+    : nParams(kern.nParams),
+      kernName(kern.kernName),
+      type(kern.type),
+      paramNames(kern.paramNames),
+      activeDims(kern.activeDims),
+      updateXused(kern.updateXused),
+      inputDim(kern.inputDim),
+      stationary(kern.stationary) {}
   
   virtual ~CKern()  {}
   virtual CKern* clone() const=0;
@@ -279,17 +287,29 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
     {
       kernName = name;
     }
-  // Set the input dimension.
+  // Set the input dimension (also resets activeDims to 0..dim-1).
   inline void setInputDim(unsigned int dim)
     {
       inputDim = dim;
+      initDefaultActiveDims();
       setInitParam();
     }
-  // Get the input dimension.
+  // Get the input dimension (number of columns this kernel reads).
   inline unsigned getInputDim() const
     {
       return inputDim;
     }
+  // Columns of a possibly wider X that this kernel reads (GPy active_dims).
+  // Size always equals getInputDim(). Default is 0..inputDim-1.
+  void setActiveDims(const vector<unsigned int>& dims);
+  const vector<unsigned int>& getActiveDims() const { return activeDims; }
+  bool isDefaultActiveDims() const;
+  // Squared Euclidean distance on activeDims only. Falls back to dist2Row
+  // when activeDims is the default and both matrices have inputDim columns.
+  double dist2Active(const CMatrix& X1, unsigned int i1,
+                     const CMatrix& X2, unsigned int i2) const;
+  // Cast a stored double index (CIP-000D): llround + near-integer + range.
+  static unsigned int indexFromDouble(double x, unsigned int outputDim);
   // How many kernel parameters are there?
   inline unsigned int getNumParams() const
   {
@@ -361,6 +381,8 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   string kernName;
   string type;
   vector<string> paramNames;
+  void initDefaultActiveDims();
+  vector<unsigned int> activeDims;
  private:
   bool updateXused;
   unsigned int inputDim;
@@ -1462,6 +1484,98 @@ class CBrownianKern: public CKern {
   void _init();
   double variance;
 };
+
+// Coregionalize Kernel --- GPy Coregionalize: B = W W' + diag(kappa), K_nm = B_{i_n,i_m}.
+// inputDim is 1; setActiveDims({q}) when X has the index in column q (CIP-000D).
+class CCoregionalizeKern: public CKern {
+ public:
+  CCoregionalizeKern();
+  CCoregionalizeKern(unsigned int outputDim, unsigned int rank=1);
+  CCoregionalizeKern(unsigned int inDim, unsigned int outputDim, unsigned int rank);
+  CCoregionalizeKern(const CMatrix& X, unsigned int outputDim, unsigned int rank=1);
+  ~CCoregionalizeKern();
+  CCoregionalizeKern(const CCoregionalizeKern&);
+  CCoregionalizeKern* clone() const
+  {
+    return new CCoregionalizeKern(*this);
+  }
+  unsigned int getOutputDim() const { return outputDim; }
+  unsigned int getRank() const { return rank; }
+  void setW(const CMatrix& Win);
+  void setKappa(const CMatrix& kappaIn);
+  const CMatrix& getB() const { return B; }
+  double getVariance() const;
+  void setVariance(double val);
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const { return 0.0; }
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  void _rebuildB();
+  unsigned int _indexOf(const CMatrix& X, unsigned int row) const;
+  unsigned int outputDim;
+  unsigned int rank;
+  CMatrix W;      // outputDim x rank
+  CMatrix kappa;  // 1 x outputDim
+  CMatrix B;      // outputDim x outputDim
+};
+
+// Index-white Kernel --- per-output Gaussian noise diagonal: K_nn = sigma^2_{i_n}, off-diag 0.
+// GPy MixedNoise marginal form (CIP-000D). Sum outside a tensor product, never inside CTensorKern.
+class CIndexWhiteKern: public CKern {
+ public:
+  CIndexWhiteKern();
+  CIndexWhiteKern(unsigned int outputDim);
+  CIndexWhiteKern(unsigned int inDim, unsigned int outputDim);
+  CIndexWhiteKern(const CMatrix& X, unsigned int outputDim);
+  ~CIndexWhiteKern();
+  CIndexWhiteKern(const CIndexWhiteKern&);
+  CIndexWhiteKern* clone() const
+  {
+    return new CIndexWhiteKern(*this);
+  }
+  unsigned int getOutputDim() const { return outputDim; }
+  double getVariance() const;
+  void setVariance(double val);
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const { return 0.0; }
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  unsigned int _indexOf(const CMatrix& X, unsigned int row) const;
+  unsigned int outputDim;
+  CMatrix variances; // 1 x outputDim
+};
+
+// ICM: spatial.prod(Coregionalize) with GPy active_dims (CIP-000D).
+// Takes ownership of clones of spatial and returns a new CTensorKern with inputDim = spatialDim+1.
+CTensorKern* createIcmKern(const CKern& spatial, unsigned int numOutputs, unsigned int rank=1);
+// LCM: sum of ICMs; takes ownership of nothing (clones each spatial).
+CCmpndKern* createLcmKern(const vector<const CKern*>& spatials, unsigned int numOutputs, unsigned int rank=1);
 
 ostream& operator<<(ostream& os, const CKern& A);
 void writeKernToStream(const CKern& kern, ostream& out);

@@ -106,6 +106,7 @@ void CClgp::learn()
   vector<double> variances;
   vector<double> degrees;
   vector<bool> selectInputs;
+  vector<string> setSpecs;
   bool centreData=true;
   bool scaleData=false;
   bool outputScaleLearnt=false;
@@ -210,6 +211,10 @@ void CClgp::learn()
           exitError("Input selection flag must come after covariance function type is specified.");
         selectInputs[selectInputs.size()-1]=getBoolFromCurrentArgument();
       }
+      else if (isCurrentArg("-P", "--set")) {
+        incrementArgument();
+        setSpecs.push_back(getCurrentArgument());
+      }
       else if(isCurrentArg("-O", "--optimiser")) {
 	incrementArgument(); 
 	optimiser=getCurrentArgument(); 
@@ -253,7 +258,7 @@ void CClgp::learn()
       else
         kernels.push_back(new CLinKern(*M));
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 0); // set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i]=="poly") {
       if(selectInputs[i]) {
@@ -267,11 +272,11 @@ void CClgp::learn()
           ((CPolyKern*)kernels[i])->setDegree(degrees[i]);
       }
       if(weightVariances[i]!=-1.0)
-        kernels[i]->setParam(weightVariances[i], 0); // set `weight variance' parameter as specified.
+        kernels[i]->setByPath("weight_variance", weightVariances[i]);
       if(biasVariances[i]!=-1.0)
-        kernels[i]->setParam(biasVariances[i], 1); // set `bias variance' parameter as specified.
+        kernels[i]->setByPath("bias_variance", biasVariances[i]);
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 2); // set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i]=="rbf") {
       if(selectInputs[i])
@@ -279,9 +284,9 @@ void CClgp::learn()
       else
         kernels.push_back(new CRbfKern(*M));
       if(rbfInvWidths[i]!=-1.0)
-        kernels[i]->setParam(rbfInvWidths[i], 0); /// set rbf inverse width as specified.
+        kernels[i]->setByPath("inverseWidth", rbfInvWidths[i]);
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
 	}
     else if(kernelTypes[i]=="exp") {
       if(selectInputs[i])
@@ -289,9 +294,9 @@ void CClgp::learn()
       else
         kernels.push_back(new CExpKern(*M));
       if(rbfInvWidths[i]!=-1.0)
-        kernels[i]->setParam(rbfInvWidths[i], 0); /// set exp inverse width as specified.
+        kernels[i]->setByPath("inverseWidth", rbfInvWidths[i]);
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
 	}
     else if(kernelTypes[i]=="ratquad") {
       if(selectInputs[i])
@@ -299,11 +304,11 @@ void CClgp::learn()
       else
         kernels.push_back(new CRatQuadKern(*M));
       if(ratQuadAlphas[i]!=-1.0)
-        kernels[i]->setParam(ratQuadAlphas[i], 0); /// set rat quad length scale as specified.
+        kernels[i]->setByPath("power", ratQuadAlphas[i]);
 	  if(rbfInvWidths[i]!=-1.0)
-        kernels[i]->setParam(1/sqrt(rbfInvWidths[i]), 1); /// set rat quad length scale as specified.
+        kernels[i]->setByPath("lengthscale", 1/sqrt(rbfInvWidths[i]));
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 2); /// set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i] == "mlp") {
       if(selectInputs[i])
@@ -311,23 +316,23 @@ void CClgp::learn()
       else
         kernels.push_back(new CMlpKern(*M));
       if(weightVariances[i]!=-1.0)
-        kernels[i]->setParam(weightVariances[i], 0); // set `weight variance' parameter as specified.
+        kernels[i]->setByPath("weight_variance", weightVariances[i]);
       if(biasVariances[i]!=-1.0)
-        kernels[i]->setParam(biasVariances[i], 1); // set `bias variance' parameter as specified.
+        kernels[i]->setByPath("bias_variance", biasVariances[i]);
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 2); // set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i] == "bias" && kernelUsageFlag[i]!=KERNEL_USAGE_FWD) {
       // fwd covariance function always has bias component
       kernels.push_back(new CBiasKern(*M));
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 0); // set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i] == "white" && kernelUsageFlag[i]!=KERNEL_USAGE_FWD) {
       // fwd covariance function always includes a white noise component
       kernels.push_back(new CWhiteKern(*M));
       if(variances[i]!=-1.0)
-        kernels[i]->setParam(variances[i], 0); // set variance parameter as specified.
+        kernels[i]->setByPath("variance", variances[i]);
     }
     else {
       exitError("Unknown covariance function type: " + kernelTypes[i]);
@@ -418,6 +423,23 @@ void CClgp::learn()
   pmodel->setBias(bias);
   pmodel->updateM();
   pmodel->setOutputScaleLearnt(outputScaleLearnt);
+  for(size_t si=0; si<setSpecs.size(); si++)
+  {
+    const string& spec=setSpecs[si];
+    const size_t eq=spec.find('=');
+    if(eq==string::npos || eq==0 || eq+1>=spec.size())
+      exitError("--set expects path=value (e.g. rbf.variance=1.0), got: "+spec);
+    const string path=spec.substr(0, eq);
+    const double val=atof(spec.substr(eq+1).c_str());
+    try
+    {
+      pmodel->setByPath(path, val);
+    }
+    catch(ndlexceptions::Error& err)
+    {
+      exitError(string("--set failed for '")+path+"': "+err.getMessage());
+    }
+  }
   //writeGpToFile(*pmodel, "c:\\gp_model", "Write for testing of model");  
   pmodel->optimise(iters);
   string comment="";
@@ -972,6 +994,7 @@ void CClgp::helpInfo()
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
     helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: legacy (explicit invK_uu) or stable (Cholesky + trsm). Default legacy ([CIP-000E]).");
+    helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();
     setMode("kern");
@@ -987,6 +1010,7 @@ void CClgp::helpInfo()
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP covariance function.");
     helpArgument("-b, --bias float", "Bias parameter for polynomial and MLP covariance function.");
     helpArgument("-d, --degree int", "Degree parameter for polynomial covariance function.");
+    helpArgument("-P, --set path=value", "Also listed under learn: GPy-style path set after model construction (rbf.variance, lengthscale, beta, scale.j).");
   }    
   else if(command=="display") {
     helpHeader();

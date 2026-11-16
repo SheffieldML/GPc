@@ -2,11 +2,11 @@
 author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000E"
-last_updated: "2026-11-15"
-status: "Implemented"
+last_updated: "2026-11-16"
+status: "Closed"
 compressed: false
 related_requirements: ["0002"]
-related_cips: ["0005"]
+related_cips: ["0005", "0012"]
 tags:
 - cip
 - numerics
@@ -26,31 +26,30 @@ title: "Stable sparse-GP factorisation path with dual-path compare flag"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete (superseded-complete by [CIP-0012](cip0012.md))
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
 ## Summary
 
-Add an alternate sparse-GP linear-algebra path that follows the Seeger–Hetzel–Dai–Meissner–Lawrence MXNet pattern: Cholesky of \(K_{uu}\), triangular solve for \(B = L_u^{-1} K_{uf}\), then SYRK to form the inducing-side Gram matrix — avoiding explicit \(K_{uu}^{-1}\) wherever possible. Expose a runtime flag so the new path can be compared against the current `pdinv`/`gemm(invK_uu, …)` originals on likelihood and gradients before any default switch.
+Introduced `SparseLinalgStableFactor` (trsm against upper `LcholK` for \(K_{uu}^{-1}K_{uf}\)) and the Legacy dual-path flag. [CIP-0012](cip0012.md) upgrades StableFactor in place to the whitened \(C=I+B\Lambda^{-1}B^\top\) forward path and reverse-mode adjoint gradients. This CIP is **Closed** as superseded-complete: the flag and `diagDtcvar` dual-path harness remain; numerical meaning of StableFactor is owned by 0012.
 
 ## Motivation
 
-Sparse approximations repeatedly need \(K_{uu}^{-1} K_{uf}\). Forming \(K_{uu}^{-1}\) with `pdinv` after Cholesky is convenient but numerically weaker than triangular solves against the factor. Recent DTCVAR diagnostics showed gradients self-consistent — this is hygiene and dual-path verification, not a correctness emergency.
+Sparse approximations repeatedly need \(K_{uu}^{-1} K_{uf}\). Forming \(K_{uu}^{-1}\) with `pdinv` after Cholesky is convenient but numerically weaker than triangular solves against the factor.
 
 ## Detailed Description
 
-### Protocol
+### Protocol (as shipped; 0012 extends StableFactor)
 
 - `CGp::SparseLinalgLegacy` (default) — `gemm(invK_uu, K_uf)`.
-- `CGp::SparseLinalgStableFactor` — two `trsm` against upper `LcholK` (`U^{-T}` then `U^{-1}`).
+- `CGp::SparseLinalgStableFactor` — after 0012: whitened \(B,C\) path (see 0012); before 0012: two `trsm` for \(V\) only.
 - Accessors: `setStableSparseLinalg` / `setSparseLinalgMode`; CLI `gp … -L legacy|stable`.
 - Not persisted in `.model` streams.
-- `_multiplyInvKuu` used for DTCVAR/FITC forward `V` and DTCVAR gradient `invK_uuK_uf`. Gradients still keep `pdinv` of \(K_{uu}\) available.
 
 ### Dual-path harness
 
-`diagDtcvar` runs Legacy vs StableFactor LL and analytic gradient max-abs diffs on the fixed synthetic problem; also FD-checks StableFactor.
+`diagDtcvar` runs Legacy vs StableFactor LL and analytic gradient max-abs diffs; also FD-checks StableFactor. Extended by 0012’s `diagSparseStable` and `scripts/sparse_mp_reference.py`.
 
 ## Implementation Status
 
@@ -59,7 +58,7 @@ Sparse approximations repeatedly need \(K_{uu}^{-1} K_{uf}\). Forming \(K_{uu}^{
 - [x] StableFactor forward path for spherical DTC / DTCVAR (and FITC `V`)
 - [x] Dual-path diagnostic harness (`diagDtcvar`)
 - [x] Documented test / tolerance gate (`docs/numerics.md`)
-- [ ] CI green; CIP Closed
+- [x] CI green; CIP Closed (superseded-complete by 0012, 2026-11-16)
 
 ## Testing Strategy
 
@@ -69,3 +68,7 @@ Sparse approximations repeatedly need \(K_{uu}^{-1} K_{uf}\). Forming \(K_{uu}^{
 ## Related Requirements
 
 - [REQ-0002](../requirements/req0002_runnable-verification.md)
+
+## Related
+
+- [CIP-0012](cip0012.md) — whitened StableFactor + reverse-mode adjoints (owns current StableFactor meaning)

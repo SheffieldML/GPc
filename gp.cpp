@@ -113,7 +113,7 @@ void CClgp::learn()
   int activeSetSize = -1;
   int approxType = -1;
   string approxTypeStr = "ftc";
-  string sparseLinalgStr = "legacy";
+  string sparseLinalgStr = "stable";
   bool labelsProvided = true;
   double signalVariance = 0.0;
   vector<int> labels;
@@ -993,7 +993,7 @@ void CClgp::helpInfo()
     helpArgument("-L, --Learn-scales bool", "Whether or not to learn the scaling on the input data. Default value is 0 (false).");
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
-    helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: legacy (explicit invK_uu) or stable (Cholesky + trsm). Default legacy ([CIP-000E]).");
+    helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: stable (whitened C + Murray adjoints, default) or legacy (explicit invK_uu). See [CIP-0012].");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();

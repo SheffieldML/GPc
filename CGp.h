@@ -82,8 +82,8 @@ public:
   void ensureADUpToDate() const { updateAD(); }
   void ensureAlphaUpToDate() const { updateAlpha(); }
 
-  // CIP-000E: Legacy uses gemm(invK_uu, …); StableFactor uses trsm on LcholK.
-  // Default Legacy. Not persisted in .model streams.
+  // CIP-0012: StableFactor (whitened C + Murray adjoints) is the default.
+  // Legacy remains for dual-path archaeology via -L legacy. Not persisted in .model streams.
   bool isStableSparseLinalg() const
   {
     return sparseLinalgMode == SparseLinalgStableFactor;

@@ -215,6 +215,7 @@ int testStableSparse()
   int fail = 0;
   cout << "==== testCGp StableFactor ====" << endl;
   ToyGp toy(CGp::DTCVAR);
+  toy.model->setStableSparseLinalg(false);
   const double llLeg = toy.model->logLikelihood();
   CMatrix gLeg(1, toy.model->getOptNumParams());
   fail += failTrue(std::isfinite(toy.model->logLikelihoodGradient(gLeg)),
@@ -230,6 +231,7 @@ int testStableSparse()
     gDiff = max(gDiff, fabs(g.getVal(i) - gLeg.getVal(i)));
   fail += failTrue(gDiff < 1e-5, "Legacy vs StableFactor DTCVAR grads");
   ToyGp toyD(CGp::DTC);
+  toyD.model->setStableSparseLinalg(false);
   CMatrix gDLeg(1, toyD.model->getOptNumParams());
   toyD.model->logLikelihoodGradient(gDLeg);
   toyD.model->setStableSparseLinalg(true);
@@ -240,6 +242,7 @@ int testStableSparse()
     gDDiff = max(gDDiff, fabs(gD.getVal(i) - gDLeg.getVal(i)));
   fail += failTrue(gDDiff < 1e-5, "Legacy vs StableFactor DTC grads");
   ToyGp toyF(CGp::FITC);
+  toyF.model->setStableSparseLinalg(false);
   const double fL = toyF.model->logLikelihood();
   toyF.model->setStableSparseLinalg(true);
   const double fS = toyF.model->logLikelihood();
@@ -255,6 +258,7 @@ int testStableSparse()
     gFDiff = max(gFDiff, fabs(gF.getVal(i) - gFLeg.getVal(i)));
   fail += failTrue(gFDiff < 1e-5, "Legacy vs StableFactor FITC grads");
   ToyGp toyP(CGp::PITC);
+  toyP.model->setStableSparseLinalg(false);
   const double pL = toyP.model->logLikelihood();
   toyP.model->setStableSparseLinalg(true);
   const double pS = toyP.model->logLikelihood();
@@ -278,6 +282,7 @@ int testStableSparse()
   {
     ToyGp tp(predApprox[k]);
     CMatrix muL(2, 1), varL(2, 1), muS(2, 1), varS(2, 1);
+    tp.model->setStableSparseLinalg(false);
     tp.model->posteriorMeanVar(muL, varL, Xtest);
     tp.model->setStableSparseLinalg(true);
     tp.model->posteriorMeanVar(muS, varS, Xtest);
@@ -290,6 +295,8 @@ int testStableSparse()
     fail += failTrue(pdiff < 1e-6,
                      string("Legacy vs StableFactor ") + predName[k] + " predict");
   }
+  fail += failTrue(toy.model->getSparseLinalgMode() == CGp::SparseLinalgStableFactor,
+                   "StableFactor is the default sparseLinalgMode");
   toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   try
   {

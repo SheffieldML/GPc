@@ -15,6 +15,21 @@ endif
 
 all: gplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
+# CIP-0015 Stage 1 API demos (docs/tutorials/)
+demos: demo_regression_1d demo_sparse_dtcvar
+
+demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+
+demo_regression_1d.o: examples/demo_regression_1d.cpp CGp.h CKern.h CNoise.h CClctrl.h
+	$(CC) -c examples/demo_regression_1d.cpp -o demo_regression_1d.o $(CCFLAGS)
+
+demo_sparse_dtcvar: demo_sparse_dtcvar.o CClctrl.o CGp.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_sparse_dtcvar demo_sparse_dtcvar.o CGp.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+
+demo_sparse_dtcvar.o: examples/demo_sparse_dtcvar.cpp CGp.h CKern.h CNoise.h CClctrl.h
+	$(CC) -c examples/demo_sparse_dtcvar.cpp -o demo_sparse_dtcvar.o $(CCFLAGS)
+
 gplvm: gplvm.o CClctrl.o CGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o gplvm gplvm.o CGplvm.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
@@ -246,4 +261,5 @@ ndlfortran.o: ndlfortran.f
 
 clean:
 	rm -f *.o *.gcda *.gcno *.gcov coverage.info
+	rm -f demo_regression_1d demo_sparse_dtcvar
 	rm -rf coverage-html

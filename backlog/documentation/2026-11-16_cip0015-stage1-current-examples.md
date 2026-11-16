@@ -1,7 +1,7 @@
 ---
 id: "2026-11-16_cip0015-stage1-current-examples"
 title: "Stage 1: Redo current README examples as native tutorials/demos (CIP-0015)"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-16"
 last_updated: "2026-11-16"
@@ -45,12 +45,12 @@ Also: a `docs/tutorials/README.md` index that starts the GPy↔GPc checklist (St
 
 ## Acceptance Criteria
 
-- [ ] `docs/tutorials/` exists with one page per in-scope workflow above
-- [ ] Each page: build prerequisites, exact commands (capped iterations ok), gnuplot/plot steps, link to GPy counterpart or “IVM substitute”
-- [ ] `docs/tutorials/README.md` indexes pages and starts the GPy checklist table
-- [ ] At least sinc and spgp1d have either a documented CLI-only path **or** a compiled `examples/demo_*.cpp` makefile target using `setByPath` where parameters are set
-- [ ] README.md root tutorials either point at `docs/tutorials/` or stay in sync (no contradictory commands)
-- [ ] No FITC as the sparse tutorial default (DTCVAR / existing working approx only)
+- [x] `docs/tutorials/` exists with one page per in-scope workflow above
+- [x] Each page: build prerequisites, exact commands (capped iterations ok), gnuplot/plot steps, link to GPy counterpart or “IVM substitute”
+- [x] `docs/tutorials/README.md` indexes pages and starts the GPy checklist table
+- [x] At least sinc and spgp1d have either a documented CLI-only path **or** a compiled `examples/demo_*.cpp` makefile target using `setByPath` where parameters are set
+- [x] README.md root tutorials either point at `docs/tutorials/` or stay in sync (no contradictory commands)
+- [x] No FITC as the sparse tutorial default (DTCVAR / existing working approx only)
 
 ## Implementation Notes
 
@@ -70,3 +70,7 @@ Also: a `docs/tutorials/README.md` index that starts the GPy↔GPc checklist (St
 ### 2026-11-16
 
 Task created (Ready) after CIP-0015 Accepted; Stage 1 launch before Phase A.
+
+### 2026-11-16 (implementation)
+
+Added `docs/tutorials/` (six pages + index/checklist), `examples/demo_regression_1d.cpp` / `demo_sparse_dtcvar.cpp`, `make demos`, README/workflow pointers. `./demo_regression_1d` and `./demo_sparse_dtcvar` smoke OK. Status → Completed.

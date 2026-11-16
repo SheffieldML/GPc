@@ -589,22 +589,21 @@ public:
   }
 
   // Return the euclidean distance squared between two row vectors.
+  // CIP-0013 P3: direct difference loop (no dnrm2/ddot). Clamp at ≥ 0.
   double dist2Row(unsigned int i, const CMatrix& A, unsigned int k) const
   {
     DIMENSIONMATCH(ncols==A.ncols);
     BOUNDCHECK(k<A.nrows);
     BOUNDCHECK(i<nrows);
-    // |X-Y|^2 == |X|^2 + |Y|^2 - 2 X dot Y
-    return norm2Row(i) + A.norm2Row(k) - 2.0*dotRowRow(i, A, k);
-    // WVB's approach
-    // double val = 0;
-    // double *v1 = vals+i;
-    // double *v2 = A.vals+k;
-    // for (int i=0; i<ncols; i++,v1+=nrows,v2+=A.nrows) {
-    //  double d = *v1 - *v2;
-    //  val += d*d;
-    //}
-    // return val;  
+    double val = 0.0;
+    const double* v1 = vals + i;
+    const double* v2 = A.vals + k;
+    for(unsigned int c = 0; c < ncols; c++, v1 += nrows, v2 += A.nrows)
+    {
+      const double d = *v1 - *v2;
+      val += d * d;
+    }
+    return (val > 0.0) ? val : 0.0;
   }
   // Return the euclidean distance squared between two column vectors.
   double dist2Col(unsigned int j, const CMatrix& A, unsigned int k) const
@@ -612,7 +611,15 @@ public:
     DIMENSIONMATCH(nrows==A.nrows);
     BOUNDCHECK(k<A.ncols);
     BOUNDCHECK(j<ncols);
-    return norm2Col(j) + A.norm2Col(k) - 2.0*dotColCol(j, A, k);
+    double val = 0.0;
+    const double* v1 = vals + j * nrows;
+    const double* v2 = A.vals + k * A.nrows;
+    for(unsigned int r = 0; r < nrows; r++)
+    {
+      const double d = v1[r] - v2[r];
+      val += d * d;
+    }
+    return (val > 0.0) ? val : 0.0;
   }
   // Return the norm of the ith row of the matrix.
   double normRow(unsigned int i) const
@@ -621,13 +628,11 @@ public:
     return dnrm2_(ncols, vals+i, nrows);
   }
   // Return the squared norm of the ith row of the matrix.
+  // CIP-0013 P3: ddot instead of dnrm2 then square (avoids overflow-safe loop cost).
   double norm2Row(unsigned int i) const
   {
     BOUNDCHECK(i<nrows);
-    double val=dnrm2_(ncols, vals+i, nrows);
-    return val*val;
-    // WVB's approach
-    // return ddot_(ncols,vals+i,nrows,vals+i,nrows);
+    return ddot_(ncols, vals + i, nrows, vals + i, nrows);
   }
   // Return the norm of the jth column of the matrix.
   double normCol(unsigned int j) const
@@ -639,10 +644,7 @@ public:
   double norm2Col(unsigned int j) const
   {
     BOUNDCHECK(j<ncols);
-    double val=dnrm2_(nrows, vals+j*nrows, 1);
-    return val*val;
-    // WVB's approach
-    // return ddot_(nrows,vals+j*nrows,1,vals+j*nrows,1);
+    return ddot_(nrows, vals + j * nrows, 1, vals + j * nrows, 1);
   }
   // Return the inner product between the ith row of the matrix and the kth row of A.
   double dotRowRow(unsigned int i, const CMatrix& A, unsigned int k) const

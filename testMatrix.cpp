@@ -8,6 +8,7 @@ const double MAXDIFF=1e-13;
 
 int testDot();
 int testNorm();
+int testDist2();
 int testInv();
 int testCholesky();
 int testTranspose();
@@ -61,6 +62,7 @@ int main()
       fail += testScale();
       fail += testDot();
       fail += testNorm();
+      fail += testDist2();
       cout << endl << "Total number of failures: " << fail << endl;
       return fail > 0 ? 1 : 0;
     }
@@ -278,6 +280,44 @@ int testNorm()
       fail++;
     }
   cout << "Test norm not yet implemented" << endl;
+  return fail;
+}
+int testDist2()
+{
+  // CIP-0013 P3: direct-loop dist2Row / dist2Col vs hand formula; clamp ≥ 0.
+  int fail = 0;
+  CMatrix X(3, 2);
+  X.setVal(0.0, 0, 0); X.setVal(0.0, 0, 1);
+  X.setVal(1.0, 1, 0); X.setVal(2.0, 1, 1);
+  X.setVal(1.0, 2, 0); X.setVal(2.0, 2, 1);
+  const double d01 = X.dist2Row(0, X, 1);
+  const double expect = 1.0 + 4.0;
+  if(abs(d01 - expect) < ndlutil::MATCHTOL)
+    cout << "dist2Row matches hand formula." << endl;
+  else
+  {
+    cout << "FAILURE: dist2Row got " << d01 << " expected " << expect << endl;
+    fail++;
+  }
+  if(X.dist2Row(1, X, 2) < ndlutil::MATCHTOL)
+    cout << "dist2Row identical rows is ~0." << endl;
+  else
+  {
+    cout << "FAILURE: dist2Row identical rows." << endl;
+    fail++;
+  }
+  CMatrix Y(2, 3);
+  Y.setVal(0.0, 0, 0); Y.setVal(1.0, 1, 0);
+  Y.setVal(0.0, 0, 1); Y.setVal(2.0, 1, 1);
+  Y.setVal(0.0, 0, 2); Y.setVal(3.0, 1, 2);
+  const double c01 = Y.dist2Col(0, Y, 1);
+  if(abs(c01 - 1.0) < ndlutil::MATCHTOL)
+    cout << "dist2Col matches hand formula." << endl;
+  else
+  {
+    cout << "FAILURE: dist2Col got " << c01 << " expected 1." << endl;
+    fail++;
+  }
   return fail;
 }
 int testInv()

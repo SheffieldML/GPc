@@ -42,3 +42,7 @@ Accept and implement [CIP-0013](../../cip/cip0013.md) / [REQ-0007](../../require
 ### 2026-11-16
 
 CIP-0013 Accepted → In Progress. Starting harness + P1/P2.
+
+### 2026-11-16 (later)
+
+P1/P2 + `benchGPc` on PR #60. P3: direct-loop `dist2Row`/`dist2Col` landed. Next: P4 `CStationaryKern` + RBF reparent.

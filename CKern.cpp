@@ -1,6 +1,435 @@
 #include "CKern.h"
+#include <cmath>
 
 using namespace std;
+
+namespace {
+
+enum LeafConv {
+  LEAF_NATIVE = 0,
+  LEAF_RBF_LENGTHSCALE = 1,
+  LEAF_EXP_LENGTHSCALE = 2
+};
+
+double toGpyValue(double native, LeafConv conv)
+{
+  switch(conv)
+  {
+  case LEAF_RBF_LENGTHSCALE:
+    if(!(native>0.0))
+      throw ndlexceptions::Error("inverseWidth must be positive to convert to lengthscale.");
+    return 1.0/std::sqrt(native);
+  case LEAF_EXP_LENGTHSCALE:
+    if(!(native>0.0))
+      throw ndlexceptions::Error("inverseWidth must be positive to convert to lengthscale.");
+    return 1.0/native;
+  case LEAF_NATIVE:
+  default:
+    return native;
+  }
+}
+
+double fromGpyValue(double gpy, LeafConv conv)
+{
+  switch(conv)
+  {
+  case LEAF_RBF_LENGTHSCALE:
+    if(!(gpy>0.0))
+      throw ndlexceptions::Error("lengthscale must be positive.");
+    return 1.0/(gpy*gpy);
+  case LEAF_EXP_LENGTHSCALE:
+    if(!(gpy>0.0))
+      throw ndlexceptions::Error("lengthscale must be positive.");
+    return 1.0/gpy;
+  case LEAF_NATIVE:
+  default:
+    return gpy;
+  }
+}
+
+bool typesCompatible(const string& type, const string& name)
+{
+  if(name==type)
+    return true;
+  if(type=="matern32" && (name=="Mat32" || name=="matern32"))
+    return true;
+  if(type=="matern52" && (name=="Mat52" || name=="matern52"))
+    return true;
+  if(type=="exp" && (name=="Exponential" || name=="exp"))
+    return true;
+  if((type=="ratquad" || type=="ratquadard") && (name=="RatQuad" || name=="ratquad"))
+    return true;
+  if((type=="lin" || type=="linard") && (name=="linear" || name=="lin"))
+    return true;
+  if(type=="stdperiodic" && (name=="std_periodic" || name=="stdperiodic"))
+    return true;
+  if(type=="cosine" && (name=="Cosine" || name=="cosine"))
+    return true;
+  if(type=="brownian" && (name=="Brownian" || name=="brownian"))
+    return true;
+  if((type=="rbf" || type=="rbfard") && name=="rbf")
+    return true;
+  if((type=="mlp" || type=="mlpard") && name=="mlp")
+    return true;
+  if(type=="poly" && name=="poly")
+    return true;
+  if(type=="white" && name=="white")
+    return true;
+  if(type=="bias" && name=="bias")
+    return true;
+  if(type=="coregionalize" && name=="coregionalize")
+    return true;
+  return false;
+}
+
+} // namespace
+
+string CKern::gpyComponentName() const
+{
+  const string t = getType();
+  if(t=="matern32") return "Mat32";
+  if(t=="matern52") return "Mat52";
+  if(t=="exp") return "Exponential";
+  if(t=="ratquad" || t=="ratquadard") return "RatQuad";
+  if(t=="lin" || t=="linard") return "linear";
+  if(t=="stdperiodic") return "std_periodic";
+  if(t=="cosine") return "Cosine";
+  if(t=="brownian") return "Brownian";
+  if(t=="rbfard") return "rbf";
+  if(t=="mlpard") return "mlp";
+  return t;
+}
+
+namespace {
+
+string canonicalLeafName(const CKern& kern, unsigned int index)
+{
+  BOUNDCHECK(index<kern.getNumParams());
+  const string native = kern.getParamName(index);
+  const string t = kern.getType();
+  if(native=="inverseWidth")
+    return "lengthscale";
+  if(native=="lengthScale")
+    return "lengthscale";
+  if(native=="weightVariance")
+    return "weight_variance";
+  if(native=="biasVariance")
+    return "bias_variance";
+  if(native=="alpha" && (t=="ratquad" || t=="ratquadard"))
+    return "power";
+  if(native=="inputScale")
+  {
+    unsigned int k=0;
+    for(unsigned int j=0; j<index; j++)
+    {
+      if(kern.getParamName(j)=="inputScale")
+        k++;
+    }
+    return string("inputScale_")+ndlstrutil::itoa(k);
+  }
+  // Disambiguate duplicate identical native names (besides inputScale).
+  unsigned int prior=0;
+  for(unsigned int j=0; j<index; j++)
+  {
+    if(kern.getParamName(j)==native)
+      prior++;
+  }
+  if(prior>0)
+    return native+string("_")+ndlstrutil::itoa(prior);
+  return native;
+}
+
+bool matchAtomicLeaf(const CKern& kern, unsigned int index, const string& leaf, LeafConv& conv)
+{
+  const string native = kern.getParamName(index);
+  const string canon = canonicalLeafName(kern, index);
+  const string t = kern.getType();
+
+  if(leaf=="inv_lengthscale" && native=="inverseWidth")
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  if(leaf=="lengthscale" && native=="inverseWidth")
+  {
+    if(t=="exp")
+      conv = LEAF_EXP_LENGTHSCALE;
+    else
+      conv = LEAF_RBF_LENGTHSCALE; // rbf / rbfard shared width
+    return true;
+  }
+  if(leaf==canon || leaf==native)
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  if(native=="lengthScale" && leaf=="lengthscale")
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  if(native=="weightVariance" && leaf=="weight_variance")
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  if(native=="biasVariance" && leaf=="bias_variance")
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  if(native=="alpha" && leaf=="power" && (t=="ratquad" || t=="ratquadard"))
+  {
+    conv = LEAF_NATIVE;
+    return true;
+  }
+  return false;
+}
+
+void resolveAtomicPath(const CKern& kern, const string& path, unsigned int& index, LeafConv& conv)
+{
+  if(path.find('.')!=string::npos)
+    throw ndlexceptions::Error("Path '"+path+"' has a component prefix but kernel '"+kern.getType()+"' is not compound.");
+  unsigned int matches=0;
+  unsigned int found=0;
+  LeafConv foundConv=LEAF_NATIVE;
+  for(unsigned int i=0; i<kern.getNumParams(); i++)
+  {
+    LeafConv c=LEAF_NATIVE;
+    if(matchAtomicLeaf(kern, i, path, c))
+    {
+      matches++;
+      found=i;
+      foundConv=c;
+    }
+  }
+  if(matches==0)
+    throw ndlexceptions::Error("Unknown parameter path '"+path+"' for kernel '"+kern.getType()+"'.");
+  if(matches>1)
+    throw ndlexceptions::Error("Ambiguous parameter path '"+path+"' for kernel '"+kern.getType()+"'.");
+  index=found;
+  conv=foundConv;
+}
+
+} // namespace
+
+vector<string> CKern::paramPaths() const
+{
+  vector<string> paths;
+  paths.reserve(getNumParams());
+  for(unsigned int i=0; i<getNumParams(); i++)
+    paths.push_back(canonicalLeafName(*this, i));
+  return paths;
+}
+
+unsigned int CKern::paramIndex(const string& path) const
+{
+  unsigned int index=0;
+  LeafConv conv=LEAF_NATIVE;
+  resolveAtomicPath(*this, path, index, conv);
+  return index;
+}
+
+double CKern::getByPath(const string& path) const
+{
+  unsigned int index=0;
+  LeafConv conv=LEAF_NATIVE;
+  resolveAtomicPath(*this, path, index, conv);
+  return toGpyValue(getParam(index), conv);
+}
+
+void CKern::setByPath(const string& path, double val)
+{
+  unsigned int index=0;
+  LeafConv conv=LEAF_NATIVE;
+  resolveAtomicPath(*this, path, index, conv);
+  setParam(fromGpyValue(val, conv), index);
+}
+
+void CKern::constrainPositive(const string& path)
+{
+  replaceTransform(CTransform::defaultPositive(), paramIndex(path));
+}
+
+void CKern::constrainZeroOne(const string& path)
+{
+  replaceTransform(CTransform::defaultZeroOne(), paramIndex(path));
+}
+
+void CKern::constrainNone(const string& path)
+{
+  replaceTransform(0, paramIndex(path));
+}
+
+string CComponentKern::componentPathLabel(unsigned int componentIndex) const
+{
+  BOUNDCHECK(componentIndex<components.size());
+  const string base = components[componentIndex]->gpyComponentName();
+  unsigned int prior=0;
+  for(unsigned int j=0; j<componentIndex; j++)
+  {
+    if(components[j]->gpyComponentName()==base)
+      prior++;
+  }
+  if(prior==0)
+    return base;
+  return base+string("_")+ndlstrutil::itoa(prior);
+}
+
+void CComponentKern::syncTransformsFromComponents()
+{
+  unlinkTransforms();
+  unsigned int offset=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    for(unsigned int j=0; j<components[i]->getNumTransforms(); j++)
+      addTransform(components[i]->getTransform(j), components[i]->getTransformIndex(j)+offset);
+    offset+=components[i]->getNumParams();
+  }
+}
+
+string CComponentKern::getParamName(unsigned int paramNo) const
+{
+  unsigned int start=0;
+  unsigned int end=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    end=start+components[i]->getNumParams()-1;
+    if(paramNo<=end)
+    {
+      const unsigned int local=paramNo-start;
+      return componentPathLabel(static_cast<unsigned int>(i))+string(".")+canonicalLeafName(*components[i], local);
+    }
+    start=end+1;
+  }
+  return "";
+}
+
+vector<string> CComponentKern::paramPaths() const
+{
+  vector<string> paths;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const string label=componentPathLabel(static_cast<unsigned int>(i));
+    vector<string> childPaths=components[i]->paramPaths();
+    for(size_t j=0; j<childPaths.size(); j++)
+      paths.push_back(label+string(".")+childPaths[j]);
+  }
+  return paths;
+}
+
+namespace {
+
+void stripCompoundPrefix(string& path)
+{
+  if(path.compare(0, 4, "sum.")==0)
+    path=path.substr(4);
+  else if(path.compare(0, 6, "cmpnd.")==0)
+    path=path.substr(6);
+  else if(path.compare(0, 7, "tensor.")==0)
+    path=path.substr(7);
+}
+
+} // namespace
+
+unsigned int CComponentKern::findComponent(const string& comp) const
+{
+  unsigned int matches=0;
+  unsigned int found=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const string label=componentPathLabel(static_cast<unsigned int>(i));
+    bool hit=(comp==label);
+    if(!hit && typesCompatible(components[i]->getType(), comp))
+    {
+      unsigned int prior=0;
+      for(size_t j=0; j<i; j++)
+        if(components[j]->gpyComponentName()==components[i]->gpyComponentName())
+          prior++;
+      // Bare type/GPy name matches only the first instance; use rbf_1 for later ones.
+      if(prior==0)
+        hit=true;
+    }
+    if(hit)
+    {
+      matches++;
+      found=static_cast<unsigned int>(i);
+    }
+  }
+  if(matches==0)
+    throw ndlexceptions::Error("Unknown component '"+comp+"'.");
+  if(matches>1)
+    throw ndlexceptions::Error("Ambiguous component '"+comp+"'.");
+  return found;
+}
+
+void CComponentKern::splitComponentPath(const string& path, unsigned int& componentIndex, string& leaf) const
+{
+  string p=path;
+  stripCompoundPrefix(p);
+  const size_t dot=p.find('.');
+  if(dot==string::npos || dot+1>=p.size())
+    throw ndlexceptions::Error("Compound kernel path '"+path+"' must be component.leaf.");
+  componentIndex=findComponent(p.substr(0, dot));
+  leaf=p.substr(dot+1);
+}
+
+unsigned int CComponentKern::paramIndex(const string& path) const
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  unsigned int offset=0;
+  for(unsigned int i=0; i<c; i++)
+    offset+=components[i]->getNumParams();
+  return offset+components[c]->paramIndex(leaf);
+}
+
+double CComponentKern::getByPath(const string& path) const
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  return components[c]->getByPath(leaf);
+}
+
+void CComponentKern::setByPath(const string& path, double val)
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  components[c]->setByPath(leaf, val);
+}
+
+void CComponentKern::constrainPositive(const string& path)
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  unlinkTransforms();
+  components[c]->constrainPositive(leaf);
+  syncTransformsFromComponents();
+}
+
+void CComponentKern::constrainZeroOne(const string& path)
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  unlinkTransforms();
+  components[c]->constrainZeroOne(leaf);
+  syncTransformsFromComponents();
+}
+
+void CComponentKern::constrainNone(const string& path)
+{
+  unsigned int c=0;
+  string leaf;
+  splitComponentPath(path, c, leaf);
+  unlinkTransforms();
+  components[c]->constrainNone(leaf);
+  syncTransformsFromComponents();
+}
 
 ostream& CKern::display(ostream& os) const
 {

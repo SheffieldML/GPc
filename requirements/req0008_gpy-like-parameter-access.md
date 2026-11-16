@@ -1,7 +1,7 @@
 ---
 id: "0008"
 title: "Users can set and constrain parameters by GPy-like paths"
-status: "Completed"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-16"
 last_updated: "2026-11-16"
@@ -53,4 +53,4 @@ Canonical paths and units locked to GPy/`paramz` where sensible; legacy GPc name
 CIP-0014 Accepted; requirement moved to In Progress.
 
 ### 2026-11-16 (complete)
-Phases A–C merged (PRs #44, #45); CIP-0014 Closed and compressed; requirement Completed.
+Phases A–C merged (PRs #44, #45); CIP-0014 Closed and compressed; requirement Validated.

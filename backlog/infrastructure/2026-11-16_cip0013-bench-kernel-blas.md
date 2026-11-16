@@ -46,3 +46,7 @@ CIP-0013 Accepted → In Progress. Starting harness + P1/P2.
 ### 2026-11-16 (later)
 
 P1/P2 + `benchGPc` on PR #60. P3: direct-loop `dist2Row`/`dist2Col` landed. Next: P4 `CStationaryKern` + RBF reparent.
+
+### 2026-11-16 (P4 slice)
+
+`CStationaryKern` base (`scaleFactor` / `K_of_r`); `CRbfKern` reparented; `CCmpndKern::compute` restored; `CGp::_updateK` uses bulk `compute`. Remaining stationary reparent + P5 workspace still open.

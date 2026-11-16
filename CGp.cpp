@@ -972,43 +972,18 @@ void CGp::updateK() const
 
 void CGp::_updateK() const
 {
-  double kVal=0.0;
   switch(getApproximationType()) 
   {
   case FTC:
-    // Element-wise fill; pkern->compute bulk path is a future optimisation.
-    for(unsigned int i=0; i<getNumData(); i++) 
-    {
-      K.setVal(pkern->diagComputeElement(*pX, i), i, i);
-      for(unsigned int j=0; j<i; j++) 
-      {
-	kVal=pkern->computeElement(*pX, i, *pX, j);
-	K.setVal(kVal, i, j);
-	K.setVal(kVal, j, i);
-      }
-    }
-    K.setSymmetric(true);
+    // CIP-0013 P4: bulk kernel path (CStationaryKern / CCmpndKern::compute).
+    pkern->compute(K, *pX);
     break;
   case DTC:
   case DTCVAR:
   case FITC:
   case PITC:
-    // Element-wise fill; pkern->compute bulk path is a future optimisation.
-    for(unsigned int i=0; i<numActive; i++) 
-    {
-      K_uu.setVal(pkern->diagComputeElement(X_u, i), i, i);
-      for(unsigned int j=0; j<i; j++) 
-      {
-	kVal=pkern->computeElement(X_u, i, X_u, j);
-	K_uu.setVal(kVal, i, j);
-	K_uu.setVal(kVal, j, i);
-      }
-      K_uu.setSymmetric(true);
-      for(unsigned int j=0; j<getNumData(); j++) {
-	kVal=pkern->computeElement(X_u, i, *pX, j);
-	K_uf.setVal(kVal, i, j);
-      }
-    }
+    pkern->compute(K_uu, X_u);
+    pkern->compute(K_uf, X_u, *pX);
     break;
   }
   switch(getApproximationType()) 

@@ -420,6 +420,28 @@ class CArdKern : public CKern {
   CMatrix scales;
 };
 
+// CIP-0013 P4: GPy Stationary-shaped base. Owns bulk compute via distances + K_of_r.
+// Concrete isotropic kernels reparent here and supply radial maps only.
+class CStationaryKern : public CKern {
+ public:
+  CStationaryKern() : CKern() { setStationary(true); }
+  CStationaryKern(const CMatrix& X) : CKern(X) { setStationary(true); }
+  CStationaryKern(unsigned int inDim) : CKern(inDim) { setStationary(true); }
+  CStationaryKern(const CKern& kern) : CKern(kern) { setStationary(true); }
+  virtual ~CStationaryKern() {}
+
+  // Multiplier turning unscaled Euclidean distance into GPy-style scaled r
+  // (RBF: sqrt(inverseWidth)).
+  virtual double scaleFactor() const = 0;
+  // k(r) with r already lengthscale-scaled (GPy K_of_r).
+  virtual double K_of_r(double r) const = 0;
+
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void compute(CMatrix& K, const CMatrix& X) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
+};
+
 // Component kernel (such as cmpnd or tensor)
 class CComponentKern : public CKern 
 {
@@ -553,10 +575,8 @@ class CCmpndKern: public CComponentKern {
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 		 const CMatrix& X2, unsigned int index2) const;
-/*   void compute(CMatrix& K, const CMatrix& X) const; */
-/*   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const; */
-/*   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const; */
-  //  void compute(CMatrix& K, const CMatrix& X, const vector<unsigned int> indices) const;
+  void compute(CMatrix& K, const CMatrix& X) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
@@ -750,7 +770,7 @@ class CBiasKern: public CKern {
 };
 
 // RBF Kernel, also known as the Gaussian or squared exponential kernel.
-class CRbfKern: public CKern {
+class CRbfKern: public CStationaryKern {
  public:
   CRbfKern();
   CRbfKern(unsigned int inDim);
@@ -782,6 +802,8 @@ class CRbfKern: public CKern {
   {
     return 1/sqrt(inverseWidth);
   }
+  double scaleFactor() const { return sqrt(inverseWidth); }
+  double K_of_r(double r) const { return variance * exp(-0.5 * r * r); }
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
   void diagCompute(CMatrix& d, const CMatrix& X) const;
@@ -790,8 +812,6 @@ class CRbfKern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   double getWhite() const;
-  double computeElement(const CMatrix& X1, unsigned int index1, 
-			const CMatrix& X2, unsigned int index2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;

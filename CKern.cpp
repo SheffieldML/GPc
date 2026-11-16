@@ -713,47 +713,32 @@ double CCmpndKern::computeElement(const CMatrix& X1, unsigned int index1,
   return y;
 }
 
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   MATRIXPROPERTIES(K.isSquare());
-//   K.zeros();
-//   CMatrix K2(K.getRows(), K.getCols());
-//   for(size_t i=0; i<components.size(); i++)
-//   {
-//     components[i]->compute(K2, X);
-//     K.axpy(K2, 1.0);
-//   }
-// }
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   DIMENSIONMATCH(K.getCols()==1);
-//   //CMatrix K2(K.getRows(), K.getCols());
-//   for(unsigned int i=0; i<X.getRows(); i++)
-//   {
-//     double kval=0.0;
-//     for(unsigned int k=0; k<components.size(); k++)
-//       kval+=components[k]->computeElement(X, i, X2, row);
-//     K.setVal(kval, i, row);
-//   }
-// }
-// void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
-// {
-//   DIMENSIONMATCH(K.rowsMatch(X));
-//   DIMENSIONMATCH(K.getCols()==X2.getRows());
-//   //CMatrix K2(K.getRows(), K.getCols());
-//   for(unsigned int i=0; i<X.getRows(); i++)
-//   {
-//     for(unsigned int j=0; j<X2.getRows(); j++)
-//     {
-//       double kval=0.0;
-//       for(unsigned int k=0; k<components.size(); k++)
-// 	kval+=components[k]->computeElement(X, i, X2, j);
-//       K.setVal(kval, i, j);
-//     }
-//   }
-// }
+// CIP-0013 P4: dispatch to each child's compute and accumulate.
+void CCmpndKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  K.zeros();
+  CMatrix K2(K.getRows(), K.getCols());
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->compute(K2, X);
+    K.axpy(K2, 1.0);
+  }
+  K.setSymmetric(true);
+}
+void CCmpndKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols() == X2.getRows());
+  K.zeros();
+  CMatrix K2(K.getRows(), K.getCols());
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->compute(K2, X, X2);
+    K.axpy(K2, 1.0);
+  }
+}
 void CCmpndKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -1508,22 +1493,63 @@ double CBiasKern::getGradParam(unsigned int index, const CMatrix& X, const CMatr
 }
 
 
+// CIP-0013 P4: Stationary base — bulk compute via distances + K_of_r.
+double CStationaryKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                       const CMatrix& X2, unsigned int index2) const
+{
+  const double r2 = dist2Active(X1, index1, X2, index2);
+  const double r = scaleFactor() * sqrt(r2);
+  return K_of_r(r);
+}
+void CStationaryKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  const double s = scaleFactor();
+  for(unsigned int i = 0; i < K.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < i; j++)
+    {
+      const double r = s * sqrt(dist2Active(X, i, X, j));
+      const double k = K_of_r(r);
+      K.setVal(k, i, j);
+      K.setVal(k, j, i);
+    }
+    K.setVal(diagComputeElement(X, i), i, i);
+  }
+  K.setSymmetric(true);
+}
+void CStationaryKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols() == X2.getRows());
+  const double s = scaleFactor();
+  for(unsigned int i = 0; i < K.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < K.getCols(); j++)
+    {
+      const double r = s * sqrt(dist2Active(X, i, X2, j));
+      K.setVal(K_of_r(r), i, j);
+    }
+  }
+}
+
 // the RBF kernel.
-CRbfKern::CRbfKern() : CKern()
+CRbfKern::CRbfKern() : CStationaryKern()
 {
   _init();
 }
-CRbfKern::CRbfKern(unsigned int inDim) : CKern(inDim)
+CRbfKern::CRbfKern(unsigned int inDim) : CStationaryKern(inDim)
 {
   _init();
   setInputDim(inDim);
 }
-CRbfKern::CRbfKern(const CMatrix& X) : CKern(X)
+CRbfKern::CRbfKern(const CMatrix& X) : CStationaryKern(X)
 {
   _init();
   setInputDim(X.getCols());
 }  
-CRbfKern::CRbfKern(const CRbfKern& kern) : CKern(kern)
+CRbfKern::CRbfKern(const CRbfKern& kern) : CStationaryKern(kern)
 {
   _init();
   setInputDim(kern.getInputDim());
@@ -1628,15 +1654,6 @@ void CRbfKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
 double CRbfKern::getWhite() const
 {
   return 0.0;
-}
-
-double CRbfKern::computeElement(const CMatrix& X1, unsigned int index1, 
-				const CMatrix& X2, unsigned int index2) const
-{
-  double k = dist2Active(X1, index1, X2, index2);
-  k = 0.5*k*inverseWidth;
-  k = variance*exp(-k);
-  return k;
 }
 
 void CRbfKern::updateX(const CMatrix& X)

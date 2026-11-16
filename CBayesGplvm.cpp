@@ -34,7 +34,7 @@ double frobeniusSq(const CMatrix& A)
 
 CBayesGplvm::CBayesGplvm(CKern* kernel, const CMatrix& Yin, unsigned int latDim,
                          unsigned int numInducing, int verbosity)
-  : pkern(kernel), Y(Yin), beta(1.0),
+  : pkern(kernel), ownKern(false), Y(Yin), beta(1.0),
     numData(Yin.getRows()), outputDim(Yin.getCols()),
     latentDim(latDim), numActive(numInducing),
     KupToDate(false)
@@ -48,6 +48,8 @@ CBayesGplvm::CBayesGplvm(CKern* kernel, const CMatrix& Yin, unsigned int latDim,
 
 CBayesGplvm::~CBayesGplvm()
 {
+  if(ownKern)
+    delete pkern;
   // transforms are shared singletons via defaultPositive — do not delete.
 }
 
@@ -436,6 +438,7 @@ void CBayesGplvm::writeParamsToStream(ostream& os) const
   writeToStream(os, "latentDim", latentDim);
   writeToStream(os, "numActive", numActive);
   writeToStream(os, "beta", beta);
+  Y.toStream(os);
   mu.toStream(os);
   S.toStream(os);
   Z.toStream(os);
@@ -456,12 +459,14 @@ void CBayesGplvm::readParamsFromStream(istream& is)
   numActive = readIntFromStream(is, "numActive");
   beta = readDoubleFromStream(is, "beta");
   initStoreage();
+  Y.fromStream(is);
   mu.fromStream(is);
   S.fromStream(is);
   Z.fromStream(is);
-  // Kernel stream is written for completeness; Phase 2 keeps caller-owned pkern.
-  // Consume the kernel block so the stream position advances.
   CKern* loaded = readKernFromStream(is);
-  delete loaded;
+  if(ownKern)
+    delete pkern;
+  pkern = loaded;
+  ownKern = true;
   setKupToDate(false);
 }

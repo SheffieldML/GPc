@@ -1,11 +1,13 @@
-/* Numerical stability suite for GPc (CIP-0019).
+/* Numerical stability suite for GPc (CIP-0019 + CIP-001A).
    Mirrors GPy CIP-0011 contracts: finiteness, accuracy, invariance under
    extreme but representable inputs. Separate from matio reference tests.
 
    Machine-readable lines:
      OUTCOME name=<id> result=passed|failed|xfailed|xpassed
+     METRIC name=<id> category=<cat> value=<float> budget=<float> unit=<rel|abs> cell=<label>
 
    Exit non-zero on unexpected failures or strict XPASS.
+   Metrics are soft during soak (over-budget does not fail the suite alone).
 */
 #include <cmath>
 #include <cstdlib>
@@ -31,9 +33,30 @@ int g_fail = 0;
 int g_xfail = 0;
 int g_xpass = 0;
 
+string cellLabel()
+{
+  const char* env = getenv("GPC_NS_CELL");
+  if(env && env[0] != '\0')
+    return string(env);
+  return "local";
+}
+
 void emit(const string& name, const string& result)
 {
   cout << "OUTCOME name=" << name << " result=" << result << endl;
+}
+
+/* CIP-001A: continuous stability diagnostic (soft during soak). */
+void emitMetric(const string& name, const string& category, double value,
+                double budget, const string& unit)
+{
+  cout << "METRIC name=" << name
+       << " category=" << category
+       << " value=" << value
+       << " budget=" << budget
+       << " unit=" << unit
+       << " cell=" << cellLabel()
+       << endl;
 }
 
 void check(const string& name, bool ok, const string& detail = string())
@@ -250,10 +273,12 @@ int testLinalg()
             s += L.getVal(k, i) * L.getVal(k, j); // columns of upper → A_ij
           recon.setVal(s, i, j);
         }
+      const double reconErr = maxAbsDiff(recon, A);
+      emitMetric("jitChol_well_conditioned_recon", "A_machine", reconErr, 1e-10, "abs");
       ostringstream os;
-      os << "maxAbsDiff=" << maxAbsDiff(recon, A);
+      os << "maxAbsDiff=" << reconErr;
       check("jitChol_well_conditioned",
-            allFinite(L) && maxAbsDiff(recon, A) < 1e-10,
+            allFinite(L) && reconErr < 1e-10,
             os.str());
     }
   }
@@ -407,6 +432,12 @@ int testLinalg()
         for(unsigned int j = 0; j < n; j++)
           resid = max(resid, fabs(R.getVal(i, j) - I.getVal(i, j)));
       const double tol = 100.0 * n * conds[c] * ndlutil::EPS;
+      {
+        ostringstream mname;
+        mname << "pdinv_resid_cond_" << conds[c];
+        // Budget: same order as the outcome gate (cond-scaled eps), soft soak.
+        emitMetric(mname.str(), "B_linalg", resid, tol, "abs");
+      }
       if(resid > tol)
       {
         ok = false;
@@ -423,6 +454,7 @@ int testLinalg()
   {
     const double scales[] = {1e-200, 1e-12, 1e12, 1e200};
     bool ok = true;
+    double maxRel = 0.0;
     for(unsigned int s = 0; s < 4; s++)
     {
       const unsigned int n = 3;
@@ -436,7 +468,9 @@ int testLinalg()
         chol(U, A);
         const double ld = logDet(U);
         const double ref = n * log(scales[s]);
-        if(!finiteVal(ld) || fabs(ld - ref) > 1e-8 * max(1.0, fabs(ref)))
+        const double rel = fabs(ld - ref) / max(1.0, fabs(ref));
+        maxRel = max(maxRel, rel);
+        if(!finiteVal(ld) || rel > 1e-8)
         {
           ok = false;
           break;
@@ -448,6 +482,7 @@ int testLinalg()
         break;
       }
     }
+    emitMetric("logDet_scale_relerr", "A_machine", maxRel, 1e-8, "rel");
     check("logDet_extreme_scales", ok);
   }
 
@@ -466,6 +501,8 @@ int testSpecial()
   const unsigned int nZ = sizeof(Z) / sizeof(Z[0]);
 
   bool lnOk = true, cdfOk = true, gradOk = true, lnConsist = true;
+  double maxLnConsist = 0.0;
+  double maxMillsRel = 0.0;
   for(unsigned int i = 0; i < nZ; i++)
   {
     const double z = Z[i];
@@ -479,18 +516,24 @@ int testSpecial()
     // Consistency only where Phi(z) has digits left in float64.
     if(z >= -5.0 && z <= 5.0)
     {
-      if(fabs(lnc - log(max(cdf, 1e-300))) > 1e-9)
+      const double err = fabs(lnc - log(max(cdf, 1e-300)));
+      maxLnConsist = max(maxLnConsist, err);
+      if(err > 1e-9)
         lnConsist = false;
     }
     // Left-tail mills: φ(z)/Φ(z) ∼ -z as z → -∞.
     if(z < -50.0)
     {
-      if(fabs(g - (-z)) / max(1.0, fabs(z)) > 1e-2)
+      const double rel = fabs(g - (-z)) / max(1.0, fabs(z));
+      maxMillsRel = max(maxMillsRel, rel);
+      if(rel > 1e-2)
         gradOk = false;
     }
     if(!finiteVal(g))
       gradOk = false;
   }
+  emitMetric("lnCumGaussian_log_cdf_abserr", "C_special", maxLnConsist, 1e-9, "abs");
+  emitMetric("gradLnCumGaussian_mills_relerr", "C_special", maxMillsRel, 1e-2, "rel");
   check("lnCumGaussian_finite_wide_range", lnOk);
   check("lnCumGaussian_matches_log_cdf_moderate", lnConsist);
   check("cumGaussian_in_unit_interval", cdfOk);
@@ -693,6 +736,12 @@ int testKernels()
       ostringstream os;
       os << "rbf_translation_offset_" << offsets[oi];
       const string name = os.str();
+      const double budget = (offsets[oi] <= 1e3) ? 1e-8 : 1e-6;
+      {
+        ostringstream mname;
+        mname << "rbf_translation_dK_" << offsets[oi];
+        emitMetric(mname.str(), "E_invariance", diff, budget, "abs");
+      }
       if(offsets[oi] <= 1e3)
         check(name, diff < 1e-8);
       else if(diff >= 1e-6)
@@ -817,8 +866,10 @@ int testModels()
     CGp b(&kernB, &noiseB, &Xb, CGp::FTC, 0, 0);
     b.setBetaVal(100.0);
     b.setVerbosity(0);
-    check("input_rescaling_invariance",
-          fabs(b.logLikelihood() - llA) < 1e-8 * max(1.0, fabs(llA)));
+    const double llDiff = fabs(b.logLikelihood() - llA);
+    const double llScale = max(1.0, fabs(llA));
+    emitMetric("input_rescale_ll_relerr", "E_invariance", llDiff / llScale, 1e-8, "rel");
+    check("input_rescaling_invariance", llDiff < 1e-8 * llScale);
   }
 
   // Extreme hyperparameters: finite LL/grad + FD agreement.
@@ -834,6 +885,7 @@ int testModels()
     };
     bool ok = true;
     string detail;
+    double maxFdRel = 0.0;
     for(unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
     {
       RegGp gp;
@@ -847,6 +899,7 @@ int testModels()
         break;
       }
       const double rel = fdGradCheckMaxRel(*gp.model);
+      maxFdRel = max(maxFdRel, rel);
       if(rel > 5e-3)
       {
         ok = false;
@@ -856,6 +909,7 @@ int testModels()
         break;
       }
     }
+    emitMetric("fd_grad_extreme_hp_relerr", "D_fd", maxFdRel, 5e-3, "rel");
     check("gradients_extreme_hyperparameters", ok, detail);
   }
 
@@ -884,7 +938,11 @@ int testModels()
     model.setBetaVal(100.0);
     model.setVerbosity(0);
     check("exp_kernel_gp_duplicates_finite", gpAllFinite(model));
-    check("exp_kernel_gp_duplicates_grad", fdGradCheckMaxRel(model) < 5e-3);
+    {
+      const double rel = fdGradCheckMaxRel(model);
+      emitMetric("fd_grad_exp_dup_relerr", "D_fd", rel, 5e-3, "rel");
+      check("exp_kernel_gp_duplicates_grad", rel < 5e-3);
+    }
   }
 
   // Sparse: coincident inducing; inducing = X recovers exact (approx).
@@ -914,6 +972,11 @@ int testModels()
     const double llS = sparse.logLikelihood();
     const double llE = exact.model->logLikelihood();
     const bool finite = finiteVal(llS) && finiteVal(llE);
+    const double gap = (finite && fabs(llE) > 0.0)
+                       ? fabs(llS - llE) / max(1.0, fabs(llE))
+                       : (finite ? fabs(llS - llE) : numeric_limits<double>::quiet_NaN());
+    if(finiteVal(gap))
+      emitMetric("fitc_ZeqX_ll_relgap", "F_model", gap, 1e-4, "rel");
     const bool close = finite && fabs(llS - llE) < 1e-4 * max(1.0, fabs(llE));
     if(finite && !close)
     {

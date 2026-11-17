@@ -72,6 +72,8 @@ qig Categories A–G stay as inspiration. GPc uses GP-shaped names with the same
 
 Budgets are **starting points** documented with a one-line error-source note (as in qig), not aspirational machine precision. Tighten only with analysis; never hide a bug by loosening (qig CIP-0004 policy).
 
+**Do not** copy OUTCOME cliff tolerances into `emitMetric` — cliffs detect NaN / gross failure; metric budgets track the category error mechanism above. Derived overrides (e.g. mills `O(1/z²)`, extreme-HP FD) must state the mechanism in a one-line comment.
+
 ### Metric record schema
 
 Machine-readable line (alongside existing `OUTCOME`):

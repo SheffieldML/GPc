@@ -59,6 +59,31 @@ void emitMetric(const string& name, const string& category, double value,
        << endl;
 }
 
+/*
+ * Metric budgets follow CIP-001A category error sources — not OUTCOME cliffs.
+ * Outcome gates may stay looser (NaN / gross failure). Soft soak flags util.
+ *
+ *   A_machine     rtol 1e-14 / atol 1e-15   (fp roundoff)
+ *   B_linalg      O(n κ ε)                  (LAPACK residual; floor atol 1e-13)
+ *   C_special     rtol 1e-10 / atol 1e-12   (special-fn; mills uses asymptote)
+ *   D_analytic    rtol 1e-8 / atol 1e-9
+ *   D_fd          rtol/atol 1e-5            (FD vs analytic; extreme HP derived)
+ *   E_invariance  atol 1e-8 … 1e-6          (modest → large shared offset)
+ *   F_model       rtol 1e-4 / atol 1e-5
+ */
+const double BUDGET_A_ATOL = 1e-15;
+const double BUDGET_A_RTOL = 1e-14;
+const double BUDGET_B_ATOL = 1e-13;
+const double BUDGET_C_RTOL = 1e-10;  /* also used as abs budget in log-space */
+const double BUDGET_D_FD = 1e-5;
+/* Extreme-HP landscape: FD step 1e-6 + ill κ → ~1e-4 observed; derived, not cliff. */
+const double BUDGET_D_FD_EXTREME = 1e-3;
+const double BUDGET_E_MODEST = 1e-8;
+const double BUDGET_E_LARGE = 1e-6;
+const double BUDGET_F_RTOL = 1e-4;
+/* mills: φ/Φ ∼ -z with remainder O(1/z^2); probes use z < -50 → ~4e-4. */
+const double BUDGET_MILLS_ASYMPTOTE = 1e-4;
+
 void check(const string& name, bool ok, const string& detail = string())
 {
   if(ok)
@@ -274,7 +299,9 @@ int testLinalg()
           recon.setVal(s, i, j);
         }
       const double reconErr = maxAbsDiff(recon, A);
-      emitMetric("jitChol_well_conditioned_recon", "A_machine", reconErr, 1e-10, "abs");
+      // A_machine: unit-scale SPD reconstruct is O(ε); category atol.
+      emitMetric("jitChol_well_conditioned_recon", "A_machine", reconErr,
+                 BUDGET_A_ATOL, "abs");
       ostringstream os;
       os << "maxAbsDiff=" << reconErr;
       check("jitChol_well_conditioned",
@@ -431,18 +458,20 @@ int testLinalg()
       for(unsigned int i = 0; i < n; i++)
         for(unsigned int j = 0; j < n; j++)
           resid = max(resid, fabs(R.getVal(i, j) - I.getVal(i, j)));
-      const double tol = 100.0 * n * conds[c] * ndlutil::EPS;
+      // Outcome cliff keeps a generous fudge; metric budget is the LAPACK-scale
+      // B_linalg bound O(n κ ε) with category atol floor (CIP-001A).
+      const double outcomeTol = 100.0 * n * conds[c] * ndlutil::EPS;
+      const double metricBudget = max(BUDGET_B_ATOL, n * conds[c] * ndlutil::EPS);
       {
         ostringstream mname;
         mname << "pdinv_resid_cond_" << conds[c];
-        // Budget: same order as the outcome gate (cond-scaled eps), soft soak.
-        emitMetric(mname.str(), "B_linalg", resid, tol, "abs");
+        emitMetric(mname.str(), "B_linalg", resid, metricBudget, "abs");
       }
-      if(resid > tol)
+      if(resid > outcomeTol)
       {
         ok = false;
         ostringstream os;
-        os << "resid=" << resid << " tol=" << tol << " cond=" << conds[c];
+        os << "resid=" << resid << " tol=" << outcomeTol << " cond=" << conds[c];
         detail = os.str();
         break;
       }
@@ -482,7 +511,8 @@ int testLinalg()
         break;
       }
     }
-    emitMetric("logDet_scale_relerr", "A_machine", maxRel, 1e-8, "rel");
+    // A_machine: logDet on scaled I should track n log(s) to ~machine rtol.
+    emitMetric("logDet_scale_relerr", "A_machine", maxRel, BUDGET_A_RTOL, "rel");
     check("logDet_extreme_scales", ok);
   }
 
@@ -532,8 +562,11 @@ int testSpecial()
     if(!finiteVal(g))
       gradOk = false;
   }
-  emitMetric("lnCumGaussian_log_cdf_abserr", "C_special", maxLnConsist, 1e-9, "abs");
-  emitMetric("gradLnCumGaussian_mills_relerr", "C_special", maxMillsRel, 1e-2, "rel");
+  // C_special rtol as abs in log-space (Φ digits → log agreement).
+  emitMetric("lnCumGaussian_log_cdf_abserr", "C_special", maxLnConsist,
+             BUDGET_C_RTOL, "abs");
+  emitMetric("gradLnCumGaussian_mills_relerr", "C_special", maxMillsRel,
+             BUDGET_MILLS_ASYMPTOTE, "rel");
   check("lnCumGaussian_finite_wide_range", lnOk);
   check("lnCumGaussian_matches_log_cdf_moderate", lnConsist);
   check("cumGaussian_in_unit_interval", cdfOk);
@@ -736,7 +769,7 @@ int testKernels()
       ostringstream os;
       os << "rbf_translation_offset_" << offsets[oi];
       const string name = os.str();
-      const double budget = (offsets[oi] <= 1e3) ? 1e-8 : 1e-6;
+      const double budget = (offsets[oi] <= 1e3) ? BUDGET_E_MODEST : BUDGET_E_LARGE;
       {
         ostringstream mname;
         mname << "rbf_translation_dK_" << offsets[oi];
@@ -868,7 +901,9 @@ int testModels()
     b.setVerbosity(0);
     const double llDiff = fabs(b.logLikelihood() - llA);
     const double llScale = max(1.0, fabs(llA));
-    emitMetric("input_rescale_ll_relerr", "E_invariance", llDiff / llScale, 1e-8, "rel");
+    // Same modest invariance scale as CIP-001A E_invariance (rel on LL).
+    emitMetric("input_rescale_ll_relerr", "E_invariance", llDiff / llScale,
+               BUDGET_E_MODEST, "rel");
     check("input_rescaling_invariance", llDiff < 1e-8 * llScale);
   }
 
@@ -909,7 +944,8 @@ int testModels()
         break;
       }
     }
-    emitMetric("fd_grad_extreme_hp_relerr", "D_fd", maxFdRel, 5e-3, "rel");
+    emitMetric("fd_grad_extreme_hp_relerr", "D_fd", maxFdRel,
+               BUDGET_D_FD_EXTREME, "rel");
     check("gradients_extreme_hyperparameters", ok, detail);
   }
 
@@ -940,7 +976,7 @@ int testModels()
     check("exp_kernel_gp_duplicates_finite", gpAllFinite(model));
     {
       const double rel = fdGradCheckMaxRel(model);
-      emitMetric("fd_grad_exp_dup_relerr", "D_fd", rel, 5e-3, "rel");
+      emitMetric("fd_grad_exp_dup_relerr", "D_fd", rel, BUDGET_D_FD, "rel");
       check("exp_kernel_gp_duplicates_grad", rel < 5e-3);
     }
   }
@@ -975,8 +1011,9 @@ int testModels()
     const double gap = (finite && fabs(llE) > 0.0)
                        ? fabs(llS - llE) / max(1.0, fabs(llE))
                        : (finite ? fabs(llS - llE) : numeric_limits<double>::quiet_NaN());
+    // F_model aspirational closeness; over-budget while xfail remains.
     if(finiteVal(gap))
-      emitMetric("fitc_ZeqX_ll_relgap", "F_model", gap, 1e-4, "rel");
+      emitMetric("fitc_ZeqX_ll_relgap", "F_model", gap, BUDGET_F_RTOL, "rel");
     const bool close = finite && fabs(llS - llE) < 1e-4 * max(1.0, fabs(llE));
     if(finite && !close)
     {

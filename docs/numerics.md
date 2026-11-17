@@ -10,8 +10,10 @@ Decisions that keep the matio reference suite trustworthy against MATLAB-era fix
 Separate from matio fixtures: `make run-numerical-stability` builds and runs
 `numerical_stability/testNumericalStability`. Contracts are finiteness,
 accuracy, and invariance under extreme inputs (GPy CIP-0011 sibling). CI:
-`.github/workflows/numerical-stability.yml`. Cross-branch outcome diff:
-`python3 numerical_stability/compare.py`. Strict xfails are listed in CIP-0019.
+`.github/workflows/numerical-stability.yml` publishes a Codecov-style report
+(job summary, artifact, sticky PR comment via `report.py`). Cross-branch
+outcome diff: `python3 numerical_stability/compare.py`. Strict xfails are
+listed in CIP-0019.
 
 Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimisers.md).
 

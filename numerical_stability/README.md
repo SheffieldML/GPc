@@ -42,15 +42,20 @@ during soak (does not fail the suite alone).
 
 ## Categories (CIP-001A)
 
-| Category | Budget idea | Typical probes |
-|----------|-------------|----------------|
-| `A_machine` | ~1e-14 / 1e-8 rel | Cholesky reconstruct; `logDet` scales |
-| `B_linalg` | cond-scaled eps | `pdinv` residual vs condition |
-| `C_special` | 1e-9 … 1e-2 | `lnCumGaussian` / mills asymptote |
-| `D_analytic` | 1e-8 | kernel consistency (when instrumented) |
-| `D_fd` | 5e-3 rel | FD vs analytic hyperparameter grads |
-| `E_invariance` | 1e-8 … 1e-6 | translation ΔK; input-rescale LL |
-| `F_model` | 1e-4 rel | FITC Z=X LL gap |
+Metric budgets follow the CIP-001A **error-source** table — they are **not** the
+OUTCOME pass/fail cliffs (those stay looser on purpose).
+
+| Category | Metric budget | Error source |
+|----------|---------------|--------------|
+| `A_machine` | rtol 1e-14 / atol 1e-15 | fp roundoff |
+| `B_linalg` | `max(1e-13, n κ ε)` | LAPACK residual |
+| `C_special` | rtol 1e-10 (log abs); mills `O(1/z²)` → 1e-4 | special fn / asymptote |
+| `D_analytic` | rtol 1e-8 / atol 1e-9 | analytic identity |
+| `D_fd` | 1e-5; extreme HP derived 1e-3 | FD step + landscape κ |
+| `E_invariance` | atol 1e-8 … 1e-6 | modest → large shared offset |
+| `F_model` | rtol 1e-4 | model approximation gap |
+
+Named constants live next to `emitMetric` in `testNumericalStability.cpp`.
 
 ## Report (Codecov-style)
 

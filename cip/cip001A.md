@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-17"
 id: "001A"
 last_updated: "2026-11-17"
-status: "Proposed"
+status: "Implemented"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0019", "0013"]
@@ -24,9 +24,9 @@ title: "Categorised numerical stability metrics and baseline trend (qig-style)"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -206,12 +206,12 @@ If Accept wants a durable principle beyond REQ-0002: add `requirements/req000D_n
 
 ## Implementation Status
 
-- [ ] Categories + budgets documented; emit `METRIC` from suite
-- [ ] `report.py` / `metrics.json`
-- [ ] CI baseline artifact on `main` + PR compare
-- [ ] Sticky comment trend table
-- [ ] Fixture tests for metric classify
-- [ ] Soak policy recorded; hard-gate decision
+- [x] Categories + budgets documented; emit `METRIC` from suite
+- [x] `report.py` / `metrics.json`
+- [x] CI baseline artifact on `main` + PR compare
+- [x] Sticky comment trend table
+- [x] Fixture tests for metric classify
+- [ ] Soak policy recorded; hard-gate decision (soft soak active; `--hard-gate` optional)
 
 ## References
 

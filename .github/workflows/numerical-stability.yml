@@ -35,14 +35,19 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pull-requests: write
 
 jobs:
   # CIP-0019: separate from matio Reference tests. One Ubuntu cell.
   # Strict xfail: unexpected passes (xpassed) fail the job.
+  # CIP-001A: METRIC stream + metrics.json baseline artifact + PR trend.
   # Report: job summary + artifact + sticky PR comment (Codecov-like).
   numerical-stability:
     runs-on: ubuntu-latest
+    env:
+      GPC_NS_CELL: ubuntu-openblas
+      GPC_NS_BLAS: openblas
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,6 +85,7 @@ jobs:
           python3 numerical_stability/report.py numerical_stability/suite.log \
             --md numerical_stability/report.md \
             --json numerical_stability/outcomes.json \
+            --metrics-json numerical_stability/metrics.json \
             --ref "${{ github.sha }}" \
             --github-summary
 
@@ -88,6 +94,7 @@ jobs:
         run: |
           python3 numerical_stability/test_compare.py
           python3 numerical_stability/test_report.py
+          python3 numerical_stability/test_compare_metrics.py
 
       - name: Upload report artifact
         if: always() && hashFiles('numerical_stability/report.md') != ''
@@ -97,8 +104,72 @@ jobs:
           path: |
             numerical_stability/report.md
             numerical_stability/outcomes.json
+            numerical_stability/metrics.json
             numerical_stability/suite.log
           retention-days: 30
+
+      # CIP-001A: pin baseline from green main runs (same cell label).
+      - name: Upload main metrics baseline
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: numerical-stability-metrics-main
+          path: numerical_stability/metrics.json
+          retention-days: 90
+
+      - name: Fetch main metrics baseline
+        if: always() && github.event_name == 'pull_request' && hashFiles('numerical_stability/metrics.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p numerical_stability/baseline
+          # Cross-run: latest successful main workflow that uploaded the baseline artifact.
+          RUN_ID=$(gh run list \
+            --workflow=numerical-stability.yml \
+            --branch=main \
+            --status=success \
+            --limit=30 \
+            --json databaseId \
+            --jq '.[0].databaseId' || true)
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "No successful main run yet — trend will note empty baseline"
+            exit 0
+          fi
+          # Walk recent runs until the metrics-main artifact is found.
+          for id in $(gh run list \
+            --workflow=numerical-stability.yml \
+            --branch=main \
+            --status=success \
+            --limit=30 \
+            --json databaseId \
+            --jq '.[].databaseId'); do
+            if gh run download "$id" \
+              -n numerical-stability-metrics-main \
+              -D numerical_stability/baseline 2>/dev/null; then
+              echo "Downloaded baseline from run $id"
+              exit 0
+            fi
+          done
+          echo "No numerical-stability-metrics-main artifact on recent main runs"
+
+      - name: Compare metrics vs main baseline
+        if: always() && github.event_name == 'pull_request' && hashFiles('numerical_stability/metrics.json') != ''
+        run: |
+          BASE=numerical_stability/baseline/metrics.json
+          python3 numerical_stability/compare_metrics.py \
+            "$BASE" numerical_stability/metrics.json \
+            --md numerical_stability/trend.md \
+            --baseline-ref main \
+            --head-ref "${{ github.sha }}" \
+            || true
+          if [ -f numerical_stability/trend.md ]; then
+            echo "" >> numerical_stability/report.md
+            cat numerical_stability/trend.md >> numerical_stability/report.md
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              cat numerical_stability/trend.md >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
       - name: Comment report on PR
         if: always() && github.event_name == 'pull_request' && hashFiles('numerical_stability/report.md') != ''

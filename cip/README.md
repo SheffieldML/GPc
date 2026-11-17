@@ -37,7 +37,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0017](./cip0017.md): Psi statistics and Bayesian GP-LVM, GPy-parity subset (**Implemented**). Implements [REQ-000B](../requirements/req000B_bayesian-gplvm-psi.md). CLI: `./bgplvm`.
 - [CIP-0018](./cip0018.md): Manifold Relevance Determination, GPy-parity subset (**In Progress** — code + tutorial docs; GPy fixture gate open). Implements [REQ-000C](../requirements/req000C_manifold-relevance-determination.md). `CMrd` + `testMrd` / `demo_mrd`; see [docs/tutorials/mrd.md](../docs/tutorials/mrd.md).
 - [CIP-0019](./cip0019.md): Numerical stability suite, separate from matio reference tests (**Implemented** — close after CI). Mirrors GPy CIP-0011; see `numerical_stability/`.
-- [CIP-001A](./cip001A.md): Categorised numerical stability metrics and baseline trend (**Implemented**). qig-style budgets + Codecov-like Δ vs `main` metrics; extends CIP-0019.
+- [CIP-001A](./cip001A.md): Categorised numerical stability metrics and baseline trend (**Closed**). qig-style budgets + Codecov-like Δ vs `main` metrics; extends CIP-0019.
 
 ## Creating a Good CIP
 

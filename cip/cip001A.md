@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-17"
 id: "001A"
 last_updated: "2026-11-17"
-status: "Implemented"
+status: "Closed"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0019", "0013"]
@@ -27,7 +27,7 @@ title: "Categorised numerical stability metrics and baseline trend (qig-style)"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
@@ -71,6 +71,8 @@ qig Categories A–G stay as inspiration. GPc uses GP-shaped names with the same
 | `F_model` | F | rtol 1e-4 / atol 1e-5 | sparse inducing≈X LL gap; predictive variance floor |
 
 Budgets are **starting points** documented with a one-line error-source note (as in qig), not aspirational machine precision. Tighten only with analysis; never hide a bug by loosening (qig CIP-0004 policy).
+
+**Do not** copy OUTCOME cliff tolerances into `emitMetric` — cliffs detect NaN / gross failure; metric budgets track the category error mechanism above. Derived overrides (e.g. mills `O(1/z²)`, extreme-HP FD) must state the mechanism in a one-line comment.
 
 ### Metric record schema
 
@@ -211,7 +213,8 @@ If Accept wants a durable principle beyond REQ-0002: add `requirements/req000D_n
 - [x] CI baseline artifact on `main` + PR compare
 - [x] Sticky comment trend table
 - [x] Fixture tests for metric classify
-- [ ] Soak policy recorded; hard-gate decision (soft soak active; `--hard-gate` optional)
+- [x] Soak policy recorded; hard-gate decision (soft soak active; `--hard-gate` optional)
+- [x] Metric budgets follow category error sources (not OUTCOME cliffs); landed after #65 merge
 
 ## References
 

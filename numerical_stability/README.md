@@ -28,6 +28,22 @@ OUTCOME name=<id> result=passed|failed|xfailed|xpassed
 
 Exit code is non-zero on `failed` or `xpassed`.
 
+## Report (Codecov-style)
+
+CI captures the suite log and renders a markdown + JSON report:
+
+```bash
+make run-numerical-stability 2>&1 | tee numerical_stability/suite.log
+python3 numerical_stability/report.py numerical_stability/suite.log
+```
+
+On GitHub Actions the workflow also:
+
+1. Writes the markdown into the **job summary**
+2. Uploads `report.md` / `outcomes.json` / `suite.log` as the
+   `numerical-stability-report` artifact
+3. Posts or updates a **sticky PR comment** with the same summary
+
 ## Cross-branch comparison
 
 Same suite source → two trees → outcome diff:

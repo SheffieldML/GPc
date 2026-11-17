@@ -114,3 +114,11 @@ benchGPc
 demo_bayes_gplvm
 demo_mrd
 bgplvm
+testNumericalStability
+
+# CIP-0019 numerical stability generated reports
+numerical_stability/suite.log
+numerical_stability/report.md
+numerical_stability/outcomes.json
+numerical_stability/last-compare.md
+numerical_stability/__pycache__/

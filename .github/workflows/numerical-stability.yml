@@ -33,9 +33,14 @@ on:
       - '.github/workflows/numerical-stability.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   # CIP-0019: separate from matio Reference tests. One Ubuntu cell.
   # Strict xfail: unexpected passes (xpassed) fail the job.
+  # Report: job summary + artifact + sticky PR comment (Codecov-like).
   numerical-stability:
     runs-on: ubuntu-latest
     steps:
@@ -55,8 +60,68 @@ jobs:
       - name: Configure platform make fragment
         run: rm -f make.inc
 
-      - name: Build and run numerical stability suite
-        run: make run-numerical-stability
+      - name: Build numerical stability suite
+        run: make testNumericalStability
 
-      - name: Compare outcome-matrix unit tests
-        run: python3 numerical_stability/test_compare.py
+      - name: Run suite and capture log
+        id: suite
+        run: |
+          set +e
+          ./testNumericalStability > numerical_stability/suite.log 2>&1
+          status=$?
+          set -e
+          cat numerical_stability/suite.log
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Render report
+        if: always() && hashFiles('numerical_stability/suite.log') != ''
+        run: |
+          python3 numerical_stability/report.py numerical_stability/suite.log \
+            --md numerical_stability/report.md \
+            --json numerical_stability/outcomes.json \
+            --ref "${{ github.sha }}" \
+            --github-summary
+
+      - name: Report / compare unit tests
+        if: always()
+        run: |
+          python3 numerical_stability/test_compare.py
+          python3 numerical_stability/test_report.py
+
+      - name: Upload report artifact
+        if: always() && hashFiles('numerical_stability/report.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: numerical-stability-report
+          path: |
+            numerical_stability/report.md
+            numerical_stability/outcomes.json
+            numerical_stability/suite.log
+          retention-days: 30
+
+      - name: Comment report on PR
+        if: always() && github.event_name == 'pull_request' && hashFiles('numerical_stability/report.md') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('numerical_stability/report.md', 'utf8');
+            const marker = '<!-- cip0019-numerical-stability-report -->';
+            const header = marker + '\n';
+            const full = header + body;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body: full
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body: full
+              });
+            }

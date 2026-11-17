@@ -118,6 +118,16 @@ run-bgplvm-smoke: bgplvm
 	chmod +x scripts/smoke_bgplvm.sh
 	./scripts/smoke_bgplvm.sh
 
+# CIP-0019: adversarial / extreme-input numerical stability (separate from matio-tests).
+testNumericalStability: numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testNumericalStability numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+numerical_stability/testNumericalStability.o: numerical_stability/testNumericalStability.cpp CGp.h CKern.h CMatrix.h CNoise.h
+	$(CC) -c numerical_stability/testNumericalStability.cpp -o numerical_stability/testNumericalStability.o $(CCFLAGS)
+
+run-numerical-stability: testNumericalStability
+	./testNumericalStability
+
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testDist testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

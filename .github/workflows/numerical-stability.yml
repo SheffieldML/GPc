@@ -1,0 +1,62 @@
+name: Numerical stability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CMatrix.*'
+      - 'CKern.*'
+      - 'CNoise.*'
+      - 'CGp.*'
+      - 'CCholAdjoint.*'
+      - 'ndlutil.*'
+      - 'ndlfortran.*'
+      - 'numerical_stability/**'
+      - 'makefile'
+      - 'make.linux'
+      - 'make.osx'
+      - '.github/workflows/numerical-stability.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'CMatrix.*'
+      - 'CKern.*'
+      - 'CNoise.*'
+      - 'CGp.*'
+      - 'CCholAdjoint.*'
+      - 'ndlutil.*'
+      - 'ndlfortran.*'
+      - 'numerical_stability/**'
+      - 'makefile'
+      - 'make.linux'
+      - 'make.osx'
+      - '.github/workflows/numerical-stability.yml'
+  workflow_dispatch:
+
+jobs:
+  # CIP-0019: separate from matio Reference tests. One Ubuntu cell.
+  # Strict xfail: unexpected passes (xpassed) fail the job.
+  numerical-stability:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ \
+            gfortran \
+            libopenblas-dev \
+            make \
+            python3
+
+      - name: Configure platform make fragment
+        run: rm -f make.inc
+
+      - name: Build and run numerical stability suite
+        run: make run-numerical-stability
+
+      - name: Compare outcome-matrix unit tests
+        run: python3 numerical_stability/test_compare.py

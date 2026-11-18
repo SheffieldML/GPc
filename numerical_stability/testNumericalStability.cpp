@@ -33,12 +33,44 @@ int g_fail = 0;
 int g_xfail = 0;
 int g_xpass = 0;
 
-string cellLabel()
+/* CIP-0012 sparse algebra mode for the suite (default: stable). */
+string sparseLinalgModeName()
+{
+  const char* env = getenv("GPC_SPARSE_LINALG");
+  if(!env || env[0] == '\0')
+    return "stable";
+  const string v(env);
+  if(v == "stable" || v == "StableFactor" || v == "1")
+    return "stable";
+  if(v == "legacy" || v == "Legacy" || v == "0")
+    return "legacy";
+  cerr << "warning: unknown GPC_SPARSE_LINALG=" << v
+       << " (use stable|legacy); defaulting to stable" << endl;
+  return "stable";
+}
+
+bool sparseLinalgWantStable()
+{
+  return sparseLinalgModeName() == "stable";
+}
+
+void applySparseMode(CGp& model)
+{
+  model.setStableSparseLinalg(sparseLinalgWantStable());
+}
+
+string cellBaseLabel()
 {
   const char* env = getenv("GPC_NS_CELL");
   if(env && env[0] != '\0')
     return string(env);
   return "local";
+}
+
+/* Cell includes sparse mode so dual-run metrics.json files differ by label. */
+string cellLabel()
+{
+  return cellBaseLabel() + "+" + sparseLinalgModeName();
 }
 
 void emit(const string& name, const string& result)
@@ -83,6 +115,9 @@ const double BUDGET_E_LARGE = 1e-6;
 const double BUDGET_F_RTOL = 1e-4;
 /* mills: φ/Φ ∼ -z with remainder O(1/z^2); probes use z < -50 → ~4e-4. */
 const double BUDGET_MILLS_ASYMPTOTE = 1e-4;
+/* Dual-path Legacy vs StableFactor agreement (matches testCGp soak tols). */
+const double BUDGET_DUAL_LL = 1e-6;
+const double BUDGET_DUAL_GRAD = 1e-5;
 
 void check(const string& name, bool ok, const string& detail = string())
 {
@@ -820,6 +855,7 @@ struct RegGp
         Xu.copyRowRow(i, X, i % X.getRows());
       model->setInducingVals(Xu);
       model->setInducingFixed(true);
+      applySparseMode(*model);
     }
     model->setBetaVal(100.0);
     model->setVerbosity(0);
@@ -827,6 +863,165 @@ struct RegGp
 
   ~RegGp() { delete model; }
 };
+
+/* Evaluate LL+grads under an explicit sparse algebra mode (catch throws). */
+bool trySparseMode(CGp& model, bool stable, double& ll, double& fdRel, string& err)
+{
+  ll = numeric_limits<double>::quiet_NaN();
+  fdRel = numeric_limits<double>::infinity();
+  err.clear();
+  try
+  {
+    model.setStableSparseLinalg(stable);
+    if(!gpAllFinite(model))
+    {
+      err = "nonfinite";
+      return false;
+    }
+    ll = model.logLikelihood();
+    if(!finiteVal(ll))
+    {
+      err = "nonfinite_ll";
+      return false;
+    }
+    fdRel = fdGradCheckMaxRel(model);
+    if(!finiteVal(fdRel))
+    {
+      err = "nonfinite_fd";
+      return false;
+    }
+    return true;
+  }
+  catch(ndlexceptions::Error& e)
+  {
+    err = e.getMessage();
+    return false;
+  }
+  catch(...)
+  {
+    err = "unknown";
+    return false;
+  }
+}
+
+/* In-process Legacy vs StableFactor LL/grad gap (independent of suite mode). */
+void dualPathGaps(CGp& model, const string& tag)
+{
+  model.setStableSparseLinalg(false);
+  const double llL = model.logLikelihood();
+  CMatrix gL(1, model.getOptNumParams());
+  const bool gradLOk = finiteVal(model.logLikelihoodGradient(gL));
+
+  model.setStableSparseLinalg(true);
+  const double llS = model.logLikelihood();
+  CMatrix gS(1, model.getOptNumParams());
+  const bool gradSOk = finiteVal(model.logLikelihoodGradient(gS));
+
+  // Restore suite mode for any later use of this model.
+  applySparseMode(model);
+
+  const double llGap = (finiteVal(llL) && finiteVal(llS)) ? fabs(llL - llS)
+                                                          : numeric_limits<double>::quiet_NaN();
+  double gGap = 0.0;
+  bool gFinite = gradLOk && gradSOk;
+  if(gFinite)
+  {
+    for(unsigned int i = 0; i < gL.getCols(); i++)
+    {
+      if(!finiteVal(gL.getVal(i)) || !finiteVal(gS.getVal(i)))
+      {
+        gFinite = false;
+        break;
+      }
+      gGap = max(gGap, fabs(gL.getVal(i) - gS.getVal(i)));
+    }
+  }
+  else
+    gGap = numeric_limits<double>::quiet_NaN();
+
+  if(finiteVal(llGap))
+    emitMetric(tag + "_legacy_stable_ll_absdiff", "F_model", llGap, BUDGET_DUAL_LL, "abs");
+  if(finiteVal(gGap))
+    emitMetric(tag + "_legacy_stable_grad_maxabs", "D_fd", gGap, BUDGET_DUAL_GRAD, "abs");
+
+  ostringstream detail;
+  detail << "llL=" << llL << " llS=" << llS << " llGap=" << llGap << " gGap=" << gGap;
+  check(tag + "_legacy_stable_agree",
+        finiteVal(llGap) && llGap < 1e-5 && gFinite && gGap < 1e-4,
+        detail.str());
+}
+
+/*
+ * Stress both modes on one model (ignores GPC_SPARSE_LINALG).
+ * Stable must stay finite. If Legacy throws/nonfinite while Stable holds,
+ * record sparse_*_legacy_breaks_stable_ok (CIP-0013-style win). If both
+ * survive, require Stable FD error not worse than Legacy (within 10%).
+ */
+void stressBothModes(CGp& model, const string& tag)
+{
+  double llL = 0.0, llS = 0.0, fdL = 0.0, fdS = 0.0;
+  string errL, errS;
+  const bool okL = trySparseMode(model, false, llL, fdL, errL);
+  const bool okS = trySparseMode(model, true, llS, fdS, errS);
+  applySparseMode(model);
+
+  check(tag + "_stress_stable_finite", okS,
+        okS ? string() : ("stable: " + errS));
+
+  if(!okL && okS)
+  {
+    check(tag + "_legacy_breaks_stable_ok", true,
+          "legacy: " + errL + " (StableFactor finite)");
+    emitMetric(tag + "_stress_legacy_failed", "F_model", 1.0, 0.5, "abs");
+    emitMetric(tag + "_stress_stable_failed", "F_model", 0.0, 0.5, "abs");
+    return;
+  }
+
+  emitMetric(tag + "_stress_legacy_failed", "F_model", okL ? 0.0 : 1.0, 0.5, "abs");
+  emitMetric(tag + "_stress_stable_failed", "F_model", okS ? 0.0 : 1.0, 0.5, "abs");
+
+  if(okL && okS)
+  {
+    emitMetric(tag + "_stress_fd_relerr_legacy", "D_fd", fdL, BUDGET_D_FD_EXTREME, "rel");
+    emitMetric(tag + "_stress_fd_relerr_stable", "D_fd", fdS, BUDGET_D_FD_EXTREME, "rel");
+    const double llGap = fabs(llL - llS);
+    emitMetric(tag + "_stress_ll_absdiff", "F_model", llGap, 5e-6, "abs");
+    // StableFactor must not be materially worse than Legacy on FD.
+    check(tag + "_stress_stable_fd_not_worse",
+          fdS <= fdL * 1.1 + 1e-12,
+          "fdL=" + to_string(fdL) + " fdS=" + to_string(fdS));
+  }
+}
+
+/* CIP-0013-style protocol data: X~U[-3,3]^q, y=sum sin + noise. */
+void fillProtocol(CMatrix& X, CMatrix& Y, CMatrix& Xu,
+                  unsigned int n, unsigned int q, unsigned int m, unsigned seed)
+{
+  unsigned state = seed ? seed : 13u;
+  auto urand = [&state]() {
+    state = 1664525u * state + 1013904223u;
+    return state / 4294967296.0;
+  };
+  for(unsigned int i = 0; i < n; i++)
+  {
+    double y = 0.0;
+    for(unsigned int d = 0; d < q; d++)
+    {
+      const double x = -3.0 + 6.0 * urand();
+      X.setVal(x, i, d);
+      y += sin(x);
+    }
+    y += 0.1 * (-1.0 + 2.0 * urand());
+    Y.setVal(y, i, 0);
+  }
+  for(unsigned int i = 0; i < m; i++)
+  {
+    const unsigned int idx = (i * 997u + 13u) % n;
+    for(unsigned int d = 0; d < q; d++)
+      Xu.setVal(X.getVal(idx, d), i, d);
+  }
+}
+
 
 int testModels()
 {
@@ -1006,6 +1201,7 @@ int testModels()
     CGp sparse(&kern, &noise, &exact.X, CGp::FITC, 30, 0);
     sparse.setInducingVals(exact.X);
     sparse.setInducingFixed(true);
+    applySparseMode(sparse);
     sparse.setBetaVal(100.0);
     sparse.setVerbosity(0);
     exact.model->setBetaVal(100.0);
@@ -1038,6 +1234,207 @@ int testModels()
     check("sparse_fitc_extreme_short_ls", gpAllFinite(*sp.model));
     sp.kern.setByPath("rbf.lengthscale", 1e4);
     check("sparse_fitc_extreme_long_ls", gpAllFinite(*sp.model));
+  }
+
+  // Sparse approx suite under GPC_SPARSE_LINALG + in-process dual-path gaps.
+  {
+    const int approxs[] = {CGp::DTC, CGp::DTCVAR, CGp::FITC, CGp::PITC};
+    const char* tags[] = {"dtc", "dtcvar", "fitc", "pitc"};
+    for(unsigned int k = 0; k < 4; k++)
+    {
+      RegGp sp(40, approxs[k], 10);
+      const string tag = string("sparse_") + tags[k];
+      const bool finite = gpAllFinite(*sp.model);
+      check(tag + "_finite", finite);
+      if(!finite)
+        continue;
+      const double fdRel = fdGradCheckMaxRel(*sp.model);
+      // Sparse inducing landscapes: FD error often ~1e-4 (between mild D_fd and extreme HP).
+      emitMetric(tag + "_fd_grad_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
+      check(tag + "_fd_grad", fdRel < 5e-3);
+      dualPathGaps(*sp.model, tag);
+    }
+  }
+
+  // Short-lengthscale stress under suite mode (kept for env dual-run surface).
+  {
+    RegGp sp(40, CGp::DTCVAR, 10);
+    sp.kern.setByPath("rbf.lengthscale", 1e-3);
+    check("sparse_dtcvar_extreme_short_ls", gpAllFinite(*sp.model));
+    const double fdRel = fdGradCheckMaxRel(*sp.model);
+    emitMetric("sparse_dtcvar_short_ls_fd_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
+  }
+  {
+    RegGp sp(40, CGp::PITC, 10);
+    sp.kern.setByPath("rbf.lengthscale", 1e-3);
+    check("sparse_pitc_extreme_short_ls", gpAllFinite(*sp.model));
+    const double fdRel = fdGradCheckMaxRel(*sp.model);
+    emitMetric("sparse_pitc_short_ls_fd_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
+  }
+
+  // -------------------------------------------------------------------------
+  // CIP-0012 improvement experiments (always both modes; ignore suite env).
+  // Mild dual-path shows agreement; these cells stress conditioning.
+  // -------------------------------------------------------------------------
+  {
+    // Crowded inducing + short lengthscale (FITC / DTCVAR).
+    const unsigned int n = 60, m = 20;
+    CMatrix X(n, 1), Y(n, 1), Xu(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double x = -1.0 + 2.0 * (double)i / (double)(n - 1);
+      X.setVal(x, i, 0);
+      Y.setVal(sin(2.0 * x), i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Xu.setVal(1e-9 * (double)(i + 1), i, 0);
+
+    const int approxs[] = {CGp::FITC, CGp::DTCVAR};
+    const char* tags[] = {"sparse_fitc_crowdZ", "sparse_dtcvar_crowdZ"};
+    for(unsigned int k = 0; k < 2; k++)
+    {
+      CCmpndKern kern(X);
+      kern.addKern(new CRbfKern(X));
+      kern.addKern(new CWhiteKern(X));
+      kern.setParam(1e4, 0); // large inverseWidth
+      kern.setParam(1.0, 1);
+      kern.setParam(1e-6, 2);
+      CGaussianNoise noise(&Y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, approxs[k], m, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(true);
+      model.setBetaVal(1e6);
+      model.setVerbosity(0);
+      stressBothModes(model, tags[k]);
+    }
+  }
+
+  {
+    // CIP-0013-style protocol (compact): q=2, LS=1, white=0.01, beta=100.
+    const unsigned int n = 200, q = 2, m = 50;
+    CMatrix X(n, q), Y(n, 1), Xu(m, q);
+    fillProtocol(X, Y, Xu, n, q, m, 13);
+    const int approxs[] = {CGp::FITC, CGp::DTCVAR};
+    const char* tags[] = {"sparse_fitc_protocol", "sparse_dtcvar_protocol"};
+    for(unsigned int k = 0; k < 2; k++)
+    {
+      CCmpndKern kern(X);
+      kern.addKern(new CRbfKern(X));
+      kern.addKern(new CWhiteKern(X));
+      kern.setByPath("rbf.lengthscale", 1.0);
+      kern.setByPath("rbf.variance", 1.0);
+      kern.setByPath("white.variance", 0.01);
+      CGaussianNoise noise(&Y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, approxs[k], m, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(true);
+      model.setBetaVal(100.0);
+      model.setVerbosity(0);
+      stressBothModes(model, tags[k]);
+    }
+  }
+
+  {
+    // Reduced γ×M dual-path slice (diagSparseStable subset) — DTCVAR + FITC.
+    const unsigned int n = 40;
+    const double beta = 100.0;
+    const double gammas[] = {10.0, 100.0, 1000.0};
+    const unsigned int Ms[] = {10u, 20u};
+    const int approxs[] = {CGp::DTCVAR, CGp::FITC};
+    const char* atags[] = {"dtcvar", "fitc"};
+    bool allOk = true;
+    string detail;
+    for(unsigned int a = 0; a < 2; a++)
+    {
+      for(unsigned int gi = 0; gi < 3; gi++)
+      {
+        for(unsigned int mi = 0; mi < 2; mi++)
+        {
+          const unsigned int m = Ms[mi];
+          CMatrix X(n, 1), Y(n, 1), Xu(m, 1);
+          for(unsigned int i = 0; i < n; i++)
+          {
+            const double x = -1.0 + 2.0 * (double)i / (double)(n - 1);
+            X.setVal(x, i, 0);
+            Y.setVal(sin(2.0 * x), i, 0);
+          }
+          for(unsigned int i = 0; i < m; i++)
+            Xu.setVal(-1.0 + 2.0 * (double)i / (double)(m - 1), i, 0);
+
+          CCmpndKern kern(X);
+          kern.addKern(new CRbfKern(X));
+          kern.addKern(new CWhiteKern(X));
+          kern.setParam(gammas[gi], 0);
+          kern.setParam(1.0, 1);
+          kern.setParam(1e-4, 2);
+          CGaussianNoise noise(&Y);
+          for(int i = 0; i < noise.getOutputDim(); i++)
+            noise.setBiasVal(0.0, i);
+          CGp model(&kern, &noise, &X, approxs[a], m, 0);
+          model.setInducingVals(Xu);
+          model.setInducingFixed(true);
+          model.setBetaVal(beta);
+          model.setVerbosity(0);
+
+          double llL = 0.0, llS = 0.0, fdL = 0.0, fdS = 0.0;
+          string errL, errS;
+          const bool okL = trySparseMode(model, false, llL, fdL, errL);
+          const bool okS = trySparseMode(model, true, llS, fdS, errS);
+          applySparseMode(model);
+
+          ostringstream mll, mgr;
+          mll << "sparse_" << atags[a] << "_gamma_" << gammas[gi] << "_M_" << m
+              << "_ll_absdiff";
+          mgr << "sparse_" << atags[a] << "_gamma_" << gammas[gi] << "_M_" << m
+              << "_grad_maxabs";
+
+          if(okL && okS)
+          {
+            const double llGap = fabs(llL - llS);
+            // Grad maxabs between paths (reuse analytic grads via dualPath-style).
+            model.setStableSparseLinalg(false);
+            CMatrix gL(1, model.getOptNumParams());
+            model.logLikelihoodGradient(gL);
+            model.setStableSparseLinalg(true);
+            CMatrix gS(1, model.getOptNumParams());
+            model.logLikelihoodGradient(gS);
+            applySparseMode(model);
+            double gGap = 0.0;
+            for(unsigned int j = 0; j < gL.getCols(); j++)
+              gGap = max(gGap, fabs(gL.getVal(j) - gS.getVal(j)));
+            emitMetric(mll.str(), "F_model", llGap, 5e-6, "abs");
+            emitMetric(mgr.str(), "D_fd", gGap, 5e-3, "abs");
+            if(llGap >= 5e-6 || gGap >= 5e-3)
+            {
+              allOk = false;
+              ostringstream os;
+              os << atags[a] << " gamma=" << gammas[gi] << " M=" << m
+                 << " llGap=" << llGap << " gGap=" << gGap;
+              detail = os.str();
+            }
+          }
+          else if(!okL && okS)
+          {
+            ostringstream brk;
+            brk << "sparse_" << atags[a] << "_gamma_" << gammas[gi] << "_M_" << m;
+            check(brk.str() + "_legacy_breaks_stable_ok", true, errL);
+          }
+          else if(!okS)
+          {
+            allOk = false;
+            ostringstream os;
+            os << atags[a] << " gamma=" << gammas[gi] << " M=" << m
+               << " stable failed: " << errS;
+            detail = os.str();
+          }
+        }
+      }
+    }
+    check("sparse_gamma_M_dual_path_slice", allOk, detail);
   }
 
   // Probit noise: log-likelihood finite on wide latent range.
@@ -1078,7 +1475,9 @@ int testModels()
 
 int main()
 {
-  cout << "GPc numerical stability suite (CIP-0019)" << endl;
+  cout << "GPc numerical stability suite (CIP-0019 + CIP-001A)" << endl;
+  cout << "cell=" << cellLabel()
+       << " sparse_linalg=" << sparseLinalgModeName() << endl;
   try
   {
     testLinalg();

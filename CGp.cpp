@@ -2953,56 +2953,117 @@ ModelDescription CGp::describe() const
   ModelDescription desc;
   if(isSparseApproximation())
   {
-    desc.title = "Sparse Approximation GP Model:";
+    desc.title = "GP regression";
     desc.headerLines.push_back("Approx type: " + getApproximationStr());
   }
   else
-    desc.title = "Standard GP Model:";
+    desc.title = "GP regression";
   desc.headerLines.push_back("Optimiser: " + getDefaultOptimiserStr());
   {
     std::ostringstream line;
     line << "Data Set Size: " << getNumData();
     desc.headerLines.push_back(line.str());
   }
-  desc.headerLines.push_back(string("Scales learnt: ") + (isOutputScaleLearnt() ? "1" : "0"));
-  desc.headerLines.push_back(string("X learnt: ") + (isOptimiseX() ? "1" : "0"));
-  {
-    std::ostringstream line;
-    line << "Bias: " << bias;
-    desc.headerLines.push_back(line.str());
-  }
-  {
-    std::ostringstream line;
-    line << "Scale: " << scale;
-    desc.headerLines.push_back(line.str());
-  }
-  if(pnoise)
-  {
-    std::ostringstream noiseOss;
-    const_cast<CNoise*>(pnoise)->display(noiseOss);
-    std::string noiseText = noiseOss.str();
-    // Drop trailing newline so headerLines stays one logical block per entry.
-    while(!noiseText.empty() && (noiseText[noiseText.size()-1]=='\n' || noiseText[noiseText.size()-1]=='\r'))
-      noiseText.erase(noiseText.size()-1);
-    desc.headerLines.push_back(noiseText);
-  }
   if(isSparseApproximation())
     desc.headerLines.push_back(string("Inducing fixed: ") + (isInducingFixed() ? "1" : "0"));
 
-  const vector<string> paths = paramPaths();
-  for(size_t i = 0; i < paths.size(); ++i)
+  // Kernel / beta / scale paths with transforms and fix flags.
+  if(pkern)
   {
-    ParamRow row(paths[i], getByPath(paths[i]));
-    try
+    ModelDescription kdesc = pkern->describe();
+    // Map flat kern index -> transform for path rows that use kern. prefix.
+    vector<string> transformByIndex(pkern->getNumParams());
+    for(unsigned int t = 0; t < pkern->getNumTransforms(); t++)
     {
-      row.fixed = isFixed(paths[i]);
+      const unsigned int idx = pkern->getTransformIndex(t);
+      if(idx < transformByIndex.size())
+        transformByIndex[idx] = pkern->getTransformType(t);
     }
-    catch(...)
+    const vector<string> kpaths = pkern->paramPaths();
+    for(size_t i = 0; i < kpaths.size(); ++i)
     {
-      row.fixed = false;
+      const string full = string("kern.") + kpaths[i];
+      ParamRow row(full, getByPath(full));
+      try
+      {
+        row.fixed = isFixed(full);
+      }
+      catch(...)
+      {
+        row.fixed = false;
+      }
+      try
+      {
+        const unsigned int idx = pkern->paramIndex(kpaths[i]);
+        if(idx < transformByIndex.size())
+          row.transform = transformByIndex[idx];
+      }
+      catch(...)
+      {
+      }
+      desc.params.push_back(row);
     }
-    desc.params.push_back(row);
   }
+  if(isSparseApproximation())
+  {
+    ParamRow beta("beta", getBetaVal());
+    try { beta.fixed = isFixed("beta"); } catch(...) { beta.fixed = false; }
+    if(betaTransform)
+      beta.transform = betaTransform->getType();
+    else
+      beta.transform = "exp";
+    desc.params.push_back(beta);
+  }
+  if(isOutputScaleLearnt())
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      const string full = string("scale.") + ndlstrutil::itoa(j);
+      ParamRow row(full, getByPath(full));
+      try { row.fixed = isFixed(full); } catch(...) { row.fixed = false; }
+      desc.params.push_back(row);
+    }
+  }
+
+  // Structured noise rows (paramz-ish names) instead of a display blob.
+  if(pnoise)
+  {
+    const string ntype = pnoise->getType();
+    if(ntype == "gaussian")
+    {
+      for(unsigned int j = 0; j < pnoise->getOutputDim(); j++)
+      {
+        ParamRow brow(string("Gaussian_noise.bias.") + ndlstrutil::itoa(j),
+                      pnoise->getParam(j));
+        desc.params.push_back(brow);
+      }
+      ParamRow var("Gaussian_noise.variance",
+                   pnoise->getParam(pnoise->getNumParams() - 1));
+      // Gaussian noise variance is positivity-constrained in the usual setup.
+      for(unsigned int t = 0; t < pnoise->getNumTransforms(); t++)
+      {
+        if(pnoise->getTransformIndex(t) == pnoise->getNumParams() - 1)
+          var.transform = pnoise->getTransformType(t);
+      }
+      if(var.transform.empty())
+        var.transform = "exp";
+      desc.params.push_back(var);
+    }
+    else
+    {
+      for(unsigned int i = 0; i < pnoise->getNumParams(); i++)
+      {
+        ParamRow row(string("noise.") + pnoise->getParamName(i), pnoise->getParam(i));
+        for(unsigned int t = 0; t < pnoise->getNumTransforms(); t++)
+        {
+          if(pnoise->getTransformIndex(t) == i)
+            row.transform = pnoise->getTransformType(t);
+        }
+        desc.params.push_back(row);
+      }
+    }
+  }
+
   if(py && pX)
   {
     desc.hasLogLikelihood = true;

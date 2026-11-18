@@ -6,8 +6,8 @@ C++ core; NumPy arrays cross the process boundary only.
 
 from __future__ import annotations
 
+from ._display import format_model_description
 from ._gpc import (
-    GPRegression,
     GpcError,
     Matrix,
     ModelDescription,
@@ -17,6 +17,7 @@ from ._gpc import (
     matrix_from_numpy,
     matrix_to_numpy,
 )
+from .models import GPRegression
 
 __all__ = [
     "GPRegression",
@@ -26,6 +27,7 @@ __all__ = [
     "OptimiserPhase",
     "ModelDescription",
     "ParamRow",
+    "format_model_description",
     "matrix_from_numpy",
     "matrix_to_numpy",
     "__version__",

@@ -83,12 +83,20 @@ def parse_metrics(text: str) -> dict[str, dict[str, Any]]:
 
 
 def default_cell_meta(cell_label: str = "") -> dict[str, str]:
+    sparse = os.environ.get("GPC_SPARSE_LINALG", "stable").lower()
+    if sparse in {"1", "stablefactor"}:
+        sparse = "stable"
+    elif sparse in {"0"}:
+        sparse = "legacy"
+    base = os.environ.get("GPC_NS_CELL", "local")
+    label = cell_label or f"{base}+{sparse}"
     return {
-        "label": cell_label or os.environ.get("GPC_NS_CELL", "local"),
+        "label": label,
         "os": platform.system(),
         "blas": os.environ.get("GPC_NS_BLAS", "unknown"),
         "cxx": os.environ.get("CXX", "unknown"),
         "runner": os.environ.get("RUNNER_OS", platform.system()),
+        "sparse_linalg": sparse if sparse in {"stable", "legacy"} else "stable",
     }
 
 

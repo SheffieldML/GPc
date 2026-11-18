@@ -43,7 +43,7 @@ export OMP_NUM_THREADS=$(nproc)   # or a measured value
 ./testKern
 ```
 
-The REQ-0007 documented one-thread bench protocol (`OPENBLAS_NUM_THREADS=1`, OpenMP off) remains the acceptance bar; multi-thread measurements are additive and recorded separately in [CIP-0025](../cip/cip0025.md) P7.
+The REQ-0007 documented one-thread bench protocol (`OPENBLAS_NUM_THREADS=1`, OpenMP off) remains the acceptance bar. Multi-thread measurements (P7) are recorded in [CIP-0025](../cip/cip0025.md) (2026-11-18 table): BLAS threads help most on GEMM-distance workloads (\(q \ge 8\)); OpenMP alone is a small VarDTC win; nesting is not clearly better — prefer `OPENBLAS_NUM_THREADS=1` with OpenMP unless re-measured. Raw TSV: [`bench/p7_results/p7_large.tsv`](../bench/p7_results/p7_large.tsv).
 - Windows CI waits on a maintained Windows make path; it is out of scope until that fragment exists.
 
 ## Reference verification without MATLAB

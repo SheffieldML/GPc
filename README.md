@@ -44,7 +44,7 @@ The software is compiled by writing
 $ make gp
 ```
 
-at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored. Older platform fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) live under `make/legacy/` and are not CI targets.
+at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored. **Make remains the blessed native and CI path.** An optional thin CMake build ([CIP-0020](cip/cip0020.md)) can produce the same core library and CLI smoke targets (`cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` on Homebrew macOS); it is not the CI gate yet. Older platform fragments and an archived 2020 CMake stub live under `make/legacy/` and are not CI targets.
 
 ### macOS (Homebrew)
 

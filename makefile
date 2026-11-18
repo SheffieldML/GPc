@@ -15,6 +15,13 @@ endif
 
 all: gplvm bgplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
+# CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).
+.PHONY: python-gpc python-gpc-test
+python-gpc: libgp$(LIBSEXT)
+	$(MAKE) -C python
+python-gpc-test: python-gpc
+	$(MAKE) -C python test
+
 # CIP-0013: objective+gradient timing harness (use RELEASE=1 for timed builds).
 bench: benchGPc
 benchGPc: bench/benchGPc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o

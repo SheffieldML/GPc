@@ -4,7 +4,7 @@ title: "Users can recreate the documented GPy-tutorial subset via native C++ dem
 status: "In Progress"
 priority: "Medium"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-18"
 related_tenets: ["ecosystem-interoperability", "compose-through-interfaces", "assert-and-verify", "flexibility-with-performance"]
 stakeholders: ["maintainers", "modellers", "teachers"]
 tags: ["gpy", "tutorials", "demos", "documentation", "multioutput"]
@@ -31,7 +31,7 @@ The first subset is the **easy and close** surface already enabled by the kernel
 - [ ] Markdown tutorials invoke demos or `./gp` / related CLIs and show how to produce plots (gnuplot path is sufficient)
 - [ ] CLI exposes kernel type strings needed by those demos where the types already exist in the stream/factory (e.g. Matérn / stdperiodic), without resurrecting broken FITC as a tutorial default
 - [ ] Demos fail loudly on shape/index misuse (dimension and bound checks), consistent with project asserts
-- [ ] Non-goals are explicit: Python bindings, Jupyter/Colab as the share format, EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, SVI / HMC, integral kernels, FITC-as-default sparse tutorial. Bayesian GPLVM is owned by [REQ-000B](./req000B_bayesian-gplvm-psi.md) / [CIP-0017](../cip/cip0017.md); MRD by [REQ-000C](./req000C_manifold-relevance-determination.md) / [CIP-0018](../cip/cip0018.md) — not this tutorial subset.
+- [ ] Non-goals are explicit: Python bindings / Jupyter as the share format (owned by [REQ-000E](./req000E_gpy-facing-python-facade.md)), EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, SVI / HMC, integral kernels, FITC-as-default sparse tutorial. Bayesian GPLVM is owned by [REQ-000B](./req000B_bayesian-gplvm-psi.md) / [CIP-0017](../cip/cip0017.md); MRD by [REQ-000C](./req000C_manifold-relevance-determination.md) / [CIP-0018](../cip/cip0018.md) — not this tutorial subset.
 
 ## Notes (Optional)
 
@@ -49,3 +49,6 @@ Requirement created with CIP-0015 (Proposed). Sharing environment locked to nati
 
 ### 2026-11-16 (accept / Stage 1 launch)
 CIP-0015 Accepted → In Progress. First delivery cut: redo current README/`examples/*.svml` tutorials (no `build_XY` required). Phase A helpers remain Ready in parallel for the later coreg demo. Status → In Progress.
+
+### 2026-11-18
+Python-bindings non-goal now points at [REQ-000E](./req000E_gpy-facing-python-facade.md) (Proposed) instead of an unowned “future CIP”.

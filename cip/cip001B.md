@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001B"
-last_updated: "2026-11-18"
+last_updated: "2026-11-18"  # grads §3 expanded same day
 status: "Proposed"
 compressed: false
 related_requirements: ["0002"]
@@ -114,14 +114,131 @@ Bound from one LQ:
 
 If the \(y\)-row is omitted, \(c\) is still available as \(c=Q_2 y/\sigma\) with \(Q_2\) the last \(N\) columns of \(Q\) (since \(L^{-1}[I,\,A]=Q\)).
 
-**Practical points:**
+**Practical points (non-grad):**
 
-- **Diagonal signs.** LAPACK `geqrf` / `gelqf` does not force \(\mathrm{diag}(L)\ge 0\). Use \(\log|L_{ii}|\) in the bound. For prediction reuse, flip row signs so the diagonal is positive.
-- **Gradients.** Reverse-mode through the paper's LQ backward (needs \(L\), \(Q\), one \(M\times M\) temporary). Extend [CIP-0012](cip0012.md) adjoint helpers; do not hand-derive a third gradient path in coordinates of \(C^{-1}\).
+- **Diagonal signs.** LAPACK `geqrf` / `gelqf` does not force \(\mathrm{diag}(L)\ge 0\). Use \(\log|L_{ii}|\) in the bound. For prediction reuse, flip row signs so the diagonal is positive; apply the **same** signed \(L\) in reverse mode (cotangent \(\bar L\) must flip with \(L\)).
 - **Cost.** LQ is \(\mathcal{O}(M^2(M+N))\), same order as Gram+chol at roughly \(\sim 2\times\) flops; return is better \(\kappa\).
 - **Storage.** GPc uses upper Cholesky elsewhere ([CIP-0005](cip0005.md)). Either store LQ \(L\) lower and convert at API boundaries, or implement against upper \(R\) from QR of \(C^\top\) consistently — pick one convention in Accept and document the Murray/Seeger \(\leftrightarrow\) GPc map once.
 
-### 3. Prediction
+### 3. Gradients (reverse mode)
+
+Do **not** hand-derive \(\partial\mathcal{F}/\partial C^{-1}\) in Legacy-style coordinates. Compose reverse mode through the forward graph, reusing CIP-0012 helpers for everything above the LQ.
+
+#### 3.1 Computation graph
+
+\[
+K_{mm},K_{mn},\sigma
+\;\xrightarrow{\mathrm{chol}}\;
+L_m
+\;\xrightarrow{\mathrm{trsm}}\;
+A=\sigma^{-1}L_m^{-1}K_{mn}
+\;\xrightarrow{\mathrm{stack}}\;
+C=\begin{bmatrix}I&A\\0&y^\top/\sigma\end{bmatrix}
+\;\xrightarrow{\mathrm{LQ}}\;
+(\tilde L,\tilde Q)
+\;\xrightarrow{\mathrm{unpack}}\;
+(L,c,r)
+\;\xrightarrow{\mathcal{F}}.
+\]
+
+Kernel / \(Z\) / \(\beta\) (or \(\sigma\)) cotangents exit through \(\bar K_{mm}\), \(\bar K_{mn}\), \(\bar\sigma\) into the existing `gK_uu` / `gK_uf` / `gLambda` / `gBeta` slots (same as CIP-0012).
+
+#### 3.2 Scalar seed cotangents (spherical VFE / DTCVAR)
+
+With \(\phi=\mathcal{F}\) (or \(-\mathcal{L}\) consistently with GPc’s LL sign), the only non-constant pieces that touch \((L,c,r)\) are \(\sum_i\log|L_{ii}|\) and \(\tfrac12 r^2\) (plus \(\tfrac12\|A\|_F^2\) and the trace term, which touch \(A\) / \(K_{nn}\) **outside** the LQ).
+
+\[
+\bar L_{ii} \;+=\; \frac{1}{L_{ii}}\operatorname{sgn}(L_{ii})
+\quad\text{(no off-diagonal seed from the log-det)},
+\qquad
+\bar r \;+=\; r,
+\qquad
+\bar c \;+=\; 0
+\quad\text{(from \(\tfrac12 r^2\) alone)}.
+\]
+
+If the implementation extracts \(c\) from \(\tilde L\) rather than from \(Q_2 y/\sigma\), there is still no direct \(\bar c\) from \(\mathcal{F}\) until prediction; the data-fit dependence on \(c\) is already inside \(r^2=\|y\|^2/\sigma^2-c^\top c\), so
+
+\[
+\bar c \;+=\; -c
+\quad\text{(from \(-\tfrac12\cdot 2\,c\) when differentiating \(\tfrac12 r^2\) w.r.t. \(c\))}.
+\]
+
+(The two presentations are equivalent once \(r^2\) is written as a function of \(c\).) Trace / \(\|A\|_F^2\) contributions add \(\bar A \;+=\; A - \sigma^{-2}\partial(\operatorname{tr}K_{nn})/\partial A\) as in CIP-0012 DTCVAR (stable path); they do **not** go through the LQ adjoint.
+
+Assemble \(\bar{\tilde L}\) by placing \(\bar L\) and \(\bar c\) (and \(\bar r\)) into the blocked lower factor; \(\bar{\tilde Q}\) starts at \(0\) unless a \(Q_2\)-based extraction of \(c\) was used (then \(\bar Q_2 \;+=\; \bar c\, y^\top/\sigma\)).
+
+#### 3.3 LQ adjoint (Seeger et al. §4.3)
+
+For wide full-rank \(C\in\mathbb{R}^{m\times n}\) (\(m=M{+}1\), \(n=M{+}N\)), \(C=\tilde L\,\tilde Q\):
+
+\[
+\bar C
+=
+\tilde L^{-\top}
+\Bigl(
+\bar{\tilde Q}
++
+\mathrm{copyltu}(M)\,\tilde Q
+\Bigr),
+\qquad
+M=\tilde L^\top\bar{\tilde L}-\bar{\tilde Q}\,\tilde Q^\top.
+\]
+
+Needs \(\tilde L\), \(\tilde Q\), and one temporary \(m\times m\) matrix. Implement as `_lqAdjoint` (or QR-of-transpose form with the same math). Unit-test against central differences on random wide matrices before wiring into `CGp`.
+
+**Rank / crowded \(Z\):** the operator has no derivative at rank-deficient \(C\). Jitter / inducing separation policy stays with \(K_{mm}\); document that LQ reverse is undefined if `gelqf` fails or \(\lvert L_{ii}\rvert\) underflows.
+
+#### 3.4 Unpack \(\bar C\) → \(\bar A\), \(\bar\sigma\)
+
+Partition \(\bar C\) conformally with \(C\):
+
+\[
+\bar C
+=
+\begin{bmatrix}
+\bar C_{11} & \bar C_{12}\\
+\bar C_{21} & \bar C_{22}
+\end{bmatrix}.
+\]
+
+Then \(\bar A \;+=\; \bar C_{12}\) (plus any direct \(\bar A\) from \(\|A\|_F^2\) / trace). The \(y\)-row block contributes to \(\bar\sigma\) only (fixed training \(y\)):
+
+\[
+\bar\sigma \;+=\;
+\text{from }A=\sigma^{-1}(\cdots)\text{ and }y^\top/\sigma\text{ scalings}.
+\]
+
+No \(\bar y\) in the training objective.
+
+#### 3.5 Chain through whitening (reuse CIP-0012)
+
+With \(A=\sigma^{-1}L_m^{-1}K_{mn}\) (GPc: \(A\propto U^{-\top}K_{uf}\)):
+
+1. **`trsm` adjoint** (existing `_trsmAdjoint`): \(\bar A\to(\bar K_{mn},\bar L_m)\) / \((\bar K_{uf},\bar U)\).
+2. **Cholesky adjoint** (existing blocked Murray `_cholAdjoint`): \(\bar L_m\to\bar K_{mm}\).
+3. **Noise / \(\beta\):** accumulate \(\bar\sigma\) (or \(\bar\beta\)) from the explicit \(\sigma^{-1}\) factors on \(A\) and on \(y/\sigma\), plus VFE trace \(\sigma\) dependence — same bookkeeping as CIP-0012’s \(\partial_\beta\) term, re-derived once for the LQ LL expression and checked by FD.
+
+Do **not** duplicate a Gram-side `syrk` adjoint for \(I+AA^\top\); that node is gone.
+
+#### 3.6 FITC / DTC / precision-form
+
+| Approx | Extra reverse work |
+|--------|-------------------|
+| **DTC** | Drop trace / \(\|A\|_F^2\) DTCVAR terms; same LQ chain. |
+| **FITC** | \(A\leftarrow A\Lambda^{-1/2}\), \(y\leftarrow\Lambda^{-1/2}y\). After \(\bar A\) on the scaled features, reverse the column scaling: \(\bar\Lambda\) from \(\bar A\) and \(\bar y_{\mathrm{scaled}}\), then \(\bar q\to\bar B\) as in CIP-0012 Appendix A. Write \(\bar\Lambda\) formulae in the implementing PR (or CIP appendix) before merge; mpmath/FD gate required. |
+| **Precision form** | LQ input is \(\begin{bmatrix}L_m&K_{mn}/\sigma\end{bmatrix}\); reverse hits \(\bar L_m\) and \(\bar K_{mn}\) directly from \(\bar C\), then chol adjoint on \(K_{mm}\). Trace still needs \(\|L_m^{-1}K_{mn}\|_F^2\) reverse (trsm path). |
+
+PITC is **out of v1** unless Accept enlarges scope (block-diagonal \(\Lambda\) + shared LQ is a separate design beat).
+
+#### 3.7 Code structure
+
+- New: `_lqFactorWide`, `_lqAdjoint`, sign-normalise helper; cached \(\tilde L,\tilde Q\) (or \(L,c,r,Q_2\)) on the CIP-0009 AD cache.
+- `gpCovGrads` / LL branch on `SparseLinalgLQ` after the StableFactor / Legacy branch.
+- Reuse `_whitenKuf`, `_trsmAdjoint`, `_cholAdjoint` unchanged.
+- NumPy prototype of §3.2–3.5 required before C++ grads merge (same bar as CIP-0012’s DTCVAR prototype).
+
+### 4. Prediction
 
 Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^\top)^{-1})\). With \(a=L_m^{-1}k_{m*}\):
 
@@ -131,7 +248,7 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 \sigma^2_*=k_{**}-\|a\|^2+\|L^{-1}a\|^2.
 \]
 
-### 4. Variants
+### 5. Variants
 
 | Variant | Change |
 |---------|--------|
@@ -140,18 +257,18 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 | **Plain DTC** | VFE without trace correction. |
 | **\(K_{mm}\)** | Still needs chol (or jittered chol). If \(K_{mm}=\Phi\Phi^\top\) (e.g. RFF), LQ \(\Phi\) there too. |
 
-### 5. Relationship to CIP-0012 / flag semantics
+### 6. Relationship to CIP-0012 / flag semantics
 
 | Layer | CIP-0012 StableFactor (today) | CIP-001B (this) |
 |-------|-------------------------------|-----------------|
 | \(K_{uu}\) | chol \(U\) / \(L_m\) | unchanged |
 | Whitening | \(B=U^{-\top}K_{uf}\) | same (\(A\propto B\)) |
 | \(I+\beta BB^\top\) | `syrk` + `potrf` | **LQ of \([I,\,A]\) (or augmented \(C\))** |
-| Grads | Murray chol/`trsm`/`syrk` adjoints | + LQ adjoint from Seeger et al. |
+| Grads | Murray chol/`trsm`/`syrk` adjoints | **LQ adjoint** (§3) then same whitening adjoints; no `syrk` adjoint on \(C\) |
 
 **Proposed Accept choice:** introduce a third runtime mode `SparseLinalgLQ` (CLI `--sparse-linalg lq`), keep StableFactor as default until soak proves LQ better on CIP-001A stress + mpmath gates; then decide whether to promote LQ to default or merge into `stable`. Do **not** silently change StableFactor behaviour mid-soak.
 
-### 6. Non-goals
+### 7. Non-goals
 
 - Replacing Legacy (`pdinv`) archaeology.
 - Multi-output / non-spherical sparse in v1 (same spherical scope as CIP-0012).
@@ -164,7 +281,7 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 2. **LAPACK wrapper.** `CMatrix` (or thin helper) for LQ/QR of wide matrices; diagonal-sign normalisation helper; log-abs-diag.
 3. **Forward path.** DTCVAR (VFE) first: build \(A\), augmented \(C\), extract \(L,c,r\), evaluate \(\mathcal{F}\). Then DTC, then FITC (\(\Lambda\) scaling).
 4. **Prediction** matching §3.
-5. **LQ reverse-mode grads** for hyperparameter / \(Z\) / \(\beta\) (Seeger et al. Appendix); FD gate + dual-path vs StableFactor.
+5. **Reverse-mode grads** per §3: `_lqAdjoint` unit tests → DTCVAR seed cotangents → chain through existing `trsm`/`chol` adjoints → FITC \(\Lambda\) reverse in-PR; FD + dual-path vs StableFactor.
 6. **CLI / enum** `--sparse-linalg lq`; document in [docs/numerics.md](../docs/numerics.md).
 7. **Gates.** Extend `numerical_stability/` stress + `diagSparseStable` / mpmath: LQ vs StableFactor LL/grad; crowded-\(Z\) FD util; optional hard cell where Gram+chol degrades and LQ holds.
 
@@ -178,18 +295,21 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 
 - Unit: LQ of \([I,\,A]\) vs `chol(I+AA^\top)` (abs diag); \(r^2\) vs Woodbury; sign-flip helper.
 - Dual-path: LQ vs StableFactor on `testCGp` / `diagDtcvar` toys (\(\lvert\Delta\mathrm{LL}\rvert < 1\mathrm{e}{-10}\) mild).
+- **Adjoint:** `_lqAdjoint` FD on random wide \(C\); DTCVAR \(\bar K_{uf},\bar K_{uu},\bar\beta\) FD + dual-path vs StableFactor (CIP-0012 prototype bar); FITC only with explicit \(\bar\Lambda\) formulae.
 - Stress: CIP-001A crowded-\(Z\) and \(\gamma\times M\) slice — expect LQ FD / LL util not worse than StableFactor; document if still limited by \(K_{mm}\).
 - Reference: mpmath recompute of bound from dumped \(K_{mm},K_{mn},y,\sigma\).
 - CI: numerical-stability job + existing matio/CGp gates with `lq` optional matrix entry or env `GPC_SPARSE_LINALG=lq`.
 
 ## Implementation Status
 
-- [ ] Proposed design reviewed (Accept)
+- [ ] Proposed design reviewed (Accept) — including §3 reverse-mode plan
 - [ ] LAPACK LQ/QR wrapper + sign policy
 - [ ] DTCVAR forward LL via augmented LQ
 - [ ] DTC + FITC variants
 - [ ] Prediction
-- [ ] LQ adjoint gradients + FD gate
+- [ ] `_lqAdjoint` helper + unit tests (Seeger §4.3)
+- [ ] DTCVAR reverse through LQ → whitening adjoints + FD/dual-path gate
+- [ ] FITC \(\Lambda\) reverse formulae + gate
 - [ ] CLI mode + docs
 - [ ] Stress / mpmath soak; default decision
 

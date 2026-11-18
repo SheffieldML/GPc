@@ -41,3 +41,16 @@ make testPpa
 - PPA stores a dense \(N\times N\) kernel; it is not an IVM-style active-set method.
 - Default path uses **scalar** site precision \(B\) and a **kernel M-step** (`ppaKernelLogLikelihood`). β updates are not wired in the CLI yet.
 - Octave reference dumps and the upstream toolbox quirks are recorded in [`cip/cip0023/phase0_notes.md`](../../cip/cip0023/phase0_notes.md).
+
+## Sparse PPA (CIP-0026)
+
+Experimental CGp-backed path (`CSparsePpa`):
+
+```bash
+make testSparsePpa && ./testSparsePpa
+./ppa -v 1 learn -A dtc -a 10 -o classification -k rbf testdata/ppa/phase0.svml
+```
+
+- Observation noise is \(\beta\) (default 1); sparse learn **omits** the white kernel (white cross-covariance is zero, so DTC with \(M=N\) would not match dense).
+- Sparse models use **`ppaVersion=0.3`** (`writeSparsePpaToFile` / `readSparsePpaFromFile`).
+- Monitor `ppaBound()` = full \(q(u)\) ELBO for DTC/DTCVAR (matches dense `approxLogLikelihood` at \(M=N\)); FITC/PITC keep interim CGp LML + outer noise LL.

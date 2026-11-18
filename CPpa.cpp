@@ -1,28 +1,50 @@
 #include "CPpa.h"
-CPpa::CPpa(const CMatrix& inData, const CMatrix& targetData, 
-	   CKern& kernel, CNoise& noiseModel, const int verbosity) 
-  : X(inData), y(targetData), kern(kernel), 
+
+CPpa::CPpa(const CMatrix& inData, const CMatrix& targetData,
+           CKern& kernel, CNoise& noiseModel, int verbosity)
+  : CMapModel(),
+    X(inData), y(targetData), kern(kernel),
     noise(noiseModel), numTarget(y.getCols()), numData(y.getRows())
 {
   assert(X.getRows()==y.getRows());
+  setInputDim(X.getCols());
+  setOutputDim(numTarget);
+  setNumData(numData);
   setVerbosity(verbosity);
   terminate = false;
   noise.setVerbosity(getVerbosity());
   varUpdate = false;
   loadedModel = false;
+  convergenceTol = 1e-6;
+  numTrainData = numData;
+  M = nullptr;
+  L = nullptr;
+  Linv = nullptr;
   init();
 }
-CPpa::CPpa(const CMatrix& trX, const CMatrix& trY, 
-     const CMatrix& mmat, const CMatrix& betamat, CKern& kernel, 
-     CNoise& noiseModel,
-	   const int verbosity) : X(trX), y(trY), activeX(trX), trainY(trY), wasM(mmat), beta(betamat), kern(kernel), noise(noiseModel), numTarget(trY.getCols()), numData(trY.getRows())
+
+CPpa::CPpa(const CMatrix& trX, const CMatrix& trY,
+           const CMatrix& mmat, const CMatrix& betamat, CKern& kernel,
+           CNoise& noiseModel, int verbosity)
+  : CMapModel(),
+    X(trX), y(trY), activeX(trX), trainY(trY), wasM(mmat), beta(betamat),
+    kern(kernel), noise(noiseModel),
+    numTarget(trY.getCols()), numData(trY.getRows())
 {
   assert(activeX.getRows()==trainY.getRows());
+  setInputDim(activeX.getCols());
+  setOutputDim(numTarget);
+  setNumData(numData);
   setVerbosity(verbosity);
   terminate = false;
   noise.setVerbosity(getVerbosity());
   varUpdate = false;
   loadedModel = true;
+  convergenceTol = 1e-6;
+  numTrainData = activeX.getRows();
+  M = nullptr;
+  L = nullptr;
+  Linv = nullptr;
   initStoreage();
   updateK();
   updateInvK();
@@ -48,7 +70,79 @@ void CPpa::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
 }
 double CPpa::logLikelihood() const
 {
+  return approxLogLikelihood();
 }
+
+double CPpa::logLikelihoodGradient(CMatrix& g) const
+{
+  approxLogLikelihoodGradient(g);
+  return logLikelihood();
+}
+
+double CPpa::outGradParams(CMatrix& /*g*/, const CMatrix& /*Xin*/,
+                           unsigned int /*pointNo*/, unsigned int /*outputNo*/) const
+{
+  throw ndlexceptions::NotImplementedError("CPpa::outGradParams not implemented (CIP-0021).");
+}
+
+double CPpa::outGradX(CMatrix& /*g*/, const CMatrix& /*Xin*/,
+                      unsigned int /*pointNo*/, unsigned int /*outputNo*/) const
+{
+  throw ndlexceptions::NotImplementedError("CPpa::outGradX not implemented (CIP-0021).");
+}
+
+void CPpa::writeParamsToStream(ostream& out) const
+{
+  writePpaToStream(*this, out);
+}
+
+void CPpa::readParamsFromStream(istream& /*in*/)
+{
+  throw ndlexceptions::NotImplementedError("CPpa::readParamsFromStream: use readPpaFromStream.");
+}
+
+void CPpa::init()
+{
+  numTrainData = numData;
+  wasM.resize(numTrainData, numTarget);
+  // Scalar B: one precision per output (MATLAB options.scalarB=1).
+  beta.resize(1, numTarget);
+  beta.setVals(1.0);
+  initStoreage();
+  activeX.deepCopy(X);
+  trainY.deepCopy(y);
+  initVals();
+  updateK();
+  updateInvK();
+  // MATLAB ppaInit ends with ppaEStep.
+  eStep();
+}
+
+void CPpa::updateK() const
+{
+  // Full-data Gram on activeX (== X for the live path). Matches MATLAB kern.Kstore.
+  kern.compute(K, activeX);
+  K.setSymmetric(true);
+  // Kstore is N x M in the old IVM-shaped layout; for full-data PPA keep N x N in K.
+  // Mirror into Kstore when shapes match so legacy readers see a Gram.
+  if(Kstore.getRows()==K.getRows() && Kstore.getCols()==K.getCols())
+    Kstore.deepCopy(K);
+}
+
+void CPpa::updateInvK(int /*index*/) const
+{
+  // MATLAB: kern.invKstore = pdinv(kern.Kstore). Not K+B (that enters q(fBar)).
+  CMatrix U(chol(K));
+  logDetK = logDet(U);
+  invK.deepCopy(K);
+  invK.pdinv(U);
+  invK.setSymmetric(true);
+}
+
+void CPpa::updateSite(int /*index*/)
+{
+}
+
 double CPpa::logLikelihood(const CMatrix& yTest, const CMatrix& Xin) const
 {
   assert(yTest.getRows()==Xin.getRows());
@@ -129,6 +223,8 @@ void CPpa::initStoreage()
   f.resize(numData, numTarget);
   ff.resize(numData, numTarget);
   fBar.resize(numData, numTarget);
+  fBarfBar.resize(numData, numData);
+  fBarfBar.setSymmetric(true);
   C.clear();
   for(int i=0; i<numTarget; i++)
     C.push_back(new CMatrix(numData, numData));
@@ -166,17 +262,17 @@ void CPpa::initVals()
 {
   // set Kstore to zeros numData, numTrainData.
   Kstore.setVals(0.0);
-  // set m and beta to zeros
   wasM.setVals(0.0);
-  beta.setVals(0.0);
+  // beta is set in init() to scalar 1 (MATLAB ppaInit); do not clear it here.
 
-  //TODO What about ff and fbar and fbarfbar
- 
-  // set nu to zeros(size of y)
+  f.setVals(0.0);
+  ff.setVals(0.0);
+  fBar.setVals(0.0);
+  fBarfBar.setVals(0.0);
+  gamma.setVals(0.0);
   nu.setVals(0.0);
-  // set g to zeros(size of y)
   g.setVals(0.0);
-  // set noise.varSigma to diagonal of kernel.
+  // Site variance for the first E-step is 1/B (set in eStep); seed diag(K) only as a placeholder.
   noise.setMus(0.0);
   double dk=0.0;
   for(int i=0; i<numData; i++)
@@ -195,8 +291,6 @@ void CPpa::initVals()
     }
   invK.zeros();
   covGrad.zeros();
-  
-  updateNuG();
 }
 void CPpa::updateNuG()
 {
@@ -206,24 +300,51 @@ void CPpa::updateNuG()
   
 double CPpa::approxLogLikelihood() const
 {
-  double L=0.0;
+  // MATLAB ppaCalculateLogLike (scalar B path).
   updateK();
-  CMatrix invKm(invK.getRows(), 1);
-  if(noise.isSpherical())
-    {
-      updateInvK(0);
-    }
+  updateInvK();
+  double L = 0.0;
+  CMatrix vs(numData, numTarget);
   for(int j=0; j<numTarget; j++)
     {
-      if(!noise.isSpherical())
-	updateInvK(j);
-      invK.setSymmetric(true);
-      invKm.symvColCol(0, invK, wasM, j, 1.0, 0.0, "u");
-      L -= .5*(logDetK + invKm.dotColCol(0, wasM, j));
+      const double b = (beta.getCols()==1) ? beta.getVal(0, 0) : beta.getVal(0, j);
+      CMatrix invC(invK);
+      for(int i=0; i<numData; i++)
+        invC.setVal(invC.getVal(i, i) + b, i, i);
+      invC.setSymmetric(true);
+      CMatrix UinvC(chol(invC));
+      const double logDetInvC = logDet(UinvC);
+
+      CMatrix invKfBarfBar(numData, numData);
+      invKfBarfBar.gemm(fBarfBar, invK, 1.0, 0.0, "n", "n");
+      const double part1 = -0.5 * logDetK - 0.5 * logDetInvC;
+      const double part2 = -0.5 * invKfBarfBar.trace();
+      const double part3 = 0.5 * static_cast<double>(numData);
+      double part4 = 0.0;
+      for(int i=0; i<numData; i++)
+        {
+          const double diagFF = fBarfBar.getVal(i, i);
+          const double fBarVal = fBar.getVal(i, j);
+          part4 += b * (diagFF - fBarVal * fBarVal);
+          vs.setVal(1.0 / b, i, j);
+        }
+      part4 *= -0.5;
+      CMatrix fBarCol(numData, 1);
+      CMatrix yCol(numData, 1);
+      for(int i=0; i<numData; i++)
+        {
+          fBarCol.setVal(fBar.getVal(i, j), i, 0);
+          yCol.setVal(y.getVal(i, j), i, 0);
+        }
+      CMatrix vsCol(numData, 1);
+      vsCol.setVals(1.0 / b);
+      const double part5 = noise.logLikelihood(fBarCol, vsCol, yCol);
+      L += part1 + part2 + part3 + part4 + part5;
     }
-  L+=kern.priorLogProb();
+  L += kern.priorLogProb();
   return L;
-}  
+}
+
 void CPpa::approxLogLikelihoodGradient(CMatrix& g) const
 {
   assert(g.getRows()==1);
@@ -288,9 +409,27 @@ void CPpa::optimise(const int maxIters, const int estepIters, const int mstepIte
 }
 void CPpa::mStep()
 {
+  // MATLAB ppaUpdateKernel with varKern=0: optimise kernel then refresh K, invK.
+  if(getOptNumParams()==0)
+    return;
+  setMaxIters(100);
+  runDefaultOptimiser();
+  updateK();
+  updateInvK();
 }
+
 void CPpa::eStep()
 {
+  // Order matches MATLAB ppaEStep: fBar moments → nu/g/gamma → f, ff.
+  updateExpectationsfBar();
+  // noiseUpdateNuG(noise, fBar, 1./B, y)
+  noise.setMus(fBar);
+  for(int i=0; i<numData; i++)
+    for(int j=0; j<numTarget; j++)
+      {
+        const double b = (beta.getCols()==1) ? beta.getVal(0, 0) : beta.getVal(0, j);
+        noise.setVarSigma(1.0 / b, i, j);
+      }
   updateNuG();
   for(int i=0; i<numData; i++)
     for(int j=0; j<numTarget; j++)
@@ -298,26 +437,28 @@ void CPpa::eStep()
 	double gVal = g.getVal(i, j);
 	gamma.setVal((gVal*gVal-nu.getVal(i, j))/2, i, j);
       }
-  logLike = logLikelihood();
   updateExpectationf();
   updateExpectationff();
-  updateExpectationsfBar();
+  logLike = logLikelihood();
 }
 void CPpa::updateExpectationf()
 {
   for(int i=0; i<numData; i++)
     for(int j=0; j<numTarget; j++)
-      f.setVal(fBar.getVal(i, j)+g.getVal(i,j)/beta.getVal(1, j), i, j);
+      {
+        const double b = (beta.getCols()==1) ? beta.getVal(0, 0) : beta.getVal(0, j);
+        f.setVal(fBar.getVal(i, j)+g.getVal(i,j)/b, i, j);
+      }
 }
 void CPpa::updateExpectationff()
 {
   for(int j=0; j<numTarget; j++)
     {
-      double b = beta.getVal(1, j);
+      const double b = (beta.getCols()==1) ? beta.getVal(0, 0) : beta.getVal(0, j);
       double b2 = b*b;
       for(int i=0; i<numData; i++)
 	{
-	  double mVal = fBar.getVal(i, j); // TODO Need to check this!
+	  double mVal = fBar.getVal(i, j);
 	  double ffVal = 2/b2*gamma.getVal(i, j) + 1/b + 2*mVal*f.getVal(i, j) - mVal*mVal;
 	  ff.setVal(ffVal, i, j);
 	}
@@ -325,7 +466,46 @@ void CPpa::updateExpectationff()
 }
 void CPpa::updateExpectationsfBar()
 {
-  throw ndlexceptions::NotImplementedError("Expectation of fbar not yet implemented.");
+  // MATLAB ppaExpectfBar / ppaExpectfBarfBar (scalar B):
+  //   Cov = inv(diag(B) + inv(K));  <fBar> = Cov * B * <f>;
+  //   <fBar fBar'> = Cov + <fBar><fBar>'.
+  updateK();
+  updateInvK();
+  DIMENSIONMATCH(f.getRows()==numData);
+  DIMENSIONMATCH(fBar.getRows()==numData);
+  DIMENSIONMATCH(fBarfBar.getRows()==numData && fBarfBar.getCols()==numData);
+
+  for(int j=0; j<numTarget; j++)
+    {
+      const double b = (beta.getCols()==1) ? beta.getVal(0, 0) : beta.getVal(0, j);
+      CMatrix invC(invK);
+      for(int i=0; i<numData; i++)
+        invC.setVal(invC.getVal(i, i) + b, i, i);
+      invC.setSymmetric(true);
+      CMatrix U(chol(invC));
+      CMatrix Cov(invC);
+      Cov.pdinv(U);
+      Cov.setSymmetric(true);
+
+      CMatrix bf(numData, 1);
+      for(int i=0; i<numData; i++)
+        bf.setVal(b * f.getVal(i, j), i, 0);
+
+      CMatrix fBarCol(numData, 1);
+      fBarCol.symvColCol(0, Cov, bf, 0, 1.0, 0.0, "u");
+      for(int i=0; i<numData; i++)
+        fBar.setVal(fBarCol.getVal(i, 0), i, j);
+
+      // Second moment for this output into fBarfBar (single-output path uses the matrix).
+      fBarfBar.deepCopy(Cov);
+      fBarfBar.syr(fBarCol, 1.0, "u");
+      fBarfBar.setSymmetric(true);
+      if(j < static_cast<int>(C.size()) && C[j]!=nullptr)
+        {
+          C[j]->deepCopy(fBarfBar);
+          C[j]->setSymmetric(true);
+        }
+    }
 }
 bool CPpa::equals(const CPpa& model, const double tol) const
 {
@@ -486,12 +666,12 @@ void writePpaToStream(const CPpa& model, ostream& out)
   writeKernToStream(model.kern, out);
   writeNoiseToStream(model.noise, out);
 
-  // Write out beta.
+  // Write out beta (row 0; scalar B is 1 x outputDim).
   for(int j=0; j<model.getNumProcesses()-1; j++)
     {
-      out << model.beta.getVal(1, j) << " ";
+      out << model.beta.getVal(0, j) << " ";
     }
-  out << model.beta.getVal(1, model.getNumProcesses()-1) << endl;
+  out << model.beta.getVal(0, model.getNumProcesses()-1) << endl;
 
   // Wright out m, Y and X.
   for(int i=0; i<model.getNumTrainData(); i++)

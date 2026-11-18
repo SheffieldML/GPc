@@ -226,7 +226,7 @@ void CClppa::relearn()
   int numNoiseParams = pmodel->noise.getNumParams();
   CMatrix noiseParams(1, numNoiseParams);
   pmodel->noise.getParams(noiseParams);
-  pmodel->noise.setTarget(y);
+  pmodel->noise.setTarget(&y);
   pmodel->noise.setParams(noiseParams);
   CPpa model(X, y, pmodel->kern, pmodel->noise, getVerbosity());
   model.optimise(extIters, kernIters, noiseIters);
@@ -659,7 +659,7 @@ void CClppa::learn()
 
   kern.addKern(whiteKern);
   
-  noise->setTarget(y);
+  noise->setTarget(&y);
   noise->initParams();
   CPpa model(X, y, kern, *noise, getVerbosity());
   model.optimise(extIters, kernIters, noiseIters);

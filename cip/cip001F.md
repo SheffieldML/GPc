@@ -21,7 +21,7 @@ title: "L2/L3 concurrency contract: docs, RNG hygiene, BLAS nesting"
 
 # CIP-001F: L2/L3 concurrency contract: docs, RNG hygiene, BLAS nesting
 
-> CIPs describe HOW to achieve requirements (WHAT). This CIP implements [REQ-0010](../requirements/req0010_documented-concurrency-contract.md). It extends the L1 note from [CIP-0009](./cip0009.md) without reopening that closed CIP. [CIP-001D](./cip001D.md) / [CIP-001E](./cip001E.md) consume the contract for Python docs and GIL policy. [CIP-0013](./cip0013.md) P7 (multi-BLAS / OpenMP speed study) stays orthogonal.
+> CIPs describe HOW to achieve requirements (WHAT). This CIP implements [REQ-0010](../requirements/req0010_documented-concurrency-contract.md). It extends the L1 note from [CIP-0009](./cip0009.md) without reopening that closed CIP. [CIP-001D](./cip001D.md) / [CIP-001E](./cip001E.md) consume the contract for Python docs and GIL policy. L4 intra-eval parallelism ([CIP-0025](./cip0025.md); was CIP-0013 P7) stays orthogonal.
 
 ## Status
 
@@ -60,7 +60,7 @@ Without that, CIP-001D users and parallel experiment drivers will assume either 
 | L1 | One instance, one thread (documented) | Already done (CIP-0009); keep |
 | L2 | Process contract: multi-instance rules, named globals, BLAS nesting | **In scope** |
 | L3 | Make L2 true (RNG isolation or documented non-safety; optional debug assert) | **In scope** |
-| L4 | Parallelism inside one evaluation | **Out of scope** → CIP-0013 P7 |
+| L4 | Parallelism inside one evaluation | **Out of scope** → [CIP-0025](./cip0025.md) (was CIP-0013 P7) |
 | L5 | Same-instance concurrent / mutexed API | **Rejected** |
 
 ### Contract text (normative intent)

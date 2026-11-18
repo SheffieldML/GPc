@@ -19,6 +19,11 @@ Sparse algebra mode for the suite: `GPC_SPARSE_LINALG=stable|legacy` (cell label
 becomes `…+stable` / `…+legacy`). Dual-path metric compare:
 `make compare-sparse-modes` or `python3 numerical_stability/compare_sparse_modes.py`.
 
+Improvement experiments (in-suite, both modes every run): crowded inducing +
+CIP-0013-style protocol stress (`*_stress_stable_finite`,
+`*_stress_stable_fd_not_worse`, optional `*_legacy_breaks_stable_ok`), plus a
+reduced γ×M dual-path slice. Full γ×M / mpmath remains `make diagSparseStable`.
+
 Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimisers.md).
 
 ## CMatrix ownership ([CIP-0008](../cip/cip0008.md))
@@ -52,6 +57,7 @@ Gates:
 - Dual-path toy: `make testCGp && ./testCGp` (StableFactor section) and `make diagDtcvar && ./diagDtcvar`.
 - γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable` (DTC/DTCVAR/FITC/PITC).
 - Numerical-stability suite dual-path metrics: `make compare-sparse-modes` (DTC/DTCVAR/FITC/PITC FD + Legacy↔StableFactor LL/grad gaps).
+- Numerical-stability stress: crowded-Z / protocol FITC+DTCVAR both-mode FD ordering; γ×M dual-path slice in CI via `make run-numerical-stability`.
 - Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`.
 
 ## Reference mismatches cleared in CIP-0003

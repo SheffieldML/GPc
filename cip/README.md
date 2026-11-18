@@ -40,6 +40,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-001A](./cip001A.md): Categorised numerical stability metrics and baseline trend (**Closed**). qig-style budgets + Codecov-like Δ vs `main` metrics; extends CIP-0019.
 - [CIP-001B](./cip001B.md): LQ factorisation for collapsed VFE/DTC (and FITC) sparse bounds (**Accepted / In Progress**). Extends CIP-0012 whitening: LQ of \([I,A]\) (or \(y\)-augmented) instead of Gram+chol of \(I+AA^\top\); Seeger et al. 2017 BLR trick on the sparse bound.
 - [CIP-001C](./cip001C.md): White-noise inducing features for stationary kernels (kernel-free \(K_{uu}\)) (**Implemented** — Phases 1–4; Close after PR/CI). Implements [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md).
+- [CIP-0016](./cip0016.md): Shared JSON/YAML model interchange with GPy and GPmat (**Proposed**). Implements [REQ-000A](../requirements/req000A_shared-model-interchange.md). Orthogonal to CIP-0015 (demos) and CIP-001D (live Python façade).
 - [CIP-001D](./cip001D.md): Light Python façade over GPc for GPy users (**In Progress** — Phase A done; Phase B FTC smoke green). Implements [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md). Orthogonal to CIP-0015 (native tutorials) and CIP-0016 (file interchange).
 
 ## Creating a Good CIP

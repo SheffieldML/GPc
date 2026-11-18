@@ -1,6 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "pybind11>=2.12", "numpy"]
-build-backend = "setuptools.build_meta"
+requires = [
+  "scikit-build-core>=0.10",
+  "pybind11>=2.12",
+  "numpy",
+]
+build-backend = "scikit_build_core.build"
 
 [project]
 name = "gpc"
@@ -19,5 +23,14 @@ examples = ["matplotlib", "pods", "jupyter"]
 testpaths = ["tests"]
 pythonpath = ["."]
 
-[tool.setuptools.packages.find]
-include = ["gpc*"]
+# CIP-0020 Phase B: build native _gpc via repo-root CMake (libgp + Fortran + OpenBLAS).
+[tool.scikit-build]
+cmake.source-dir = ".."
+wheel.packages = ["gpc"]
+minimum-version = "0.10"
+build-dir = "build/{wheel_tag}"
+
+[tool.scikit-build.cmake.define]
+GPC_BUILD_PYTHON = "ON"
+GPC_BUILD_GP_CLI = "OFF"
+GPC_BUILD_EXTRA_CLIS = "OFF"

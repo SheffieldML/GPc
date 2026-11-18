@@ -1,6 +1,7 @@
 #ifndef CGP_H
 #define CGP_H
 #include "CMltools.h"
+#include "CInducing.h"
 
 using namespace std;
 
@@ -349,6 +350,15 @@ public:
     inducingFixed = val;
   }
 
+  // CIP-001C: inducing-variable family ("points" | "whitenoise").
+  void setInducingType(const string& typeName);
+  void setInducing(CInducing* pInd);
+  string getInducingType() const;
+  CInducing* getInducing() { return pInducing; }
+  const CInducing* getInducing() const { return pInducing; }
+  // Meff = M - tr(C^{-1}) after ensureAD (whitened path); legacy uses A.
+  double getEffectiveInducingCount() const;
+
   // Model-level GPy-style paths (CIP-0014 Phase C): kern.*, beta, scale.j.
   vector<string> paramPaths() const;
   double getByPath(const string& path) const;
@@ -437,7 +447,8 @@ public:
   }
  
   CMapModel* backConstraintModel; // for mapping constraints on latent variables.
-  CMatrix X_u; // for inducing variables if needed.
+  CMatrix X_u; // for inducing variables if needed (centres storage; inducing object aliases).
+  ~CGp();
 
   CMatrix* pX;
   CMatrix* py;  // target data.
@@ -594,6 +605,8 @@ public:
   mutable bool AlphaUpToDate;
   mutable bool ADupToDate;
   mutable bool MupToDate;
+
+  CInducing* pInducing; // owned; points / white-noise inducing contract
   
   string type;
 };

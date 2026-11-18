@@ -146,52 +146,53 @@ testGp: testGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfort
 testGp.o: testGp.cpp CGp.h CKern.h CMatrix.h CClctrl.h
 	$(CC) -c testGp.cpp -o testGp.o $(CCFLAGS)
 
+# Maintainer diagnostics / fixture stampers live under tools/ (binaries still at repo root).
 # DTC/DTCVAR gradient + GPy-aligned reference dump (backlog 2026-11-15_dtcvar-numerical-diagnostic).
-diagDtcvar: diagDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagDtcvar diagDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagDtcvar: tools/diagDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagDtcvar tools/diagDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-diagDtcvar.o: diagDtcvar.cpp CGp.h CKern.h CMatrix.h
-	$(CC) -c diagDtcvar.cpp -o diagDtcvar.o $(CCFLAGS)
+tools/diagDtcvar.o: tools/diagDtcvar.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c tools/diagDtcvar.cpp -o tools/diagDtcvar.o $(CCFLAGS)
 
 # CIP-0012: Legacy vs StableFactor γ×M stress sweep (pair with scripts/sparse_mp_reference.py).
-diagSparseStable: diagSparseStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagSparseStable diagSparseStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagSparseStable: tools/diagSparseStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagSparseStable tools/diagSparseStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-diagSparseStable.o: diagSparseStable.cpp CGp.h CKern.h CMatrix.h
-	$(CC) -c diagSparseStable.cpp -o diagSparseStable.o $(CCFLAGS)
+tools/diagSparseStable.o: tools/diagSparseStable.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c tools/diagSparseStable.cpp -o tools/diagSparseStable.o $(CCFLAGS)
 
 # CIP-001C pilot: white-noise inducing vs point inducing (hand closed-form sweep).
-diagWhiteNoisePilot: diagWhiteNoisePilot.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagWhiteNoisePilot diagWhiteNoisePilot.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o $(LDFLAGS)
+diagWhiteNoisePilot: tools/diagWhiteNoisePilot.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagWhiteNoisePilot tools/diagWhiteNoisePilot.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o $(LDFLAGS)
 
-diagWhiteNoisePilot.o: diagWhiteNoisePilot.cpp CMatrix.h
-	$(CC) -c diagWhiteNoisePilot.cpp -o diagWhiteNoisePilot.o $(CCFLAGS)
+tools/diagWhiteNoisePilot.o: tools/diagWhiteNoisePilot.cpp CMatrix.h
+	$(CC) -c tools/diagWhiteNoisePilot.cpp -o tools/diagWhiteNoisePilot.o $(CCFLAGS)
 
 # CIP-001C pilot: full SCG — point DTCVAR (CGp) vs VIK white-noise features.
-diagVikCompare: diagVikCompare.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagVikCompare diagVikCompare.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagVikCompare: tools/diagVikCompare.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagVikCompare tools/diagVikCompare.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-diagVikCompare.o: diagVikCompare.cpp CGp.h CKern.h CMatrix.h COptimisable.h
-	$(CC) -c diagVikCompare.cpp -o diagVikCompare.o $(CCFLAGS)
+tools/diagVikCompare.o: tools/diagVikCompare.cpp CGp.h CKern.h CMatrix.h COptimisable.h
+	$(CC) -c tools/diagVikCompare.cpp -o tools/diagVikCompare.o $(CCFLAGS)
 
-diagPitc: diagPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagPitc: tools/diagPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagPitc tools/diagPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-diagPitc.o: diagPitc.cpp CGp.h CKern.h CMatrix.h
-	$(CC) -c diagPitc.cpp -o diagPitc.o $(CCFLAGS)
+tools/diagPitc.o: tools/diagPitc.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c tools/diagPitc.cpp -o tools/diagPitc.o $(CCFLAGS)
 
-genTestGpPitc: genTestGpPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o genTestGpPitc genTestGpPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+genTestGpPitc: tools/genTestGpPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpPitc tools/genTestGpPitc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-genTestGpPitc.o: genTestGpPitc.cpp CGp.h CKern.h CMatrix.h
-	$(CC) -c genTestGpPitc.cpp -o genTestGpPitc.o $(CCFLAGS)
+tools/genTestGpPitc.o: tools/genTestGpPitc.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c tools/genTestGpPitc.cpp -o tools/genTestGpPitc.o $(CCFLAGS)
 
 # Fixture generator for matfiles/testGpdtcvar.mat (scripts/gen_testGpdtcvar.py).
-genTestGpDtcvar: genTestGpDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar genTestGpDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+genTestGpDtcvar: tools/genTestGpDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar tools/genTestGpDtcvar.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-genTestGpDtcvar.o: genTestGpDtcvar.cpp CGp.h CKern.h CMatrix.h
-	$(CC) -c genTestGpDtcvar.cpp -o genTestGpDtcvar.o $(CCFLAGS)
+tools/genTestGpDtcvar.o: tools/genTestGpDtcvar.cpp CGp.h CKern.h CMatrix.h
+	$(CC) -c tools/genTestGpDtcvar.cpp -o tools/genTestGpDtcvar.o $(CCFLAGS)
  
 testIvm: testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testIvm  testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
@@ -392,11 +393,12 @@ ndlfortran.o: ndlfortran.f
 
 clean:
 	rm -f *.o *.gcda *.gcno *.gcov coverage.info
+	rm -f tools/*.o tools/*.gcda tools/*.gcno
 	rm -f demo_regression_1d demo_sparse_dtcvar
 	rm -rf coverage-html
 
-diagLqVsStable: diagLqVsStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagLqVsStable diagLqVsStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagLqVsStable: tools/diagLqVsStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagLqVsStable tools/diagLqVsStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-diagLqVsStable.o: diagLqVsStable.cpp CGp.h
-	$(CC) -c diagLqVsStable.cpp -o diagLqVsStable.o $(CCFLAGS)
+tools/diagLqVsStable.o: tools/diagLqVsStable.cpp CGp.h
+	$(CC) -c tools/diagLqVsStable.cpp -o tools/diagLqVsStable.o $(CCFLAGS)

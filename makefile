@@ -17,8 +17,8 @@ all: gplvm bgplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-0013: objective+gradient timing harness (use RELEASE=1 for timed builds).
 bench: benchGPc
-benchGPc: bench/benchGPc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o benchGPc bench/benchGPc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+benchGPc: bench/benchGPc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o benchGPc bench/benchGPc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
 
 bench/benchGPc.o: bench/benchGPc.cpp CGp.h CKern.h CNoise.h
 	$(CC) -c bench/benchGPc.cpp -o bench/benchGPc.o $(CCFLAGS)
@@ -26,14 +26,14 @@ bench/benchGPc.o: bench/benchGPc.cpp CGp.h CKern.h CNoise.h
 # CIP-0015 Stage 1 API demos (docs/tutorials/)
 demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm demo_mrd
 
-demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CCholAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 demo_regression_1d.o: examples/demo_regression_1d.cpp CGp.h CKern.h CNoise.h CClctrl.h
 	$(CC) -c examples/demo_regression_1d.cpp -o demo_regression_1d.o $(CCFLAGS)
 
-demo_sparse_dtcvar: demo_sparse_dtcvar.o CClctrl.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o demo_sparse_dtcvar demo_sparse_dtcvar.o CGp.o CCholAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+demo_sparse_dtcvar: demo_sparse_dtcvar.o CClctrl.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_sparse_dtcvar demo_sparse_dtcvar.o CGp.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 demo_sparse_dtcvar.o: examples/demo_sparse_dtcvar.cpp CGp.h CKern.h CNoise.h CClctrl.h
 	$(CC) -c examples/demo_sparse_dtcvar.cpp -o demo_sparse_dtcvar.o $(CCFLAGS)
@@ -67,14 +67,14 @@ ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil
 ivm.o: ivm.cpp CIvm.h CKern.h CMatrix.h ivm.h CClctrl.h
 	$(CC) -c ivm.cpp -o ivm.o $(CCFLAGS)
 
-gp: gp.o CClctrl.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CCholAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+gp: gp.o CClctrl.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
-libgp$(LIBSEXT): CClctrl.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LIBSCOMMAND) libgp$(LIBSEXT) CGp.o CCholAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+libgp$(LIBSEXT): CClctrl.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LIBSCOMMAND) libgp$(LIBSEXT) CGp.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 
-libgp$(LIBDEXT): CClctrl.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CCholAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+libgp$(LIBDEXT): CClctrl.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 
 gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h CTransform.h \
@@ -85,7 +85,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -93,7 +93,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
 # testMrd is CIP-0018.
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testCoregionalize testPsi testBayesGplvm testMrd
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -108,6 +108,7 @@ run-matio-tests: matio-tests
 	./testGp
 	./testCGp
 	./testCholAdjoint
+	./testLQAdjoint
 	./testCoregionalize
 	./testPsi
 	./testBayesGplvm
@@ -119,8 +120,8 @@ run-bgplvm-smoke: bgplvm
 	./scripts/smoke_bgplvm.sh
 
 # CIP-0019: adversarial / extreme-input numerical stability (separate from matio-tests).
-testNumericalStability: numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testNumericalStability numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testNumericalStability: numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testNumericalStability numerical_stability/testNumericalStability.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 numerical_stability/testNumericalStability.o: numerical_stability/testNumericalStability.cpp CGp.h CKern.h CMatrix.h CNoise.h
 	$(CC) -c numerical_stability/testNumericalStability.cpp -o numerical_stability/testNumericalStability.o $(CCFLAGS)
@@ -139,41 +140,41 @@ testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o 
 testDist.o: testDist.cpp CDist.h CTransform.h CMatrix.h CClctrl.h
 	$(CC) -c testDist.cpp -o testDist.o $(CCFLAGS)
 
-testGp: testGp.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testGp  testGp.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testGp: testGp.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testGp  testGp.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 testGp.o: testGp.cpp CGp.h CKern.h CMatrix.h CClctrl.h
 	$(CC) -c testGp.cpp -o testGp.o $(CCFLAGS)
 
 # DTC/DTCVAR gradient + GPy-aligned reference dump (backlog 2026-11-15_dtcvar-numerical-diagnostic).
-diagDtcvar: diagDtcvar.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagDtcvar diagDtcvar.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagDtcvar: diagDtcvar.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagDtcvar diagDtcvar.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 diagDtcvar.o: diagDtcvar.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c diagDtcvar.cpp -o diagDtcvar.o $(CCFLAGS)
 
 # CIP-0012: Legacy vs StableFactor γ×M stress sweep (pair with scripts/sparse_mp_reference.py).
-diagSparseStable: diagSparseStable.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagSparseStable diagSparseStable.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagSparseStable: diagSparseStable.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagSparseStable diagSparseStable.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 diagSparseStable.o: diagSparseStable.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c diagSparseStable.cpp -o diagSparseStable.o $(CCFLAGS)
 
-diagPitc: diagPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+diagPitc: diagPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 diagPitc.o: diagPitc.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c diagPitc.cpp -o diagPitc.o $(CCFLAGS)
 
-genTestGpPitc: genTestGpPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o genTestGpPitc genTestGpPitc.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+genTestGpPitc: genTestGpPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpPitc genTestGpPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 genTestGpPitc.o: genTestGpPitc.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c genTestGpPitc.cpp -o genTestGpPitc.o $(CCFLAGS)
 
 # Fixture generator for matfiles/testGpdtcvar.mat (scripts/gen_testGpdtcvar.py).
-genTestGpDtcvar: genTestGpDtcvar.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar genTestGpDtcvar.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+genTestGpDtcvar: genTestGpDtcvar.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o genTestGpDtcvar genTestGpDtcvar.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 genTestGpDtcvar.o: genTestGpDtcvar.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c genTestGpDtcvar.cpp -o genTestGpDtcvar.o $(CCFLAGS)
@@ -239,11 +240,20 @@ testMatrix.o: testMatrix.cpp CMatrix.h CClctrl.h
 CCholAdjoint.o: CCholAdjoint.cpp CCholAdjoint.h CMatrix.h
 	$(CC) -c CCholAdjoint.cpp -o CCholAdjoint.o $(CCFLAGS)
 
+CLQAdjoint.o: CLQAdjoint.cpp CLQAdjoint.h CMatrix.h lapack.h
+	$(CC) -c CLQAdjoint.cpp -o CLQAdjoint.o $(CCFLAGS)
+
 testCholAdjoint: testCholAdjoint.o CCholAdjoint.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testCholAdjoint testCholAdjoint.o CCholAdjoint.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o $(LDFLAGS)
 
 testCholAdjoint.o: testCholAdjoint.cpp CCholAdjoint.h CMatrix.h
 	$(CC) -c testCholAdjoint.cpp -o testCholAdjoint.o $(CCFLAGS)
+
+testLQAdjoint: testLQAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testLQAdjoint testLQAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o $(LDFLAGS)
+
+testLQAdjoint.o: testLQAdjoint.cpp CLQAdjoint.h CMatrix.h
+	$(CC) -c testLQAdjoint.cpp -o testLQAdjoint.o $(CCFLAGS)
 
 testOptimisable: testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testOptimisable testOptimisable.o COptimisable.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o ndlassert.o $(LDFLAGS)
@@ -258,8 +268,8 @@ testParamPaths: testParamPaths.o CMatrix.o ndlfortran.o CKern.o CTransform.o COp
 testParamPaths.o: testParamPaths.cpp CKern.h CTransform.h CMatrix.h
 	$(CC) -c testParamPaths.cpp -o testParamPaths.o $(CCFLAGS)
 
-testCGp: testCGp.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CCholAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testCGp: testCGp.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c testCGp.cpp -o testCGp.o $(CCFLAGS)
@@ -330,7 +340,7 @@ CMatrix.o: CMatrix.cpp CMatrix.h ndlassert.h ndlexceptions.h \
 CMltools.o: CMltools.cpp CMltools.h
 	$(CC) -c CMltools.cpp -o CMltools.o $(CCFLAGS)
 
-CGp.o: CGp.cpp CGp.h CCholAdjoint.h CMltools.h ndlassert.h ndlexceptions.h \
+CGp.o: CGp.cpp CGp.h CCholAdjoint.h CLQAdjoint.h CMltools.h ndlassert.h ndlexceptions.h \
   ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \
   ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
   CNoise.h
@@ -360,3 +370,9 @@ clean:
 	rm -f *.o *.gcda *.gcno *.gcov coverage.info
 	rm -f demo_regression_1d demo_sparse_dtcvar
 	rm -rf coverage-html
+
+diagLqVsStable: diagLqVsStable.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagLqVsStable diagLqVsStable.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+diagLqVsStable.o: diagLqVsStable.cpp CGp.h
+	$(CC) -c diagLqVsStable.cpp -o diagLqVsStable.o $(CCFLAGS)

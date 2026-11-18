@@ -18,11 +18,12 @@ public:
     DTCVAR
   };
 
-  // Sparse factorisation schedule ([CIP-000E](cip/cip000E.md)).
+  // Sparse factorisation schedule ([CIP-000E](cip/cip000E.md) / [CIP-0012](cip/cip0012.md) / [CIP-001B](cip/cip001B.md)).
   enum SparseLinalgMode
   {
     SparseLinalgLegacy = 0,
-    SparseLinalgStableFactor = 1
+    SparseLinalgStableFactor = 1,
+    SparseLinalgLQ = 2
   };
 
   CGp();
@@ -82,11 +83,24 @@ public:
   void ensureADUpToDate() const { updateAD(); }
   void ensureAlphaUpToDate() const { updateAlpha(); }
 
-  // CIP-0012: StableFactor (whitened C + Murray adjoints) is the default.
-  // Legacy remains for dual-path archaeology via -L legacy. Not persisted in .model streams.
+  // CIP-001B: SparseLinalgLQ (LQ of [I,A]) is the default.
+  // CIP-0012 StableFactor remains available (--sparse-linalg stable).
+  // (Seeger et al., arXiv:1710.08717 §3.3 BLR / §4.3 adjoint).
+  // Legacy remains for dual-path archaeology via --sparse-linalg legacy.
+  // Not persisted in .model streams.
   bool isStableSparseLinalg() const
   {
     return sparseLinalgMode == SparseLinalgStableFactor;
+  }
+  bool isLQSparseLinalg() const
+  {
+    return sparseLinalgMode == SparseLinalgLQ;
+  }
+  // Whitened B / C path shared by StableFactor and LQ (vs Legacy pdinv).
+  bool isWhitenedSparseLinalg() const
+  {
+    return sparseLinalgMode == SparseLinalgStableFactor
+      || sparseLinalgMode == SparseLinalgLQ;
   }
   void setStableSparseLinalg(bool val)
   {
@@ -99,7 +113,9 @@ public:
   }
   void setSparseLinalgMode(int mode)
   {
-    if(mode != SparseLinalgLegacy && mode != SparseLinalgStableFactor)
+    if(mode != SparseLinalgLegacy
+       && mode != SparseLinalgStableFactor
+       && mode != SparseLinalgLQ)
       throw ndlexceptions::Error("Unknown sparseLinalgMode");
     if(mode != sparseLinalgMode)
     {
@@ -516,11 +532,13 @@ public:
   mutable CMatrix LcholA;
   mutable double logDetA;
 
-  // CIP-0012 whitened StableFactor state (spherical sparse).
+  // CIP-0012 / CIP-001B whitened state (spherical sparse).
   mutable CMatrix B;       // U^{-T} K_uf (M × N)
-  mutable CMatrix Cmat;    // I + β B B^T
-  mutable CMatrix LcholC;  // upper chol(C)
+  mutable CMatrix Cmat;    // I + β B B^T (StableFactor); unused for LQ forward
+  mutable CMatrix LcholC;  // upper chol(C) or upper R = L^T from LQ of [I,A]
   mutable double logDetC;
+  // CIP-001B: Q from LQ of [I, A] (M × (M+N)), rows orthonormal; needed for lqAdjoint.
+  mutable CMatrix Qlq;
 
   // Representations for intermediate gradients.
   mutable CMatrix dgKX;
@@ -555,7 +573,7 @@ public:
 
   unsigned int numActive;
   int approximationType; /// FTC, DTC, FITC, PITC, DTCVAR
-  int sparseLinalgMode; /// SparseLinalgLegacy or SparseLinalgStableFactor
+  int sparseLinalgMode; /// SparseLinalgLegacy, StableFactor, or LQ
   int numCovStruct;
 
   bool outputScaleLearnt;

@@ -1,4 +1,7 @@
 #include "CPpa.h"
+#include <algorithm>
+#include <cmath>
+#include <vector>
 
 CPpa::CPpa(const CMatrix& inData, const CMatrix& targetData,
            CKern& kernel, CNoise& noiseModel, int verbosity)
@@ -884,5 +887,98 @@ CPpa* readPpaFromFile(const string modelFileName, const int verbosity)
     cout << "... done." << endl;
   in.close();
   return pmodel;
+}
+
+static double medianNearestNeighbourDistance(const CMatrix& X)
+{
+  // Nearest-neighbour median lengthscale tracks local geometry (spirals,
+  // clusters) better than all-pairs median, which is biased long and lets
+  // the kernel M-step collapse signal variance into white noise.
+  const int N = static_cast<int>(X.getRows());
+  const int D = static_cast<int>(X.getCols());
+  if(N < 2)
+    return 1.0;
+
+  const int maxPts = 512;
+  vector<int> idx;
+  if(N <= maxPts)
+    {
+      idx.resize(N);
+      for(int i=0; i<N; i++)
+        idx[i] = i;
+    }
+  else
+    {
+      idx.resize(maxPts);
+      for(int i=0; i<maxPts; i++)
+        idx[i] = (i * (N - 1)) / (maxPts - 1);
+    }
+
+  vector<double> nnd;
+  nnd.reserve(idx.size());
+  for(size_t a=0; a<idx.size(); a++)
+    {
+      double best = 0.0;
+      bool have = false;
+      for(size_t b=0; b<idx.size(); b++)
+        {
+          if(a == b)
+            continue;
+          double s = 0.0;
+          for(int d=0; d<D; d++)
+            {
+              const double t = X.getVal(idx[a], d) - X.getVal(idx[b], d);
+              s += t * t;
+            }
+          const double dist = sqrt(s);
+          if(!have || dist < best)
+            {
+              best = dist;
+              have = true;
+            }
+        }
+      if(have)
+        nnd.push_back(best);
+    }
+  if(nnd.empty())
+    return 1.0;
+  const size_t mid = nnd.size() / 2;
+  nth_element(nnd.begin(), nnd.begin() + static_cast<long>(mid), nnd.end());
+  const double med = nnd[mid];
+  return (med > 1e-12) ? med : 1.0;
+}
+
+static bool trySetByPath(CKern& kern, const string& path, double val)
+{
+  try
+    {
+      kern.setByPath(path, val);
+      return true;
+    }
+  catch(ndlexceptions::Error&)
+    {
+      return false;
+    }
+}
+
+void initPpaKernFromData(CKern& kern, const CMatrix& X,
+                         bool setRbfLengthScale, bool setRbfVariance,
+                         bool setWhiteBias)
+{
+  const double ell = medianNearestNeighbourDistance(X);
+  if(setRbfLengthScale)
+    {
+      // Prefer GPy-style lengthscale path; fall back to raw inverseWidth.
+      if(!trySetByPath(kern, "rbf.lengthscale", ell))
+        trySetByPath(kern, "rbf.inverseWidth", 1.0 / (ell * ell));
+    }
+  if(setRbfVariance)
+    trySetByPath(kern, "rbf.variance", 1.0);
+  if(setWhiteBias)
+    {
+      // Keep diagonal dominated by the signal term at the start of EM.
+      trySetByPath(kern, "white.variance", 1e-4);
+      trySetByPath(kern, "bias.variance", 1e-2);
+    }
 }
 

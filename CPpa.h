@@ -170,4 +170,13 @@ void writePpaToFile(const CPpa& model, const string modelFileName, const string 
 CPpa* readPpaFromStream(istream& in);
 CPpa* readPpaFromFile(const string modelfileName, int verbosity=2);
 
+/** Data-dependent classification kernel init: RBF lengthscale from median
+    nearest-neighbour distance, signal variance 1, white/bias small so M-step
+    does not collapse into a noise-only solution. Skips components the caller
+    already overrode when the corresponding flag is false. */
+void initPpaKernFromData(CKern& kern, const CMatrix& X,
+                         bool setRbfLengthScale=true,
+                         bool setRbfVariance=true,
+                         bool setWhiteBias=true);
+
 #endif

@@ -92,7 +92,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -100,7 +100,8 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
 # testMrd is CIP-0018.
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd
+# testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -117,6 +118,7 @@ run-matio-tests: matio-tests
 	./testCholAdjoint
 	./testLQAdjoint
 	./testCoregionalize
+	./testClctrl
 	./testPsi
 	./testBayesGplvm
 	./testMrd
@@ -264,6 +266,13 @@ testMatrix: testMatrix.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o CClctrl.o
 
 testMatrix.o: testMatrix.cpp CMatrix.h CClctrl.h
 	$(CC) -c testMatrix.cpp  -o testMatrix.o $(CCFLAGS)
+
+# CIP-0022: CSV / SVML data loaders.
+testClctrl: testClctrl.o CClctrl.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testClctrl testClctrl.o CClctrl.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o $(LDFLAGS)
+
+testClctrl.o: testClctrl.cpp CClctrl.h CMatrix.h
+	$(CC) -c testClctrl.cpp -o testClctrl.o $(CCFLAGS)
 
 # CIP-0012: Murray Cholesky / trsm adjoint primitives.
 CCholAdjoint.o: CCholAdjoint.cpp CCholAdjoint.h CMatrix.h

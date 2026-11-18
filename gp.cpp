@@ -1006,7 +1006,7 @@ void CClgp::helpInfo()
     helpUsage("gp [options] learn example_file [model_file]");
     helpDescriptor("This file is for learning a data set with an GP. By default 1000 iterations of scaled conjugate gradient are used.");
     cout << "Arguments:" << endl;
-    helpArgument("example_file", "File with the training data. The data file is in the format used by SVM light.");
+    helpArgument("example_file", "Training data: dense CSV/TSV (last column = y; CIP-0022) preferred; SVM-light (.svml) still supported. Extension selects the reader.");
     helpArgument("model_file", "File to store the resulting model in. By default this is set to gp_model.");
     cout << endl;
     cout << "Command Options:" << endl;

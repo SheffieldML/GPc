@@ -1,7 +1,7 @@
 ---
 id: "0011"
 title: "Users can load tutorial and modelling data via CSV and pods, with SVM-light still supported"
-status: "Ready"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -45,3 +45,6 @@ HOW: [CIP-0022](../cip/cip0022.md) (Proposed). Orthogonal to [REQ-000A](./req000
 
 ### 2026-11-18
 Requirement created after agreeing CSV + pods as the preferred data path; SVM-light retained for compatibility.
+
+### 2026-11-18 (implementation)
+CIP-0022 accepted and in progress on `cip0022-csv-pods-data`: `readCsvDataFile`, extension auto-detect, example CSVs, `testClctrl` parity.

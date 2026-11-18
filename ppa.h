@@ -1,5 +1,5 @@
 /* Command-line interface for Probabilistic Point Assimilation (PPA).
-   Restored for CIP-0021; mirrors ivm.h / CClivm. */
+   Restored for CIP-0023; mirrors ivm.h / CClivm. */
 
 #ifndef PPA_H
 #define PPA_H

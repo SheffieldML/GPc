@@ -1,14 +1,14 @@
 ---
-id: "2026-11-18_cip0021-phase3-testppa"
-title: "CIP-0021 Phase 3: testPpa vs Phase 0 fixtures + CLI smoke"
+id: "2026-11-18_cip0023-phase3-testppa"
+title: "CIP-0023 Phase 3: testPpa vs Phase 0 fixtures + CLI smoke"
 status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
 category: "features"
-related_cips: ["0021"]
+related_cips: ["0023"]
 owner: "Neil Lawrence"
-dependencies: ["2026-11-18_cip0021-phase2-em-port"]
+dependencies: ["2026-11-18_cip0023-phase2-em-port"]
 tags:
 - backlog
 - ppa
@@ -16,7 +16,7 @@ tags:
 - verification
 ---
 
-# Task: CIP-0021 Phase 3 — verification
+# Task: CIP-0023 Phase 3 — verification
 
 ## Description
 
@@ -31,7 +31,7 @@ Add `testPpa` comparing C++ init / short-EM state to `testdata/ppa/phase0_*` ASC
 
 ## Related
 
-- CIP: 0021
+- CIP: 0023
 - Fixtures: `testdata/ppa/`
 
 ## Progress Updates

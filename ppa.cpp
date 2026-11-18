@@ -1095,9 +1095,16 @@ void CClppa::gnuplot()
 	  else
 	    numUnlab++;
 	}
-      CMatrix XPos(numPos, X.getCols()+1);
-      CMatrix XNeg(numNeg, X.getCols()+1);
-      CMatrix XUnlab(numUnlab, X.getCols()+1);
+      // Avoid CMatrix(0, c) under GPC_CHECKS (BOUNDCHECK); match ivm.cpp.
+      CMatrix XPos;
+      CMatrix XNeg;
+      CMatrix XUnlab;
+      if(numPos>0)
+	XPos.resize(numPos, X.getCols()+1);
+      if(numNeg>0)
+	XNeg.resize(numNeg, X.getCols()+1);
+      if(numUnlab>0)
+	XUnlab.resize(numUnlab, X.getCols()+1);
       int posIndex = 0;
       int negIndex = 0;
       int unlabIndex = 0;

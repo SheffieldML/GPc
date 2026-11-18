@@ -112,7 +112,7 @@ One of the advantages of interfacing to the LAPACK and BLAS libraries is that th
 
 ## General Information
 
-The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. Probabilistic Point Assimilation (variational EM classification) uses `./ppa` ([CIP-0021](cip/cip0021.md)). MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
+The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. Probabilistic Point Assimilation (variational EM classification) uses `./ppa` ([CIP-0023](cip/cip0023.md)). MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
 
 ```sh
 $ ./gp -h

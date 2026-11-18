@@ -1,14 +1,14 @@
 ---
-id: "2026-11-18_cip0021-phase2-em-port"
-title: "CIP-0021 Phase 2: port E-step and M-step (scalar β)"
+id: "2026-11-18_cip0023-phase2-em-port"
+title: "CIP-0023 Phase 2: port E-step and M-step (scalar β)"
 status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
 category: "features"
-related_cips: ["0021"]
+related_cips: ["0023"]
 owner: "Neil Lawrence"
-dependencies: ["2026-11-18_cip0021-phase1-compile-skeleton"]
+dependencies: ["2026-11-18_cip0023-phase1-compile-skeleton"]
 tags:
 - backlog
 - ppa
@@ -16,7 +16,7 @@ tags:
 - em
 ---
 
-# Task: CIP-0021 Phase 2 — E/M port
+# Task: CIP-0023 Phase 2 — E/M port
 
 ## Description
 
@@ -31,8 +31,8 @@ Implement `updateExpectationsfBar` / f̄ second moment from MATLAB `ppaExpectfBa
 
 ## Related
 
-- CIP: 0021
-- Notes: `cip/cip0021/symbol_map.md`
+- CIP: 0023
+- Notes: `cip/cip0023/symbol_map.md`
 
 ## Progress Updates
 

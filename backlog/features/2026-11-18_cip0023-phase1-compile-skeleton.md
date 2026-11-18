@@ -1,12 +1,12 @@
 ---
-id: "2026-11-18_cip0021-phase1-compile-skeleton"
-title: "CIP-0021 Phase 1: ppa.h, base-class rebase, make ppa, CI smoke"
+id: "2026-11-18_cip0023-phase1-compile-skeleton"
+title: "CIP-0023 Phase 1: ppa.h, base-class rebase, make ppa, CI smoke"
 status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
 category: "features"
-related_cips: ["0021"]
+related_cips: ["0023"]
 owner: "Neil Lawrence"
 dependencies: []
 tags:
@@ -16,7 +16,7 @@ tags:
 - cli
 ---
 
-# Task: CIP-0021 Phase 1 — compile skeleton
+# Task: CIP-0023 Phase 1 — compile skeleton
 
 ## Description
 
@@ -32,7 +32,7 @@ Restore `ppa.h`, rebase `CPpa` onto IVM-like bases so the sources link, add `mak
 
 ## Related
 
-- CIP: 0021
+- CIP: 0023
 - REQ: 0002, 0004
 
 ## Progress Updates

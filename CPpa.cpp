@@ -50,6 +50,7 @@ CPpa::CPpa(const CMatrix& trX, const CMatrix& trY,
   L = nullptr;
   Linv = nullptr;
   initStoreage();
+  fBar.deepCopy(wasM);
   updateK();
   updateInvK();
 }
@@ -91,13 +92,13 @@ double CPpa::logLikelihoodGradient(CMatrix& g) const
 double CPpa::outGradParams(CMatrix& /*g*/, const CMatrix& /*Xin*/,
                            unsigned int /*pointNo*/, unsigned int /*outputNo*/) const
 {
-  throw ndlexceptions::NotImplementedError("CPpa::outGradParams not implemented (CIP-0021).");
+  throw ndlexceptions::NotImplementedError("CPpa::outGradParams not implemented (CIP-0023).");
 }
 
 double CPpa::outGradX(CMatrix& /*g*/, const CMatrix& /*Xin*/,
                       unsigned int /*pointNo*/, unsigned int /*outputNo*/) const
 {
-  throw ndlexceptions::NotImplementedError("CPpa::outGradX not implemented (CIP-0021).");
+  throw ndlexceptions::NotImplementedError("CPpa::outGradX not implemented (CIP-0023).");
 }
 
 void CPpa::writeParamsToStream(ostream& out) const
@@ -182,40 +183,44 @@ void CPpa::out(CMatrix& yout, CMatrix& probout, const CMatrix& Xin) const
 }
 void CPpa::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
 {
+  // MATLAB ppaPosteriorMeanVar: invSigma = inv(diag(1/B)+K), mu = k(X)' invSigma fBar.
   assert(mu.getCols()==numTarget);
   assert(varSigma.getCols()==numTarget);
+  DIMENSIONMATCH(mu.getRows()==Xin.getRows());
+  DIMENSIONMATCH(varSigma.getRows()==Xin.getRows());
+  updateK();
   CMatrix kX(numTrainData, Xin.getRows());
-  kern.compute(kX, activeX, Xin);
-  if(numCovStruct==1)
-      {
-	kX.trsm(L[0], 1.0, "L", "L", "N", "N"); // now it is Linvk
-	for(int i=0; i<Xin.getRows(); i++)
-	  {
-	    double vsVal = kern.diagComputeElement(Xin, i) - kX.norm2Col(i);
-	    assert(vsVal>=0);
-	    for(int j=0; j<numTarget; j++)
-	      varSigma.setVal(vsVal, i, j);	    
-	  }
-	kX.trsm(L[0], 1.0, "L", "L", "T", "N"); // now it is Kinvk
-	mu.gemm(kX, wasM, 1.0, 0.0, "T", "N");
-      }
-  else
+  kern.compute(kX, activeX, Xin); // numTrainData x N*
+  const double b0 = beta.getVal(0, 0);
+  for(int j=0; j<numTarget; j++)
     {
-      CMatrix Lk(numTrainData, Xin.getRows());
-      
-      for(int k=0; k<numCovStruct; k++)
-	{
-	  Lk.deepCopy(kX);
-	  Lk.trsm(L[k], 1.0, "L", "L", "N", "N");
-	  for(int i=0; i<Xin.getRows(); i++)
-	    {
-	      double vsVal=kern.diagComputeElement(Xin, i) - Lk.norm2Col(i);
-	      assert(vsVal>=0);
-	      varSigma.setVal(vsVal, i, k);
-	    }
-	  Lk.trsm(L[k], 1.0, "L", "L", "T", "N"); // now it is Kinvk
-	  mu.gemvColCol(k, Lk, wasM, k, 1.0, 0.0, "N");
-	}
+      const double b = (beta.getCols()==1) ? b0 : beta.getVal(0, j);
+      CMatrix Sigma(K);
+      for(int i=0; i<numTrainData; i++)
+        Sigma.setVal(Sigma.getVal(i, i) + 1.0 / b, i, i);
+      Sigma.setSymmetric(true);
+      CMatrix U(chol(Sigma));
+      CMatrix invSigma(Sigma);
+      invSigma.pdinv(U);
+      invSigma.setSymmetric(true);
+
+      CMatrix Kinvk(numTrainData, Xin.getRows());
+      Kinvk.symm(invSigma, kX, 1.0, 0.0, "l", "l"); // invSigma * kX
+
+      for(int n=0; n<Xin.getRows(); n++)
+        {
+          double vsVal = kern.diagComputeElement(Xin, n) - Kinvk.dotColCol(n, kX, n);
+          if(vsVal < 0.0)
+            vsVal = 0.0;
+          varSigma.setVal(vsVal, n, j);
+        }
+      CMatrix fBarCol(numTrainData, 1);
+      for(int i=0; i<numTrainData; i++)
+        fBarCol.setVal(fBar.getVal(i, j), i, 0);
+      CMatrix muCol(Xin.getRows(), 1);
+      muCol.gemv(Kinvk, fBarCol, 1.0, 0.0, "T");
+      for(int n=0; n<Xin.getRows(); n++)
+        mu.setVal(muCol.getVal(n, 0), n, j);
     }
 }
 void CPpa::initStoreage()
@@ -492,6 +497,8 @@ void CPpa::eStep()
       }
   updateExpectationf();
   updateExpectationff();
+  // Persist fBar in wasM so stream I/O / prediction after load stay consistent.
+  wasM.deepCopy(fBar);
   logLike = logLikelihood();
 }
 void CPpa::updateExpectationf()
@@ -776,7 +783,8 @@ CPpa* readPpaFromStream(istream& in)
   ndlstrutil::tokenise(tokens, line, "=");
   if(tokens.size()>2 || tokens[0]!="ppaVersion")
     throw ndlexceptions::FileFormatError();
-  if(tokens[1]!="0.1")
+  // 0.1: historical; 0.2: CIP-0023 revive (same payload layout for these fields).
+  if(tokens[1]!="0.1" && tokens[1]!="0.2")
     throw ndlexceptions::FileFormatError();
 
   // next line is training set size
@@ -816,38 +824,40 @@ CPpa* readPpaFromStream(istream& in)
       beta.setVal(atof(tokens[j].c_str()), j);
     }
 
-  // Get m, X and Y
-  CMatrix m(numTrainData, numProcesses);
-  CMatrix activeX(numTrainData, numFeatures, 0.0);
-  CMatrix trainY(numTrainData, numProcesses);
+  // Row layout: pointIndex, y[P], wasM/fBar[P], sparse features.
+  // Heap-allocate so CPpa's const refs remain valid after return.
+  CMatrix* pm = new CMatrix(numTrainData, numProcesses);
+  CMatrix* pactiveX = new CMatrix(numTrainData, numFeatures, 0.0);
+  CMatrix* ptrainY = new CMatrix(numTrainData, numProcesses);
+  CMatrix* pbeta = new CMatrix(beta);
   for(int i=0; i<numTrainData; i++)
     {
       tokens.clear();
       ndlstrutil::getline(in, line);
       ndlstrutil::tokenise(tokens, line, " ");
+      if(static_cast<int>(tokens.size()) < 1 + 2*numProcesses)
+        throw ndlexceptions::FileFormatError("Corrupt file format.");
       for(int j=0; j<numProcesses; j++)
 	{
-	  trainY.setVal(atof(tokens[j].c_str()), i, j);
+	  ptrainY->setVal(atof(tokens[1+j].c_str()), i, j);
 	}
       for(int j=0; j<numProcesses; j++)
 	{
-	  m.setVal(atof(tokens[j+numProcesses].c_str()), i, j);
+	  pm->setVal(atof(tokens[1+numProcesses+j].c_str()), i, j);
 	}
-      // get activeX and trainY now.
-      for(int j=numProcesses*3; j<tokens.size(); j++)
+      for(size_t j=static_cast<size_t>(1+2*numProcesses); j<tokens.size(); j++)
 	{
 	  int ind = tokens[j].find(':');
-	  // TODO Check that : is in the string.
 	  string featStr=tokens[j].substr(0, ind);
 	  string featValStr=tokens[j].substr(ind+1, tokens[j].size()-ind);
 	  int featNum = atoi(featStr.c_str());
 	  if(featNum<1 || featNum>numFeatures)
 	    throw ndlexceptions::FileFormatError("Corrupt file format.");
 	  double featVal = atof(featValStr.c_str());
-	  activeX.setVal(featVal, i, featNum-1);	  
+	  pactiveX->setVal(featVal, i, featNum-1);
 	}
     }
-  CPpa* pmodel= new CPpa(activeX, trainY, m, beta, *pkern, *pnoise); 
+  CPpa* pmodel= new CPpa(*pactiveX, *ptrainY, *pm, *pbeta, *pkern, *pnoise);
   return pmodel;
 }
 

@@ -1,4 +1,4 @@
-# MATLAB → C++ symbol map (CIP-0021)
+# MATLAB → C++ symbol map (CIP-0023)
 
 Reference root: `~/lawrennd/ppa/matlab` (GitHub [lawrennd/ppa](https://github.com/lawrennd/ppa)).  
 GPc targets: `CPpa.{h,cpp}`, `ppa.h` (restore), `ppa.cpp`.

@@ -1,4 +1,4 @@
-/* CIP-0021: compare CPpa init state to Octave Phase 0 fixtures. */
+/* CIP-0023: compare CPpa init state to Octave Phase 0 fixtures. */
 #include "CKern.h"
 #include "CMatrix.h"
 #include "CNoise.h"

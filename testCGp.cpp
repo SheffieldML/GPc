@@ -300,8 +300,8 @@ int testStableSparse()
     fail += failTrue(pdiff < 1e-6,
                      string("Legacy vs StableFactor ") + predName[k] + " predict");
   }
-  fail += failTrue(toy.model->getSparseLinalgMode() == CGp::SparseLinalgStableFactor,
-                   "StableFactor is the default sparseLinalgMode");
+  fail += failTrue(toy.model->getSparseLinalgMode() == CGp::SparseLinalgLQ,
+                   "LQ is the default sparseLinalgMode");
   toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   try
   {

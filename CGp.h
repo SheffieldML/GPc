@@ -83,8 +83,8 @@ public:
   void ensureADUpToDate() const { updateAD(); }
   void ensureAlphaUpToDate() const { updateAlpha(); }
 
-  // CIP-0012: StableFactor (whitened C + Murray adjoints) is the default.
-  // CIP-001B: SparseLinalgLQ replaces Gram+chol of C with LQ of [I,A]
+  // CIP-001B: SparseLinalgLQ (LQ of [I,A]) is the default.
+  // CIP-0012 StableFactor remains available (--sparse-linalg stable).
   // (Seeger et al., arXiv:1710.08717 §3.3 BLR / §4.3 adjoint).
   // Legacy remains for dual-path archaeology via --sparse-linalg legacy.
   // Not persisted in .model streams.

@@ -790,6 +790,8 @@ int testKernels()
 
 // =============================================================================
 // 4. Models (exact + sparse GP)
+// Real-world stand-ins: full GP regression, then sparse pathologies that show
+// up in practice — collapsed inducing sets, Z=X identity, lengthscale extremes.
 // =============================================================================
 
 struct RegGp
@@ -981,7 +983,8 @@ int testModels()
     }
   }
 
-  // Sparse: coincident inducing; inducing = X recovers exact (approx).
+  // Sparse GP pathology: every inducing point stacked on the same x (degenerate
+  // init / collapsed Z). Model must stay finite even though K_uu is singular.
   {
     RegGp sp(40, CGp::DTC, 10);
     CMatrix Xu(10, 1);
@@ -991,6 +994,8 @@ int testModels()
     check("sparse_coincident_inducing", gpAllFinite(*sp.model));
   }
   {
+    // FITC with Z = X: the sparse model that should recover the exact GP when
+    // you place an inducing point on every training input (sanity / identity).
     RegGp exact(30);
     CCmpndKern kern(exact.X);
     kern.addKern(new CRbfKern(exact.X));
@@ -998,7 +1003,6 @@ int testModels()
     CGaussianNoise noise(&exact.Y);
     for(int i = 0; i < noise.getOutputDim(); i++)
       noise.setBiasVal(0.0, i);
-    // FITC with Z=X should recover the exact GP; DTC remains a bound.
     CGp sparse(&kern, &noise, &exact.X, CGp::FITC, 30, 0);
     sparse.setInducingVals(exact.X);
     sparse.setInducingFixed(true);
@@ -1026,6 +1030,9 @@ int testModels()
       check("sparse_inducing_eq_X_near_exact", close);
   }
   {
+    // Hyperparameter extremes during training: near-delta RBF (very short
+    // lengthscale) and near-constant RBF (very long lengthscale). Sparse FITC
+    // must remain finite at both ends of the lengthscale path.
     RegGp sp(40, CGp::FITC, 10);
     sp.kern.setByPath("rbf.lengthscale", 1e-3);
     check("sparse_fitc_extreme_short_ls", gpAllFinite(*sp.model));

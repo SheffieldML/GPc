@@ -1,6 +1,13 @@
-/* CIP-0012: Legacy vs StableFactor stress sweep (γ × M) for sparse approx.
-   Dual-path LL/grad compare on 1-D RBF data. Pair dumps with
-   scripts/sparse_mp_reference.py for mpmath gates. */
+/* CIP-0012 / CIP-001B: Legacy vs StableFactor vs LQ on a γ×M sweep.
+ *
+ * Real-world map: 1-D sparse regression while varying RBF inverseWidth (γ) and
+ * inducing count M — from smooth/global kernels (small γ) to short-scale local
+ * structure (large γ), and from coarse to dense inducing grids. Separated Z on
+ * a grid (not crowdZ). Asks whether the three linalg modes still implement the
+ * same DTC / DTCVAR / FITC / PITC model as conditioning changes.
+ *
+ * Pair dumps with scripts/sparse_mp_reference.py for mpmath gates.
+ */
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -15,6 +22,8 @@ using namespace std;
 
 namespace {
 
+// Evenly spaced inputs and inducing points on [-1,1] — the default “place Z on
+// a grid over the observed range” workflow in sparse GP tutorials.
 void fillGrid1d(CMatrix& X, CMatrix& y, CMatrix& Xu, unsigned int N, unsigned int M)
 {
   for(unsigned int i = 0; i < N; i++)
@@ -72,6 +81,17 @@ CellResult runCell(int approx, double gamma, unsigned int M, unsigned int N, dou
   CMatrix gS(1, model.getOptNumParams());
   model.logLikelihoodGradient(gS);
 
+  // CIP-001B: on this grid/γ sweep LQ must match StableFactor (same sparse GP,
+  // different factorisation). PITC still uses Gram under lq mode.
+  model.setSparseLinalgMode(CGp::SparseLinalgLQ);
+  const double llQ = model.logLikelihood();
+  CMatrix gQ(1, model.getOptNumParams());
+  model.logLikelihoodGradient(gQ);
+  const double llSQ = fabs(llS - llQ);
+  double gSQ = 0.0;
+  for(unsigned int j = 0; j < gS.getCols(); j++)
+    gSQ = max(gSQ, fabs(gS.getVal(j) - gQ.getVal(j)));
+
   CellResult r;
   r.gamma = gamma;
   r.M = M;
@@ -80,8 +100,10 @@ CellResult runCell(int approx, double gamma, unsigned int M, unsigned int N, dou
   for(unsigned int j = 0; j < gL.getCols(); j++)
     r.gMax = max(r.gMax, fabs(gL.getVal(j) - gS.getVal(j)));
   // LL dual-path is tight; M=20 PITC can sit ~1e-6. Grad diffs need mpmath (CIP-0012).
-  const bool finite = std::isfinite(llL) && std::isfinite(llS) && std::isfinite(r.gMax);
-  r.ok = finite && (r.llDiff < 5e-6) && (r.gMax < 5e-3);
+  const bool finite = std::isfinite(llL) && std::isfinite(llS) && std::isfinite(llQ)
+    && std::isfinite(r.gMax) && std::isfinite(gSQ);
+  r.ok = finite && (r.llDiff < 5e-6) && (r.gMax < 5e-3)
+    && (llSQ < 5e-6) && (gSQ < 5e-3);
   return r;
 }
 

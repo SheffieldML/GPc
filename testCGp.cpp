@@ -983,7 +983,7 @@ int testModelPaths()
     std::ostringstream oss;
     dispToy.model->display(oss);
     const string text = oss.str();
-    fail += failTrue(text.find("Standard GP Model") != string::npos,
+    fail += failTrue(text.find("GP regression") != string::npos,
                      "CGp display title on ostream");
     fail += failTrue(text.find("kern.rbf.lengthscale") != string::npos,
                      "CGp display includes GPy path");

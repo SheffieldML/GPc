@@ -43,12 +43,18 @@ def test_optimize_silent_without_callback():
     assert events == []
 
 
-def test_str_contains_canonical_paths():
+def test_str_paramz_table():
     X, Y = _toy()
     m = gpc.GPRegression(X, Y)
     m.set_by_path("rbf.lengthscale", 0.75)
     text = str(m)
-    assert "kern.rbf.lengthscale" in text or "rbf.lengthscale" in text
+    assert "Name : GP regression" in text
+    assert "Objective :" in text
+    assert "Number of Parameters :" in text
+    assert "Parameters:" in text
+    assert "kern.rbf.lengthscale" in text
+    assert "Gaussian_noise.variance" in text
+    assert "+ve" in text
     desc = m.describe()
-    assert desc.title
     assert any("lengthscale" in p.path for p in desc.params)
+    assert any(p.path == "Gaussian_noise.variance" for p in desc.params)

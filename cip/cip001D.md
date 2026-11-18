@@ -229,7 +229,7 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 
 - [x] Phase A: package scaffold + NumPy/`CMatrix` bridge
 - [ ] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native (wrapper + smoke tests green; docs/compare open)
-- [ ] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML)
+- [x] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML)
 - [ ] Phase C: sparse DTCVAR façade + pytest
 - [ ] Phase D: subset checklist, negative tests, README install notes
 - [ ] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)

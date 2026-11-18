@@ -22,6 +22,7 @@
 #include "CDist.h"
 #include "ndlstrutil.h"
 #include "ndlutil.h"
+#include "CModelDescription.h"
 using namespace std;
 
 
@@ -381,6 +382,8 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   void getGradPrior(CMatrix& g) const;
   // Get the log probabilities associated with the priors.
   void getPriorLogProb(CMatrix& L) const;
+  // Structured description for display / façades (CIP-001E).
+  virtual ModelDescription describe() const;
   // Display the kernel on an ostream.
   virtual ostream& display(ostream& os) const;
   

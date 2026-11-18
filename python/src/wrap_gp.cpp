@@ -1,5 +1,6 @@
 #include "wrap_gp.h"
 
+#include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
 #include "matrix_numpy.h"
@@ -51,9 +52,31 @@ std::vector<std::string> PyGPRegression::param_paths() const
   return model->paramPaths();
 }
 
-void PyGPRegression::optimize(unsigned int iters)
+void PyGPRegression::optimize(unsigned int iters, bool messages, py::object callback)
 {
-  model->optimise(iters);
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(messages);
+  // CGp::optimise prints the final model when verbosity>0; keep quiet unless messages.
+  model->setVerbosity(messages ? 3 : 0);
+
+  const bool haveCallback = !(callback.is_none());
+  if(haveCallback)
+  {
+    // Hold a copy for the duration of optimise; clear afterwards.
+    py::object cb = callback;
+    model->addOptimiserObserver([cb](const OptimiserEvent& e) {
+      py::gil_scoped_acquire acquire;
+      cb(e);
+    });
+  }
+
+  {
+    py::gil_scoped_release release;
+    model->optimise(iters);
+  }
+
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(true);
 }
 
 double PyGPRegression::objective() const
@@ -74,8 +97,49 @@ std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict(
   return {matrixToNumpy(mu), matrixToNumpy(varSigma)};
 }
 
+ModelDescription PyGPRegression::describe() const
+{
+  return model->describe();
+}
+
+std::string PyGPRegression::to_string() const
+{
+  return modelDescriptionToString(model->describe());
+}
+
 void bind_gp(py::module_& m)
 {
+  py::enum_<OptimiserPhase>(m, "OptimiserPhase")
+      .value("Start", OptimiserPhase::Start)
+      .value("Iter", OptimiserPhase::Iter)
+      .value("Converged", OptimiserPhase::Converged)
+      .value("MaxIters", OptimiserPhase::MaxIters)
+      .value("Failed", OptimiserPhase::Failed);
+
+  py::class_<OptimiserEvent>(m, "OptimiserEvent")
+      .def_readonly("phase", &OptimiserEvent::phase)
+      .def_readonly("optimiser", &OptimiserEvent::optimiser)
+      .def_readonly("iter", &OptimiserEvent::iter)
+      .def_readonly("func_eval", &OptimiserEvent::funcEval)
+      .def_readonly("objective", &OptimiserEvent::objective)
+      .def_readonly("grad_norm", &OptimiserEvent::gradNorm)
+      .def_readonly("step_or_scale", &OptimiserEvent::stepOrScale)
+      .def_readonly("message", &OptimiserEvent::message);
+
+  py::class_<ParamRow>(m, "ParamRow")
+      .def_readonly("path", &ParamRow::path)
+      .def_readonly("value", &ParamRow::value)
+      .def_readonly("transform", &ParamRow::transform)
+      .def_readonly("fixed", &ParamRow::fixed)
+      .def_readonly("role", &ParamRow::role);
+
+  py::class_<ModelDescription>(m, "ModelDescription")
+      .def_readonly("title", &ModelDescription::title)
+      .def_readonly("header_lines", &ModelDescription::headerLines)
+      .def_readonly("params", &ModelDescription::params)
+      .def_readonly("has_log_likelihood", &ModelDescription::hasLogLikelihood)
+      .def_readonly("log_likelihood", &ModelDescription::logLikelihood);
+
   py::class_<PyGPRegression>(m, "GPRegression")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
@@ -85,9 +149,16 @@ void bind_gp(py::module_& m)
       .def("set_by_path", &PyGPRegression::set_by_path, py::arg("path"), py::arg("value"))
       .def("get_by_path", &PyGPRegression::get_by_path, py::arg("path"))
       .def("param_paths", &PyGPRegression::param_paths)
-      .def("optimize", &PyGPRegression::optimize, py::arg("iters") = 100)
+      .def("optimize", &PyGPRegression::optimize,
+           py::arg("iters") = 100,
+           py::arg("messages") = false,
+           py::arg("callback") = py::none(),
+           "Run the C++ optimiser. Optional outer-iteration callback (CIP-001E).")
       .def("objective", &PyGPRegression::objective)
       .def("predict", &PyGPRegression::predict, py::arg("Xtest"))
+      .def("describe", &PyGPRegression::describe)
+      .def("__str__", &PyGPRegression::to_string)
+      .def("__repr__", &PyGPRegression::to_string)
       .def_property_readonly("n", &PyGPRegression::n)
       .def_property_readonly("input_dim", &PyGPRegression::input_dim)
       .def_property_readonly("output_dim", &PyGPRegression::output_dim);

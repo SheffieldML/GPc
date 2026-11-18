@@ -33,8 +33,15 @@ Making SCG treat `-#` as function evaluations is easy mechanically (`funcEval` +
 
 If a hard **function-evaluation** cap is needed for SCG later, expose it explicitly (e.g. enable `setFuncEvalTerminate(true)` / `setMaxFuncEvals`) rather than overloading `-#`.
 
+## Progress observers (CIP-001E)
+
+Optimiser drivers emit typed `OptimiserEvent` values at **outer-iteration** and terminal boundaries via `notifyOptimiserEvent`. Callers can register `addOptimiserObserver(...)`; default verbosity-gated text goes to `setOptimiserProgressStream` (default `cout`) when `setDefaultTextProgress(true)`.
+
+Events are **not** fired from inside `computeObjectiveVal` / `computeObjectiveGradParams`. Verbosity 0 keeps the default text path silent. Python `messages=` / `callback=` (CIP-001D Phase B2) bind the same observer.
+
 ## Related
 
 - Implementation: `COptimisable::{scgOptimise,lbfgsOptimise,cgOptimise,gdOptimise}`
 - Fortran: `ndlfortran.f` `SUBROUTINE LBFGS` (Nocedal)
 - GPy entry: `GPy.core.GP.optimize` → `paramz.optimization.opt_lbfgsb` / `opt_SCG`
+- CIP-001E / REQ-000F

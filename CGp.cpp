@@ -3,6 +3,7 @@
 #include "CLQAdjoint.h"
 #include <cmath>
 #include <cstdlib>
+#include <sstream>
 #include <vector>
 #include "ndlstrutil.h"
 CGp::CGp() 
@@ -2947,27 +2948,72 @@ bool CGp::equals(const CGp& model, const double tol) const
   return true;
 }
 
-void CGp::display(ostream& os) const 
+ModelDescription CGp::describe() const
 {
+  ModelDescription desc;
   if(isSparseApproximation())
-    cout << "Sparse Approximation GP Model:" << endl << "Approx type: " << getApproximationStr() <<endl;
+  {
+    desc.title = "Sparse Approximation GP Model:";
+    desc.headerLines.push_back("Approx type: " + getApproximationStr());
+  }
   else
-    cout << "Standard GP Model: " << endl;
-  cout << "Optimiser: " << getDefaultOptimiserStr() << endl;
-  cout << "Data Set Size: " << getNumData() << endl;
-  cout << "Kernel Type: " << endl;
-  cout << "Scales learnt: " << isOutputScaleLearnt() << endl;
-  cout << "X learnt: " << isOptimiseX() << endl;
-  cout << "Bias: " << bias << endl;
-  cout << "Scale: " << scale << endl;
-  pnoise->display(os);
-  pkern->display(os);
-  if(isSparseApproximation()) {
-    cout << "Inducing fixed: " << isInducingFixed() << endl;
-    cout << "Beta Value: " << getBetaVal() << endl;
+    desc.title = "Standard GP Model:";
+  desc.headerLines.push_back("Optimiser: " + getDefaultOptimiserStr());
+  {
+    std::ostringstream line;
+    line << "Data Set Size: " << getNumData();
+    desc.headerLines.push_back(line.str());
+  }
+  desc.headerLines.push_back(string("Scales learnt: ") + (isOutputScaleLearnt() ? "1" : "0"));
+  desc.headerLines.push_back(string("X learnt: ") + (isOptimiseX() ? "1" : "0"));
+  {
+    std::ostringstream line;
+    line << "Bias: " << bias;
+    desc.headerLines.push_back(line.str());
+  }
+  {
+    std::ostringstream line;
+    line << "Scale: " << scale;
+    desc.headerLines.push_back(line.str());
+  }
+  if(pnoise)
+  {
+    std::ostringstream noiseOss;
+    const_cast<CNoise*>(pnoise)->display(noiseOss);
+    std::string noiseText = noiseOss.str();
+    // Drop trailing newline so headerLines stays one logical block per entry.
+    while(!noiseText.empty() && (noiseText[noiseText.size()-1]=='\n' || noiseText[noiseText.size()-1]=='\r'))
+      noiseText.erase(noiseText.size()-1);
+    desc.headerLines.push_back(noiseText);
+  }
+  if(isSparseApproximation())
+    desc.headerLines.push_back(string("Inducing fixed: ") + (isInducingFixed() ? "1" : "0"));
+
+  const vector<string> paths = paramPaths();
+  for(size_t i = 0; i < paths.size(); ++i)
+  {
+    ParamRow row(paths[i], getByPath(paths[i]));
+    try
+    {
+      row.fixed = isFixed(paths[i]);
+    }
+    catch(...)
+    {
+      row.fixed = false;
+    }
+    desc.params.push_back(row);
   }
   if(py && pX)
-    cout << "Log likelihood: " << logLikelihood() << endl;
+  {
+    desc.hasLogLikelihood = true;
+    desc.logLikelihood = logLikelihood();
+  }
+  return desc;
+}
+
+void CGp::display(ostream& os) const
+{
+  formatModelDescription(describe(), os);
 }
 
 void CGp::readParamsFromStream(istream& in)

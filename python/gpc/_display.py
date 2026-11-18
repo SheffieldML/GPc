@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import math
 import sys
 import time
@@ -82,19 +83,29 @@ def format_model_description(
     return "\n".join(lines) + "\n"
 
 
-def _in_ipython() -> bool:
+def _jupyter_zmq_shell() -> Any | None:
+    """Return the IPython shell only when running under Jupyter (ZMQ).
+
+    Terminal IPython also defines ``get_ipython()``, but ``clear_output`` does
+    not rewrite prior prints there — tables stack. Use ANSI in that case.
+    """
     try:
-        get_ipython()  # type: ignore[name-defined]
-        return True
-    except NameError:
-        return False
+        from IPython import get_ipython
+    except ImportError:
+        return None
+    ip = get_ipython()
+    if ip is None:
+        return None
+    if ip.__class__.__name__ == "ZMQInteractiveShell":
+        return ip
+    return None
 
 
 class OptimiserTableProgress:
     """Refresh the paramz-style model table in place during ``optimize``.
 
-    IPython/Jupyter: ``clear_output`` + reprint (paramz notebook behaviour).
-    Terminal: ANSI cursor-up rewrite of the same block.
+    Jupyter (ZMQ): update a single ``display_id`` HTML ``<pre>`` cell.
+    Terminal / terminal IPython: ANSI cursor-up rewrite of the same block.
     """
 
     def __init__(self, model: Any, *, name: str = "GP regression") -> None:
@@ -102,7 +113,8 @@ class OptimiserTableProgress:
         self.name = name
         self._start = time.time()
         self._lines = 0
-        self._ipython = _in_ipython()
+        self._jupyter = _jupyter_zmq_shell() is not None
+        self._handle: Any | None = None
         self._finished = False
 
     def __call__(self, event: Any) -> None:
@@ -131,7 +143,6 @@ class OptimiserTableProgress:
         status = " · ".join(status_bits)
 
         footer = ""
-        # Match C++ / paramz terminal completion notes without dumping Iteration lines.
         phase_name = getattr(phase, "name", str(phase))
         if phase_name == "MaxIters":
             footer = "Warning: Maximum number of iterations has been exceeded\n"
@@ -146,23 +157,27 @@ class OptimiserTableProgress:
 
         if phase_name in ("Converged", "MaxIters", "Failed"):
             self._finished = True
-            if not self._ipython and self._lines:
-                # Leave the final frame on screen; advance past the rewrite region.
+            if not self._jupyter and self._lines:
                 sys.stdout.write("\n")
                 sys.stdout.flush()
                 self._lines = 0
 
     def _render(self, block: str) -> None:
-        if self._ipython:
+        if self._jupyter:
             try:
-                from IPython.display import clear_output
+                from IPython.display import HTML, display
             except ImportError:
-                clear_output = None  # type: ignore[assignment]
-            if clear_output is not None:
-                clear_output(wait=True)
-            sys.stdout.write(block)
-            sys.stdout.flush()
-            return
+                self._jupyter = False
+            else:
+                payload = HTML(
+                    "<pre style='line-height:1.3;margin:0'>"
+                    f"{html.escape(block)}</pre>"
+                )
+                if self._handle is None:
+                    self._handle = display(payload, display_id=True)
+                else:
+                    self._handle.update(payload)
+                return
 
         if self._lines > 0:
             sys.stdout.write(f"\033[{self._lines}A\r")

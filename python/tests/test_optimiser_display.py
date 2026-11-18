@@ -81,3 +81,15 @@ def test_messages_and_callback_both_fire():
     events = []
     m.optimize(iters=6, messages=True, callback=events.append)
     assert any(e.phase == gpc.OptimiserPhase.Iter for e in events)
+
+
+def test_progress_uses_ansi_outside_jupyter():
+    # Terminal IPython still defines get_ipython(), but must not take the
+    # clear_output path — that stacks tables. Outside ZMQ, use ANSI rewrite.
+    from gpc._display import OptimiserTableProgress, _jupyter_zmq_shell
+
+    assert _jupyter_zmq_shell() is None
+    X, Y = _toy()
+    m = gpc.GPRegression(X, Y)
+    prog = OptimiserTableProgress(m)
+    assert prog._jupyter is False

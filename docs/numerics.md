@@ -45,17 +45,20 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 
 FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/DTCVAR/PITC. An earlier FITC-only `+ N log 2π` before `L *= -0.5` double-counted that constant (offset \(\tfrac{d N}{2}\log 2\pi\); gradients unaffected). Removed 2026-11-16 — see backlog `2026-11-15_fitc-logtwopi-double-count`. MATLAB-era FITC fixtures may still differ by that amount; `testGp` accepts either convention via `logLikMatchesFixture`.
 
-## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md))
+## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md) / [CIP-001B](../cip/cip001B.md))
 
-Runtime flag only (not stored in `.model` files). Toggle with `CGp::setStableSparseLinalg` or `gp … -L stable`.
+Runtime flag only (not stored in `.model` files). Toggle with `CGp::setSparseLinalgMode` or `gp … --sparse-linalg stable|lq|legacy` (prefer the long form: short `-L` collides with `--Learn-scales`).
 
-- **StableFactor** (default, [CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
-- **Legacy**: `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed. Keep for dual-path archaeology (`gp … -L legacy`).
+- **LQ** (default, [CIP-001B](../cip/cip001B.md)): whitened forward \(B = U^{-\top}K_{uf}\); form \(C\) by LQ of \([I,\,\sqrt{\beta}B]\) (DTC/DTCVAR) or \([I,\,\sqrt{\beta}V]\) (FITC) instead of Gram+chol. Upper \(R=L^\top\) lands in `LcholC` for prediction. Gradients reverse through Seeger §4.3 `lqAdjoint` (`CLQAdjoint`) then the CIP-0012 whitening adjoints — not `pdinv(C)`. PITC stays on the StableFactor Gram path under `lq` for now.
+- **StableFactor** ([CIP-0012](../cip/cip0012.md)): same whitening; \(C = I + B\Lambda^{-1}B^\top\) via `syrk`+`potrf` (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
+- **Legacy**: `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed. Keep for dual-path archaeology (`gp … --sparse-linalg legacy`).
 
 Gates:
 
-- Dual-path toy: `make testCGp && ./testCGp` (StableFactor section) and `make diagDtcvar && ./diagDtcvar`.
+- Dual-path toy: `make testCGp && ./testCGp` (StableFactor + LQ sections) and `make diagDtcvar && ./diagDtcvar`.
+- LQ unit: `make testLQAdjoint && ./testLQAdjoint` (includes ill-conditioned \(K_{uf}K_{fu}\) logdet vs SVD — the large-\(N\) C-side cell, distinct from crowdZ). Offline: `python scripts/lq_sparse_prototype.py`.
 - γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable` (DTC/DTCVAR/FITC/PITC).
+- Stable vs LQ hard cells: `make diagLqVsStable && ./diagLqVsStable` (crowdZ = \(K_{uu}\)-limited; `largeN_clust_kufkfu_*` = \(K_{uf}K_{fu}\)-limited).
 - Numerical-stability suite dual-path metrics: `make compare-sparse-modes` (DTC/DTCVAR/FITC/PITC FD + Legacy↔StableFactor LL/grad gaps).
 - Numerical-stability stress: crowded-Z / protocol FITC+DTCVAR both-mode FD ordering; γ×M dual-path slice in CI via `make run-numerical-stability`.
 - Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`.

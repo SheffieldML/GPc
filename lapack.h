@@ -72,6 +72,47 @@ extern "C" void dpotri_(
 			int &info       // (output)
 			);
 
+// LQ factorization of a general M-by-N matrix A = L*Q (CIP-001B).
+extern "C" void dgelqf_(
+			const int &m,
+			const int &n,
+			double *a,
+			const int &lda,
+			double *tau,
+			double *work,
+			const int &lwork,
+			int &info
+			);
+// Generate the M-by-N matrix Q from DGELQF.
+extern "C" void dorglq_(
+			const int &m,
+			const int &n,
+			const int &k,
+			double *a,
+			const int &lda,
+			const double *tau,
+			double *work,
+			const int &lwork,
+			int &info
+			);
+// Singular values of a general M-by-N matrix (CIP-001B logdet reference).
+extern "C" void dgesvd_(
+			const char* jobu,
+			const char* jobvt,
+			const int &m,
+			const int &n,
+			double *a,
+			const int &lda,
+			double *s,
+			double *u,
+			const int &ldu,
+			double *vt,
+			const int &ldvt,
+			double *work,
+			const int &lwork,
+			int &info
+			);
+
 // ***** BLAS Level 1 operations *****
 
 // Perform y <-> x

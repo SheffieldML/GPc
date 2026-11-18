@@ -113,7 +113,7 @@ void CClgp::learn()
   int activeSetSize = -1;
   int approxType = -1;
   string approxTypeStr = "ftc";
-  string sparseLinalgStr = "stable";
+  string sparseLinalgStr = "lq";
   bool labelsProvided = true;
   double signalVariance = 0.0;
   vector<int> labels;
@@ -403,11 +403,13 @@ void CClgp::learn()
   CMatrix bK(1,1,0.0);
   pmodel = new CGp(&kern, &noise, &X, approxType, activeSetSize, getVerbosity());
   if(sparseLinalgStr=="legacy")
-    pmodel->setStableSparseLinalg(false);
+    pmodel->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   else if(sparseLinalgStr=="stable")
-    pmodel->setStableSparseLinalg(true);
+    pmodel->setSparseLinalgMode(CGp::SparseLinalgStableFactor);
+  else if(sparseLinalgStr=="lq")
+    pmodel->setSparseLinalgMode(CGp::SparseLinalgLQ);
   else
-    exitError("Unknown --sparse-linalg mode (use legacy or stable): " + sparseLinalgStr);
+    exitError("Unknown --sparse-linalg mode (use legacy, stable, or lq): " + sparseLinalgStr);
   if(optimiser=="scg")
     pmodel->setDefaultOptimiser(CGp::SCG);
   else if(optimiser=="conjgrad")
@@ -993,7 +995,7 @@ void CClgp::helpInfo()
     helpArgument("-L, --Learn-scales bool", "Whether or not to learn the scaling on the input data. Default value is 0 (false).");
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
-    helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: stable (whitened C + Murray adjoints, default) or legacy (explicit invK_uu). See [CIP-0012].");
+    helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: lq (LQ of [I,A], CIP-001B, default), stable (whitened C + Murray adjoints), or legacy (explicit invK_uu). Prefer --sparse-linalg over -L (short -L collides with Learn-scales).");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();

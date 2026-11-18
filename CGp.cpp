@@ -1,5 +1,7 @@
 #include "CGp.h"
 #include "CCholAdjoint.h"
+#include "CLQAdjoint.h"
+#include <cmath>
 CGp::CGp() 
   : CMapModel(), CProbabilisticOptimisable()
 {
@@ -106,7 +108,7 @@ void CGp::_init()
   backConstrained = false;
   KupToDate = false;
   sparseApproximation = false;
-  sparseLinalgMode = SparseLinalgStableFactor;
+  sparseLinalgMode = SparseLinalgLQ;
   setApproximationType(FTC);
   numActive = 0;
 }
@@ -169,10 +171,11 @@ void CGp::initSparseStoreage()
     gKX_uf.resize(getNumData(), getInputDim());
     gBeta.resize(1, 1);
     Alpha.resize(numActive, getOutputDim());
-    // CIP-0012 whitened factors (allocated for all sparse approx; filled under StableFactor).
+    // CIP-0012 / CIP-001B whitened factors (allocated for all sparse approx).
     B.resize(numActive, getNumData());
     Cmat.resize(numActive, numActive);
     LcholC.resize(numActive, numActive);
+    Qlq.resize(numActive, numActive + getNumData());
     logDetC = 0.0;
   }
   else 
@@ -773,7 +776,7 @@ void CGp::updateAlpha() const
     case DTCVAR:
       if(isSpherical())
       {
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // Alpha = β U^{-1} C^{-1} B m  (CIP-0012; equiv. A^{-1} K_uf m).
           CMatrix u(numActive, getOutputDim());
@@ -805,7 +808,7 @@ void CGp::updateAlpha() const
 	for(unsigned int i=0; i<getNumData(); i++)
 	  scaledM.scaleRow(i, 1/diagD.getVal(i));
 	/////////////
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // Alpha = β U^{-1} C^{-1} B (m./D) with B, LcholC from updateAD().
           CMatrix u(numActive, getOutputDim());
@@ -832,7 +835,7 @@ void CGp::updateAlpha() const
     case PITC:
       if (isSpherical()) 
       {
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // Alpha = β U^{-1} C^{-1} u with u = U^{-T} pitcKufDinvm = Σ B_b Dinv m_b.
           Alpha.deepCopy(pitcKufDinvm);
@@ -908,7 +911,7 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
   // WARNING: destroys kX through in place operations.
   if(isSparseApproximation())
   {
-    if(isStableSparseLinalg()
+    if(isWhitenedSparseLinalg()
        && isSpherical()
        && (getApproximationType() == DTC
            || getApproximationType() == DTCVAR
@@ -1103,7 +1106,7 @@ void CGp::_updateK() const
 void CGp::_multiplyInvKuu(CMatrix& out, const CMatrix& rhs) const
 {
   // out = K_uu^{-1} rhs. Upper Cholesky LcholK = U with K_uu = U^T U.
-  if(isStableSparseLinalg())
+  if(isWhitenedSparseLinalg())
   {
     out.deepCopy(rhs);
     out.trsm(LcholK, 1.0, "l", "u", "t", "n"); // U^{-T} rhs
@@ -1134,19 +1137,30 @@ void CGp::updateAD() const {
     case DTCVAR:
       if (isSpherical()) 
       {
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // CIP-0012 whitened forward: B = U^{-T} K_uf, C = I + β B B^T
           // (Λ = β^{-1} I ⇒ Λ^{-1} = β). Legacy A = K_uf K_uf^T + β^{-1} K_uu
           // satisfies |A| = |C| |K_uu| / β^M, so log|A|-log|K_uu| = log|C| - M log β.
+          // CIP-001B / Seeger et al. arXiv:1710.08717 §3.3: SparseLinalgLQ forms
+          // C via LQ of [I, √β B] (BLR trick; no Gram+chol of I+AA^T).
           _whitenKuf(B, K_uf);
-          Cmat.eye();
-          Cmat.syrk(B, betaVal, 1.0, "u", "n");
-          Cmat.setSymmetric(true);
-          double jitC = LcholC.jitChol(Cmat);
-          if(jitC > 1e-2 && getVerbosity() > 2)
-            cout << "Warning: jitter of " << jitC << " added to C in whitened updateAD()." << endl;
-          logDetC = logDet(LcholC);
+          if(isLQSparseLinalg())
+          {
+            CMatrix Afeat(B);
+            Afeat.scale(sqrt(betaVal));
+            lqFactorIA(LcholC, logDetC, &Qlq, Afeat);
+          }
+          else
+          {
+            Cmat.eye();
+            Cmat.syrk(B, betaVal, 1.0, "u", "n");
+            Cmat.setSymmetric(true);
+            double jitC = LcholC.jitChol(Cmat);
+            if(jitC > 1e-2 && getVerbosity() > 2)
+              cout << "Warning: jitter of " << jitC << " added to C in whitened updateAD()." << endl;
+            logDetC = logDet(LcholC);
+          }
           // Legacy A/Ainv retained for dual-path compares and residual callers.
           A.deepCopy(K_uu);
           A.gemm(K_uf, K_uf, 1.0, 1.0 / betaVal, "n", "t");
@@ -1207,7 +1221,7 @@ void CGp::updateAD() const {
       if (isSpherical()) 
       {
         const double betaValF = getBetaVal();
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // CIP-0012: q_i = ||B_{:,i}||^2 with B = U^{-T} K_uf; Am = β^{-1}I + V V^T
           // with V = B D^{-1/2} (≡ β^{-1} C when C = I + B Λ^{-1} B^T, Λ_i = diagD_i/β).
@@ -1248,14 +1262,25 @@ void CGp::updateAD() const {
           Am.diag(1.0 / betaValF);
           Am.gemm(V, V, 1.0, 1.0, "n", "t");
           Am.setSymmetric(true);
-          // C = β Am = I + β B D^{-1} B^T for the LL log-det identity.
-          Cmat.eye();
-          Cmat.syrk(V, betaValF, 1.0, "u", "n");
-          Cmat.setSymmetric(true);
-          double jitC = LcholC.jitChol(Cmat);
-          if(jitC > 1e-2 && getVerbosity() > 2)
-            cout << "Warning: jitter of " << jitC << " added to C in FITC updateAD()." << endl;
-          logDetC = logDet(LcholC);
+          // C = β Am = I + β V V^T. CIP-001B / Seeger arXiv:1710.08717 §3.3:
+          // LQ of [I, √β V] instead of syrk+chol. FITC LL still uses Lm = chol(Am);
+          // LcholC/logDetC feed prediction / dual-path.
+          if(isLQSparseLinalg())
+          {
+            CMatrix Afeat(V);
+            Afeat.scale(sqrt(betaValF));
+            lqFactorIA(LcholC, logDetC, &Qlq, Afeat);
+          }
+          else
+          {
+            Cmat.eye();
+            Cmat.syrk(V, betaValF, 1.0, "u", "n");
+            Cmat.setSymmetric(true);
+            double jitC = LcholC.jitChol(Cmat);
+            if(jitC > 1e-2 && getVerbosity() > 2)
+              cout << "Warning: jitter of " << jitC << " added to C in FITC updateAD()." << endl;
+            logDetC = logDet(LcholC);
+          }
 
           jit = Lm.jitChol(Am);
           if(jit > 1e-2 && getVerbosity() > 2)
@@ -1330,7 +1355,7 @@ void CGp::updateAD() const {
         A.setSymmetric(true);
         pitcKufDinvm.zeros();
         logDetDSum = 0.0;
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
           _whitenKuf(B, K_uf);
         for(unsigned int b = 0; b < getNumBlocks(); b++)
         {
@@ -1341,7 +1366,7 @@ void CGp::updateAD() const {
           K_uf.getMatrix(Kufb, 0, numActive - 1, start, endInc);
           blockD[b].deepCopy(blockK[b]);
           blockD[b].scale(betaValP);
-          if(isStableSparseLinalg())
+          if(isWhitenedSparseLinalg())
           {
             // Q_b = B_b^T B_b with B = U^{-T} K_uf (CIP-0012).
             CMatrix Bb(numActive, bs);
@@ -1379,7 +1404,7 @@ void CGp::updateAD() const {
         logDetA = logDet(LcholA);
         Ainv.setSymmetric(true);
         Ainv.pdinv(LcholA);
-        if(isStableSparseLinalg())
+        if(isWhitenedSparseLinalg())
         {
           // C = I + β Σ_b B_b D_b^{-1} B_b^T; |A| = |C| |K_uu| / β^M.
           Cmat.eye();
@@ -1480,7 +1505,7 @@ double CGp::logLikelihood() const
       CMatrix e(numActive, 1);
       CMatrix invAe(numActive, 1);
       // CIP-0012: StableFactor uses C = I+βBB^T; log|A|-log|K_uu| = log|C|-M log β.
-      const double logDetTerm = isStableSparseLinalg()
+      const double logDetTerm = isWhitenedSparseLinalg()
         ? (logDetC - (double)numActive * log(getBetaVal()))
         : (-logDetK_uu + logDetA);
       L+= (double)getOutputDim()*
@@ -1531,7 +1556,7 @@ double CGp::logLikelihood() const
       const double dOut = (double)getOutputDim();
       const double betaValP = getBetaVal();
       // StableFactor: log|A|-log|K_uu| = log|C|-M log β ⇒ first term is d log|C|.
-      if(isStableSparseLinalg())
+      if(isWhitenedSparseLinalg())
         L = dOut * logDetC;
       else
         L = dOut * (logDetA - logDetK_uu + (double)numActive * log(betaValP));
@@ -1830,7 +1855,130 @@ void CGp::gpCovGrads() const
   case DTCVAR:
     if(isSpherical())
     {
-      if(isStableSparseLinalg())
+      if(isLQSparseLinalg())
+      {
+        // CIP-001B: reverse through LQ of W=[I,A], A=√β B (Seeger arXiv:1710.08717 §4.3).
+        // Seeds: log|C| on L; data-fit via c=L^{-1} A m; DTCVAR on A; then lqAdjoint.
+        const double betaVal = getBetaVal();
+        const double sqrtBeta = sqrt(betaVal);
+        const double dOut = (double)getOutputDim();
+        const unsigned int Mact = numActive;
+        const unsigned int Ndat = getNumData();
+        const bool dtcvar = (getApproximationType() == DTCVAR);
+
+        CMatrix Afeat(B);
+        Afeat.scale(sqrtBeta);
+
+        CMatrix Llow(Mact, Mact);
+        Llow.zeros();
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j <= i; j++)
+            Llow.setVal(LcholC.getVal(j, i), i, j);
+        Llow.setTriangular(true);
+
+        CMatrix Lbar(Mact, Mact);
+        Lbar.zeros();
+        CMatrix Abar(Mact, Ndat);
+        Abar.zeros();
+
+        // LL contains -½ dOut logDetC with logDetC = 2 Σ log L_ii.
+        for(unsigned int i = 0; i < Mact; i++)
+        {
+          const double di = Llow.getVal(i, i);
+          Lbar.setVal(Lbar.getVal(i, i) - dOut / di, i, i);
+        }
+
+        // Data fit: ||c||² = e^T Ainv e with c = L^{-1} A m; final LL += ½ β (||c||² - ||m||²).
+        CMatrix z(Mact, 1);
+        CMatrix c(Mact, 1);
+        CMatrix barz(Mact, 1);
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+        {
+          z.gemvColCol(0, Afeat, m, j, 1.0, 0.0, "n");
+          c.deepCopy(z);
+          c.trsm(Llow, 1.0, "l", "l", "n", "n"); // c = L^{-1} z
+          // bar c = β c; bar z = L^{-T} bar c; Lbar -= barz c^T (lower); Abar += barz m^T
+          barz.deepCopy(c);
+          barz.scale(betaVal);
+          barz.trsm(Llow, 1.0, "l", "l", "t", "n");
+          for(unsigned int i = 0; i < Mact; i++)
+            for(unsigned int k = 0; k <= i; k++)
+              Lbar.setVal(Lbar.getVal(i, k) - barz.getVal(i) * c.getVal(k), i, k);
+          Abar.gerColCol(barz, 0, m, j, 1.0);
+        }
+
+        if(dtcvar)
+        {
+          // Final LL += ½ dOut ||A||_F² + β-only pieces from diagD.
+          Abar.axpy(Afeat, dOut);
+          gLambda.setVals(-0.5 * dOut * betaVal);
+        }
+
+        CMatrix Qbar(Mact, Mact + Ndat);
+        Qbar.zeros();
+        CMatrix Wbar;
+        lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j < Ndat; j++)
+            Abar.setVal(Abar.getVal(i, j) + Wbar.getVal(i, Mact + j), i, j);
+
+        // A = √β B ⇒ Bbar = √β Abar.
+        CMatrix Bbar(Abar);
+        Bbar.scale(sqrtBeta);
+
+        // ∂LL/∂β closed form (same -½ gbetaM2L as CIP-0012 StableFactor; C^{-1} via trsm on LQ R).
+        CMatrix CinvB(B);
+        CinvB.trsm(LcholC, 1.0, "l", "u", "t", "n");
+        CinvB.trsm(LcholC, 1.0, "l", "u", "n", "n");
+        double trCinvBB = 0.0;
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j < Ndat; j++)
+            trCinvBB += CinvB.getVal(i, j) * B.getVal(i, j);
+        double gbetaM2L = dOut * (trCinvBB - (double)Ndat / betaVal);
+        CMatrix u(Mact, 1);
+        CMatrix a(Mact, 1);
+        CMatrix BTa(Ndat, 1);
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+        {
+          u.gemvColCol(0, B, m, j, 1.0, 0.0, "n");
+          a.deepCopy(u);
+          a.trsm(LcholC, 1.0, "l", "u", "t", "n");
+          a.trsm(LcholC, 1.0, "l", "u", "n", "n");
+          BTa.gemvColCol(0, B, a, 0, 1.0, 0.0, "t");
+          const double uta = u.dotColCol(0, a, 0);
+          const double BTaNorm2 = BTa.dotColCol(0, BTa, 0);
+          gbetaM2L += m.dotColCol(j, m, j)
+            - 2.0 * betaVal * uta
+            + betaVal * betaVal * BTaNorm2;
+        }
+        if(dtcvar)
+        {
+          double bFro2 = 0.0;
+          for(unsigned int i = 0; i < Mact; i++)
+            for(unsigned int j = 0; j < Ndat; j++)
+              bFro2 += B.getVal(i, j) * B.getVal(i, j);
+          gbetaM2L += dOut * (diagK.sum() - bFro2);
+        }
+        gBeta.setVal(-0.5 * gbetaM2L, 0);
+
+        CMatrix Ubar;
+        CMatrix KufBar;
+        trsmAdjointUT(KufBar, Ubar, LcholK, B, Bbar);
+        gK_uf.deepCopy(KufBar);
+
+        CMatrix KuuBar;
+        cholAdjointUpperBlocked(KuuBar, LcholK, Ubar);
+        gK_uu.deepCopy(KuuBar);
+        for(unsigned int i = 0; i < Mact; i++)
+          for(unsigned int j = 0; j < i; j++)
+          {
+            const double v = 0.5 * gK_uu.getVal(i, j);
+            gK_uu.setVal(v, i, j);
+            gK_uu.setVal(v, j, i);
+          }
+        gK_uu.setSymmetric(true);
+      }
+      else if(isWhitenedSparseLinalg())
       {
         // CIP-0012 reverse mode on C = I + β B B^T (formulae for -2L, then × -1/2 for L).
         const double betaVal = getBetaVal();
@@ -1985,13 +2133,16 @@ void CGp::gpCovGrads() const
   case FITC:
     if(isSpherical())
     {
-      if(isStableSparseLinalg())
+      if(isWhitenedSparseLinalg())
       {
         // CIP-0012 FITC reverse on C = I + β V V^T, V = B D^{-1/2}, D = diagD.
+        // CIP-001B LQ: replace Vbar = 2β Cbar V with Cbar→Lbar→lqAdjoint→Abar.
         const double betaVal = getBetaVal();
+        const double sqrtBeta = sqrt(betaVal);
         const double dOut = (double)getOutputDim();
         const unsigned int Mact = numActive;
         const unsigned int Ndat = getNumData();
+        const bool useLq = isLQSparseLinalg();
 
         CMatrix Cinv(Mact, Mact);
         Cinv.setSymmetric(true);
@@ -2038,7 +2189,7 @@ void CGp::gpCovGrads() const
           }
           uaSum += u.dotColCol(0, a, 0);
         }
-        // Symmetrise Cbar and Vbar = 2 β Cbar V
+        // Symmetrise Cbar
         for(unsigned int i = 0; i < Mact; i++)
           for(unsigned int j = 0; j < i; j++)
           {
@@ -2047,8 +2198,35 @@ void CGp::gpCovGrads() const
             Cbar.setVal(v, j, i);
           }
         Cbar.setSymmetric(true);
+
         CMatrix Vbar(Mact, Ndat);
-        Vbar.symm(Cbar, Vfit, 2.0 * betaVal, 0.0, "u", "l");
+        if(useLq)
+        {
+          // C = L L^T from LQ of [I, √β V]; Lbar from <Cbar, dC>, then Seeger §4.3.
+          CMatrix Llow(Mact, Mact);
+          Llow.zeros();
+          for(unsigned int i = 0; i < Mact; i++)
+            for(unsigned int j = 0; j <= i; j++)
+              Llow.setVal(LcholC.getVal(j, i), i, j);
+          Llow.setTriangular(true);
+          CMatrix tmp(Mact, Mact);
+          tmp.gemm(Cbar, Llow, 2.0, 0.0, "n", "n"); // (Cbar+Cbar^T)L with Cbar sym
+          CMatrix Lbar(Mact, Mact);
+          Lbar.zeros();
+          for(unsigned int i = 0; i < Mact; i++)
+            for(unsigned int j = 0; j <= i; j++)
+              Lbar.setVal(tmp.getVal(i, j), i, j);
+          CMatrix Qbar(Mact, Mact + Ndat);
+          Qbar.zeros();
+          CMatrix Wbar;
+          lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
+          for(unsigned int i = 0; i < Mact; i++)
+            for(unsigned int j = 0; j < Ndat; j++)
+              Vbar.setVal(sqrtBeta * Wbar.getVal(i, Mact + j), i, j);
+        }
+        else
+          Vbar.symm(Cbar, Vfit, 2.0 * betaVal, 0.0, "u", "l");
+
         for(unsigned int j = 0; j < Ndat; j++)
         {
           const double s = sqrt(diagD.getVal(j));
@@ -2189,7 +2367,7 @@ void CGp::gpCovGrads() const
     {
       const double dOut = (double)getOutputDim();
       const double betaValP = getBetaVal();
-      if(isStableSparseLinalg())
+      if(isWhitenedSparseLinalg())
       {
         // CIP-0012 reverse on C = I + β Σ B_b D_b^{-1} B_b^T (formulae for -2L, then × -1/2).
         const unsigned int Mact = numActive;

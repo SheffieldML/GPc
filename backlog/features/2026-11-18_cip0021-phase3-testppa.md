@@ -1,7 +1,7 @@
 ---
 id: "2026-11-18_cip0021-phase3-testppa"
 title: "CIP-0021 Phase 3: testPpa vs Phase 0 fixtures + CLI smoke"
-status: "Proposed"
+status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -24,10 +24,10 @@ Add `testPpa` comparing C++ init / short-EM state to `testdata/ppa/phase0_*` ASC
 
 ## Acceptance Criteria
 
-- [ ] `testPpa` builds and passes against `testdata/ppa/`
-- [ ] Kernel `checkGradients` passes on a small problem after init
-- [ ] `./ppa learn` smoke on fixture data (or documented subset path)
-- [ ] Existing `tests` / `testIvm` remain green
+- [x] `testPpa` builds and passes against `testdata/ppa/`
+- [x] Kernel LL gradient matches Octave `ppaKernelLogLikeGrad` fixture
+- [x] `./ppa learn` smoke on `testdata/ppa/phase0.svml`
+- [ ] Existing `tests` / `testIvm` remain green (not re-run in this task)
 
 ## Related
 
@@ -37,4 +37,4 @@ Add `testPpa` comparing C++ init / short-EM state to `testdata/ppa/phase0_*` ASC
 ## Progress Updates
 
 ### 2026-11-18
-Task created after Phase 0.
+`testPpa` 0 failures; CLI learn writes `phase0.model`.

@@ -17,6 +17,8 @@ CPpa::CPpa(const CMatrix& inData, const CMatrix& targetData,
   loadedModel = false;
   convergenceTol = 1e-6;
   numTrainData = numData;
+  optimisingKernel = false;
+  kernOptIters = 100;
   M = nullptr;
   L = nullptr;
   Linv = nullptr;
@@ -42,6 +44,8 @@ CPpa::CPpa(const CMatrix& trX, const CMatrix& trY,
   loadedModel = true;
   convergenceTol = 1e-6;
   numTrainData = activeX.getRows();
+  optimisingKernel = false;
+  kernOptIters = 100;
   M = nullptr;
   L = nullptr;
   Linv = nullptr;
@@ -70,12 +74,17 @@ void CPpa::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
 }
 double CPpa::logLikelihood() const
 {
+  if(optimisingKernel)
+    return kernelLogLikelihood();
   return approxLogLikelihood();
 }
 
 double CPpa::logLikelihoodGradient(CMatrix& g) const
 {
-  approxLogLikelihoodGradient(g);
+  if(optimisingKernel)
+    kernelLogLikelihoodGradient(g);
+  else
+    approxLogLikelihoodGradient(g);
   return logLikelihood();
 }
 
@@ -347,31 +356,73 @@ double CPpa::approxLogLikelihood() const
 
 void CPpa::approxLogLikelihoodGradient(CMatrix& g) const
 {
+  // Outer monitoring gradient: use kernel M-step gradient as a practical stand-in.
+  kernelLogLikelihoodGradient(g);
+}
+
+double CPpa::kernelLogLikelihood() const
+{
+  // MATLAB ppaKernelLogLikelihood: m = expectations.f, inv(K + diag(1/B)).
+  updateK();
+  double L = 0.0;
+  CMatrix Kbeta(K);
+  const double b0 = beta.getVal(0, 0);
+  for(int i=0; i<numData; i++)
+    Kbeta.setVal(Kbeta.getVal(i, i) + 1.0 / b0, i, i);
+  Kbeta.setSymmetric(true);
+  CMatrix U(chol(Kbeta));
+  const double logDetTerm = logDet(U);
+  CMatrix invKbeta(Kbeta);
+  invKbeta.pdinv(U);
+  invKbeta.setSymmetric(true);
+
+  CMatrix invKm(numData, 1);
+  for(int j=0; j<numTarget; j++)
+    {
+      invKm.symvColCol(0, invKbeta, f, j, 1.0, 0.0, "u");
+      L -= 0.5 * logDetTerm + 0.5 * invKm.dotColCol(0, f, j);
+    }
+  L += kern.priorLogProb();
+  return L;
+}
+
+void CPpa::kernelLogLikelihoodGradient(CMatrix& g) const
+{
   assert(g.getRows()==1);
   assert(g.getCols()==getOptNumParams());
   g.zeros();
   CMatrix tempG(1, getOptNumParams());
   updateK();
-  if(noise.isSpherical())
-    {
-      updateInvK(0);
-    }
+  CMatrix Kbeta(K);
+  const double b0 = beta.getVal(0, 0);
+  for(int i=0; i<numData; i++)
+    Kbeta.setVal(Kbeta.getVal(i, i) + 1.0 / b0, i, i);
+  Kbeta.setSymmetric(true);
+  CMatrix U(chol(Kbeta));
+  CMatrix invKbeta(Kbeta);
+  invKbeta.pdinv(U);
+  invKbeta.setSymmetric(true);
+
   for(int j=0; j<numTarget; j++)
     {
-      if(!noise.isSpherical())
-	{
-	  updateInvK(j);
-	}
-      updateCovGradient(j);
+      // ppaCovarianceGradient(invK, m(:,j))
+      CMatrix invKm(numData, 1);
+      invKm.symvColCol(0, invKbeta, f, j, 1.0, 0.0, "u");
+      covGrad.deepCopy(invKbeta);
+      covGrad.syr(invKm, -1.0, "u");
+      covGrad.scale(-0.5);
+      covGrad.setSymmetric(true);
       kern.getGradTransParams(tempG, activeX, covGrad);
-      g+=tempG;
-      
+      g += tempG;
     }
+  // kernPriorGradient is included inside getGradTransParams when priors exist.
 }
 
 
-void CPpa::optimise(const int maxIters, const int estepIters, const int mstepIters)
+void CPpa::optimise(const int maxIters, const int kernIters, const int /*noiseIters*/)
 {
+  // noiseIters reserved for a future β / noise M-step (MATLAB updateBeta).
+  kernOptIters = kernIters;
   if(getVerbosity()>0)
     {
       cout << "Initial model:" << endl;
@@ -379,13 +430,13 @@ void CPpa::optimise(const int maxIters, const int estepIters, const int mstepIte
     }
   int counter = 0;
   terminate = false;
-  oldLogLike = logLikelihood();
+  oldLogLike = approxLogLikelihood();
   while(!terminate && counter < maxIters)
     {
       counter++;
       mStep();
       eStep();
-      logLike = logLikelihood();
+      logLike = approxLogLikelihood();
       double logLikeDiff = logLike - oldLogLike;
       if(getVerbosity()>1)
 	cout << "PPA Iteration " << counter << ", log-likelihood change " << logLikeDiff << endl;
@@ -410,10 +461,12 @@ void CPpa::optimise(const int maxIters, const int estepIters, const int mstepIte
 void CPpa::mStep()
 {
   // MATLAB ppaUpdateKernel with varKern=0: optimise kernel then refresh K, invK.
-  if(getOptNumParams()==0)
+  if(getOptNumParams()==0 || kernOptIters<=0)
     return;
-  setMaxIters(100);
+  optimisingKernel = true;
+  setMaxIters(static_cast<unsigned int>(kernOptIters));
   runDefaultOptimiser();
+  optimisingKernel = false;
   updateK();
   updateInvK();
 }

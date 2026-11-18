@@ -28,9 +28,10 @@ Dumps (`.txt`, not `.dat` — repo ignores `*.dat`): `X`, `y`, `Kstore`/`invKsto
 
 ## Upstream quirks
 
-1. **`ppaMStep.m` is syntactically incomplete** (missing `end` for nested `if options.varKern` under `updateBeta`, and no function-closing `end`). Octave refuses to parse it. With `updateBeta=0` and `doDebug=0` the live body is only `ppaUpdateKernel`; the dump script calls that directly.
-2. **`ppa.m` omits semicolons** on `model.X = X` / `model.y = y` (noisy stdout).
-3. On this host, Homebrew Octave needs the **hdf5 1.14.5** library path (built against `libhdf5.310`, while `hdf5` formula is 2.2 / `.320`).
+1. **`ppaMStep.m` is syntactically incomplete** (missing `end` tokens). Octave refuses to parse it.
+2. **`ppaOptimiseKernel.m` returns immediately** (extra `end` after the `nargin` block), so kernel M-step is a no-op in the shipped toolbox. Phase 0 **after** fixtures are therefore **E-step-only** (`kernIters=0`). C++ kernel M-step is checked with `checkGradients`, not those tensors.
+3. **`ppa.m` omits semicolons** on `model.X = X` / `model.y = y` (noisy stdout).
+4. On this host, Homebrew Octave needs the **hdf5 1.14.5** library path (built against `libhdf5.310`, while `hdf5` formula is 2.2 / `.320`).
 
 ## Design locks from Phase 0
 

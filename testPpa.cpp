@@ -90,11 +90,40 @@ int main()
   const double llRef = loadScalar(dir + "phase0_loglike_init.txt");
 
   const double tol = 1e-5;
-  expect(maxAbsDiff(model.K, KRef) < tol, "Kstore/K vs fixture");
-  expect(maxAbsDiff(model.fBar, fBarRef) < tol, "fBar vs fixture");
-  expect(maxAbsDiff(model.f, fRef) < tol, "f vs fixture");
-  expect(maxAbsDiff(model.g, gRef) < tol, "g vs fixture");
-  expect(fabs(model.logLikelihood() - llRef) < 1e-4, "approx log-likelihood vs fixture");
+  expect(maxAbsDiff(model.K, KRef) < tol, "Kstore/K vs fixture (init)");
+  expect(maxAbsDiff(model.fBar, fBarRef) < tol, "fBar vs fixture (init)");
+  expect(maxAbsDiff(model.f, fRef) < tol, "f vs fixture (init)");
+  expect(maxAbsDiff(model.g, gRef) < tol, "g vs fixture (init)");
+  expect(fabs(model.approxLogLikelihood() - llRef) < 1e-4, "approx log-likelihood vs fixture (init)");
+
+  // After fixtures are E-step-only (upstream MATLAB kernel M-step is a no-op).
+  model.optimise(3, 0, 0);
+
+  CMatrix fAfter = loadDat(dir + "phase0_f_after.txt", N, 1);
+  CMatrix fBarAfter = loadDat(dir + "phase0_fBar_after.txt", N, 1);
+  CMatrix gAfter = loadDat(dir + "phase0_g_after.txt", N, 1);
+  CMatrix KAfter = loadDat(dir + "phase0_Kstore_after.txt", N, N);
+  const double llAfter = loadScalar(dir + "phase0_loglike_after.txt");
+
+  expect(maxAbsDiff(model.K, KAfter) < 1e-4, "K vs fixture (after E-steps)");
+  expect(maxAbsDiff(model.fBar, fBarAfter) < 1e-4, "fBar vs fixture (after E-steps)");
+  expect(maxAbsDiff(model.f, fAfter) < 1e-4, "f vs fixture (after E-steps)");
+  expect(maxAbsDiff(model.g, gAfter) < 1e-4, "g vs fixture (after E-steps)");
+  expect(fabs(model.approxLogLikelihood() - llAfter) < 1e-3, "approx log-likelihood vs fixture (after E-steps)");
+
+  // Kernel M-step analytic gradient vs Octave ppaKernelLogLikeGrad.
+  CCmpndKern kern2(X);
+  kern2.addKern(new CRbfKern(X));
+  kern2.addKern(new CBiasKern(X));
+  kern2.addKern(new CWhiteKern(X));
+  kern2.setTransParams(kp);
+  CProbitNoise noise2(&y);
+  noise2.initParams();
+  CPpa model2(X, y, kern2, noise2, 0);
+  CMatrix gKern(1, 4);
+  model2.kernelLogLikelihoodGradient(gKern);
+  CMatrix gKernRef = loadDat(dir + "phase0_kernGrad_init.txt", 1, 4);
+  expect(maxAbsDiff(gKern, gKernRef) < 1e-5, "kernel LL gradient vs Octave");
 
   cout << "Number of failures: " << fails << endl;
   return fails > 0 ? 1 : 0;

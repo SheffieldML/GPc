@@ -47,7 +47,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0020](./cip0020.md): CMake when packaging forces it — keep makefile as blessed native path (**Closed** — #74). Extends [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0007](../requirements/req0007_competitive-default-build.md); supports [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [CIP-001D](./cip001D.md) wheels. CI cutover deferred to CIP-0021.
 - [CIP-0021](./cip0021.md): CMake CI soak then hard-gate cutover (**Proposed**). Implements [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0002](../requirements/req0002_runnable-verification.md) under Actions CMake; revisits CIP-0020 deferred cutover. Local `make` stays documented.
 - [CIP-0023](./cip0023.md): Resuscitate Probabilistic Point Assimilation (PPA) from Nat King MATLAB (**Closed**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md). Tutorial: [`docs/tutorials/ppa_phase0.md`](../docs/tutorials/ppa_phase0.md).
-- [CIP-0024](./cip0024.md): EQ / ExpQuad — GPy lengthscale-first SE surface on shared RBF engine (**In Progress**). Implements [REQ-0012](../requirements/req0012_eq-expquad-parameterisation.md).
+- [CIP-0024](./cip0024.md): EQ / ExpQuad — GPy lengthscale-first SE surface on shared RBF engine (**In Progress**). Implements [REQ-0012](../requirements/req0012_eq-expquad-parameterisation.md). (CIP-0022 CSV/pods remains on another branch.)
 
 ## Creating a Good CIP
 

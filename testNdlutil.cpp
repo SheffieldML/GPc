@@ -11,17 +11,21 @@ int testConsts();
 int main()
 {
   cout << "eps is: " << ndlutil::EPS << endl;
+  cout << "matchtol is: " << ndlutil::MATCHTOL << endl;
   int fail = 0;
   fail+= testFunctions();
   fail+= testConsts();
   cout << "Total failures: " << fail << endl;
+  return fail > 0 ? 1 : 0;
 }
 
 int testConsts()
 {
+  // Compare stored constants to recomputed values with MATCHTOL (not DBL_EPSILON):
+  // cross-library / MATLAB-era fixtures disagree at ~1e-15..1e-14.
   int fail=0;
   double diff=abs(ndlutil::LOGTWOPI-log(2*M_PI));
-  if(diff<ndlutil::EPS)
+  if(diff<=ndlutil::MATCHTOL)
     cout << "log(2*pi) passes." << endl;
   else 
   {
@@ -29,7 +33,7 @@ int testConsts()
     fail++;
   }
   diff=abs(ndlutil::HALFLOGTWOPI-.5*log(2*M_PI));
-  if(diff<ndlutil::EPS)
+  if(diff<=ndlutil::MATCHTOL)
     cout << ".5*log(2*pi) passes." << endl;
   else 
   {
@@ -37,7 +41,7 @@ int testConsts()
     fail++;
   }
   diff=abs(ndlutil::HALFSQRTTWO-.5*sqrt(2.0));
-  if(diff<ndlutil::EPS)
+  if(diff<=ndlutil::MATCHTOL)
     cout << ".5*sqrt(2) passes." << endl;
   else 
   {
@@ -45,7 +49,7 @@ int testConsts()
     fail++;
   }
   diff=abs(ndlutil::SQRTTWOPI-sqrt(2*M_PI));
-  if(diff<ndlutil::EPS)
+  if(diff<=ndlutil::MATCHTOL)
     cout << "sqrt(2*pi) passes." << endl;
   else 
   {
@@ -87,7 +91,7 @@ int testLnDiffCumGaussian()
   for(int i=0; i<y.getNumElements(); i++)
   {
     double diff = y.getVal(i)-ndlutil::lnDiffCumGaussian(u.getVal(i), uprime.getVal(i));
-    if(abs(diff)>ndlutil::EPS)
+    if(abs(diff)>ndlutil::MATCHTOL)
     {
 	  
       cout << "FAILURE: lnDiffCumGaussian for u = " << u.getVal(i) << " and uprime =  " << uprime.getVal(i)  <<  ": absolute difference " << diff << endl;
@@ -113,7 +117,7 @@ int testGaussOverDiffCumGaussian()
   for(int i=0; i<y.getNumElements(); i++)
   {
     double diff = y.getVal(i)-ndlutil::gaussOverDiffCumGaussian(u.getVal(i), uprime.getVal(i), (int)order.getVal(i));
-    if(abs(diff)>ndlutil::EPS)
+    if(abs(diff)>ndlutil::MATCHTOL)
     {	  
       cout << "FAILURE: gaussOverDiffCumGaussian for u = " << u.getVal(i) << " and uprime =  " << uprime.getVal(i)  <<  " and order = " << order.getVal(i) << ": absolute difference " << diff << endl;
       fail++;
@@ -157,7 +161,7 @@ int testFunction(string funcName)
   else if(funcName=="digamma")
     y=ndlutil::digamma(x);
   double diff = abs(y-trueY);
-  if(diff<=ndlutil::EPS)
+  if(diff<=ndlutil::MATCHTOL)
     cout << funcName << " test passed." << endl;
   else
   {

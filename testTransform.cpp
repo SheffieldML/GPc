@@ -1,85 +1,111 @@
-  #include "CTransform.h"
+#include "CTransform.h"
+#include <cmath>
 
-  CParamTransforms* ptransforms;
-  int testTransform(string transType);
-  int main()
-  { 
-    ptransforms = new CParamTransforms();
-    int fail = 0;
-    fail+=testTransform("exp");
-    fail+=testTransform("negLogLogit");
-    fail+=testTransform("sigmoid");
+CParamTransforms* ptransforms;
+int testTransform(string transType);
 
-    CParamTransforms* preadTrans = new CParamTransforms();
+int main()
+{
+  ptransforms = new CParamTransforms();
+  int fail = 0;
+  fail+=testTransform("exp");
+  fail+=testTransform("negLogLogit");
+  fail+=testTransform("sigmoid");
+
+  CParamTransforms* preadTrans = new CParamTransforms();
 #ifdef _NDLMATLAB
-    ptransforms->writeMatlabFile("crap.mat", "writtenTransforms");
-    preadTrans->readMatlabFile("crap.mat", "writtenTransforms");
-   if(ptransforms->equals(*preadTrans))
-      cout << "MATLAB Read and write transforms to stream passed"<<endl;
-    else
-    {
-      cout << "FAILURE: Read and write to MATLAB" << endl;
-      cout << "Written transforms:" << endl;
-      ptransforms->display(cout);
-      cout << "Read in transforms: " << endl;
-      preadTrans->display(cout);
-      fail++;
-    }
-#endif
- 
-    ptransforms->toFile("crap_paramtransform");
-    preadTrans->fromFile("crap_paramtransform");
-    if(ptransforms->equals(*preadTrans))
-      cout << "Read and write transforms to stream passed"<<endl;
-    else
-    {
-      cout << "FAILURE: Read and write to stream" << endl;
-      cout << "Written transforms:" << endl;
-      ptransforms->display(cout);
-      cout << "Read in transforms: " << endl;
-      preadTrans->display(cout);
-      fail++;
-    }
-    cout << "Number of failures: " << fail << endl;
-  }
-   
-  int testTransform(string transType)
+  ptransforms->writeMatlabFile("crap.mat", "writtenTransforms");
+  preadTrans->readMatlabFile("crap.mat", "writtenTransforms");
+  if(ptransforms->equals(*preadTrans))
+    cout << "MATLAB Read and write transforms to stream passed"<<endl;
+  else
   {
-    int fail = 0;
-    CTransform* trans = CTransform::getNewTransformPointer(transType);
-    int ncols = 9;
-    double a[19] = {-1e16, -1e8, -1e4, -100, -1, -0.1, -1e-5, -1e-9, -1e-13, 0, 1e-13, 1e-9, 1e-5, 0.1, 1, 100, 1e4, 1e8, 1e16};
-    double x[19];
-    double newa[19];
-    double g[19];
-    cout << "Transform " << transType << endl;
-    for(int i=0; i<9; i++)
+    cout << "FAILURE: Read and write to MATLAB" << endl;
+    cout << "Written transforms:" << endl;
+    ptransforms->display(cout);
+    cout << "Read in transforms: " << endl;
+    preadTrans->display(cout);
+    fail++;
+  }
+#endif
+
+  ptransforms->toFile("crap_paramtransform");
+  preadTrans->fromFile("crap_paramtransform");
+  if(ptransforms->equals(*preadTrans))
+    cout << "Read and write transforms to stream passed"<<endl;
+  else
+  {
+    cout << "FAILURE: Read and write to stream" << endl;
+    cout << "Written transforms:" << endl;
+    ptransforms->display(cout);
+    cout << "Read in transforms: " << endl;
+    preadTrans->display(cout);
+    fail++;
+  }
+  cout << "Number of failures: " << fail << endl;
+  return fail > 0 ? 1 : 0;
+}
+
+int testTransform(string transType)
+{
+  int fail = 0;
+  CTransform* trans = CTransform::getNewTransformPointer(transType);
+  // Probe both deep-negative (clamp) and deep-positive sides, plus near-zero.
+  const int n = 19;
+  double a[19] = {-1e16, -1e8, -1e4, -100, -1, -0.1, -1e-5, -1e-9, -1e-13, 0, 1e-13, 1e-9, 1e-5, 0.1, 1, 100, 1e4, 1e8, 1e16};
+  const double roundTol = ndlutil::MATCHTOL;
+  cout << "Transform " << transType << endl;
+  for(int i=0; i<n; i++)
+  {
+    double x = trans->atox(a[i]);
+    double newa = trans->xtoa(x);
+    // limVal clamp: atox saturates, so xtoa(atox(a)) recovers a boundary, not a.
+    const bool clamped = (a[i] < -limVal) || (a[i] > limVal);
+    if(clamped)
     {
-      x[i] = trans->atox(a[i]);
-      newa[i] = trans->xtoa(x[i]);
-      if(newa[i]!=a[i])
+      // Bound must be finite and stable under a further atox/xtoa round-trip.
+      double x2 = trans->atox(newa);
+      double a2 = trans->xtoa(x2);
+      if(!std::isfinite(newa) || !std::isfinite(x) ||
+         fabs(x2 - x) > roundTol * (1.0 + fabs(x)) ||
+         fabs(a2 - newa) > roundTol * (1.0 + fabs(newa)))
       {
-        cout << "FAIL: " << endl;
-        cout << "a: " << a[i] << " x: " << x[i] << " newa: "  << newa[i] << endl;
+        cout << "FAIL: clamp round-trip" << endl;
+        cout << "a: " << a[i] << " x: " << x << " newa: " << newa
+             << " atox(newa): " << x2 << " xtoa(atox(newa)): " << a2 << endl;
         fail++;
       }
       else
-        cout << "atox -> xtoa check passed: a: " << a[i] << endl;
-      g[i] = trans->gradfact(x[i]);
-      double diff = 1e-6;
-      double aplus = a[i]+diff;
-      double xplus = trans->atox(aplus);
-      double aminus = a[i]-diff;
-      double xminus = trans->atox(aminus);
-      double gdiff = (xplus - xminus)/(2*diff);
-      if(abs(gdiff-g[i])>2*diff)
-      {
-        cout << "FAIL: Gradient: " << "g: " << g[i] << " gdiff: " << gdiff << endl;
-      }
-      else
-        cout << "Gradient check passed: a: " << a[i] << endl;
+        cout << "atox -> xtoa clamp check passed: a: " << a[i] << " -> " << newa << endl;
     }
-    ptransforms->addTransform(trans, 1);
-    ptransforms->addTransform(trans, 2);
-    return fail;
+    else if(fabs(newa - a[i]) > roundTol * (1.0 + fabs(a[i])))
+    {
+      cout << "FAIL: " << endl;
+      cout << "a: " << a[i] << " x: " << x << " newa: " << newa << endl;
+      fail++;
+    }
+    else
+      cout << "atox -> xtoa check passed: a: " << a[i] << endl;
+
+    double g = trans->gradfact(x);
+    double diff = 1e-6;
+    double aplus = a[i]+diff;
+    double xplus = trans->atox(aplus);
+    double aminus = a[i]-diff;
+    double xminus = trans->atox(aminus);
+    double gdiff = (xplus - xminus)/(2*diff);
+    // Finite-difference is unreliable once atox has saturated.
+    if(!clamped && fabs(gdiff-g)>2*diff)
+    {
+      cout << "FAIL: Gradient: " << "g: " << g << " gdiff: " << gdiff << endl;
+      fail++;
+    }
+    else if(!clamped)
+      cout << "Gradient check passed: a: " << a[i] << endl;
+    else
+      cout << "Gradient check skipped (clamped): a: " << a[i] << endl;
   }
+  ptransforms->addTransform(trans, 1);
+  ptransforms->addTransform(trans, 2);
+  return fail;
+}

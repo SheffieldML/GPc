@@ -1,0 +1,14 @@
+source=lawrennd/ppa demPpa1 subset
+N=30
+inputDim=2
+outputDim=1
+noise=probit
+kernel=rbf+bias+white
+scalarB=1
+varKern=0
+updateBeta=0
+maxOuterIter=3
+kernIters=10
+loglike_init=-31.740631380651045
+loglike_after=-24.346211953663285
+octave=10.3.0

@@ -2,13 +2,14 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md)  
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
 
-- Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored.
-- Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) live under [`make/legacy/`](../make/legacy/); they are not CI targets.
+- **Blessed path is still make.** Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored. Compile / Reference / Coverage CI use this path.
+- **Optional thin CMake** ([CIP-0020](../cip/cip0020.md)): `cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` builds `libgp` and CLI smoke targets (`gp`, and optionally `ivm` / `gplvm` / `bgplvm`). On macOS, pass Homebrew `g++-N` / `gfortran-N` (or rely on `GPC_PREFER_HOMEBREW_GCC`) so C++ and Fortran ABIs match `make.osx`. `CMAKE_BUILD_TYPE=Release` maps to `make RELEASE=1` checks-off semantics; `-DGPC_USE_MATIO=ON` maps to `_NDLMATIO`. Sources are listed in [`cmake/GpcSources.cmake`](../cmake/GpcSources.cmake). CMake is **not** the CI gate until Phase C parity.
+- Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) and the archived 2020 stub `CMakeLists.txt.archive-2020` live under [`make/legacy/`](../make/legacy/); they are not CI targets.
 - Maintainer diagnostics / fixture stampers (`diag*`, `genTest*`) live under [`tools/`](../tools/); binaries still build to the repo root.
 - Tutorial PNG plots used by the README live under [`docs/images/`](images/).
 - **Linux default links OpenBLAS** (`-lopenblas`; install `libopenblas-dev`). `make RELEASE=1` is `-O2 -DNDEBUG` with `GPC_CHECKS=0` (CIP-0013 P1/P2). Checking / reference builds keep `GPC_CHECKS=1`.

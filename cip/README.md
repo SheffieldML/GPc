@@ -44,6 +44,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-001D](./cip001D.md): Light Python façade over GPc for GPy users (**In Progress** — Phase A done; Phase B FTC smoke green). Implements [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md). Consumes [CIP-001E](./cip001E.md) for live progress / repr. Orthogonal to CIP-0015 (native tutorials) and CIP-0016 (file interchange).
 - [CIP-001E](./cip001E.md): Interceptable optimiser events and structured model display (**Accepted**). Implements [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md). C++ `OptimiserEvent`/observer + `ModelDescription`; CIP-001D binds thin Python progress and repr.
 - [CIP-001F](./cip001F.md): L2/L3 concurrency contract — docs, RNG hygiene, BLAS nesting (**Proposed**). Implements [REQ-0010](../requirements/req0010_documented-concurrency-contract.md). Extends CIP-0009 L1; orthogonal to CIP-0013 P7; consumed by CIP-001D/001E docs/GIL.
+- [CIP-0020](./cip0020.md): CMake when packaging forces it — keep makefile as blessed native path (**In Progress** — Phase 0–A done; B/C open). Extends [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0007](../requirements/req0007_competitive-default-build.md); supports [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [CIP-001D](./cip001D.md) wheels.
 
 ## Creating a Good CIP
 

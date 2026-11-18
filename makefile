@@ -167,6 +167,13 @@ diagWhiteNoisePilot: diagWhiteNoisePilot.o CMatrix.o ndlfortran.o ndlstrutil.o n
 diagWhiteNoisePilot.o: diagWhiteNoisePilot.cpp CMatrix.h
 	$(CC) -c diagWhiteNoisePilot.cpp -o diagWhiteNoisePilot.o $(CCFLAGS)
 
+# CIP-001C pilot: full SCG — point DTCVAR (CGp) vs VIK white-noise features.
+diagVikCompare: diagVikCompare.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagVikCompare diagVikCompare.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+diagVikCompare.o: diagVikCompare.cpp CGp.h CKern.h CMatrix.h COptimisable.h
+	$(CC) -c diagVikCompare.cpp -o diagVikCompare.o $(CCFLAGS)
+
 diagPitc: diagPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o diagPitc diagPitc.o CGp.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 

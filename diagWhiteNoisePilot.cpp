@@ -253,7 +253,8 @@ BoundResult collapsedDtcvar(const CMatrix& KuuIn, const CMatrix& Kuf,
     y2 += yi * yi;
   }
 
-  const double logDetC = 2.0 * logDet(Lc); // Lc upper: |C| = |Lc|^2
+  // logDet(Lc) already returns log|C| = 2 Σ log L_ii (CMatrix::logDet).
+  const double logDetC = logDet(Lc);
   r.trGap = traceKffMinusQff(X, Kuf, U, ell, var);
 
   r.ll = 0.5 * (-(double)N * log(2.0 * PI) + (double)N * log(beta)

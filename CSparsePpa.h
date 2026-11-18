@@ -41,8 +41,8 @@ class CSparsePpa {
   void fixInducing(bool val = true);
   void setSiteState(const CMatrix& fBarIn, const CMatrix& fIn);
 
-  // Phase C: CGp approx bound on ⟨f⟩ + outer noise LL at ⟨fBar⟩, var=1/β.
-  // Prefer DTCVAR for the GP term (Titsias). Not dense approxLogLikelihood.
+  // Full q(u) PPA ELBO for DTC/DTCVAR (matches dense approxLogLikelihood at M=N).
+  // FITC/PITC: interim CGp LML + outer noise LL.
   double ppaBound() const;
   double monitorLogLikelihood() const { return ppaBound(); }
 
@@ -65,6 +65,8 @@ class CSparsePpa {
   CMatrix y;
   CMatrix f;
   CMatrix fBar;
+  // ⟨f⟩ used for the last fBar / q(u) (dense keeps fBarfBar from that step).
+  CMatrix fPost;
   CMatrix g;
   CMatrix nu;
   CMatrix gamma;

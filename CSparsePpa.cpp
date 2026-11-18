@@ -8,12 +8,14 @@ void allocSiteStorage(CSparsePpa& m, int numData, int numTarget)
 {
   m.f.resize(numData, numTarget);
   m.fBar.resize(numData, numTarget);
+  m.fPost.resize(numData, numTarget);
   m.g.resize(numData, numTarget);
   m.nu.resize(numData, numTarget);
   m.gamma.resize(numData, numTarget);
   m.ff.resize(numData, numTarget);
   m.f.zeros();
   m.fBar.zeros();
+  m.fPost.zeros();
   m.g.zeros();
   m.nu.zeros();
   m.gamma.zeros();
@@ -115,6 +117,7 @@ void CSparsePpa::setSiteState(const CMatrix& fBarIn, const CMatrix& fIn)
   DIMENSIONMATCH(fIn.dimensionsMatch(f));
   fBar.deepCopy(fBarIn);
   f.deepCopy(fIn);
+  fPost.deepCopy(fIn);
   syncGpTargets();
 }
 
@@ -148,6 +151,8 @@ void CSparsePpa::eStep()
 {
   syncGpTargets();
   pGp->posteriorMean(fBar, X);
+  // Bound / q(u) must use the ⟨f⟩ that produced fBar (MATLAB fBarfBar timing).
+  fPost.deepCopy(f);
 
   outerNoise.setMus(fBar);
   for(int i = 0; i < numData; i++)
@@ -189,16 +194,29 @@ void CSparsePpa::mStep(int kernIters)
 
 double CSparsePpa::ppaBound() const
 {
-  // Sparse variational monitor (CIP-0026 Phase C):
-  //   L ≈ log p_approx(⟨f⟩ | X, u)  [CGp DTC/DTCVAR/FITC/PITC bound]
-  //     + E[log p(y | fBar)] with site variance 1/β (mean-field; no N×N Cov)
-  // Dense approxLogLikelihood also has KL terms in K^{-1}/fBarfBar; those need
-  // a full q(u) derivation. DTCVAR is the preferred GP term (Titsias VFE).
-  const_cast<CSparsePpa*>(this)->syncGpTargets();
-  double L = pGp->logLikelihood();
+  // CIP-0026 full q(u) ELBO (DTC / DTCVAR):
+  //   L = -KL(q(u)||p(u)) - ½β tr(Cov_f̄) [+ DTCVAR K−Q site] + kern prior
+  //     + E[log p(y | f̄)] with site variance 1/β
+  // Matches dense CPpa::approxLogLikelihood when M=N, Xu=X, no white.
+  // GP terms use fPost (⟨f⟩ that produced fBar), not post-E-step f.
+  // FITC/PITC keep the interim monitor (CGp approx LML + outer noise LL).
+  CSparsePpa* self = const_cast<CSparsePpa*>(this);
+  CMatrix fSave(f);
+  self->f.deepCopy(fPost);
+  self->syncGpTargets();
+
   CMatrix vs(numData, numTarget);
   vs.setVals(1.0 / betaVal);
-  L += outerNoise.logLikelihood(fBar, vs, y);
+  const double noiseLL = outerNoise.logLikelihood(fBar, vs, y);
+  double L = 0.0;
+  const int approx = pGp->getApproximationType();
+  if(approx == CGp::DTC || approx == CGp::DTCVAR)
+    L = pGp->sparsePpaElboGpTerms() + noiseLL;
+  else
+    L = pGp->logLikelihood() + noiseLL;
+
+  self->f.deepCopy(fSave);
+  self->syncGpTargets();
   return L;
 }
 

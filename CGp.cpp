@@ -1724,6 +1724,68 @@ double CGp::logLikelihood() const
   L-=(double)getOutputDim()*(double)getNumData()*ndlutil::HALFLOGTWOPI;
   return L;
 }
+
+double CGp::sparsePpaElboGpTerms() const
+{
+  // Sparse PPA variational GP terms (CIP-0026), inducing form of dense
+  // ppaCalculateLogLike parts 1–4:
+  //   q(u)=N(m_u,S_u), S_u = β^{-1} K_uu A^{-1} K_uu,
+  //   m_u = K_uu A^{-1} K_uf m,  Cov_f̄ = β^{-1} K_fu A^{-1} K_uf
+  //   (DTCVAR: + diag(K-Q) on the site trace).
+  // L = -KL(q(u)||p(u)) - ½ β tr(Cov_f̄) + kernPrior.
+  if(!isSparseApproximation())
+    throw ndlexceptions::Error("sparsePpaElboGpTerms requires a sparse approximation");
+  if(getApproximationType() != DTC && getApproximationType() != DTCVAR)
+    throw ndlexceptions::NotImplementedError(
+      "sparsePpaElboGpTerms: DTC/DTCVAR only (FITC/PITC use interim monitor)");
+  if(!isSpherical())
+    throw ndlexceptions::NotImplementedError("sparsePpaElboGpTerms: non-spherical not implemented");
+
+  ensureMUpToDate();
+  ensureKUpToDate();
+  ensureADUpToDate();
+
+  const double betaVal = getBetaVal();
+  const unsigned int M = numActive;
+  const unsigned int dOut = getOutputDim();
+
+  CMatrix AinvKuu(M, M);
+  AinvKuu.symm(Ainv, K_uu, 1.0, 0.0, "l", "l");
+  const double trAinvKuu = AinvKuu.trace();
+  // log|S_u| = -M log β + 2 log|K_uu| - log|A|
+  const double logDetS = -(double)M * log(betaVal) + 2.0 * logDetK_uu - logDetA;
+  const double trKuuInvS = trAinvKuu / betaVal;
+
+  CMatrix e(M, 1);
+  CMatrix AinvE(M, 1);
+  CMatrix KuuAinvE(M, 1);
+  double negKL = 0.0;
+  for(unsigned int j = 0; j < dOut; j++)
+    {
+      e.gemvColCol(0, K_uf, m, j, 1.0, 0.0, "n");
+      AinvE.symvColCol(0, Ainv, e, 0, 1.0, 0.0, "l");
+      KuuAinvE.symvColCol(0, K_uu, AinvE, 0, 1.0, 0.0, "u");
+      const double quad = AinvE.dotColCol(0, KuuAinvE, 0);
+      // -KL = ½ (M + log|S| - log|K_uu| - tr(K_uu^{-1}S) - m_u^T K_uu^{-1} m_u)
+      negKL += 0.5 * ((double)M + logDetS - logDetK_uu - trKuuInvS - quad);
+    }
+
+  // tr(Cov_Q) = β^{-1} tr(A^{-1} K_uf K_fu) = β^{-1}(M - β^{-1} tr(A^{-1} K_uu))
+  const double trCovQ = ((double)M - trAinvKuu / betaVal) / betaVal;
+  double part4 = -0.5 * betaVal * trCovQ * (double)dOut;
+  if(getApproximationType() == DTCVAR)
+    {
+      // Extra site variance under true p(f|u): sum_i (K_ii - Q_ii).
+      // diagD_i = β (K_ii - Q_ii) on the DTCVAR path.
+      double sumKmQ = 0.0;
+      for(unsigned int i = 0; i < diagD.getRows(); i++)
+        sumKmQ += diagD.getVal(i) / betaVal;
+      part4 += -0.5 * betaVal * sumKmQ * (double)dOut;
+    }
+
+  return negKL + part4 + pkern->priorLogProb();
+}
+
 // compute the gradients wrt parameters and latent variables.
 double CGp::logLikelihoodGradient(CMatrix& g) const 
 {

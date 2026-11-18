@@ -22,7 +22,7 @@ tags:
 
 ## Description
 
-Sparse monitor `ppaBound()` = CGp approximation LML on \(\langle f\rangle\) + outer noise LL at \(\langle\bar f\rangle\) with site variance \(1/\beta\). Prefer DTCVAR for the GP term. Full dense-equivalent Cov / \(K^{-1}\) terms deferred as optional follow-up.
+Sparse monitor started as CGp LML + outer noise LL; superseded by full \(q(u)\) ELBO in `2026-11-19_cip0026-full-qu-elbo` for DTC/DTCVAR.
 
 ## Acceptance Criteria
 

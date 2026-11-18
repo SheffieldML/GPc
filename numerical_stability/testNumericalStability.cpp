@@ -33,12 +33,44 @@ int g_fail = 0;
 int g_xfail = 0;
 int g_xpass = 0;
 
-string cellLabel()
+/* CIP-0012 sparse algebra mode for the suite (default: stable). */
+string sparseLinalgModeName()
+{
+  const char* env = getenv("GPC_SPARSE_LINALG");
+  if(!env || env[0] == '\0')
+    return "stable";
+  const string v(env);
+  if(v == "stable" || v == "StableFactor" || v == "1")
+    return "stable";
+  if(v == "legacy" || v == "Legacy" || v == "0")
+    return "legacy";
+  cerr << "warning: unknown GPC_SPARSE_LINALG=" << v
+       << " (use stable|legacy); defaulting to stable" << endl;
+  return "stable";
+}
+
+bool sparseLinalgWantStable()
+{
+  return sparseLinalgModeName() == "stable";
+}
+
+void applySparseMode(CGp& model)
+{
+  model.setStableSparseLinalg(sparseLinalgWantStable());
+}
+
+string cellBaseLabel()
 {
   const char* env = getenv("GPC_NS_CELL");
   if(env && env[0] != '\0')
     return string(env);
   return "local";
+}
+
+/* Cell includes sparse mode so dual-run metrics.json files differ by label. */
+string cellLabel()
+{
+  return cellBaseLabel() + "+" + sparseLinalgModeName();
 }
 
 void emit(const string& name, const string& result)
@@ -83,6 +115,9 @@ const double BUDGET_E_LARGE = 1e-6;
 const double BUDGET_F_RTOL = 1e-4;
 /* mills: φ/Φ ∼ -z with remainder O(1/z^2); probes use z < -50 → ~4e-4. */
 const double BUDGET_MILLS_ASYMPTOTE = 1e-4;
+/* Dual-path Legacy vs StableFactor agreement (matches testCGp soak tols). */
+const double BUDGET_DUAL_LL = 1e-6;
+const double BUDGET_DUAL_GRAD = 1e-5;
 
 void check(const string& name, bool ok, const string& detail = string())
 {
@@ -818,6 +853,7 @@ struct RegGp
         Xu.copyRowRow(i, X, i % X.getRows());
       model->setInducingVals(Xu);
       model->setInducingFixed(true);
+      applySparseMode(*model);
     }
     model->setBetaVal(100.0);
     model->setVerbosity(0);
@@ -825,6 +861,53 @@ struct RegGp
 
   ~RegGp() { delete model; }
 };
+
+/* In-process Legacy vs StableFactor LL/grad gap (independent of suite mode). */
+void dualPathGaps(CGp& model, const string& tag)
+{
+  model.setStableSparseLinalg(false);
+  const double llL = model.logLikelihood();
+  CMatrix gL(1, model.getOptNumParams());
+  const bool gradLOk = finiteVal(model.logLikelihoodGradient(gL));
+
+  model.setStableSparseLinalg(true);
+  const double llS = model.logLikelihood();
+  CMatrix gS(1, model.getOptNumParams());
+  const bool gradSOk = finiteVal(model.logLikelihoodGradient(gS));
+
+  // Restore suite mode for any later use of this model.
+  applySparseMode(model);
+
+  const double llGap = (finiteVal(llL) && finiteVal(llS)) ? fabs(llL - llS)
+                                                          : numeric_limits<double>::quiet_NaN();
+  double gGap = 0.0;
+  bool gFinite = gradLOk && gradSOk;
+  if(gFinite)
+  {
+    for(unsigned int i = 0; i < gL.getCols(); i++)
+    {
+      if(!finiteVal(gL.getVal(i)) || !finiteVal(gS.getVal(i)))
+      {
+        gFinite = false;
+        break;
+      }
+      gGap = max(gGap, fabs(gL.getVal(i) - gS.getVal(i)));
+    }
+  }
+  else
+    gGap = numeric_limits<double>::quiet_NaN();
+
+  if(finiteVal(llGap))
+    emitMetric(tag + "_legacy_stable_ll_absdiff", "F_model", llGap, BUDGET_DUAL_LL, "abs");
+  if(finiteVal(gGap))
+    emitMetric(tag + "_legacy_stable_grad_maxabs", "D_fd", gGap, BUDGET_DUAL_GRAD, "abs");
+
+  ostringstream detail;
+  detail << "llL=" << llL << " llS=" << llS << " llGap=" << llGap << " gGap=" << gGap;
+  check(tag + "_legacy_stable_agree",
+        finiteVal(llGap) && llGap < 1e-5 && gFinite && gGap < 1e-4,
+        detail.str());
+}
 
 int testModels()
 {
@@ -1002,6 +1085,7 @@ int testModels()
     CGp sparse(&kern, &noise, &exact.X, CGp::FITC, 30, 0);
     sparse.setInducingVals(exact.X);
     sparse.setInducingFixed(true);
+    applySparseMode(sparse);
     sparse.setBetaVal(100.0);
     sparse.setVerbosity(0);
     exact.model->setBetaVal(100.0);
@@ -1031,6 +1115,42 @@ int testModels()
     check("sparse_fitc_extreme_short_ls", gpAllFinite(*sp.model));
     sp.kern.setByPath("rbf.lengthscale", 1e4);
     check("sparse_fitc_extreme_long_ls", gpAllFinite(*sp.model));
+  }
+
+  // Sparse approx suite under GPC_SPARSE_LINALG + in-process dual-path gaps.
+  {
+    const int approxs[] = {CGp::DTC, CGp::DTCVAR, CGp::FITC, CGp::PITC};
+    const char* tags[] = {"dtc", "dtcvar", "fitc", "pitc"};
+    for(unsigned int k = 0; k < 4; k++)
+    {
+      RegGp sp(40, approxs[k], 10);
+      const string tag = string("sparse_") + tags[k];
+      const bool finite = gpAllFinite(*sp.model);
+      check(tag + "_finite", finite);
+      if(!finite)
+        continue;
+      const double fdRel = fdGradCheckMaxRel(*sp.model);
+      // Sparse inducing landscapes: FD error often ~1e-4 (between mild D_fd and extreme HP).
+      emitMetric(tag + "_fd_grad_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
+      check(tag + "_fd_grad", fdRel < 5e-3);
+      dualPathGaps(*sp.model, tag);
+    }
+  }
+
+  // Short-lengthscale stress: StableFactor often stays finite where Legacy struggles.
+  {
+    RegGp sp(40, CGp::DTCVAR, 10);
+    sp.kern.setByPath("rbf.lengthscale", 1e-3);
+    check("sparse_dtcvar_extreme_short_ls", gpAllFinite(*sp.model));
+    const double fdRel = fdGradCheckMaxRel(*sp.model);
+    emitMetric("sparse_dtcvar_short_ls_fd_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
+  }
+  {
+    RegGp sp(40, CGp::PITC, 10);
+    sp.kern.setByPath("rbf.lengthscale", 1e-3);
+    check("sparse_pitc_extreme_short_ls", gpAllFinite(*sp.model));
+    const double fdRel = fdGradCheckMaxRel(*sp.model);
+    emitMetric("sparse_pitc_short_ls_fd_relerr", "D_fd", fdRel, BUDGET_D_FD_EXTREME, "rel");
   }
 
   // Probit noise: log-likelihood finite on wide latent range.
@@ -1071,7 +1191,9 @@ int testModels()
 
 int main()
 {
-  cout << "GPc numerical stability suite (CIP-0019)" << endl;
+  cout << "GPc numerical stability suite (CIP-0019 + CIP-001A)" << endl;
+  cout << "cell=" << cellLabel()
+       << " sparse_linalg=" << sparseLinalgModeName() << endl;
   try
   {
     testLinalg();

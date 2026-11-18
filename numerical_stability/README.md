@@ -23,11 +23,24 @@ make run-numerical-stability
 make testNumericalStability && ./testNumericalStability
 ```
 
-Optional cell label (CI sets `ubuntu-openblas`):
+Optional cell / sparse-algebra labels (CI sets `ubuntu-openblas`):
 
 ```bash
 export GPC_NS_CELL=local
 export GPC_NS_BLAS=accelerate   # or openblas, etc.
+export GPC_SPARSE_LINALG=stable # or legacy — CIP-0012 path for sparse CGp
+```
+
+The suite appends the mode to the metric cell (`local+stable` / `local+legacy`).
+Sparse probes cover DTC, DTCVAR, FITC, and PITC. Each also emits an in-process
+Legacy↔StableFactor LL/grad gap (`*_legacy_stable_*`) so a single run already
+shows dual-path agreement; a dual-cell run compares the full metric surface.
+
+```bash
+# StableFactor vs Legacy: two suite runs + compare_metrics trend
+python3 numerical_stability/compare_sparse_modes.py
+# → numerical_stability/mode_compare/{stable,legacy}/metrics.json
+# → numerical_stability/mode_compare/trend.md
 ```
 
 Each case prints machine-readable lines:

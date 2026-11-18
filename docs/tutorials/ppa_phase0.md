@@ -40,4 +40,5 @@ make testPpa
 
 - PPA stores a dense \(N\times N\) kernel; it is not an IVM-style active-set method.
 - Default path uses **scalar** site precision \(B\) and a **kernel M-step** (`ppaKernelLogLikelihood`). β updates are not wired in the CLI yet.
+- Unless you pass `-g` / `-v`, `./ppa learn` seeds the RBF lengthscale from the median nearest-neighbour distance in \(X\) and starts white/bias small so the M-step does not collapse into a noise-only kernel.
 - Octave reference dumps and the upstream toolbox quirks are recorded in [`cip/cip0023/phase0_notes.md`](../../cip/cip0023/phase0_notes.md).

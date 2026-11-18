@@ -108,7 +108,7 @@ void CGp::_init()
   backConstrained = false;
   KupToDate = false;
   sparseApproximation = false;
-  sparseLinalgMode = SparseLinalgStableFactor;
+  sparseLinalgMode = SparseLinalgLQ;
   setApproximationType(FTC);
   numActive = 0;
 }

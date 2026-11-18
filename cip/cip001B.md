@@ -309,7 +309,7 @@ The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it save
 | \(I+\beta BB^\top\) | `syrk` + `potrf` | **LQ of \([I,\,A]\) (or augmented \(C\))** |
 | Grads | Murray chol/`trsm`/`syrk` adjoints | **LQ adjoint** (§3) then same whitening adjoints; no `syrk` adjoint on \(C\) |
 
-**Proposed Accept choice:** introduce a third runtime mode `SparseLinalgLQ` (CLI `--sparse-linalg lq`), keep StableFactor as default until soak proves LQ better on CIP-001A stress + mpmath gates; then decide whether to promote LQ to default or merge into `stable`. Do **not** silently change StableFactor behaviour mid-soak.
+**Accept / land choice:** introduce a third runtime mode `SparseLinalgLQ` (CLI `--sparse-linalg lq`) and **promote it to default** once forward+reverse and dual-path gates land. StableFactor remains `--sparse-linalg stable`. Do **not** silently change StableFactor's Gram+chol behaviour — LQ is a separate mode.
 
 ### 7. Non-goals
 
@@ -330,7 +330,7 @@ The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it save
 
 ## Backward Compatibility
 
-- Default remains CIP-0012 StableFactor until an explicit soak decision.
+- Default is LQ (`SparseLinalgLQ` / `--sparse-linalg lq`); StableFactor and Legacy remain selectable.
 - `.model` files still omit sparse-linalg mode (runtime only), same as CIP-0012.
 - MatIO fixtures unchanged; LL must match StableFactor within CIP-001A budgets on mild cells.
 
@@ -355,10 +355,11 @@ The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it save
 - [x] FITC: \(C\)-block via `lqAdjoint` (then existing \(\bar D\) / \(\bar B\) chain); dual-path vs StableFactor
 - [x] CLI mode + docs (`--sparse-linalg lq`, `docs/numerics.md`)
 - [x] Ill-conditioned \(K_{uf}K_{fu}\) gate (`testLQAdjoint`): large-\(N\) clustered \(X\), OK \(K_{uu}\); LQ logdet beats Gram+chol vs SVD
-- [ ] Stress / mpmath soak on GP LL/grad for that cell; default decision
+- [x] Default promoted to LQ (`CGp` init + CLI `lq`)
+- [ ] Stress / mpmath soak on GP LL/grad for the large-\(N\) clustered cell
 - [ ] Crowded-\(Z\) remains \(K_{mm}\)-limited (LQ ≡ StableFactor there) — not the Seeger/C-side regime
 
-**Accept notes (2026-11-18):** introduce `SparseLinalgLQ` (`--sparse-linalg lq`); keep StableFactor default; GPc stores the LQ \(L\) as upper \(R=L^\top\) in `LcholC` for prediction reuse; PITC stays on the StableFactor Gram path in v1.
+**Accept notes (2026-11-18):** introduce `SparseLinalgLQ` (`--sparse-linalg lq`); GPc stores the LQ \(L\) as upper \(R=L^\top\) in `LcholC` for prediction reuse; PITC stays on the StableFactor Gram path under `lq` in v1. **Land notes:** LQ is the default sparse linalg mode; StableFactor stays available for dual-path soak.
 
 ## References
 

@@ -40,8 +40,8 @@ FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/
 
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setSparseLinalgMode` or `gp … --sparse-linalg stable|lq|legacy` (prefer the long form: short `-L` collides with `--Learn-scales`).
 
-- **StableFactor** (default, [CIP-0012](../cip/cip0012.md)): whitened forward \(B = U^{-\top}K_{uf}\), \(C = I + B\Lambda^{-1}B^\top\) via `syrk`+`potrf` (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
-- **LQ** ([CIP-001B](../cip/cip001B.md)): same whitening; form \(C\) by LQ of \([I,\,\sqrt{\beta}B]\) (DTC/DTCVAR) or \([I,\,\sqrt{\beta}V]\) (FITC) instead of Gram+chol. Upper \(R=L^\top\) lands in `LcholC` for prediction. Gradients reverse through Seeger §4.3 `lqAdjoint` (`CLQAdjoint`) then the CIP-0012 whitening adjoints — not `pdinv(C)`. PITC stays on the StableFactor Gram path under `lq` for now.
+- **LQ** (default, [CIP-001B](../cip/cip001B.md)): whitened forward \(B = U^{-\top}K_{uf}\); form \(C\) by LQ of \([I,\,\sqrt{\beta}B]\) (DTC/DTCVAR) or \([I,\,\sqrt{\beta}V]\) (FITC) instead of Gram+chol. Upper \(R=L^\top\) lands in `LcholC` for prediction. Gradients reverse through Seeger §4.3 `lqAdjoint` (`CLQAdjoint`) then the CIP-0012 whitening adjoints — not `pdinv(C)`. PITC stays on the StableFactor Gram path under `lq` for now.
+- **StableFactor** ([CIP-0012](../cip/cip0012.md)): same whitening; \(C = I + B\Lambda^{-1}B^\top\) via `syrk`+`potrf` (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.
 - **Legacy**: `pdinv` of \(K_{uu}\) / \(A\) and `gemm(invK_uu, K_uf)` where needed. Keep for dual-path archaeology (`gp … --sparse-linalg legacy`).
 
 Gates:

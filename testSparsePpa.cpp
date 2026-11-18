@@ -179,7 +179,43 @@ int main()
     cout << "  info: max|FTC mean - PPA fBar| = " << dFtc << endl;
   }
 
-  // ---- Phase C ppaBound: finite for M<N; DTCVAR selectable ----
+  // ---- Full q(u) ELBO: DTC M=N matches dense approxLogLikelihood ----
+  {
+    CCmpndKern kernD(X); makeKernNoWhite(kernD, X);
+    CCmpndKern kernS(X); makeKernNoWhite(kernS, X);
+    CProbitNoise noiseD(&y); noiseD.initParams();
+    CProbitNoise noiseS(&y); noiseS.initParams();
+    CPpa dense(X, y, kernD, noiseD, 0);
+    CSparsePpa sp(X, y, kernS, noiseS, CGp::DTC, static_cast<unsigned int>(N), 1.0, 0);
+    for(int i = 0; i < 3; i++)
+      {
+        dense.eStep();
+        sp.eStep();
+      }
+    const double denseLL = dense.approxLogLikelihood();
+    const double sparseLL = sp.ppaBound();
+    expect(fabs(sparseLL - denseLL) < 1e-6,
+           "DTC M=N ppaBound matches dense approxLogLikelihood");
+    cout << "  info: dense approx=" << denseLL << " sparse ELBO=" << sparseLL
+         << " diff=" << (sparseLL - denseLL) << endl;
+  }
+  {
+    CCmpndKern kernD(X); makeKernNoWhite(kernD, X);
+    CCmpndKern kernS(X); makeKernNoWhite(kernS, X);
+    CProbitNoise noiseD(&y); noiseD.initParams();
+    CProbitNoise noiseS(&y); noiseS.initParams();
+    CPpa dense(X, y, kernD, noiseD, 0);
+    CSparsePpa sp(X, y, kernS, noiseS, CGp::DTCVAR, static_cast<unsigned int>(N), 1.0, 0);
+    for(int i = 0; i < 3; i++)
+      {
+        dense.eStep();
+        sp.eStep();
+      }
+    expect(fabs(sp.ppaBound() - dense.approxLogLikelihood()) < 1e-6,
+           "DTCVAR M=N ppaBound matches dense approxLogLikelihood");
+  }
+
+  // ---- Full ELBO finite for M<N; DTCVAR selectable ----
   {
     CCmpndKern kern(X); makeKernNoWhite(kern, X);
     CProbitNoise noise(&y); noise.initParams();

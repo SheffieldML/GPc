@@ -53,4 +53,4 @@ make testSparsePpa && ./testSparsePpa
 
 - Observation noise is \(\beta\) (default 1); sparse learn **omits** the white kernel (white cross-covariance is zero, so DTC with \(M=N\) would not match dense).
 - Sparse models use **`ppaVersion=0.3`** (`writeSparsePpaToFile` / `readSparsePpaFromFile`).
-- Monitor `ppaBound()` = CGp approx LML on \(\langle f\rangle\) + outer noise LL at \(\langle\bar f\rangle\) (prefer DTCVAR for the GP term). Not dense `approxLogLikelihood`.
+- Monitor `ppaBound()` = full \(q(u)\) ELBO for DTC/DTCVAR (matches dense `approxLogLikelihood` at \(M=N\)); FITC/PITC keep interim CGp LML + outer noise LL.

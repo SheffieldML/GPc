@@ -130,6 +130,10 @@ public:
   virtual double logLikelihood() const;
   // compute the gradients of the approximation wrt parameters.
   virtual double logLikelihoodGradient(CMatrix& g) const;
+  // CIP-0026: -KL(q(u)||p(u)) - ½β tr(Cov_f̄) [+ DTCVAR residual] + kern prior.
+  // Matches dense CPpa approxLogLikelihood parts 1–4 when DTC/DTCVAR and M=N, Xu=X.
+  // Throws for FITC/PITC (different A; use interim CGp LML + noise monitor).
+  double sparsePpaElboGpTerms() const;
   void gpCovGrads() const;
   virtual void pointLogLikelihood(const CMatrix& y, const CMatrix& X) const;
   void optimise(unsigned int iters=1000);

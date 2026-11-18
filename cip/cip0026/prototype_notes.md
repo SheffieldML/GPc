@@ -43,8 +43,14 @@ Date: 2026-11-18. Branch experiment before accepting CIP-0026.
 - Phase C: `ppaBound()` = CGp LML + outer noise LL (prefer DTCVAR)
 - Phase D: FITC/PITC + free-inducing smoke tests
 
+## Full \(q(u)\) ELBO (landed)
+
+- `CGp::sparsePpaElboGpTerms()`: \(-\mathrm{KL}(q(u)\|p(u)) - \tfrac12\beta\,\mathrm{tr}(\mathrm{Cov}_{\bar f})\) (+ DTCVAR \(K-Q\) site) + kern prior
+- `CSparsePpa` keeps `fPost` = \(\langle f\rangle\) that produced `fBar` (matches MATLAB `fBarfBar` timing)
+- Gate: DTC/DTCVAR \(M=N\) `ppaBound` vs dense `approxLogLikelihood` ~1e-14
+- FITC/PITC still use interim CGp LML + outer noise LL
+
 ## Still open (optional follow-up)
 
-- Full \(q(u)\) PPA ELBO recovering dense Cov / \(K^{-1}\) terms
 - Sparse `display` / `predict` CLI wiring
 - CIP-001C white-noise inducing + PPA sites note

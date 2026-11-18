@@ -20,6 +20,14 @@ gpc (this file)::
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Allow `python examples/expquad_regression.py` from python/ or repo root.
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import numpy as np
 
 import gpc

@@ -48,6 +48,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0021](./cip0021.md): CMake CI soak then hard-gate cutover (**Proposed**). Implements [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0002](../requirements/req0002_runnable-verification.md) under Actions CMake; revisits CIP-0020 deferred cutover. Local `make` stays documented.
 - [CIP-0023](./cip0023.md): Resuscitate Probabilistic Point Assimilation (PPA) from Nat King MATLAB (**Closed**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md). Tutorial: [`docs/tutorials/ppa_phase0.md`](../docs/tutorials/ppa_phase0.md).
 - [CIP-0024](./cip0024.md): EQ / ExpQuad — GPy lengthscale-first SE surface on shared RBF engine (**In Progress**). Implements [REQ-0012](../requirements/req0012_eq-expquad-parameterisation.md). (CIP-0022 CSV/pods remains on another branch.)
+- [CIP-0025](./cip0025.md): BLAS-owned distances and OpenMP bulk \(K(r)\) — parallelism without a GPc thread pool (**Proposed**). Implements [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md); takes CIP-0013 P7; respects [CIP-001F](./cip001F.md) / [REQ-0010](../requirements/req0010_documented-concurrency-contract.md).
 
 ## Creating a Good CIP
 

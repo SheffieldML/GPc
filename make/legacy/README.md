@@ -8,3 +8,9 @@ still at the repository root:
 
 Copy one of those to `make.inc` (gitignored) for a local override. Do not
 expect CI to exercise anything in this directory.
+
+Also archived here:
+
+- `CMakeLists.txt.archive-2020` — pre-CIP-0020 stub that pointed at an external
+  `mlprojects` tree and `ndlfortran.c`. Do not use. Living thin CMake (when
+  present) is the root `CMakeLists.txt` from [CIP-0020](../../cip/cip0020.md).

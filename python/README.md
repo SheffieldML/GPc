@@ -2,7 +2,9 @@
 
 Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay in C++; this package is an ease-of-use boundary for GPy users ([REQ-000E](../requirements/req000E_gpy-facing-python-facade.md)).
 
-## Setup (Phase A)
+## Setup
+
+### Makefile path (day-to-day, CIP-001D)
 
 From the repository root (with `make.inc` configured):
 
@@ -11,6 +13,23 @@ python3 -m venv python/.venv
 python/.venv/bin/pip install pybind11 numpy pytest
 cd python && make && make test
 ```
+
+### scikit-build / editable install (CIP-0020 Phase B)
+
+Builds `_gpc` via the repo-root thin CMake (OpenBLAS + Fortran). Make remains the blessed native/CI path; this is the packaging-oriented path.
+
+```bash
+python3 -m venv python/.venv
+source python/.venv/bin/activate
+# Homebrew macOS: point CMake at OpenBLAS (and prefer g++/gfortran like make.osx).
+export CMAKE_PREFIX_PATH="$(brew --prefix openblas)"
+export CXX="$(/bin/ls "$(brew --prefix gcc)/bin"/g++-[0-9]* | sort -V | tail -1)"
+export FC="$(/bin/ls "$(brew --prefix gcc)/bin"/gfortran-[0-9]* | sort -V | tail -1)"
+pip install -e "python/[test]"
+pytest -q python/tests
+```
+
+`python/Makefile` stays supported for editable development without scikit-build.
 
 ```python
 import numpy as np

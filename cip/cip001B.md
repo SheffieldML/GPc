@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001B"
-last_updated: "2026-11-18"  # grads §3 expanded same day
+last_updated: "2026-11-18"
 status: "Proposed"
 compressed: false
 related_requirements: ["0002"]
@@ -227,7 +227,7 @@ Do **not** duplicate a Gram-side `syrk` adjoint for \(I+AA^\top\); that node is 
 |--------|-------------------|
 | **DTC** | Drop trace / \(\|A\|_F^2\) DTCVAR terms; same LQ chain. |
 | **FITC** | \(A\leftarrow A\Lambda^{-1/2}\), \(y\leftarrow\Lambda^{-1/2}y\). After \(\bar A\) on the scaled features, reverse the column scaling: \(\bar\Lambda\) from \(\bar A\) and \(\bar y_{\mathrm{scaled}}\), then \(\bar q\to\bar B\) as in CIP-0012 Appendix A. Write \(\bar\Lambda\) formulae in the implementing PR (or CIP appendix) before merge; mpmath/FD gate required. |
-| **Precision form** | LQ input is \(\begin{bmatrix}L_m&K_{mn}/\sigma\end{bmatrix}\); reverse hits \(\bar L_m\) and \(\bar K_{mn}\) directly from \(\bar C\), then chol adjoint on \(K_{mm}\). Trace still needs \(\|L_m^{-1}K_{mn}\|_F^2\) reverse (trsm path). |
+| **Precision form** | LQ input is \(\begin{bmatrix}L_m&K_{mn}/\sigma\end{bmatrix}\) (plus \(y\)-row). Reverse hits \(\bar L_m\), \(\bar K_{mn}\) from \(\bar C\), then chol adjoint on \(K_{mm}\). Trace cotangent is through \(\|L_m^{-1}L_\Sigma\|_F^2-M\) (one \(M\times M\) `trsm`), **not** an \(M\times N\) solve — see §5. |
 
 PITC is **out of v1** unless Accept enlarges scope (block-diagonal \(\Lambda\) + shared LQ is a separate design beat).
 
@@ -252,10 +252,53 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 
 | Variant | Change |
 |---------|--------|
-| **Precision form** | LQ of \(\begin{bmatrix}L_m & K_{mn}/\sigma\\ 0 & y^\top/\sigma\end{bmatrix}\). Top block \(\Rightarrow L_\Sigma L_\Sigma^\top=K_{mm}+K_{mn}K_{nm}/\sigma^2\). Log-det: \(2N\log\sigma+2\sum\log|L_{\Sigma,ii}|-2\sum\log L_{m,ii}\). Trace term still needs \(\|L_m^{-1}K_{mn}\|_F^2\), so this mainly helps DTC/FITC (no / cheaper trace). |
+| **Precision form** | LQ of \(\begin{bmatrix}L_m & K_{mn}/\sigma\\ 0 & y^\top/\sigma\end{bmatrix}\). Top block \(\Rightarrow L_\Sigma L_\Sigma^\top=K_{mm}+K_{mn}K_{nm}/\sigma^2\). Full VFE bound from this LQ + \(O(M^3)\) — including the trace term (below). |
 | **FITC / heteroscedastic** | Replace \(\sigma\) by \(\Lambda^{1/2}\), \(\Lambda=\mathrm{diag}(K_{nn}-Q_{nn})+\sigma^2 I\). Scale column \(i\) of \(A\) and entry \(i\) of \(y\) by \(\Lambda_{ii}^{-1/2}\). Use \(\tfrac12\sum\log\Lambda_{ii}\) instead of \(N\log\sigma\); drop VFE trace. |
-| **Plain DTC** | VFE without trace correction. |
+| **Plain DTC** | VFE without the trace correction \(\tfrac12\|A\|_F^2-\tfrac{1}{2\sigma^2}\operatorname{tr}K_{nn}\) pieces that distinguish VFE from DTC. |
 | **\(K_{mm}\)** | Still needs chol (or jittered chol). If \(K_{mm}=\Phi\Phi^\top\) (e.g. RFF), LQ \(\Phi\) there too. |
+
+#### 5.1 Precision-form trace term (no \(M\times N\) solve)
+
+Earlier drafts claimed the VFE trace still required \(\|L_m^{-1}K_{mn}\|_F^2\) and thus an \(M\times N\) triangular solve. That overstates the cost. From the same precision-form LQ,
+
+\[
+\begin{bmatrix} L_m & K_{mn}/\sigma\\ 0 & y^\top/\sigma\end{bmatrix}
+=
+\begin{bmatrix} L_\Sigma & 0\\ \cdot & r\end{bmatrix}\tilde Q,
+\qquad
+L_\Sigma L_\Sigma^\top = K_{mm}+K_{mn}K_{nm}/\sigma^2.
+\]
+
+Define the \(M\times M\) matrix \(R=L_m^{-1}L_\Sigma\). Then
+
+\[
+RR^\top
+= I + L_m^{-1}K_{mn}K_{nm}L_m^{-\top}/\sigma^2
+= I+AA^\top = B,
+\]
+
+so \(R\) is a (non-triangular) square root of \(B\). Taking traces:
+
+\[
+\|A\|_F^2 = \operatorname{tr}(B)-M = \|L_m^{-1}L_\Sigma\|_F^2 - M.
+\]
+
+**From one LQ plus \(O(M^3)\):**
+
+| Piece | Source |
+|-------|--------|
+| Log-det | \(\log\|B\| = 2\sum\log\|L_{\Sigma,ii}\|-2\sum\log L_{m,ii}\) |
+| Data fit | \(r^2\) |
+| Trace correction | \(\|L_m^{-1}L_\Sigma\|_F^2-M\), plus \(\operatorname{tr}K_{nn}\) (diagonal only) |
+
+Cost: \(O(NM^2)\) for the LQ and \(O(M^3)\) for the \(M\times M\) `trsm` that forms \(L_m^{-1}L_\Sigma\). Everything that touches \(N\) is the single orthogonal factorisation — never \(L_m^{-1}K_{mn}\).
+
+The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it saves nothing there because that path builds \(A\) explicitly anyway.
+
+**Caveats:**
+
+- **Cancellation.** \(\|A\|_F^2=\operatorname{tr}(B)-M\). When the data barely inform \(u\) (\(\|A\|_F^2\not\gg M\): large \(\sigma^2\), redundant inducing points), the subtraction loses digits. In typical regimes \(\|A\|_F^2\gg M\) and it is harmless.
+- **Cannot drop the term.** It is what separates VFE from DTC. The identity only removes the expensive way of computing it.
 
 ### 6. Relationship to CIP-0012 / flag semantics
 

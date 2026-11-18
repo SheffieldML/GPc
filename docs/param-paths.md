@@ -8,8 +8,9 @@ Path get/set is a façade over indexed `setParam` / `getParam`. Canonical leaf a
 
 | Path | Object | Notes |
 |------|--------|-------|
-| `lengthscale` / `variance` | atomic `CKern` | RBF/Exp convert `lengthscale` ↔ stored `inverseWidth` |
-| `inv_lengthscale` / `inverseWidth` | atomic RBF/Exp | set/get in GPc storage units (no conversion) |
+| `lengthscale` / `variance` | atomic `CKern` | RBF/EQ/Exp convert `lengthscale` ↔ stored `inverseWidth` |
+| `inv_lengthscale` / `inverseWidth` | atomic RBF/EQ/Exp | set/get in GPc storage units (no conversion) |
+| `ExpQuad.lengthscale`, `ExpQuad.variance` | `CEqKern` / compound | GPy ExpQuad lengthscale-first SE (CIP-0024); stream type `eq`; same maths as RBF |
 | `rbf.variance`, `rbf_1.…` | `CCmpndKern` | GPy component labels; `_k` for duplicates |
 | `weight_variance` / `bias_variance` | MLP / Poly | GPy spelling; legacy camelCase aliases accepted |
 | `power` | RatQuad | alias of stored `alpha` |
@@ -32,9 +33,10 @@ Runtime constraints by path: `constrainPositive`, `constrainZeroOne`, `constrain
 
 ```bash
 gp learn -k rbf -P rbf.variance=1.0 -P rbf.lengthscale=2.0 examples/sinc.svml sinc.model
+gp learn -k eq -P ExpQuad.lengthscale=2.0 -P ExpQuad.variance=1.0 examples/sinc.svml sinc_eq.model
 ```
 
-`-P` / `--set path=value` is repeatable and applied after the model is built.
+`-P` / `--set path=value` is repeatable and applied after the model is built. Prefer `-k eq` with `ExpQuad.*` paths when matching GPy ExpQuad parameterisation; `-k rbf` remains the historical MATLAB-style default.
 
 ## Checks
 

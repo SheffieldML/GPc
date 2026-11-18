@@ -1,7 +1,7 @@
 ---
 id: "2026-11-18_cip0024-eq-core-factory-paths"
 title: "CIP-0024: CEqKern + factory + ExpQuad lengthscale paths"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -26,10 +26,10 @@ Add `CEqKern` as a thin subclass of `CRbfKern` (`type: eq`, `gpyComponentName` â
 
 ## Acceptance Criteria
 
-- [ ] `CEqKern` constructs, clones, and writes stream type `eq`
-- [ ] `readKernFromStream` accepts `eq`, `ExpQuad`, `expquad`
-- [ ] `ExpQuad.lengthscale` / `ExpQuad.variance` get/set in GPy units
-- [ ] Setting \(\ell\) yields same \(K\) as `CRbfKern` with \(w=1/\ell^2\) within `MATCHTOL`
+- [x] `CEqKern` constructs, clones, and writes stream type `eq`
+- [x] `readKernFromStream` accepts `eq`, `ExpQuad`, `expquad`
+- [x] `ExpQuad.lengthscale` / `ExpQuad.variance` get/set in GPy units
+- [x] Setting \(\ell\) yields same \(K\) as `CRbfKern` with \(w=1/\ell^2\) within `MATCHTOL`
 
 ## Implementation Notes
 
@@ -45,3 +45,6 @@ Reuse `LEAF_RBF_LENGTHSCALE`; do not duplicate `K_of_r`. No `eqard`.
 ### 2026-11-18
 
 Task created when CIP-0024 was Accepted.
+
+### 2026-11-18
+Completed on `cip0024-eq-expquad`.

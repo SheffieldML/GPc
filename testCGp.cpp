@@ -300,8 +300,12 @@ int testStableSparse()
     fail += failTrue(pdiff < 1e-6,
                      string("Legacy vs StableFactor ") + predName[k] + " predict");
   }
-  fail += failTrue(toy.model->getSparseLinalgMode() == CGp::SparseLinalgLQ,
-                   "LQ is the default sparseLinalgMode");
+  // Fresh model: the Dual-path toy above was left in StableFactor.
+  {
+    ToyGp toyDef(CGp::DTCVAR);
+    fail += failTrue(toyDef.model->getSparseLinalgMode() == CGp::SparseLinalgLQ,
+                     "LQ is the default sparseLinalgMode");
+  }
   toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
   try
   {

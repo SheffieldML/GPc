@@ -1,4 +1,4 @@
-% DUMP_PPA_PHASE0_FIXTURES  Octave/MATLAB Phase 0 dumps for CIP-0021.
+% DUMP_PPA_PHASE0_FIXTURES  Octave/MATLAB Phase 0 dumps for CIP-0023.
 %
 % Uses Nat King PPA toolbox (lawrennd/ppa) with Sheffield deps on the path.
 % Writes ASCII artefacts under testdata/ppa/ for C++ assert-and-verify.

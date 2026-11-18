@@ -1082,7 +1082,7 @@ void CClppa::gnuplot()
     }
   if(pmodel->noise.getType()=="probit" || pmodel->noise.getType()=="ncnm")
     {
-      pmodel->activeX.toFile(name+"_active_set.dat");
+      pmodel->activeX.toUnheadedFile(name+"_active_set.dat");
       int numPos = 0;
       int numNeg = 0;
       int numUnlab = 0;
@@ -1133,11 +1133,11 @@ void CClppa::gnuplot()
 	    }
 	}
       if(numPos>0)
-	XPos.toFile(name+"_positive.dat");
+	XPos.toUnheadedFile(name+"_positive.dat");
       if(numNeg>0)
-	XNeg.toFile(name+"_negative.dat");
+	XNeg.toUnheadedFile(name+"_negative.dat");
       if(numUnlab>0)
-	XUnlab.toFile(name+"_unlabelled.dat");
+	XUnlab.toUnheadedFile(name+"_unlabelled.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);
@@ -1182,7 +1182,7 @@ void CClppa::gnuplot()
       out << "# Prepared plot of model file " << endl;
       for(int i=0; i<numy; i++)
 	{
-	  probOut[i]->toStream(out);
+	  probOut[i]->toUnheadedStream(out);
 	  out << endl;
 	}
       out.close();
@@ -1233,7 +1233,7 @@ void CClppa::gnuplot()
 	  scatterActive.setVal(pmodel->trainY.getVal(i, 0), i, pmodel->activeX.getCols());
 	}
       
-      scatterActive.toFile(name+"_active_set.dat");
+      scatterActive.toUnheadedFile(name+"_active_set.dat");
       CMatrix scatterData(X.getRows(), X.getCols()+1);
       for(int i=0; i<X.getRows(); i++)
 	{
@@ -1241,7 +1241,7 @@ void CClppa::gnuplot()
 	    scatterData.setVal(X.getVal(i, j), i, j);
 	  scatterData.setVal(y.getVal(i, 0), i, X.getCols());
 	}
-      scatterData.toFile(name+"_scatter_data.dat");
+      scatterData.toUnheadedFile(name+"_scatter_data.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);

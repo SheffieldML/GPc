@@ -49,6 +49,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0023](./cip0023.md): Resuscitate Probabilistic Point Assimilation (PPA) from Nat King MATLAB (**Closed**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md). Tutorial: [`docs/tutorials/ppa_phase0.md`](../docs/tutorials/ppa_phase0.md).
 - [CIP-0024](./cip0024.md): EQ / ExpQuad — GPy lengthscale-first SE surface on shared RBF engine (**In Progress**). Implements [REQ-0012](../requirements/req0012_eq-expquad-parameterisation.md). (CIP-0022 CSV/pods remains on another branch.)
 - [CIP-0025](./cip0025.md): BLAS-owned distances and OpenMP bulk \(K(r)\) — parallelism without a GPc thread pool (**Proposed**). Implements [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md); takes CIP-0013 P7; respects [CIP-001F](./cip001F.md) / [REQ-0010](../requirements/req0010_documented-concurrency-contract.md).
+- [CIP-0027](./cip0027.md): GPy-aligned defaults — `Gaussian_noise.variance`; drop auto White/Bias for regression/PPA; **IVM keeps trained White** (softener write-up [`cip0027/ivm_softener.md`](./cip0027/ivm_softener.md)); EP/non-linear likelihoods deferred (**Proposed**). Implements [REQ-0014](../requirements/req0014_observation-noise-in-likelihood.md).
 
 ## Creating a Good CIP
 

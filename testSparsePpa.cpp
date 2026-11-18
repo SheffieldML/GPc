@@ -179,20 +179,61 @@ int main()
     cout << "  info: max|FTC mean - PPA fBar| = " << dFtc << endl;
   }
 
-  // ---- Phase C interim monitor: finite for M<N; DTCVAR selectable ----
+  // ---- Phase C ppaBound: finite for M<N; DTCVAR selectable ----
   {
     CCmpndKern kern(X); makeKernNoWhite(kern, X);
     CProbitNoise noise(&y); noise.initParams();
     CSparsePpa sp(X, y, kern, noise, CGp::DTC, 10, 1.0, 0);
-    const double mon = sp.monitorLogLikelihood();
-    expect(std::isfinite(mon), "DTC M<N monitorLogLikelihood finite");
+    expect(std::isfinite(sp.ppaBound()), "DTC M<N ppaBound finite");
   }
   {
     CCmpndKern kern(X); makeKernNoWhite(kern, X);
     CProbitNoise noise(&y); noise.initParams();
     CSparsePpa sp(X, y, kern, noise, CGp::DTCVAR, 10, 1.0, 0);
     expect(sp.getApproxType() == CGp::DTCVAR, "DTCVAR approx selected");
-    expect(std::isfinite(sp.monitorLogLikelihood()), "DTCVAR M<N monitor finite");
+    expect(std::isfinite(sp.ppaBound()), "DTCVAR M<N ppaBound finite");
+  }
+
+  // ---- Phase B: sparse .model stream round-trip ----
+  {
+    CCmpndKern kern(X); makeKernNoWhite(kern, X);
+    CProbitNoise noise(&y); noise.initParams();
+    CSparsePpa sp(X, y, kern, noise, CGp::DTC, 10, 1.0, 0);
+    sp.optimise(1, 0);
+    const string path = "/tmp/test_sparse_ppa_0.3.model";
+    writeSparsePpaToFile(sp, path, "testSparsePpa round-trip");
+    CSparsePpa* loaded = readSparsePpaFromFile(path, 0);
+    expect(loaded->getApproxType() == CGp::DTC, "stream round-trip approx");
+    expect(loaded->getNumActive() == 10u, "stream round-trip M");
+    expect(fabs(loaded->getBeta() - 1.0) < 1e-12, "stream round-trip beta");
+    expect(maxAbsDiff(loaded->getFBar(), sp.getFBar()) < 1e-8, "stream round-trip fBar");
+    expect(maxAbsDiff(loaded->getF(), sp.getF()) < 1e-8, "stream round-trip f");
+    expect(std::isfinite(loaded->ppaBound()), "loaded ppaBound finite");
+    delete loaded;
+  }
+
+  // ---- Phase D: FITC / PITC smoke; free inducing ----
+  {
+    CCmpndKern kern(X); makeKernNoWhite(kern, X);
+    CProbitNoise noise(&y); noise.initParams();
+    CSparsePpa fitc(X, y, kern, noise, CGp::FITC, 10, 1.0, 0);
+    fitc.optimise(1, 0);
+    expect(std::isfinite(fitc.ppaBound()), "FITC M=10 ppaBound finite");
+  }
+  {
+    CCmpndKern kern(X); makeKernNoWhite(kern, X);
+    CProbitNoise noise(&y); noise.initParams();
+    CSparsePpa pitc(X, y, kern, noise, CGp::PITC, 10, 1.0, 0);
+    pitc.optimise(1, 0);
+    expect(std::isfinite(pitc.ppaBound()), "PITC M=10 ppaBound finite");
+  }
+  {
+    CCmpndKern kern(X); makeKernNoWhite(kern, X);
+    CProbitNoise noise(&y); noise.initParams();
+    CSparsePpa sp(X, y, kern, noise, CGp::DTC, 8, 1.0, 0);
+    sp.fixInducing(false);
+    sp.optimise(1, 5);
+    expect(std::isfinite(sp.ppaBound()), "free inducing DTC optimise finite");
   }
 
   cout << "Number of failures: " << fails << endl;

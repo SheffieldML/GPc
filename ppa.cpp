@@ -738,16 +738,19 @@ void CClppa::learn()
   sparse.optimise(extIters, kernIters);
   if(getVerbosity()>0)
     {
-      cout << "Sparse PPA learn finished. monitor(CGp LL)="
-           << sparse.monitorLogLikelihood() << endl;
-      cout << "Model file not written: sparse PPA stream format is Phase B "
-           << "incomplete (refuse save). Use dense path to persist .model files."
-           << endl;
+      cout << "Sparse PPA learn finished. ppaBound="
+           << sparse.ppaBound() << endl;
     }
-  // Explicit refuse — no silent dense write of a sparse fit.
-  if(modelFileName.size()>0 && getVerbosity()>=0)
-    cerr << "ppa learn: sparse models are not yet streamable; skipped write of "
-         << modelFileName << endl;
+  string comment = "Run as: ";
+  for(int i=0; i<argc; i++)
+    {
+      comment+=argv[i];
+      comment+=" ";
+    }
+  writeSparsePpaToFile(sparse, modelFileName, comment);
+  if(getVerbosity()>0)
+    cout << "Saved sparse PPA (ppaVersion=" << SPARSE_PPAVERSION
+         << ") to " << modelFileName << endl;
   exit(0);
 }
 
@@ -1449,10 +1452,10 @@ void CClppa::helpInfo()
     {
       helpHeader();
       helpUsage("ppa [options] learn [command-options] example_file [model_file]");
-      helpDescriptor("Learn a PPA model. Default is dense CPpa (CIP-0023). Sparse path (CIP-0026) uses CGp via -A dtc|dtcvar|fitc|pitc and -a M; observation noise is β (no white kernel). Sparse models are not yet streamable.");
+      helpDescriptor("Learn a PPA model. Default is dense CPpa (CIP-0023). Sparse path (CIP-0026) uses CGp via -A dtc|dtcvar|fitc|pitc and -a M; observation noise is β (no white kernel). Sparse models use ppaVersion=0.3.");
       cout << "Arguments:" << endl;
       helpArgument("example_file", "File with the training data. The data file is in the format used by SVM light.");
-      helpArgument("model_file", "File to store the resulting dense model in. Default ppa_model. Ignored for sparse learn.");
+      helpArgument("model_file", "File to store the resulting model in. Default ppa_model.");
       cout << endl;
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");

@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0026-phase-d-fitc-inducing"
 title: "CIP-0026 Phase D (optional): FITC/PITC and free inducing"
-status: "Proposed"
+status: "Completed"
 priority: "Low"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -23,18 +23,13 @@ tags:
 
 ## Description
 
-Extend sparse PPA beyond DTC: FITC/PITC approx types, optional free inducing optimisation, and CIP-001C white-noise inducing features with PPA sites.
+FITC/PITC smoke tests and optional free inducing optimisation via `CGp`.
 
 ## Acceptance Criteria
 
-- [ ] FITC and/or PITC selectable on sparse PPA path with smoke tests
-- [ ] Optional unfixed inducing with gradient path via CGp
-- [ ] Document interaction with white-noise inducing (CIP-001C)
-
-## Implementation Notes
-
-- Depends on a usable sparse monitor (Phase C).
-- Keep optional; do not block Phases A–C.
+- [x] FITC and PITC selectable with finite `ppaBound` smoke tests
+- [x] Optional unfixed inducing with short optimise path
+- [ ] Document interaction with white-noise inducing (CIP-001C) — deferred note in CIP
 
 ## Related
 
@@ -44,4 +39,4 @@ Extend sparse PPA beyond DTC: FITC/PITC approx types, optional free inducing opt
 
 ### 2026-11-19
 
-Task created (Proposed / optional).
+FITC/PITC + free inducing smoke in `testSparsePpa`.

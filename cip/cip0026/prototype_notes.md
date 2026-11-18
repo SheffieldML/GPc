@@ -39,12 +39,12 @@ Date: 2026-11-18. Branch experiment before accepting CIP-0026.
 ## Landed on `cip0026-sparse-ppa` (2026-11-19)
 
 - Phase A: `CSparsePpa` + `testSparsePpa` in makefile `tests`
-- Phase B: `./ppa learn -A dtc|dtcvar|fitc|pitc -a M` (no white; refuse `.model` write)
-- Phase C interim: `monitorLogLikelihood()`; full PPA–DTCVAR ELBO still open
+- Phase B: `./ppa learn -A … -a M` (no white); **`ppaVersion=0.3` stream**
+- Phase C: `ppaBound()` = CGp LML + outer noise LL (prefer DTCVAR)
+- Phase D: FITC/PITC + free-inducing smoke tests
 
-## Still open
+## Still open (optional follow-up)
 
-- Principled DTCVAR / PPA ELBO and convergence policy
-- Sparse `.model` stream version
-- Stripping \(N\times N\) stores from dense `CPpa` (unchanged by design)
-- Phase D: free inducing / FITC-PITC polish
+- Full \(q(u)\) PPA ELBO recovering dense Cov / \(K^{-1}\) terms
+- Sparse `display` / `predict` CLI wiring
+- CIP-001C white-noise inducing + PPA sites note

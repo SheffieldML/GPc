@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include "CMatrix.h"
+#include "ndlexceptions.h"
 
 using namespace std;
 
@@ -182,12 +183,30 @@ BoundResult collapsedDtcvar(const CMatrix& KuuIn, const CMatrix& Kuf,
   CMatrix Kuu(KuuIn);
   r.kappaKuu = kappaSym(Kuu);
 
+  // Member jitChol returns the seed (1e-6 mean diag) even when chol succeeds
+  // on the first try without adding anything. Detect real adds by probing chol.
   CMatrix U(M, M);
+  r.jitter = 0.0;
   try
   {
-    r.jitter = U.jitChol(Kuu);
+    U.deepCopy(Kuu);
+    U.chol();
     U.setTriangular(true);
     r.cholOk = true;
+  }
+  catch(ndlexceptions::MatrixNonPosDef&)
+  {
+    try
+    {
+      CMatrix KuuJ(Kuu);
+      r.jitter = U.jitChol(KuuJ);
+      U.setTriangular(true);
+      r.cholOk = true;
+    }
+    catch(...)
+    {
+      return r;
+    }
   }
   catch(...)
   {

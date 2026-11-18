@@ -280,7 +280,7 @@ Posterior over whitened inducing values \(v=L_m^{-1}u\) is \(N(L^{-\top}c,\,(LL^
 1. **Prototype (offline).** Dense NumPy/SciPy: LQ bound vs CIP-0012 Cholesky bound vs full \(O(N^3)\) VFE on small \(N\); confirm \(\sim 10^{-13}\) agreement on well-conditioned cells (already sketched).
 2. **LAPACK wrapper.** `CMatrix` (or thin helper) for LQ/QR of wide matrices; diagonal-sign normalisation helper; log-abs-diag.
 3. **Forward path.** DTCVAR (VFE) first: build \(A\), augmented \(C\), extract \(L,c,r\), evaluate \(\mathcal{F}\). Then DTC, then FITC (\(\Lambda\) scaling).
-4. **Prediction** matching §3.
+4. **Prediction** matching §4.
 5. **Reverse-mode grads** per §3: `_lqAdjoint` unit tests → DTCVAR seed cotangents → chain through existing `trsm`/`chol` adjoints → FITC \(\Lambda\) reverse in-PR; FD + dual-path vs StableFactor.
 6. **CLI / enum** `--sparse-linalg lq`; document in [docs/numerics.md](../docs/numerics.md).
 7. **Gates.** Extend `numerical_stability/` stress + `diagSparseStable` / mpmath: LQ vs StableFactor LL/grad; crowded-\(Z\) FD util; optional hard cell where Gram+chol degrades and LQ holds.

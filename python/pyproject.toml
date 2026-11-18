@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "pybind11>=2.12", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpc"
+version = "0.1.0a1"
+description = "Light Python façade over SheffieldML GPc (CIP-001D)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+plot = ["matplotlib"]
+examples = ["matplotlib", "pods", "jupyter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["gpc*"]

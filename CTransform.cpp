@@ -65,6 +65,8 @@ double CNegLogLogitTransform::atox(double a) const
     x = exp(-limVal);
   else if(a<limVal)
     x=log(1+exp(a));
+  else
+    x = a; // softplus(a) ≈ a once exp(a) overflows the stable branch
   SANITYCHECK(!isnan(x));
   return x;
 }

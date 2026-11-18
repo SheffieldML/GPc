@@ -14,6 +14,7 @@ int main()
   fail += testProbit();
   fail += testNcnm();
   cout << "Number of failures: " << fail << endl;
+  return fail > 0 ? 1 : 0;
 }
 
 int testGaussian()

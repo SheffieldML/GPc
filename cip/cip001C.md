@@ -30,7 +30,7 @@ title: "White-noise inducing features for stationary kernels (kernel-free K_uu)"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented (Phase 1–2 on `cip001C-wn-pilot`)
-- [x] Implemented - Phases 1–4 (Hankel Phase 3 + essentials of Phase 4); stability-suite cell still open
+- [x] Implemented - Phases 1–4 delivered (Hankel + stability cells); awaiting Close after PR/CI
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -207,9 +207,9 @@ Add `virtual double spectralDensity(double rho) const` (default throws) to `CSta
 - [x] Phase 1: `CInducing` contract + `CInducingPoints`, no behaviour change
 - [x] Phase 2: `CInducingWhiteNoise` + RBF/RBF-ARD closed forms + equivalence gate
 - [x] Phase 3: `spectralDensity` + generic Hankel path (Matérn 3/2, 5/2, Exp); RBF-via-Hankel gate ~1e-10
-- [x] Phase 4 (partial): `getEffectiveInducingCount` (Meff), CLI `--inducing`/`--window-width`, stream `inducingType`/`windowWidth` — stability cells still open
+- [x] Phase 4: Meff, CLI `--inducing`/`--window-width`, stream keys, `wn_ls_sweep_*` stability cells
 - [ ] Compression into `docs/numerics.md`
-- [x] Pilot spike (`diagWhiteNoisePilot`): lengthscale sweep vs point inducing (pre-acceptance)
+- [x] Pilot spike (`diagWhiteNoisePilot` / `diagVikCompare`): pre-acceptance evidence
 
 
 ## Future CIPs (pointers, not scope)

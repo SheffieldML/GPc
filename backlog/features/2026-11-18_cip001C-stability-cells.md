@@ -1,7 +1,7 @@
 ---
 id: "2026-11-18_cip001C-stability-cells"
 title: "CIP-001C Phase 4: stability-suite point vs white-noise cells"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -25,13 +25,18 @@ Add numerical-stability suite cells (CIP-0019/001A) comparing point vs white-noi
 
 ## Acceptance Criteria
 
-- [ ] Lengthscale-sweep cell in `numerical_stability/`
-- [ ] White-noise path finite with no \(K_{uu}\) jitter across the sweep
-- [ ] Point path jitter/failure recorded as expected contrast (xfail-style where it breaks)
-- [ ] ELBO/bound gap vs (jittered) point inducing recorded
-- [ ] Metrics emitted in CIP-001A categorised format where applicable
+- [x] Lengthscale-sweep cell in `numerical_stability/` (`wn_ls_sweep_*`)
+- [x] White-noise path finite across the sweep under StableFactor and LQ
+- [x] Point path \(\kappa(K_{uu})\) recorded as contrast (≫ WN; kernel-driven)
+- [x] ELBO/bound gap vs point inducing recorded per \(\gamma\) and mode
+- [x] Metrics emitted in CIP-001A categorised format (`B_linalg`, `F_model`)
 
 ## Related
 
 - CIP: 001C
 - REQ: 000D
+
+## Progress Updates
+
+### 2026-11-18
+Implemented in `testNumericalStability`: WN finite stable/lq; max \(\kappa\) point \(\sim 10^{18}\) vs WN \(\sim 10^{4}\); suite `passed=65 failed=0`.

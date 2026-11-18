@@ -30,6 +30,9 @@
 # Local platform flags (copy make.linux / make.osx → make.inc). CI uses make.linux.
 make.inc
 
+# CIP-0020 out-of-tree CMake build directory
+/build/
+
 #
 *.dat
 *~

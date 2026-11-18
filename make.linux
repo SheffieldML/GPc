@@ -39,6 +39,15 @@ ifeq ($(COVERAGE),1)
 COVERAGEFLAGS = --coverage -O0
 endif
 
+# Optional OpenMP for parallel stationary workspace fills (CIP-0025 Track 2).
+# Enable with: make GPC_OPENMP=1 testKern
+# When enabled, set OPENBLAS_NUM_THREADS=1 (or equivalent) to avoid nested-thread
+# oversubscription; see docs/build-and-ci.md and CIP-0025 nesting policy.
+ifeq ($(GPC_OPENMP),1)
+OPENMPFLAG  = -fopenmp -DGPC_OPENMP=1
+OPENMPLDFLAGS = -fopenmp
+endif
+
 # Default to the project root so -I is never empty when MATLAB is disabled.
 # When enabling MATLAB above, set MATLABINCLUDE and it will be used instead.
 ifeq ($(strip $(MATLABINCLUDE)),)
@@ -47,14 +56,14 @@ else
 INCLUDE = $(MATLABINCLUDE)
 endif
 LD=g++
-LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
+LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS) $(OPENMPLDFLAGS)
 CC=g++
 # C++17: dynamic exception specifications removed from the sources (CIP-0002).
 # CIP-0013: RELEASE=1 is the timed / documented Linux run path.
 ifeq ($(RELEASE),1)
-CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 else
-CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 endif
 FC=gfortran
 FCFLAGS = -funroll-all-loops -O3 -fPIC

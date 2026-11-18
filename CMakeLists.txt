@@ -18,6 +18,10 @@ option(GPC_BUILD_EXTRA_CLIS "Also build ivm, gplvm, bgplvm, ppa" ON)
 option(GPC_BUILD_GP_CLI "Build the gp executable" ON)
 option(GPC_BUILD_PYTHON "Build the pybind11 gpc._gpc extension" OFF)
 option(GPC_BUILD_TESTS "Build CTest mirrors of makefile unit/matio-gate binaries" OFF)
+# CIP-0025: optional OpenMP over bulk K(r) workspace fills.
+# cmake -DGPC_OPENMP=ON ...  or  cmake -DGPC_OPENMP=1 ...
+# Requires libomp / libgomp; set OPENBLAS_NUM_THREADS=1 when enabled.
+option(GPC_OPENMP "Enable OpenMP for parallel stationary workspace fills" OFF)
 
 # scikit-build-core sets SKBUILD when configuring for a wheel / editable install.
 if(DEFINED SKBUILD)
@@ -55,6 +59,11 @@ if(GPC_USE_MATIO)
   if(NOT MATIO_INCLUDE_DIR OR NOT MATIO_LIBRARY)
     message(FATAL_ERROR "GPC_USE_MATIO=ON but libmatio was not found")
   endif()
+endif()
+
+if(GPC_OPENMP)
+  find_package(OpenMP REQUIRED)
+  add_compile_definitions(GPC_OPENMP=1)
 endif()
 
 set(BLA_VENDOR OpenBLAS)

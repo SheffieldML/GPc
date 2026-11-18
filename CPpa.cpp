@@ -757,7 +757,10 @@ void writePpaToStream(const CPpa& model, ostream& out)
 	}
       double x = model.getTrainingX(i, model.getNumInputs()-1);
       if(x!=0.0)
-	out << model.getNumInputs() << ":" << x << endl;
+	out << model.getNumInputs() << ":" << x;
+      // Always terminate the row: sparse omission of a trailing 0 feature
+      // used to swallow the newline and merge the next point into this line.
+      out << endl;
     }
 }
 void writePpaToFile(const CPpa& model, const string modelFileName, const string comment)

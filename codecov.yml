@@ -21,8 +21,12 @@ ignore:
   - "test*.h"
   - "**/test*.cpp"
   - "**/test*.h"
-  # Local DTCVAR diagnostic / fixture stampers (not part of matio-tests).
-  - "diagDtcvar.cpp"
-  - "genTestGpDtcvar.cpp"
-  - "diagPitc.cpp"
-  - "genTestGpPitc.cpp"
+  # Local DTCVAR diagnostic / fixture stampers under tools/ (not matio-tests).
+  - "tools/diagDtcvar.cpp"
+  - "tools/genTestGpDtcvar.cpp"
+  - "tools/diagPitc.cpp"
+  - "tools/genTestGpPitc.cpp"
+  - "tools/diagSparseStable.cpp"
+  - "tools/diagLqVsStable.cpp"
+  - "tools/diagWhiteNoisePilot.cpp"
+  - "tools/diagVikCompare.cpp"

@@ -44,7 +44,7 @@ The software is compiled by writing
 $ make gp
 ```
 
-at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored.
+at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored. Older platform fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) live under `make/legacy/` and are not CI targets.
 
 ### macOS (Homebrew)
 
@@ -205,7 +205,7 @@ $ gnuplot -e "GPLOT_OUT='sinc.svg'" sinc_plot.gp
 ```
 
 Then you should obtain the plot shown below
-<center><img src="sinc.png"><br>
+<center><img src="docs/images/sinc.png"><br>
 Gaussian process applied to sinc data.</center><br>
 
 The other files created are `sinc_error_bar_data.dat` (x, ymin, ymax for the ±2σ band), `sinc_line_data.dat` (posterior mean), and `sinc_scatter_data.dat` (training data). Colours follow the GPy Tango palette.
@@ -264,7 +264,7 @@ Historical notes about gcc 3.2 / g77, Cygwin, and MSVC below describe older pack
 
 ### Optimisation
 
-One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file `make.atlas` includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
+One of the advantages of interfacing to the LAPACK and BLAS libraries is that they are often optimised for particular architectures. The file `make/legacy/make.atlas` includes options for compiling the ATLAS optimised versions of lapack and blas that are available on a server I have access to. These options may vary for particular machines.
 
 ### Cygwin / Microsoft Visual C++
 
@@ -360,7 +360,7 @@ $ gnuplot -e "GPLOT_PNG='unitsquaregp_plot.png'" unitsquaregp_plot.gp
 ```
 
 and obtain the plot shown below
-<center><img src="unitsquaregp_plot.png"><br>
+<center><img src="docs/images/unitsquaregp_plot.png"><br>
 The decision boundary learnt for the data sampled from a Gaussian process classification. Note the active points (dark red) typically lie along the decision boundary.</center><br>
 
 Generated plot artefacts for this 2-D IVM example follow the stub name (for example `unitsquaregp_*.dat`); see the gnuplot script header for the exact list. Maintained walk-through: [`docs/tutorials/ivm_unitsquare.md`](docs/tutorials/ivm_unitsquare.md).
@@ -400,7 +400,7 @@ Once again the results can be displayed as a two dimensional plot,
 $ ./ivm gnuplot examples/ard_gaussian_clusters.svml ard_gaussian_clusters.model ard_gaussian_clusters
 ```
 
-<center><img src="ard_gaussian_clusters_plot.png"><br>
+<center><img src="docs/images/ard_gaussian_clusters_plot.png"><br>
 The IVM learnt with an ARD RBF kernel. One of the input directions has been recognised as not relevant.
 </center>
 
@@ -450,7 +450,7 @@ $ gnuplot -e "GPLOT_PNG='semisupercrescent_plot.png'" semisupercrescent_plot.gp
 
 The result of the visualisation being,
 
-<center><img src="semisupercrescent_plot.png"><img src="semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data; dark-red markers are the active set.</center>
+<center><img src="docs/images/semisupercrescent_plot.png"><img src="docs/images/semisupercrescent_labels_only_plot.png"><br>The result of semi-supervised learning on the crescent data. At the top is the result from the null category noise model. The bottom shows the result from training only on the labelled data only with the standard probit noise model. Purple squares are unlabelled data; dark-red markers are the active set.</center>
 
 Maintained walk-through: [`docs/tutorials/ivm_semisupervised.md`](docs/tutorials/ivm_semisupervised.md).
 
@@ -517,7 +517,7 @@ GP section still describe older packaging; prefer `make.linux` / `make.osx`.
 
 One of the advantages of interfacing to the LAPACK and BLAS libraries
 is that they are often optimised for particular architectures. The
-file `make.atlas` includes options for compiling the ATLAS
+file `make/legacy/make.atlas` includes options for compiling the ATLAS
 optimised versions of lapack and blas that are available on a server I
 have access to. These options may vary for particular machines.
 
@@ -684,7 +684,7 @@ $ gnuplot -e "GPLOT_PNG='oil100_plot.png'" oil100_plot.gp
 ```
 
 And obtain the plot shown below
-<center><img src="oil100_plot.png"><br>
+<center><img src="docs/images/oil100_plot.png"><br>
 Visualisation of 100 points of the oil flow data.</center><br>
 
 The other files created are
@@ -698,7 +698,7 @@ each label.
 Running the GPLVM for 1000 iterations on all 1000 points of the oil
 data leads to the visualisation below.
 
-<center><img src="oil1000_plot.png"><br>
+<center><img src="docs/images/oil1000_plot.png"><br>
 All 1000 points of the oil data projected into latent space. This visualisation takes overnight to optimise on a Pentinum IV.
 </center>
 
@@ -813,7 +813,7 @@ using the command
 >> mocapResultsCppBvh('swagger.model', 'examples/Swagger.bvh', 'bvh');
 ```
 
-<center><img src="swagger_plot.png">
+<center><img src="docs/images/swagger_plot.png">
 <br>Latent space for the Swagger data. Note the breaks in the sequence.</center>
 
 ### Dealing with the Breaks
@@ -855,7 +855,7 @@ The results can then be seen in MATLAB using
 >> mocapResultsCppBvh('swagger_back_constrained.model', 'examples/Swagger.bvh', 'bvh');
 ```
 
-<center><img src="swagger_back_constrained_plot.png">
+<center><img src="docs/images/swagger_back_constrained_plot.png">
 <br>The repeated circular pattern is associated with the repeated walking paces in the data.</center>
 
 ### Dealing with the Breaks with Dynamics
@@ -904,7 +904,7 @@ Here `-D rbf` selects the dynamics kernel, `-g` sets its inverse width, and
 `-dr 20` fixes a signal-to-noise ratio for the dynamics GP (preferable to
 `-dh` / `-ds` for most runs). The results of the visualisation are shown below.
 
-<center><img src="swagger_dynamics_plot.png"> <br>Latent space for
+<center><img src="docs/images/swagger_dynamics_plot.png"> <br>Latent space for
 the Swagger data with the dynamics. By constraining the GP-LVM with an
 unusual prior the sequence stays continuous in latent space.</center>
 

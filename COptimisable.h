@@ -81,6 +81,9 @@ class COptimisable {
     funcEval = 0;
     defaultTextProgress = true;
     progressStream = &std::cout;
+    logStream = 0;
+    progressLinesPrinted = 0;
+    inPlaceProgressMode = -1; // -1 auto (TTY), 0 off, 1 on
   }
   virtual ~COptimisable() {}
   virtual inline void setVerbosity(int val) const 
@@ -113,10 +116,32 @@ class COptimisable {
   void setOptimiserProgressStream(std::ostream* os)
   {
     progressStream = os;
+    progressLinesPrinted = 0;
   }
   std::ostream* getOptimiserProgressStream() const
   {
     return progressStream;
+  }
+  /// Optional append-only record of events (independent of live TTY redraw).
+  void setOptimiserLogStream(std::ostream* os)
+  {
+    logStream = os;
+  }
+  std::ostream* getOptimiserLogStream() const
+  {
+    return logStream;
+  }
+  /// Force in-place ANSI redraw: -1 auto (TTY), 0 off, 1 on.
+  void setInPlaceProgress(int mode) const
+  {
+    inPlaceProgressMode = mode;
+    progressLinesPrinted = 0;
+  }
+
+  /// Optional multi-line model snapshot for live progress (CGp overrides).
+  virtual std::string progressSnapshot(const OptimiserEvent& /*event*/) const
+  {
+    return std::string();
   }
 
   /// Fire default text (if enabled) then all registered observers.
@@ -318,6 +343,9 @@ class COptimisable {
 
   bool defaultTextProgress;
   mutable std::ostream* progressStream;
+  mutable std::ostream* logStream;
+  mutable unsigned int progressLinesPrinted;
+  mutable int inPlaceProgressMode;
   mutable std::vector<OptimiserObserver> optimiserObservers;
   
   CMatrix direction; // direction for 1-D optimisation.
@@ -325,6 +353,10 @@ class COptimisable {
   CMatrix paramStoreTwo;
 
   void writeDefaultOptimiserText(const OptimiserEvent& event) const;
+  void writeOptimiserLogLine(const OptimiserEvent& event) const;
+  std::string buildProgressBlock(const OptimiserEvent& event) const;
+  bool shouldUseInPlaceProgress() const;
+  static const char* optimiserName(int optimiserId);
   OptimiserEvent makeOptimiserEvent(OptimiserPhase phase,
                                     int optimiserId,
                                     double objectiveVal,

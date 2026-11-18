@@ -1,5 +1,17 @@
 #include "COptimisable.h"
+#include <cstdio>
 #include <sstream>
+
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#define GPC_ISATTY _isatty
+#define GPC_FILENO _fileno
+#else
+#include <unistd.h>
+#define GPC_ISATTY isatty
+#define GPC_FILENO fileno
+#endif
 
 const double COptimisable::phi=1.618033988749895;
 const double COptimisable::cphi=-0.6180339887498949;
@@ -22,37 +34,148 @@ OptimiserEvent COptimisable::makeOptimiserEvent(OptimiserPhase phase,
   return e;
 }
 
-void COptimisable::writeDefaultOptimiserText(const OptimiserEvent& event) const
+const char* COptimisable::optimiserName(int optimiserId)
 {
+  switch(optimiserId)
+  {
+  case CG: return "cg";
+  case SCG: return "scg";
+  case GD: return "gd";
+  case BFGS: return "bfgs";
+  case LBFGS: return "lbfgs";
+  default: return "optimiser";
+  }
+}
+
+bool COptimisable::shouldUseInPlaceProgress() const
+{
+  if(inPlaceProgressMode == 0)
+    return false;
+  if(inPlaceProgressMode > 0)
+    return true;
   if(!progressStream)
-    return;
-  std::ostream& out = *progressStream;
-  const int v = getVerbosity();
+    return false;
+  if(progressStream != &std::cout && progressStream != &std::cerr)
+    return false;
+  FILE* fp = (progressStream == &std::cerr) ? stderr : stdout;
+#ifdef _WIN32
+  HANDLE h = GetStdHandle((progressStream == &std::cerr) ? STD_ERROR_HANDLE
+                                                         : STD_OUTPUT_HANDLE);
+  if(h != INVALID_HANDLE_VALUE)
+  {
+    DWORD mode = 0;
+    if(GetConsoleMode(h, &mode))
+      SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+  }
+#endif
+  return GPC_ISATTY(GPC_FILENO(fp)) != 0;
+}
+
+std::string COptimisable::buildProgressBlock(const OptimiserEvent& event) const
+{
+  std::ostringstream status;
+  status << "Running " << optimiserName(event.optimiser)
+         << " · iter " << event.iter;
+  if(std::isfinite(event.objective))
+    status << " · objective " << event.objective;
+  if(std::isfinite(event.stepOrScale))
+    status << " · scale " << event.stepOrScale;
+  status << '\n';
+
+  std::string block = status.str();
+  const std::string snap = progressSnapshot(event);
+  if(!snap.empty())
+    block += snap;
+  if(!snap.empty() && snap[snap.size() - 1] != '\n')
+    block += '\n';
+
   switch(event.phase)
   {
-  case OptimiserPhase::Start:
-    if(v > 2 && !event.message.empty())
-      out << event.message << endl;
-    break;
-  case OptimiserPhase::Iter:
-    if(v > 2)
-    {
-      if(!std::isnan(event.stepOrScale))
-        out << "Iteration: " << event.iter << " Error: " << event.objective
-            << " Scale: " << event.stepOrScale << endl;
-      else
-        out << "Iteration: " << event.iter << " Error: " << event.objective << endl;
-    }
+  case OptimiserPhase::MaxIters:
+    block += "Warning: Maximum number of iterations has been exceeded\n";
     break;
   case OptimiserPhase::Converged:
-    if(v > 0 && !event.message.empty())
-      out << event.message << endl;
+    if(!event.message.empty())
+      block += event.message + "\n";
+    else
+      block += "Optimization converged.\n";
     break;
-  case OptimiserPhase::MaxIters:
   case OptimiserPhase::Failed:
-    if(v > 0 && !event.message.empty())
-      out << event.message << endl;
+    if(!event.message.empty())
+      block += event.message + "\n";
+    else
+      block += "Optimization failed.\n";
     break;
+  default:
+    break;
+  }
+  return block;
+}
+
+void COptimisable::writeOptimiserLogLine(const OptimiserEvent& event) const
+{
+  if(!logStream)
+    return;
+  std::ostream& out = *logStream;
+  const char* phase = "Iter";
+  switch(event.phase)
+  {
+  case OptimiserPhase::Start: phase = "Start"; break;
+  case OptimiserPhase::Iter: phase = "Iter"; break;
+  case OptimiserPhase::Converged: phase = "Converged"; break;
+  case OptimiserPhase::MaxIters: phase = "MaxIters"; break;
+  case OptimiserPhase::Failed: phase = "Failed"; break;
+  }
+  out << phase << '\t' << optimiserName(event.optimiser)
+      << '\t' << event.iter
+      << '\t' << event.objective;
+  if(std::isfinite(event.stepOrScale))
+    out << '\t' << event.stepOrScale;
+  if(!event.message.empty())
+    out << '\t' << event.message;
+  out << endl;
+}
+
+void COptimisable::writeDefaultOptimiserText(const OptimiserEvent& event) const
+{
+  writeOptimiserLogLine(event);
+
+  if(!progressStream || getVerbosity() <= 0)
+    return;
+
+  std::ostream& out = *progressStream;
+  const bool inPlace = shouldUseInPlaceProgress();
+  const bool terminal =
+      event.phase == OptimiserPhase::Converged
+      || event.phase == OptimiserPhase::MaxIters
+      || event.phase == OptimiserPhase::Failed;
+
+  // Non-TTY (pipes, logs, test sinks): avoid Iteration spam — Start + terminal only.
+  if(!inPlace && event.phase == OptimiserPhase::Iter)
+    return;
+
+  const std::string block = buildProgressBlock(event);
+  if(inPlace)
+  {
+    if(progressLinesPrinted > 0)
+      out << "\033[" << progressLinesPrinted << "A\r";
+    out << block;
+    out << "\033[J" << std::flush;
+    progressLinesPrinted = 0;
+    for(size_t i = 0; i < block.size(); ++i)
+    {
+      if(block[i] == '\n')
+        ++progressLinesPrinted;
+    }
+    if(terminal)
+    {
+      out << '\n' << std::flush;
+      progressLinesPrinted = 0;
+    }
+  }
+  else
+  {
+    out << block << std::flush;
   }
 }
 
@@ -60,6 +183,8 @@ void COptimisable::notifyOptimiserEvent(const OptimiserEvent& event) const
 {
   if(defaultTextProgress)
     writeDefaultOptimiserText(event);
+  else
+    writeOptimiserLogLine(event);
   for(size_t i = 0; i < optimiserObservers.size(); ++i)
     optimiserObservers[i](event);
 }

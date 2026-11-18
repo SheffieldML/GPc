@@ -137,6 +137,7 @@ public:
   bool equals(const CGp& model, double tol=ndlutil::MATCHTOL) const;
   ModelDescription describe() const;
   void display(ostream& os) const;
+  virtual std::string progressSnapshot(const OptimiserEvent& event) const;
   
   virtual unsigned int getOptNumParams() const;
   virtual void getOptParams(CMatrix& param) const;

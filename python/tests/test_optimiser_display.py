@@ -58,3 +58,26 @@ def test_str_paramz_table():
     desc = m.describe()
     assert any("lengthscale" in p.path for p in desc.params)
     assert any(p.path == "Gaussian_noise.variance" for p in desc.params)
+
+
+def test_messages_inplace_table_not_cpp_iteration_lines(capsys):
+    X, Y = _toy()
+    m = gpc.GPRegression(X, Y)
+    m.optimize(iters=8, messages=True)
+    out = capsys.readouterr().out
+    assert "Iteration:" not in out
+    assert "Numerical differences" not in out
+    assert "Analytic gradients" not in out
+    assert "Initial model:" not in out
+    assert "Name : GP regression" in out
+    assert "Parameters:" in out
+    assert "Running scg" in out
+    assert "kern.rbf.lengthscale" in out
+
+
+def test_messages_and_callback_both_fire():
+    X, Y = _toy()
+    m = gpc.GPRegression(X, Y)
+    events = []
+    m.optimize(iters=6, messages=True, callback=events.append)
+    assert any(e.phase == gpc.OptimiserPhase.Iter for e in events)

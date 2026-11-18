@@ -54,10 +54,12 @@ std::vector<std::string> PyGPRegression::param_paths() const
 
 void PyGPRegression::optimize(unsigned int iters, bool messages, py::object callback)
 {
+  // Python façade owns messaging (paramz-style in-place table). Never enable
+  // C++ CLI Iteration lines, Initial model dumps, or checkGradients here.
+  (void)messages;
   model->clearOptimiserObservers();
-  model->setDefaultTextProgress(messages);
-  // CGp::optimise prints the final model when verbosity>0; keep quiet unless messages.
-  model->setVerbosity(messages ? 3 : 0);
+  model->setDefaultTextProgress(false);
+  model->setVerbosity(0);
 
   const bool haveCallback = !(callback.is_none());
   if(haveCallback)
@@ -153,7 +155,8 @@ void bind_gp(py::module_& m)
            py::arg("iters") = 100,
            py::arg("messages") = false,
            py::arg("callback") = py::none(),
-           "Run the C++ optimiser. Optional outer-iteration callback (CIP-001E).")
+           "Run the C++ optimiser. messages= is handled by the Python GPRegression "
+           "wrapper (in-place table); this binding only installs callback=.")
       .def("objective", &PyGPRegression::objective)
       .def("predict", &PyGPRegression::predict, py::arg("Xtest"))
       .def("describe", &PyGPRegression::describe)

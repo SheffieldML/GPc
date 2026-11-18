@@ -6,7 +6,7 @@ C++ core; NumPy arrays cross the process boundary only.
 
 from __future__ import annotations
 
-from ._display import format_model_description
+from ._display import OptimiserTableProgress, format_model_description
 from ._gpc import (
     GpcError,
     Matrix,
@@ -28,6 +28,7 @@ __all__ = [
     "ModelDescription",
     "ParamRow",
     "format_model_description",
+    "OptimiserTableProgress",
     "matrix_from_numpy",
     "matrix_to_numpy",
     "__version__",

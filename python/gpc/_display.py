@@ -1,8 +1,19 @@
-"""Paramz-inspired text formatting for ModelDescription (CIP-001E)."""
+"""Paramz-inspired text formatting and in-place optimiser progress (CIP-001E)."""
 
 from __future__ import annotations
 
+import math
+import sys
+import time
 from typing import Any
+
+_OPT_NAMES = {
+    0: "cg",
+    1: "scg",
+    2: "gd",
+    3: "bfgs",
+    4: "lbfgs",
+}
 
 
 def _constraint_label(row: Any) -> str:
@@ -69,3 +80,93 @@ def format_model_description(
             f"  {p.path:<{name_w}}  |  {val_s:>{val_w}}  |  {cons:<{cons_w}}"
         )
     return "\n".join(lines) + "\n"
+
+
+def _in_ipython() -> bool:
+    try:
+        get_ipython()  # type: ignore[name-defined]
+        return True
+    except NameError:
+        return False
+
+
+class OptimiserTableProgress:
+    """Refresh the paramz-style model table in place during ``optimize``.
+
+    IPython/Jupyter: ``clear_output`` + reprint (paramz notebook behaviour).
+    Terminal: ANSI cursor-up rewrite of the same block.
+    """
+
+    def __init__(self, model: Any, *, name: str = "GP regression") -> None:
+        self.model = model
+        self.name = name
+        self._start = time.time()
+        self._lines = 0
+        self._ipython = _in_ipython()
+        self._finished = False
+
+    def __call__(self, event: Any) -> None:
+        if self._finished:
+            return
+
+        phase = getattr(event, "phase", None)
+        opt = _OPT_NAMES.get(int(getattr(event, "optimiser", 1)), "optimiser")
+        it = int(getattr(event, "iter", 0))
+        obj = float(getattr(event, "objective", float("nan")))
+        scale = float(getattr(event, "step_or_scale", float("nan")))
+        elapsed = time.time() - self._start
+
+        obj_for_table = obj if math.isfinite(obj) else None
+        table = format_model_description(
+            self.model.describe(),
+            name=self.name,
+            objective=obj_for_table,
+        )
+
+        status_bits = [f"Running {opt}", f"iter {it}", f"{elapsed:.2f}s"]
+        if math.isfinite(obj):
+            status_bits.append(f"objective {obj:.6g}")
+        if math.isfinite(scale):
+            status_bits.append(f"scale {scale:.6g}")
+        status = " · ".join(status_bits)
+
+        footer = ""
+        # Match C++ / paramz terminal completion notes without dumping Iteration lines.
+        phase_name = getattr(phase, "name", str(phase))
+        if phase_name == "MaxIters":
+            footer = "Warning: Maximum number of iterations has been exceeded\n"
+        elif phase_name == "Converged":
+            footer = "Optimization converged.\n"
+        elif phase_name == "Failed":
+            msg = getattr(event, "message", "") or "Optimization failed."
+            footer = f"{msg}\n"
+
+        block = f"{status}\n{table}{footer}"
+        self._render(block)
+
+        if phase_name in ("Converged", "MaxIters", "Failed"):
+            self._finished = True
+            if not self._ipython and self._lines:
+                # Leave the final frame on screen; advance past the rewrite region.
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                self._lines = 0
+
+    def _render(self, block: str) -> None:
+        if self._ipython:
+            try:
+                from IPython.display import clear_output
+            except ImportError:
+                clear_output = None  # type: ignore[assignment]
+            if clear_output is not None:
+                clear_output(wait=True)
+            sys.stdout.write(block)
+            sys.stdout.flush()
+            return
+
+        if self._lines > 0:
+            sys.stdout.write(f"\033[{self._lines}A\r")
+        sys.stdout.write(block)
+        sys.stdout.write("\033[J")
+        sys.stdout.flush()
+        self._lines = block.count("\n")

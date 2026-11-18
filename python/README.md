@@ -36,6 +36,8 @@ m.optimize(iters=50)
 mu, var = m.predict(X)
 ```
 
-Default kernel is compound RBF + bias + white. Prefer **noisy** observations in smoke tests: noiseless \(Y\) drives `white.variance` → 0 and near-zero predictive variance at training points (correct, but looks broken). `objective()` is **−log-likelihood** (SCG minimises it). SCG may print a max-iteration warning when the budget is hit.
+Default kernel is compound RBF + bias + white. Prefer **noisy** observations in smoke tests: noiseless \(Y\) drives `white.variance` → 0 and near-zero predictive variance at training points (correct, but looks broken). `objective()` is **−log-likelihood** (SCG minimises it).
+
+`optimize(messages=True)` refreshes the paramz-style parameter table **in place** (IPython `clear_output`, or ANSI rewrite in a terminal). It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks.
 
 Custom kernel factories, GPy side-by-side docs, sparse DTCVAR, and Jupyter/`pods` examples are later CIP-001D phases. Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.

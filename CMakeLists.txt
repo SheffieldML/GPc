@@ -17,12 +17,14 @@ option(GPC_USE_MATIO "Enable libmatio numeric .mat I/O (_NDLMATIO)" OFF)
 option(GPC_BUILD_EXTRA_CLIS "Also build ivm, gplvm, bgplvm" ON)
 option(GPC_BUILD_GP_CLI "Build the gp executable" ON)
 option(GPC_BUILD_PYTHON "Build the pybind11 gpc._gpc extension" OFF)
+option(GPC_BUILD_TESTS "Build CTest mirrors of makefile unit/matio-gate binaries" OFF)
 
 # scikit-build-core sets SKBUILD when configuring for a wheel / editable install.
 if(DEFINED SKBUILD)
   set(GPC_BUILD_PYTHON ON)
   set(GPC_BUILD_GP_CLI OFF)
   set(GPC_BUILD_EXTRA_CLIS OFF)
+  set(GPC_BUILD_TESTS OFF)
 endif()
 
 set(GPC_ROOT ${CMAKE_SOURCE_DIR})
@@ -84,8 +86,12 @@ if(GPC_BUILD_PYTHON)
   add_subdirectory(python)
 endif()
 
+if(GPC_BUILD_TESTS)
+  include(${GPC_ROOT}/cmake/GpcTests.cmake)
+endif()
+
 message(STATUS "GPc CMake (CIP-0020): build=${CMAKE_BUILD_TYPE} plat=${GPC_PLAT} matio=${GPC_USE_MATIO}")
 message(STATUS "  CXX=${CMAKE_CXX_COMPILER}")
 message(STATUS "  Fortran=${CMAKE_Fortran_COMPILER}")
 message(STATUS "  BLAS=${BLAS_LIBRARIES}")
-message(STATUS "  python=${GPC_BUILD_PYTHON} gp_cli=${GPC_BUILD_GP_CLI}")
+message(STATUS "  python=${GPC_BUILD_PYTHON} gp_cli=${GPC_BUILD_GP_CLI} tests=${GPC_BUILD_TESTS}")

@@ -1,7 +1,7 @@
 ---
 id: "2026-11-18_cip0020-phase-c-parity-cutover"
 title: "CIP-0020 Phase C: matio parity and CI cutover decision"
-status: "Proposed"
+status: "Completed"
 priority: "Low"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -25,13 +25,13 @@ Optionally extend CMake to the matio hard-gate test set and decide whether Actio
 
 ## Acceptance Criteria
 
-- [ ] CMake/`ctest` (or scripted) coverage of the `run-matio-tests` set
-- [ ] Written cutover decision: retire make, wrap make→CMake, or keep dual forever with clear owners
-- [ ] No hard CI cutover while make and CMake disagree on flags or results
+- [x] CMake/`ctest` (or scripted) coverage of the `run-matio-tests` set (`cmake/GpcTests.cmake`, 16 binaries; verified locally with `GPC_USE_MATIO=ON`)
+- [x] Written cutover decision: **keep dual** — make remains Actions hard gate; CMake for packaging + optional maintainer ctest (no make retirement in CIP-0020)
+- [x] No hard CI cutover while make and CMake disagree on flags or results (Actions unchanged)
 
 ## Implementation Notes
 
-Assert-and-Verify: reference fixtures still gate merges.
+Assert-and-Verify: reference fixtures still gate merges via makefile workflows.
 
 ## Related
 
@@ -42,3 +42,7 @@ Assert-and-Verify: reference fixtures still gate merges.
 ### 2026-11-18
 
 Task created Proposed; not started.
+
+### 2026-11-18 (later)
+
+Completed: `ctest` 16/16 passed with matio; cutover decision documented in CIP-0020 and `docs/build-and-ci.md`.

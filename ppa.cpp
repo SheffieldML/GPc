@@ -1287,7 +1287,7 @@ void CClppa::gnuplot()
 	  out << "# Prepared plot of model file " << endl;
 	  for(int i=0; i<numy; i++)
 	    {
-	      regressOut[i]->toStream(out);
+	      regressOut[i]->toUnheadedStream(out);
 	      out << endl;
 	    }
 	  out.close();
@@ -1332,7 +1332,7 @@ void CClppa::gnuplot()
 	      errorBarMinus.setVal(val - stdVals.getVal(j), j, 1);
 	    }
 	  string lineFile = name + "_line_data.dat";
-	  regressOut.toFile(lineFile);
+	  regressOut.toUnheadedFile(lineFile);
 	  string errorFile = name + "_error_bar_data.dat";
 	  ofstream out(errorFile.c_str());
 	  if(!out) throw ndlexceptions::FileWriteError(errorFile);

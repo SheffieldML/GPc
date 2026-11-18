@@ -1,5 +1,5 @@
 /* Gaussian processes via probabilistic point assimilation (PPA).
-   CIP-0021: rebased onto CMapModel + CProbabilisticOptimisable + CStreamInterface.
+   CIP-0023: rebased onto CMapModel + CProbabilisticOptimisable + CStreamInterface.
    Algorithm reference: lawrennd/ppa MATLAB (Nat King). */
 
 #ifndef CPPA_H

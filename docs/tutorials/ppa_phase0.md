@@ -1,6 +1,6 @@
 # Tutorial: Probabilistic Point Assimilation (`./ppa`)
 
-CIP-0021 restores Nat King & Neil Lawrence’s **Probabilistic Point Assimilation** (PPA) as a full-data variational EM classifier alongside `./ivm`.
+CIP-0023 restores Nat King & Neil Lawrence’s **Probabilistic Point Assimilation** (PPA) as a full-data variational EM classifier alongside `./ivm`.
 
 ## Build and help
 
@@ -30,4 +30,4 @@ make testPpa
 
 - PPA stores a dense \(N\times N\) kernel; it is not an IVM-style active-set method.
 - Default path uses **scalar** site precision \(B\) and a **kernel M-step** (`ppaKernelLogLikelihood`). β updates are not wired in the CLI yet.
-- Octave reference dumps and the upstream toolbox quirks are recorded in [`cip/cip0021/phase0_notes.md`](../../cip/cip0021/phase0_notes.md).
+- Octave reference dumps and the upstream toolbox quirks are recorded in [`cip/cip0023/phase0_notes.md`](../../cip/cip0023/phase0_notes.md).

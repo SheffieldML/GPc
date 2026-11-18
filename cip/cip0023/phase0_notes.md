@@ -1,4 +1,4 @@
-# CIP-0021 Phase 0 notes
+# CIP-0023 Phase 0 notes
 
 Date: 2026-11-18
 

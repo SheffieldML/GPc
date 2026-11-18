@@ -74,7 +74,7 @@ ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil
 ivm.o: ivm.cpp CIvm.h CKern.h CMatrix.h ivm.h CClctrl.h
 	$(CC) -c ivm.cpp -o ivm.o $(CCFLAGS)
 
-# CIP-0021: Probabilistic Point Assimilation CLI (Phase 1 skeleton; EM in Phase 2).
+# CIP-0023: Probabilistic Point Assimilation CLI (Phase 1 skeleton; EM in Phase 2).
 ppa: ppa.o CClctrl.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o ppa ppa.o CClctrl.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
@@ -214,7 +214,7 @@ testIvm: testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o
 testIvm.o: testIvm.cpp CIvm.h CKern.h CMatrix.h CClctrl.h
 	$(CC) -c testIvm.cpp -o testIvm.o $(CCFLAGS)
 
-# CIP-0021: PPA vs Octave Phase 0 fixtures (no matio required).
+# CIP-0023: PPA vs Octave Phase 0 fixtures (no matio required).
 testPpa: testPpa.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testPpa testPpa.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
 

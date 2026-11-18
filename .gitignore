@@ -40,6 +40,8 @@ python/*.egg-info/
 python/gpc/_gpc*.so
 python/gpc/_gpc*.dylib
 python/src/*.o
+python/**/__pycache__/
+__pycache__/
 
 #
 *.dat

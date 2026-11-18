@@ -658,6 +658,22 @@ void CClppa::learn()
   kern.addKern(biasKern);
 
   kern.addKern(whiteKern);
+
+  // NN-median lengthscale + signal-dominated white/bias (avoids M-step
+  // collapse to a near-zero RBF when the factory inverseWidth=1 mismatches scale).
+  bool anyRbfInvSet = false;
+  bool anyRbfVarSet = false;
+  for(size_t i=0; i<kernelTypes.size(); i++)
+    {
+      if(kernelTypes[i]=="rbf")
+	{
+	  if(rbfInvWidths[i]!=-1.0)
+	    anyRbfInvSet = true;
+	  if(variances[i]!=-1.0)
+	    anyRbfVarSet = true;
+	}
+    }
+  initPpaKernFromData(kern, X, !anyRbfInvSet, !anyRbfVarSet, true);
   
   noise->setTarget(&y);
   noise->initParams();

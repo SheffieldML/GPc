@@ -2,18 +2,27 @@
 
 Decisions that keep the matio reference suite trustworthy against MATLAB-era fixtures.
 
-**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md) · [CIP-0019](../cip/cip0019.md)  
+**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md) · [CIP-0019](../cip/cip0019.md) · [CIP-001A](../cip/cip001A.md)  
 **Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
-## Adversarial numerical stability ([CIP-0019](../cip/cip0019.md))
+## Adversarial numerical stability ([CIP-0019](../cip/cip0019.md) / [CIP-001A](../cip/cip001A.md))
 
 Separate from matio fixtures: `make run-numerical-stability` builds and runs
 `numerical_stability/testNumericalStability`. Contracts are finiteness,
 accuracy, and invariance under extreme inputs (GPy CIP-0011 sibling). CI:
 `.github/workflows/numerical-stability.yml` publishes a Codecov-style report
-(job summary, artifact, sticky PR comment via `report.py`). Cross-branch
-outcome diff: `python3 numerical_stability/compare.py`. Strict xfails are
-listed in CIP-0019.
+(job summary, artifact, sticky PR comment via `report.py`) plus CIP-001A
+`metrics.json` trend. Cross-branch outcome diff:
+`python3 numerical_stability/compare.py`. Strict xfails are listed in CIP-0019.
+
+Sparse algebra mode for the suite: `GPC_SPARSE_LINALG=stable|legacy` (cell label
+becomes `…+stable` / `…+legacy`). Dual-path metric compare:
+`make compare-sparse-modes` or `python3 numerical_stability/compare_sparse_modes.py`.
+
+Improvement experiments (in-suite, both modes every run): crowded inducing +
+CIP-0013-style protocol stress (`*_stress_stable_finite`,
+`*_stress_stable_fd_not_worse`, optional `*_legacy_breaks_stable_ok`), plus a
+reduced γ×M dual-path slice. Full γ×M / mpmath remains `make diagSparseStable`.
 
 Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimisers.md).
 
@@ -47,6 +56,8 @@ Gates:
 
 - Dual-path toy: `make testCGp && ./testCGp` (StableFactor section) and `make diagDtcvar && ./diagDtcvar`.
 - γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable` (DTC/DTCVAR/FITC/PITC).
+- Numerical-stability suite dual-path metrics: `make compare-sparse-modes` (DTC/DTCVAR/FITC/PITC FD + Legacy↔StableFactor LL/grad gaps).
+- Numerical-stability stress: crowded-Z / protocol FITC+DTCVAR both-mode FD ordering; γ×M dual-path slice in CI via `make run-numerical-stability`.
 - Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`.
 
 ## Reference mismatches cleared in CIP-0003

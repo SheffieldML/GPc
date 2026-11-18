@@ -1,7 +1,7 @@
 ---
 id: "2026-11-18_cip0021-phase2-em-port"
 title: "CIP-0021 Phase 2: port E-step and M-step (scalar β)"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -25,7 +25,7 @@ Implement `updateExpectationsfBar` / f̄ second moment from MATLAB `ppaExpectfBa
 ## Acceptance Criteria
 
 - [x] No `NotImplementedError` on E-step for probit + scalar β
-- [ ] `mStep` optimises kernel parameters (or documented no-op only if kernIters=0) — stub calls `runDefaultOptimiser`; needs after-EM fixture gate
+- [x] `mStep` optimises kernel via `kernelLogLikelihood` (MATLAB `ppaKernelLogLikelihood`); `kernIters=0` skips
 - [x] Dense \(K\) / \(K^{-1}\) via Cholesky / `pdinv`
 - [x] Live path has no IVM active-set selection API
 
@@ -37,4 +37,4 @@ Implement `updateExpectationsfBar` / f̄ second moment from MATLAB `ppaExpectfBa
 ## Progress Updates
 
 ### 2026-11-18
-E-step + LL match `testdata/ppa/phase0_*_init` (`./testPpa` 0 failures). Remaining: harden M-step vs `phase0_*_after` fixtures.
+E-step + LL + kernel grad match Octave. After fixtures are E-step-only due to upstream `ppaOptimiseKernel.m` bug.

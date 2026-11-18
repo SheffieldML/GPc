@@ -74,6 +74,9 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   void updateInvK(int index=0) const;
   double approxLogLikelihood() const;
   void approxLogLikelihoodGradient(CMatrix& g) const;
+  // MATLAB ppaKernelLogLikelihood / gradient (M-step objective on <f>).
+  double kernelLogLikelihood() const;
+  void kernelLogLikelihoodGradient(CMatrix& g) const;
 
   void optimise(int maxIters=15, int kernIters=100, int noiseIters=100);
   bool equals(const CPpa& model, double tol=ndlutil::MATCHTOL) const;
@@ -151,6 +154,7 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   bool terminate;
   bool varUpdate;
   bool loadedModel;
+  mutable bool optimisingKernel;
 
   int numCovStruct;
   int numTrainData;
@@ -158,6 +162,7 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   int numTarget;
   int numData;
   int numIters;
+  int kernOptIters;
 };
 
 void writePpaToStream(const CPpa& model, ostream& out);

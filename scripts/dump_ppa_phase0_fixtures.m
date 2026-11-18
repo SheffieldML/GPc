@@ -44,7 +44,10 @@ options.doDebug = 0;
 options.rememLoglikeVals = 0;
 options.tol = 1e-6;
 options.maxOuterIter = 3;
-options.kernIters = 10;
+% Upstream ppaOptimiseKernel.m has a premature "end" and is a no-op under
+% Octave; keep kernIters=0 so after-EM fixtures are honest E-step-only.
+% C++ M-step is validated via checkGradients, not these after tensors.
+options.kernIters = 0;
 
 model = ppa(X, y, noiseModel, kernelType);
 model = ppaInit(model, options);
@@ -70,13 +73,8 @@ fid = fopen(fullfile(outDir, "phase0_loglike_init.txt"), "w");
 fprintf(fid, "%.17g\n", ll0);
 fclose(fid);
 
-% Short outer EM (M then E). Avoid ppaMStep.m: upstream file is missing
-% 'end' tokens and fails Octave parse; with updateBeta=0 / doDebug=0 the
-% live body is just ppaUpdateKernel (see lawrennd/ppa matlab/ppaMStep.m).
+% Short outer loop: E-steps only (see kernIters note above).
 for it = 1:options.maxOuterIter
-  if options.kernIters
-    model = ppaUpdateKernel(model, options);
-  end
   model = ppaEStep(model, options);
 end
 

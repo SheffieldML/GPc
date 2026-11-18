@@ -7162,6 +7162,31 @@ void CKern::getGradPsi(CMatrix& /*gParams*/, CMatrix& /*gZ*/, CMatrix& /*gMu*/, 
   throw ndlexceptions::NotImplementedError("getGradPsi not implemented for kernel type " + getType());
 }
 
+void CKern::wnCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError("wnCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::wnGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError("wnGradParams not implemented for kernel type " + getType());
+}
+void CKern::wnGradZ(CMatrix& /*gZ*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError("wnGradZ not implemented for kernel type " + getType());
+}
+void CKern::wnGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError("wnGradX not implemented for kernel type " + getType());
+}
+void CKern::wnGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError("wnGradS not implemented for kernel type " + getType());
+}
+
 // ---- White ----
 double CWhiteKern::psi0(const CMatrix& mu, const CMatrix& S) const
 {
@@ -7246,6 +7271,43 @@ void CBiasKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix&
       sum2 += dL_dpsi2.getVal(m1, m2);
   g += 2.0 * variance * static_cast<double>(N) * sum2;
   gParams.addVal(g, 0);
+}
+
+void CWhiteKern::wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double /*s*/) const
+{
+  Kfu.resize(X.getRows(), Z.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::wnGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::wnGradZ(CMatrix& gZ, const CMatrix& /*X*/, const CMatrix& Z, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+}
+void CWhiteKern::wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*Z*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::wnGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+
+void CBiasKern::wnCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/) const
+{
+  throw ndlexceptions::Error(
+    "Bias kernel has no L2 square-root: white-noise inducing is not defined for bias. "
+    "Remove CBiasKern from the compound, or use point inducing.");
 }
 
 // ---- Linear ----
@@ -7499,6 +7561,174 @@ void CRbfKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix& 
     }
 }
 
+// CIP-001C: isotropic RBF × Gaussian white-noise windows.
+void CRbfKern::wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d && Z.getCols() == d);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double ell = 1.0 / sqrt(inverseWidth);
+  const double sigma = sqrt(variance);
+  const double v = ell * ell + 2.0 * s * s;
+  const double amp = sigma * pow(2.0 * sqrt(2.0) * ell * s / v, 0.5 * (double)d);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double r2 = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        r2 += dz * dz;
+      }
+      Kfu.setVal(amp * exp(-r2 / v), n, m);
+    }
+  }
+}
+
+void CRbfKern::wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                            const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(g.getCols() == nParams);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  const double ell = 1.0 / sqrt(inverseWidth);
+  const double v = ell * ell + 2.0 * s * s;
+  const double sigma = sqrt(variance);
+  const double amp = sigma * pow(2.0 * sqrt(2.0) * ell * s / v, 0.5 * (double)d);
+  const double dlogK_dell_base = 0.5 * (double)d * (1.0 / ell - 2.0 * ell / v);
+  double gEll = 0.0;
+  double gVar = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double r2 = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        r2 += dz * dz;
+      }
+      const double k = amp * exp(-r2 / v);
+      const double cg = gKfu.getVal(n, m);
+      const double dlogK_dell = dlogK_dell_base + 2.0 * ell * r2 / (v * v);
+      gEll += cg * k * dlogK_dell;
+      // ∂K/∂var = K / (2 var)
+      gVar += cg * k / (2.0 * variance);
+    }
+  }
+  // ∂ℓ/∂γ = -0.5 ℓ / γ
+  const double gGamma = gEll * (-0.5 * ell / inverseWidth);
+  g.setVal(gGamma, 0);
+  g.setVal(gVar, 1);
+}
+
+void CRbfKern::wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gZ.resize(M, d);
+  gZ.zeros();
+  const double ell = 1.0 / sqrt(inverseWidth);
+  const double v = ell * ell + 2.0 * s * s;
+  const double sigma = sqrt(variance);
+  const double amp = sigma * pow(2.0 * sqrt(2.0) * ell * s / v, 0.5 * (double)d);
+  const double twoOverV = 2.0 / v;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double r2 = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        r2 += dz * dz;
+      }
+      const double k = amp * exp(-r2 / v);
+      const double cg = gKfu.getVal(n, m) * k * twoOverV;
+      for(unsigned int q = 0; q < d; q++)
+        gZ.addVal(cg * (X.getVal(n, q) - Z.getVal(m, q)), m, q);
+    }
+  }
+}
+
+void CRbfKern::wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gX.resize(N, d);
+  gX.zeros();
+  const double ell = 1.0 / sqrt(inverseWidth);
+  const double v = ell * ell + 2.0 * s * s;
+  const double sigma = sqrt(variance);
+  const double amp = sigma * pow(2.0 * sqrt(2.0) * ell * s / v, 0.5 * (double)d);
+  const double twoOverV = 2.0 / v;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double r2 = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        r2 += dz * dz;
+      }
+      const double k = amp * exp(-r2 / v);
+      // ∇_x log Kfu = -∇_z log Kfu = -2(x-z)/v
+      const double cg = gKfu.getVal(n, m) * k * (-twoOverV);
+      for(unsigned int q = 0; q < d; q++)
+        gX.addVal(cg * (X.getVal(n, q) - Z.getVal(m, q)), n, q);
+    }
+  }
+}
+
+void CRbfKern::wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gS.resize(1, 1);
+  const double ell = 1.0 / sqrt(inverseWidth);
+  const double v = ell * ell + 2.0 * s * s;
+  const double sigma = sqrt(variance);
+  const double amp = sigma * pow(2.0 * sqrt(2.0) * ell * s / v, 0.5 * (double)d);
+  const double dlogK_ds_base = 0.5 * (double)d * (1.0 / s - 4.0 * s / v);
+  double gs = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double r2 = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        r2 += dz * dz;
+      }
+      const double k = amp * exp(-r2 / v);
+      const double dlogK_ds = dlogK_ds_base + 4.0 * s * r2 / (v * v);
+      gs += gKfu.getVal(n, m) * k * dlogK_ds;
+    }
+  }
+  gS.setVal(gs, 0);
+}
+
 // ---- RBF ARD ----
 static vector<double> ardLengthscale2(double inverseWidth, const CMatrix& scales)
 {
@@ -7569,6 +7799,222 @@ void CRbfardKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatri
       gMu.addVal(gMuloc.getVal(n, q), n, q);
       gS.addVal(gSloc.getVal(n, q), n, q);
     }
+}
+
+// CIP-001C: RBF-ARD × shared-s Gaussian windows (product over dims).
+void CRbfardKern::wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d && Z.getCols() == d);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  vector<double> ell(d);
+  vector<double> v(d);
+  double amp = sigma;
+  for(unsigned int q = 0; q < d; q++)
+  {
+    const double aq = scales.getVal(q);
+    BOUNDCHECK(aq > 0.0);
+    ell[q] = 1.0 / sqrt(inverseWidth * aq);
+    v[q] = ell[q] * ell[q] + 2.0 * s * s;
+    amp *= sqrt(2.0 * sqrt(2.0) * ell[q] * s / v[q]);
+  }
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double expo = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        expo += dz * dz / v[q];
+      }
+      Kfu.setVal(amp * exp(-expo), n, m);
+    }
+  }
+}
+
+void CRbfardKern::wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                               const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(g.getCols() == nParams);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  const double sigma = sqrt(variance);
+  vector<double> ell(d);
+  vector<double> v(d);
+  double amp = sigma;
+  for(unsigned int q = 0; q < d; q++)
+  {
+    const double aq = scales.getVal(q);
+    ell[q] = 1.0 / sqrt(inverseWidth * aq);
+    v[q] = ell[q] * ell[q] + 2.0 * s * s;
+    amp *= sqrt(2.0 * sqrt(2.0) * ell[q] * s / v[q]);
+  }
+  double gGamma = 0.0;
+  double gVar = 0.0;
+  vector<double> gScale(d, 0.0);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double expo = 0.0;
+      vector<double> dz2(d);
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        dz2[q] = dz * dz;
+        expo += dz2[q] / v[q];
+      }
+      const double k = amp * exp(-expo);
+      const double cg = gKfu.getVal(n, m);
+      gVar += cg * k / (2.0 * variance);
+      for(unsigned int q = 0; q < d; q++)
+      {
+        // ∂ log K / ∂ℓ_q = 1/2 (1/ℓ_q - 2ℓ_q/v_q) + 2ℓ_q dz2_q / v_q^2
+        const double dlog_dell = 0.5 * (1.0 / ell[q] - 2.0 * ell[q] / v[q])
+          + 2.0 * ell[q] * dz2[q] / (v[q] * v[q]);
+        const double dK_dell = cg * k * dlog_dell;
+        // ℓ_q = (γ a_q)^{-1/2}; ∂ℓ/∂γ = -0.5 ℓ/γ; ∂ℓ/∂a = -0.5 ℓ/a
+        gGamma += dK_dell * (-0.5 * ell[q] / inverseWidth);
+        gScale[q] += dK_dell * (-0.5 * ell[q] / scales.getVal(q));
+      }
+    }
+  }
+  g.setVal(gGamma, 0);
+  g.setVal(gVar, 1);
+  for(unsigned int q = 0; q < d; q++)
+    g.setVal(gScale[q], q + 2);
+}
+
+void CRbfardKern::wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gZ.resize(M, d);
+  gZ.zeros();
+  const double sigma = sqrt(variance);
+  vector<double> ell(d);
+  vector<double> v(d);
+  double amp = sigma;
+  for(unsigned int q = 0; q < d; q++)
+  {
+    ell[q] = 1.0 / sqrt(inverseWidth * scales.getVal(q));
+    v[q] = ell[q] * ell[q] + 2.0 * s * s;
+    amp *= sqrt(2.0 * sqrt(2.0) * ell[q] * s / v[q]);
+  }
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double expo = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        expo += dz * dz / v[q];
+      }
+      const double k = amp * exp(-expo);
+      const double cg = gKfu.getVal(n, m) * k;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        gZ.addVal(cg * 2.0 * dz / v[q], m, q);
+      }
+    }
+  }
+}
+
+void CRbfardKern::wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gX.resize(N, d);
+  gX.zeros();
+  const double sigma = sqrt(variance);
+  vector<double> ell(d);
+  vector<double> v(d);
+  double amp = sigma;
+  for(unsigned int q = 0; q < d; q++)
+  {
+    ell[q] = 1.0 / sqrt(inverseWidth * scales.getVal(q));
+    v[q] = ell[q] * ell[q] + 2.0 * s * s;
+    amp *= sqrt(2.0 * sqrt(2.0) * ell[q] * s / v[q]);
+  }
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double expo = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        expo += dz * dz / v[q];
+      }
+      const double k = amp * exp(-expo);
+      const double cg = gKfu.getVal(n, m) * k;
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        gX.addVal(cg * (-2.0 * dz / v[q]), n, q);
+      }
+    }
+  }
+}
+
+void CRbfardKern::wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gS.resize(1, 1);
+  const double sigma = sqrt(variance);
+  vector<double> ell(d);
+  vector<double> v(d);
+  double amp = sigma;
+  for(unsigned int q = 0; q < d; q++)
+  {
+    ell[q] = 1.0 / sqrt(inverseWidth * scales.getVal(q));
+    v[q] = ell[q] * ell[q] + 2.0 * s * s;
+    amp *= sqrt(2.0 * sqrt(2.0) * ell[q] * s / v[q]);
+  }
+  double gs = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double expo = 0.0;
+      vector<double> dz2(d);
+      for(unsigned int q = 0; q < d; q++)
+      {
+        const double dz = X.getVal(n, q) - Z.getVal(m, q);
+        dz2[q] = dz * dz;
+        expo += dz2[q] / v[q];
+      }
+      const double k = amp * exp(-expo);
+      double dlog = 0.0;
+      for(unsigned int q = 0; q < d; q++)
+        dlog += 0.5 * (1.0 / s - 4.0 * s / v[q]) + 4.0 * s * dz2[q] / (v[q] * v[q]);
+      gs += gKfu.getVal(n, m) * k * dlog;
+    }
+  }
+  gS.setVal(gs, 0);
 }
 
 // ---- Compound ----
@@ -7744,5 +8190,72 @@ void CCmpndKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix
         gS.addVal(gSc.getVal(n, q), n, q);
       }
     paramOffset += p1->getNumParams();
+  }
+}
+
+void CCmpndKern::wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  // Shared white-noise drive: Kfu = sum_c g_c * psi; Kuu unchanged (inducing-side).
+  components[0]->wnCrossCompute(Kfu, X, Z, s);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->wnCrossCompute(tmp, X, Z, s);
+    Kfu.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                              const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->wnGradParams(subg, X, Z, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                         const CMatrix& gKfu) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->wnGradZ(tmp, X, Z, s, gKfu);
+    gZ.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                         const CMatrix& gKfu) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->wnGradX(tmp, X, Z, s, gKfu);
+    gX.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                         const CMatrix& gKfu) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+  CMatrix tmp(1, 1);
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->wnGradS(tmp, X, Z, s, gKfu);
+    gS.axpy(tmp, 1.0);
   }
 }

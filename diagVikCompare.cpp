@@ -451,28 +451,92 @@ int main(int argc, char** argv)
   cout << "  CGp LL init→final: " << llPt0 << " → " << llPt1
        << "  (hand bound " << endPt.ll << ", Δ=" << (llPt1 - endPt.ll) << ")" << endl;
 
-  // --- VIK DTCVAR ---
-  cout << "\n---- optimise VIK / white-noise DTCVAR ----" << endl;
-  CVikDtcvar vik(X, y, Z0, s, gamma0, var0, beta0);
-  vik.setVerbosity(1);
-  vik.setMaxIters(iters);
-  vik.setObjectiveTol(1e-8);
-  vik.setParamTol(1e-8);
-  const double obj0 = vik.computeObjectiveVal();
-  vik.scgOptimise();
-  const double obj1 = vik.computeObjectiveVal();
-  BoundStats endVn = vik.stats();
-  printStats("opt/vik", endVn, vik.getGamma(), vik.getVar(), vik.getBeta(), vik.getS());
-  cout << "  VIK LL init→final: " << (-obj0) << " → " << (-obj1) << endl;
+  // --- VIK / white-noise DTCVAR via CGp (CIP-001C Phase 2) ---
+  cout << "\n---- optimise VIK / white-noise DTCVAR (CGp) ----" << endl;
+  CRbfKern kernWn(X);
+  kernWn.setParam(gamma0, 0);
+  kernWn.setParam(var0, 1);
+  CGaussianNoise noiseWn(&y);
+  noiseWn.setBiasVal(0.0, 0);
+  CGp gpWn(&kernWn, &noiseWn, &X, CGp::DTCVAR, M, 0);
+  gpWn.setOutputBiasLearnt(false);
+  gpWn.setOutputScaleLearnt(false);
+  gpWn.setBiasVal(0.0, 0);
+  gpWn.setInducingFixed(false);
+  gpWn.setActiveSet(Z0);
+  gpWn.setBetaVal(beta0);
+  gpWn.setInducingType("whitenoise");
+  gpWn.getInducing()->setWindowWidth(s);
+  gpWn.updateM();
+  gpWn.setVerbosity(1);
+  gpWn.setMaxIters(iters);
+  gpWn.setObjectiveTol(1e-8);
+  gpWn.setParamTol(1e-8);
+  const double llWn0 = gpWn.logLikelihood();
+  BoundStats initVnCgp = evalVikBound(X, y, Z0, gamma0, var0, beta0, s);
+  cout << "  CGp-WN vs hand LL at init: " << llWn0 << " vs " << initVnCgp.ll
+       << "  (Δ=" << (llWn0 - initVnCgp.ll) << ")" << endl;
+  gpWn.optimise(iters);
+  const double llWn1 = gpWn.logLikelihood();
 
-  // Cross-evaluate: point bound at VIK params (with point Kuu) and vice versa.
-  BoundStats crossPt = evalPointBound(X, y, vik.inducing(),
-                                     vik.getGamma(), vik.getVar(), vik.getBeta());
+  CMatrix Zwn(gpWn.X_u);
+  const double gammaWn = kernWn.getParam(0);
+  const double varWn = kernWn.getParam(1);
+  const double betaWn = gpWn.getBetaVal();
+  const double sWn = gpWn.getInducing()->getWindowWidth();
+  BoundStats endVn = evalVikBound(X, y, Zwn, gammaWn, varWn, betaWn, sWn);
+  printStats("opt/vik", endVn, gammaWn, varWn, betaWn, sWn);
+  cout << "  CGp-WN LL init→final: " << llWn0 << " → " << llWn1
+       << "  (hand bound " << endVn.ll << ", Δ=" << (llWn1 - endVn.ll) << ")" << endl;
+  cout << "  Meff (CGp)=" << gpWn.getEffectiveInducingCount() << endl;
+
+  // Equivalence gate at s = ell/√2 on a small well-conditioned toy.
+  // (Large M with moderate γ makes point Kuu ≈ singular; jitter then breaks
+  // the exact algebraic identity even when Kuu_wn ≈ Kuu_pt/σ² elementwise.)
+  {
+    const unsigned int Ne = 8, Me = 3;
+    CMatrix Xe(Ne, 1), ye(Ne, 1), Ze(Me, 1);
+    for(unsigned int i = 0; i < Ne; i++)
+    {
+      const double xv = -1.0 + 2.0 * (double)i / (double)(Ne - 1);
+      Xe.setVal(xv, i, 0);
+      ye.setVal(sin(xv), i, 0);
+    }
+    for(unsigned int i = 0; i < Me; i++)
+      Ze.setVal(Xe.getVal(i, 0), i, 0);
+    CRbfKern kernEq(Xe);
+    kernEq.setInverseWidth(2.0);
+    kernEq.setVariance(1.5);
+    CGaussianNoise noiseEqPt(&ye);
+    noiseEqPt.setBiasVal(0.0, 0);
+    CGaussianNoise noiseEqWn(&ye);
+    noiseEqWn.setBiasVal(0.0, 0);
+    CGp gpEqPt(&kernEq, &noiseEqPt, &Xe, CGp::DTCVAR, Me, 0);
+    gpEqPt.setInducingVals(Ze);
+    gpEqPt.setInducingFixed(true);
+    gpEqPt.setBetaVal(10.0);
+    gpEqPt.setInducingType("points");
+    CGp gpEqWn(&kernEq, &noiseEqWn, &Xe, CGp::DTCVAR, Me, 0);
+    gpEqWn.setInducingVals(Ze);
+    gpEqWn.setInducingFixed(true);
+    gpEqWn.setBetaVal(10.0);
+    gpEqWn.setInducingType("whitenoise");
+    gpEqWn.getInducing()->setWindowWidth(kernEq.getLengthScale() / sqrt(2.0));
+    const double llPtEq = gpEqPt.logLikelihood();
+    const double llWnEq = gpEqWn.logLikelihood();
+    const double dEq = fabs(llPtEq - llWnEq);
+    cout << "\n---- equivalence s=ell/√2 (N=8,M=3 toy) ----" << endl;
+    cout << "  LL_pt=" << llPtEq << " LL_wn=" << llWnEq
+         << " |Δ|=" << scientific << setprecision(3) << dEq << endl;
+  }
+
+  // Cross-evaluate: point bound at WN params (with point Kuu) and vice versa.
+  BoundStats crossPt = evalPointBound(X, y, Zwn, gammaWn, varWn, betaWn);
   BoundStats crossVn = evalVikBound(X, y, Zpt, gammaPt, varPt, betaPt, s);
   cout << "\n---- cross-eval (same data; swap inducing family) ----" << endl;
   printStats("vik@Zpt", crossVn, gammaPt, varPt, betaPt, s);
-  printStats("pt@Zvik", crossPt, vik.getGamma(), vik.getVar(), vik.getBeta(),
-             1.0 / sqrt(2.0 * vik.getGamma()));
+  printStats("pt@Zvik", crossPt, gammaWn, varWn, betaWn,
+             1.0 / sqrt(2.0 * gammaWn));
 
   cout << "\n==== summary ====" << endl;
   cout << fixed << setprecision(4);

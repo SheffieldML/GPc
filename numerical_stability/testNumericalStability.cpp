@@ -1338,6 +1338,150 @@ int testModels()
     }
   }
 
+  // -------------------------------------------------------------------------
+  // CIP-001C: lengthscale sweep, fixed Z — point vs white-noise inducing.
+  // Kernel-driven κ(K_uu) should explode for points as γ→0; WN K_uu depends
+  // only on windows (s fixed from spacing). Both SparseFactor and LQ.
+  // -------------------------------------------------------------------------
+  {
+    const unsigned int n = 40, m = 10;
+    const double beta = 100.0;
+    const double sWin = 0.25; // fixed window; spacing on [-1,1] with M=10 ≈ 0.22
+    const double gammas[] = {0.01, 0.1, 1.0, 10.0, 100.0};
+    CMatrix X(n, 1), Y(n, 1), Xu(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double x = -1.0 + 2.0 * (double)i / (double)(n - 1);
+      X.setVal(x, i, 0);
+      Y.setVal(sin(2.0 * x), i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Xu.setVal(-1.0 + 2.0 * (double)i / (double)(m - 1), i, 0);
+
+    auto kappaSym = [](CMatrix spd) {
+      CMatrix evals(1, spd.getRows());
+      spd.setSymmetric(true);
+      spd.syev(evals, "n", "u");
+      double mx = 0.0, mn = numeric_limits<double>::infinity();
+      for(unsigned int i = 0; i < evals.getCols(); i++)
+      {
+        const double d = fabs(evals.getVal(i));
+        mx = max(mx, d);
+        if(d > 0.0)
+          mn = min(mn, d);
+      }
+      if(!isfinite(mn) || mn <= 0.0)
+        return numeric_limits<double>::infinity();
+      return mx / mn;
+    };
+
+    bool wnAllFiniteStable = true;
+    bool wnAllFiniteLq = true;
+    double maxKappaPt = 0.0;
+    double maxKappaWn = 0.0;
+    double maxAbsLlGap = 0.0;
+
+    for(unsigned int gi = 0; gi < 5; gi++)
+    {
+      const double gamma = gammas[gi];
+      // Point Kuu = k(Z,Z) for RBF variance=1.
+      CMatrix KuuPt(m, m);
+      const double ell = 1.0 / sqrt(gamma);
+      for(unsigned int i = 0; i < m; i++)
+        for(unsigned int j = 0; j < m; j++)
+        {
+          const double dz = Xu.getVal(i, 0) - Xu.getVal(j, 0);
+          KuuPt.setVal(exp(-0.5 * gamma * dz * dz), i, j);
+        }
+      KuuPt.setSymmetric(true);
+      const double kPt = kappaSym(KuuPt);
+      maxKappaPt = max(maxKappaPt, kPt);
+
+      CMatrix KuuWn(m, m);
+      for(unsigned int i = 0; i < m; i++)
+        for(unsigned int j = 0; j < m; j++)
+        {
+          const double dz = Xu.getVal(i, 0) - Xu.getVal(j, 0);
+          KuuWn.setVal(exp(-dz * dz / (4.0 * sWin * sWin)), i, j);
+        }
+      KuuWn.setSymmetric(true);
+      const double kWn = kappaSym(KuuWn);
+      maxKappaWn = max(maxKappaWn, kWn);
+
+      // WN κ independent of γ — record per-γ metric for trend.
+      ostringstream mk;
+      mk << "wn_ls_sweep_kappa_pt_g" << gamma;
+      emitMetric(mk.str(), "B_linalg", kPt, 1e8, "abs");
+      ostringstream mkw;
+      mkw << "wn_ls_sweep_kappa_wn_g" << gamma;
+      emitMetric(mkw.str(), "B_linalg", kWn, 1e6, "abs");
+
+      for(int mode = 0; mode < 2; mode++)
+      {
+        const bool useLq = (mode == 1);
+        CRbfKern kernPt(X);
+        kernPt.setParam(gamma, 0);
+        kernPt.setParam(1.0, 1);
+        CGaussianNoise noisePt(&Y);
+        noisePt.setBiasVal(0.0, 0);
+        CGp gpPt(&kernPt, &noisePt, &X, CGp::DTCVAR, m, 0);
+        gpPt.setInducingVals(Xu);
+        gpPt.setInducingFixed(true);
+        gpPt.setBetaVal(beta);
+        gpPt.setVerbosity(0);
+        gpPt.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                       : CGp::SparseLinalgStableFactor);
+
+        CRbfKern kernWn(X);
+        kernWn.setParam(gamma, 0);
+        kernWn.setParam(1.0, 1);
+        CGaussianNoise noiseWn(&Y);
+        noiseWn.setBiasVal(0.0, 0);
+        CGp gpWn(&kernWn, &noiseWn, &X, CGp::DTCVAR, m, 0);
+        gpWn.setInducingVals(Xu);
+        gpWn.setInducingFixed(true);
+        gpWn.setBetaVal(beta);
+        gpWn.setVerbosity(0);
+        gpWn.setInducingType("whitenoise");
+        gpWn.getInducing()->setWindowWidth(sWin);
+        gpWn.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                       : CGp::SparseLinalgStableFactor);
+
+        const bool okPt = gpAllFinite(gpPt);
+        const bool okWn = gpAllFinite(gpWn);
+        if(!okWn)
+        {
+          if(useLq)
+            wnAllFiniteLq = false;
+          else
+            wnAllFiniteStable = false;
+        }
+        if(okPt && okWn)
+        {
+          const double gap = fabs(gpWn.logLikelihood() - gpPt.logLikelihood());
+          maxAbsLlGap = max(maxAbsLlGap, gap);
+          ostringstream mg;
+          mg << "wn_ls_sweep_ll_abs_gap_g" << gamma
+             << (useLq ? "_lq" : "_stable");
+          emitMetric(mg.str(), "F_model", gap, 1e4, "abs");
+        }
+        (void)ell;
+        (void)okPt;
+      }
+    }
+
+    emitMetric("wn_ls_sweep_max_kappa_point", "B_linalg", maxKappaPt, 1e8, "abs");
+    emitMetric("wn_ls_sweep_max_kappa_whitenoise", "B_linalg", maxKappaWn, 1e6, "abs");
+    emitMetric("wn_ls_sweep_max_ll_abs_gap", "F_model", maxAbsLlGap, 1e4, "abs");
+
+    // Structural claim: WN κ flat in γ and ≪ point κ at long lengthscales.
+    check("wn_ls_sweep_whitenoise_finite_stable", wnAllFiniteStable);
+    check("wn_ls_sweep_whitenoise_finite_lq", wnAllFiniteLq);
+    check("wn_ls_sweep_kappa_wn_below_1e6", maxKappaWn < 1e6);
+    check("wn_ls_sweep_point_kappa_exceeds_wn", maxKappaPt > 10.0 * maxKappaWn,
+          "point max κ should dominate WN (kernel-driven ill-conditioning)");
+  }
+
   {
     // Reduced γ×M dual-path slice (diagSparseStable subset) — DTCVAR + FITC.
     const unsigned int n = 40;

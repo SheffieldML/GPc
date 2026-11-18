@@ -1193,6 +1193,217 @@ int testBlocksAndApi()
   return fail;
 }
 
+int testWhiteNoiseInducing()
+{
+  int fail = 0;
+  cout << "==== testCGp white-noise inducing (CIP-001C) ====" << endl;
+
+  // Non-sparse: Meff is 0; inducing type defaults to points with null pInducing.
+  {
+    ToyGp toy(CGp::FTC);
+    fail += failTrue(toy.model->getEffectiveInducingCount() == 0.0, "FTC Meff is 0");
+    fail += failTrue(toy.model->getInducingType() == "points", "FTC inducing type default");
+    try
+    {
+      toy.model->setInducingType("whitenoise");
+      fail += 1;
+      cout << "FAILURE: FTC setInducingType." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "FTC setInducingType throws Error." << endl;
+    }
+    try
+    {
+      toy.model->setInducing(0);
+      fail += 1;
+      cout << "FAILURE: FTC setInducing null." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "FTC setInducing throws Error." << endl;
+    }
+  }
+
+  // Smoke: RBF+White compound, DTCVAR, few SCG iters, finite LL.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingFixed(false);
+    toy.model->setInducingType("whitenoise");
+    fail += failTrue(toy.model->getInducingType() == "whitenoise", "inducing type whitenoise");
+    const double ll0 = toy.model->logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "WN DTCVAR initial LL finite");
+    toy.model->setDefaultOptimiser(CGp::SCG);
+    toy.model->setVerbosity(0);
+    toy.model->optimise(5);
+    const double ll1 = toy.model->logLikelihood();
+    fail += failTrue(std::isfinite(ll1), "WN DTCVAR after optimise LL finite");
+    const double meff = toy.model->getEffectiveInducingCount();
+    fail += failTrue(std::isfinite(meff) && meff >= 0.0 && meff <= (double)M_ACTIVE + 1e-8,
+                     "Meff in [0,M]");
+  }
+
+  // Legacy Meff on points (covers non-whitened diagnostic branch).
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setSparseLinalgMode(CGp::SparseLinalgLegacy);
+    (void)toy.model->logLikelihood();
+    const double meffLeg = toy.model->getEffectiveInducingCount();
+    fail += failTrue(std::isfinite(meffLeg) && meffLeg >= 0.0 && meffLeg <= (double)M_ACTIVE + 1e-8,
+                     "Legacy Meff in [0,M]");
+  }
+
+  // setInducing ownership transfer + unknown / null type errors.
+  {
+    ToyGp toy(CGp::DTC);
+    const double s0 = CInducingWhiteNoise::medianSpacing(toy.model->X_u);
+    CInducingWhiteNoise* owned = new CInducingWhiteNoise(&toy.model->X_u, s0 > 0.0 ? s0 : 1.0, false);
+    toy.model->setInducing(owned);
+    fail += failTrue(toy.model->getInducingType() == "whitenoise", "setInducing WN type");
+    fail += failTrue(std::isfinite(toy.model->logLikelihood()), "setInducing WN LL finite");
+    try
+    {
+      toy.model->setInducingType("notatype");
+      fail += 1;
+      cout << "FAILURE: unknown inducing type." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "unknown inducing type throws Error." << endl;
+    }
+    try
+    {
+      toy.model->setInducing(0);
+      fail += 1;
+      cout << "FAILURE: sparse setInducing null." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "sparse setInducing null throws Error." << endl;
+    }
+  }
+
+  // WN finite LL on remaining sparse approximations (plus grads / predict).
+  {
+    const int approxs[] = {CGp::DTC, CGp::FITC, CGp::PITC};
+    for(unsigned int k = 0; k < 3; k++)
+    {
+      ToyGp toy(approxs[k]);
+      toy.model->setInducingType("whitenoise");
+      const double ll = toy.model->logLikelihood();
+      fail += failTrue(std::isfinite(ll),
+                       string("WN ") + toy.model->getApproximationStr() + " LL finite");
+      CMatrix g(1, toy.model->getOptNumParams());
+      fail += failTrue(std::isfinite(toy.model->logLikelihoodGradient(g)),
+                       string("WN ") + toy.model->getApproximationStr() + " grads finite");
+      CMatrix mu(2, 1);
+      CMatrix var(2, 1);
+      CMatrix Xtest(2, Q);
+      Xtest.setVal(0.1, 0, 0);
+      Xtest.setVal(-0.5, 1, 0);
+      toy.model->posteriorMeanVar(mu, var, Xtest);
+      fail += failTrue(std::isfinite(mu.getVal(0)) && std::isfinite(var.getVal(0)),
+                       string("WN ") + toy.model->getApproximationStr() + " predict finite");
+    }
+  }
+
+  // Stream round-trip: whitenoise + windowWidth keys.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("whitenoise");
+    toy.model->getInducing()->setWindowWidth(0.35);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    const string blob = out.str();
+    fail += failTrue(blob.find("inducingType=whitenoise") != string::npos,
+                     "stream writes inducingType=whitenoise");
+    fail += failTrue(blob.find("windowWidth=") != string::npos,
+                     "stream writes windowWidth");
+    istringstream in(blob);
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "whitenoise",
+                     "stream restore inducingType whitenoise");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && fabs(round->getInducing()->getWindowWidth() - 0.35) < 1e-12,
+                     "stream restore windowWidth");
+    delete round;
+  }
+
+  // Stream round-trip: points key present; also whitenoise without windowWidth line.
+  {
+    ToyGp toy(CGp::DTC);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    fail += failTrue(out.str().find("inducingType=points") != string::npos,
+                     "stream writes inducingType=points");
+    istringstream in(out.str());
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "points",
+                     "stream restore inducingType points");
+    delete round;
+
+    // Hand-edit: inducingType=whitenoise then a non-windowWidth token ⇒ seek back.
+    string blob = out.str();
+    const string needle = "inducingType=points";
+    const size_t pos = blob.find(needle);
+    fail += failTrue(pos != string::npos, "points key locate for rewrite");
+    if(pos != string::npos)
+    {
+      string blobWn = blob;
+      blobWn.replace(pos, needle.size(), "inducingType=whitenoise\nnotWindow=1");
+      istringstream in2(blobWn);
+      CGp* wnRound = readGpFromStream(in2);
+      fail += failTrue(wnRound != 0 && wnRound->getInducingType() == "whitenoise",
+                       "stream WN without windowWidth still loads");
+      delete wnRound;
+
+      // Non-inducingType peek line ⇒ leave default points and seek back.
+      string blobSkip = blob;
+      blobSkip.replace(pos, needle.size(), "otherKey=1");
+      istringstream in3(blobSkip);
+      CGp* ptRound = readGpFromStream(in3);
+      fail += failTrue(ptRound != 0 && ptRound->getInducingType() == "points",
+                       "stream non-inducingType peek keeps points");
+      delete ptRound;
+    }
+  }
+
+  // Equivalence: pure RBF, s = ell/sqrt(2) ⇒ point vs WN LL within 1e-8.
+  {
+    CMatrix X(N, Q), y(N, 1), Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    CRbfKern kern(X);
+    kern.setInverseWidth(2.0);
+    kern.setVariance(1.5);
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+
+    CGp pt(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    pt.setInducingVals(Xu);
+    pt.setInducingFixed(true);
+    pt.setBetaVal(10.0);
+    pt.setInducingType("points");
+
+    CGp wn(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    wn.setInducingVals(Xu);
+    wn.setInducingFixed(true);
+    wn.setBetaVal(10.0);
+    wn.setInducingType("whitenoise");
+    const double ell = kern.getLengthScale();
+    wn.getInducing()->setWindowWidth(ell / sqrt(2.0));
+
+    const double llPt = pt.logLikelihood();
+    const double llWn = wn.logLikelihood();
+    const double diff = fabs(llPt - llWn);
+    cout << "point LL=" << llPt << " WN LL=" << llWn << " |diff|=" << diff << endl;
+    fail += failTrue(diff < 1e-8, "point vs WN LL equivalence at s=ell/sqrt(2)");
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -1210,6 +1421,7 @@ int main()
     fail += testBlocksAndApi();
     fail += testFixMask();
     fail += testModelPaths();
+    fail += testWhiteNoiseInducing();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

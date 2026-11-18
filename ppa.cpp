@@ -1,4 +1,5 @@
 #include "ppa.h"
+#include "CSparsePpa.h"
 
 int main(int argc, char* argv[])
 {
@@ -282,6 +283,9 @@ void CClppa::learn()
   int noiseIters=20;
   int extIters=4;
   string modelFileName="ppa_model";
+  // CIP-0026: dense (default) or sparse via CSparsePpa / CGp.
+  string approxTypeStr="dense";
+  int activeSetSize=-1;
 
   while(isFlags())
     {
@@ -304,6 +308,18 @@ void CClppa::learn()
 		confirmCurrentArg("--help");
 	      helpInfo(); 
 	      exit(0);
+	    case 'a':
+	      if(j==2)
+		confirmCurrentArg("--active-set-size");
+	      incrementArgument();
+	      activeSetSize=getIntFromCurrentArgument();
+	      break;
+	    case 'A':
+	      if(j==2)
+		confirmCurrentArg("--Approximation-type");
+	      incrementArgument();
+	      approxTypeStr=getCurrentArgument();
+	      break;
 	    case 'l':
 	      if(j==2)
 		confirmCurrentArg("--labelled-indices-file");
@@ -648,49 +664,90 @@ void CClppa::learn()
   CKern* biasKern = new CBiasKern(X);
   if(missingData)
     biasKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(biasKernVariance, 0);
 
-  CKern* whiteKern = new CWhiteKern(X);
-  if(missingData)
-    whiteKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(whiteKernVariance, 0);
-  
   kern.addKern(biasKern);
 
-  kern.addKern(whiteKern);
-  
+  // Sparse PPA (CIP-0026): observation noise lives in β — do not add white
+  // (CWhiteKern cross-covariance is zero, so DTC M=N would not recover dense).
+  const bool useSparse = (approxTypeStr!="dense" && approxTypeStr!="ftc");
+  if(!useSparse)
+    {
+      CKern* whiteKern = new CWhiteKern(X);
+      if(missingData)
+	whiteKern->addPrior(prior, 0);
+      kern.addKern(whiteKern);
+    }
+
   noise->setTarget(&y);
   noise->initParams();
-  CPpa model(X, y, kern, *noise, getVerbosity());
-  model.optimise(extIters, kernIters, noiseIters);
-  string comment="";
-  switch(getFileFormat())
+
+  if(!useSparse)
     {
-    case 0: /// PPA file format.
-      comment = "Run as: ";
-      for(int i=0; i<argc; i++)
+      // Requested ftc/dense: full-data CPpa (CIP-0023).
+      CPpa model(X, y, kern, *noise, getVerbosity());
+      model.optimise(extIters, kernIters, noiseIters);
+      string comment="";
+      switch(getFileFormat())
 	{
-	  comment+=argv[i];
-	  comment+=" ";
-	}
-      writePpaToFile(model, modelFileName, comment);
-      break;
-    case 1: /// Matlab file format.
+	case 0:
+	  comment = "Run as: ";
+	  for(int i=0; i<argc; i++)
+	    {
+	      comment+=argv[i];
+	      comment+=" ";
+	    }
+	  writePpaToFile(model, modelFileName, comment);
+	  break;
+	case 1:
 #ifdef _NDLMATLAB
-      // Write matlab output.
-      model.writeMatlabFile(modelFileName, "ppaInfo");
-      model.kern.updateMatlabFile(modelFileName, "kern");
-      model.noise.updateMatlabFile(modelFileName, "noise");
-      X.updateMatlabFile(modelFileName, "X");
-      y.updateMatlabFile(modelFileName, "y");
-#else 
-      exitError("Error MATLAB not incorporated at compile time.");
+	  model.writeMatlabFile(modelFileName, "ppaInfo");
+	  model.kern.updateMatlabFile(modelFileName, "kern");
+	  model.noise.updateMatlabFile(modelFileName, "noise");
+	  X.updateMatlabFile(modelFileName, "X");
+	  y.updateMatlabFile(modelFileName, "y");
+#else
+	  exitError("Error MATLAB not incorporated at compile time.");
 #endif
-      break;
-    default:
-      exitError("Unrecognised file format number.");
-      
+	  break;
+	default:
+	  exitError("Unrecognised file format number.");
+	}
+      exit(0);
     }
+
+  int approxType = CGp::DTC;
+  if(approxTypeStr=="dtc")
+    approxType = CGp::DTC;
+  else if(approxTypeStr=="dtcvar")
+    approxType = CGp::DTCVAR;
+  else if(approxTypeStr=="fitc")
+    approxType = CGp::FITC;
+  else if(approxTypeStr=="pitc")
+    approxType = CGp::PITC;
+  else
+    exitError("Unknown PPA approximation: " + approxTypeStr
+              + " (use dense, dtc, dtcvar, fitc, or pitc).");
+  if(activeSetSize < 1)
+    exitError("Sparse PPA requires -a / --active-set-size > 0.");
+  if(static_cast<unsigned int>(activeSetSize) > X.getRows())
+    exitError("Active set size cannot exceed number of data.");
+
+  CSparsePpa sparse(X, y, kern, *noise, approxType,
+                    static_cast<unsigned int>(activeSetSize),
+                    1.0, getVerbosity());
+  sparse.optimise(extIters, kernIters);
+  if(getVerbosity()>0)
+    {
+      cout << "Sparse PPA learn finished. monitor(CGp LL)="
+           << sparse.monitorLogLikelihood() << endl;
+      cout << "Model file not written: sparse PPA stream format is Phase B "
+           << "incomplete (refuse save). Use dense path to persist .model files."
+           << endl;
+    }
+  // Explicit refuse — no silent dense write of a sparse fit.
+  if(modelFileName.size()>0 && getVerbosity()>=0)
+    cerr << "ppa learn: sparse models are not yet streamable; skipped write of "
+         << modelFileName << endl;
   exit(0);
 }
 
@@ -1391,14 +1448,16 @@ void CClppa::helpInfo()
   else if(command=="learn")
     {
       helpHeader();
-      helpUsage("ppa [options] learn -a int [command-options] example_file [model_file]");
-      helpDescriptor("This file is for learning a data set with an PPA. By default the kernel parameters are also optimised for 4 iterations.");
+      helpUsage("ppa [options] learn [command-options] example_file [model_file]");
+      helpDescriptor("Learn a PPA model. Default is dense CPpa (CIP-0023). Sparse path (CIP-0026) uses CGp via -A dtc|dtcvar|fitc|pitc and -a M; observation noise is β (no white kernel). Sparse models are not yet streamable.");
       cout << "Arguments:" << endl;
       helpArgument("example_file", "File with the training data. The data file is in the format used by SVM light.");
-      helpArgument("model_file", "File to store the resulting model in. By default this is set to ppa_model.");
+      helpArgument("model_file", "File to store the resulting dense model in. Default ppa_model. Ignored for sparse learn.");
       cout << endl;
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");
+      helpArgument("-A, --Approximation-type {dense,dtc,dtcvar,fitc,pitc}", "Dense (default) or sparse CGp-backed PPA.");
+      helpArgument("-a, --active-set-size int", "Inducing size M for sparse approx (required if -A is not dense).");
       helpArgument("-o, --output-type {c,r,n}", "select between classification, regression and null category noise model.");
       helpArgument("-e, --external-iterations int", "Number of external iterations. Default is 4.");
       helpArgument("-l, --labelled-indices-file string", "File containing indices of labelled points. The index starts from 1.");

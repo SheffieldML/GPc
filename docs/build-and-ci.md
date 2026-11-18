@@ -8,6 +8,9 @@ Maintainer notes for how GPc builds and how verification is gated. Short command
 ## Platforms and make fragments
 
 - Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored.
+- Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) live under [`make/legacy/`](../make/legacy/); they are not CI targets.
+- Maintainer diagnostics / fixture stampers (`diag*`, `genTest*`) live under [`tools/`](../tools/); binaries still build to the repo root.
+- Tutorial PNG plots used by the README live under [`docs/images/`](images/).
 - **Linux default links OpenBLAS** (`-lopenblas`; install `libopenblas-dev`). `make RELEASE=1` is `-O2 -DNDEBUG` with `GPC_CHECKS=0` (CIP-0013 P1/P2). Checking / reference builds keep `GPC_CHECKS=1`.
 - Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`. Same `RELEASE=1` switch.
 - Language floor is **C++17** (`-std=c++17`). Dynamic exception specifications were removed so the pin is no longer C++14 ([CIP-0002](../cip/cip0002.md)).
@@ -42,7 +45,7 @@ make USE_MATIO=1 COVERAGE=1 matio-tests && make run-matio-tests
 # On macOS Homebrew GCC, pass matching gcov: lcov --gcov-tool gcov-16 …
 lcov --ignore-errors inconsistent,empty --capture --directory . -o coverage.info
 lcov --ignore-errors unused --remove coverage.info '/usr/*' '*/test*.cpp' \
-  '*/diagDtcvar.cpp' '*/genTestGpDtcvar.cpp' -o coverage.info
+  '*/tools/diagDtcvar.cpp' '*/tools/genTestGpDtcvar.cpp' -o coverage.info
 CGP_COVERAGE_THRESHOLD=95 ./scripts/check_cgp_coverage.sh coverage.info
 ```
 

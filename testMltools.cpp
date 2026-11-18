@@ -11,7 +11,7 @@ int main()
   fail += testMlpType("mlp");
   fail += testLinearType("linear");
   cout << "Number of failures: " << fail << endl;
-  return 0;
+  return fail > 0 ? 1 : 0;
 }
 int testMlpType(const string type)
 {

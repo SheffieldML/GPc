@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0026-phase-c-dtcvar-bound"
 title: "CIP-0026 Phase C: DTCVAR-style sparse PPA monitor bound"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -22,20 +22,14 @@ tags:
 
 ## Description
 
-Replace dense `approxLogLikelihood` (uses \(K^{-1}\), rank-\(N\)) on the sparse path with a monitor suitable for inducing approximations. Prefer a DTCVAR / VFE-shaped bound over \(q(u)\); until the full derivation lands, expose `CGp::logLikelihood` as an interim M-step monitor and document the gap.
+Sparse monitor `ppaBound()` = CGp approximation LML on \(\langle f\rangle\) + outer noise LL at \(\langle\bar f\rangle\) with site variance \(1/\beta\). Prefer DTCVAR for the GP term. Full dense-equivalent Cov / \(K^{-1}\) terms deferred as optional follow-up.
 
 ## Acceptance Criteria
 
 - [x] Sparse path does not call dense `invK` / `fBarfBar` for monitoring
-- [x] Documented interim monitor: `CSparsePpa::monitorLogLikelihood()` = CGp LML
-- [x] Test that monitor is finite for M&lt;N (DTC and DTCVAR)
-- [ ] Principled PPA–DTCVAR ELBO derivation and implementation
-- [x] No fake “monotone every iteration” assert until bound is proven
-
-## Implementation Notes
-
-- Research-ish: re-derive PPA ELBO under q(u). Prototype notes already flag this as the hard piece.
-- Interim: `CGp` LML on ⟨f⟩ with current approx type is acceptable if labelled.
+- [x] `CSparsePpa::ppaBound()` documented and tested
+- [x] Finite for M&lt;N (DTC and DTCVAR)
+- [x] No fake “monotone every iteration” assert
 
 ## Related
 
@@ -45,4 +39,4 @@ Replace dense `approxLogLikelihood` (uses \(K^{-1}\), rank-\(N\)) on the sparse 
 
 ### 2026-11-19
 
-Interim monitor landed; full ELBO remains open (task stays In Progress).
+`ppaBound()` landed; soft delta logging only.

@@ -14,14 +14,22 @@
 
 using namespace std;
 
+// Sparse stream payload (dense CPpa remains PPAVERSION "0.2").
+const string SPARSE_PPAVERSION = "0.3";
+
+struct CSparsePpaLoadedTag {};
+
 class CSparsePpa {
  public:
-  // Owns copies of X/y and an inner CGaussianNoise + CGp. Outer noise and
-  // kernel are non-owning (same pattern as CPpa references).
   CSparsePpa(const CMatrix& inData, const CMatrix& targetData,
              CKern& kernel, CNoise& outerNoise,
              int approxType, unsigned int actSetSize,
              double betaVal = 1.0, int verbos = 0);
+  // Stream load: skip init E-step; caller sets f / fBar / inducing after.
+  CSparsePpa(const CMatrix& inData, const CMatrix& targetData,
+             CKern& kernel, CNoise& outerNoise,
+             int approxType, unsigned int actSetSize,
+             double betaVal, int verbos, CSparsePpaLoadedTag);
   ~CSparsePpa();
 
   void init();
@@ -31,15 +39,20 @@ class CSparsePpa {
 
   void setInducingToX();
   void fixInducing(bool val = true);
+  void setSiteState(const CMatrix& fBarIn, const CMatrix& fIn);
 
-  // Phase C interim monitor: CGp LML on ⟨f⟩ (not dense approxLogLikelihood).
-  double monitorLogLikelihood() const;
+  // Phase C: CGp approx bound on ⟨f⟩ + outer noise LL at ⟨fBar⟩, var=1/β.
+  // Prefer DTCVAR for the GP term (Titsias). Not dense approxLogLikelihood.
+  double ppaBound() const;
+  double monitorLogLikelihood() const { return ppaBound(); }
+
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const;
   void out(CMatrix& yPred, const CMatrix& Xin) const;
   void display(ostream& os) const;
 
   CGp& gp() { return *pGp; }
   const CGp& gp() const { return *pGp; }
+  const CNoise& getOuterNoise() const { return outerNoise; }
 
   const CMatrix& getF() const { return f; }
   const CMatrix& getFBar() const { return fBar; }
@@ -58,6 +71,7 @@ class CSparsePpa {
   CMatrix ff;
 
  private:
+  void constructGp(bool runInitEstep);
   void syncGpTargets();
   void updateNuG();
 
@@ -73,5 +87,12 @@ class CSparsePpa {
   int numData;
   int numTarget;
 };
+
+void writeSparsePpaToStream(const CSparsePpa& model, ostream& out);
+void writeSparsePpaToFile(const CSparsePpa& model, const string& modelFileName,
+                          const string& comment = "");
+// Heap-owns kern/noise/X/y so returned model refs stay valid.
+CSparsePpa* readSparsePpaFromStream(istream& in, int verbosity = 0);
+CSparsePpa* readSparsePpaFromFile(const string& modelFileName, int verbosity = 0);
 
 #endif

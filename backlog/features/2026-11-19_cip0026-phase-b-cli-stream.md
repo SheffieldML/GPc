@@ -22,19 +22,14 @@ tags:
 
 ## Description
 
-Optional sparse learn path on `./ppa`: `--approx dtc` (and related) with `-a M` inducing size; quiet CGp logging; bump `ppaVersion` / stream fields when persisting sparse models (or document that sparse models are not yet streamable).
+Optional sparse learn path on `./ppa`: `--approx dtc` (and related) with `-a M` inducing size; quiet CGp logging; `ppaVersion=0.3` sparse stream.
 
 ## Acceptance Criteria
 
 - [x] `./ppa learn` accepts approx + active-set size for sparse path without breaking dense default
 - [x] Help text documents sparse flags and no-white / β convention
-- [x] Sparse models refuse save with a clear error (stream format deferred)
+- [x] Sparse models stream with `ppaVersion=0.3` (`writeSparsePpaToFile` / `readSparsePpaFromFile`)
 - [x] Dense learn/test/predict unchanged
-
-## Implementation Notes
-
-- Link `ppa` target to `CGp.o` / inducing only if sparse learn is wired; keep dense path allocation-light where possible.
-- Prefer inducing fixed by default for Phase B; free inducing is Phase D.
 
 ## Related
 
@@ -44,4 +39,4 @@ Optional sparse learn path on `./ppa`: `--approx dtc` (and related) with `-a M` 
 
 ### 2026-11-19
 
-Task created and completed: `-A` / `-a` on `learn`; sparse omits white; refuse `.model` write.
+CLI + stream round-trip landed and tested.

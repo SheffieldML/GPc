@@ -22,7 +22,7 @@ Maintainer notes (build/CI rationale, numerics policy, planning workflow) live u
 
 **Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md).
 
-**Binaries / demos:** `make gp ivm gplvm bgplvm` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
+**Binaries / demos:** `make gp ivm gplvm bgplvm ppa` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
 
 Gaussian Process Software
 =========================
@@ -112,7 +112,7 @@ One of the advantages of interfacing to the LAPACK and BLAS libraries is that th
 
 ## General Information
 
-The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
+The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. Probabilistic Point Assimilation (variational EM classification) uses `./ppa` ([CIP-0021](cip/cip0021.md)). MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
 
 ```sh
 $ ./gp -h

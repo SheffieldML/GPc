@@ -2904,20 +2904,20 @@ void CGp::fromMxArray(const mxArray* matlabArray)
 // Optimise the GP with respect to latent positions and kernel parameters.
 void CGp::optimise(unsigned int iters)
 {
-  if(getVerbosity()>2)
-  {
-    cout << "Initial model:" << endl;
-    display(cout);
-  }
-  if(getVerbosity()>2 && getOptNumParams()<40)
+  // Live messaging is the in-place paramz table via OptimiserEvent (verbosity>0).
+  // Gradient checking is diagnostic only — keep it off the normal messages path.
+  if(getVerbosity() > 3 && getOptNumParams() < 40)
     checkGradients();
   setMaxIters(iters);
   runDefaultOptimiser();
-  
-  if(getVerbosity()>1)
-    cout << "... done. " << endl;
-  if(getVerbosity()>0)
-    display(cout);
+}
+
+std::string CGp::progressSnapshot(const OptimiserEvent& event) const
+{
+  ModelDescription desc = describe();
+  if(std::isfinite(event.objective))
+    return modelDescriptionToString(desc, &event.objective);
+  return modelDescriptionToString(desc);
 }
 
 bool CGp::equals(const CGp& model, const double tol) const 

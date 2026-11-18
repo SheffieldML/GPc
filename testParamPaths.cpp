@@ -1,6 +1,7 @@
 /* CIP-0014 Phase A: GPy-like parameter path façade tests (no matio). */
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "CKern.h"
@@ -65,6 +66,44 @@ int main()
     expk.setByPath("lengthscale", 5.0);
     expectNear(expk.getParam(0), 0.2, tol, "Exp lengthscale=5 stores inverseWidth=1/5");
     expectNear(expk.getByPath("lengthscale"), 5.0, tol, "Exp get lengthscale");
+  }
+
+  // --- CIP-0024 EQ / ExpQuad: lengthscale-first surface, shared RBF maths ---
+  {
+    CEqKern eq(2);
+    CRbfKern rbf(2);
+    expect(eq.getType()=="eq", "EQ stream type is eq");
+    expect(eq.gpyComponentName()=="ExpQuad", "EQ gpyComponentName is ExpQuad");
+    eq.setByPath("lengthscale", 2.0);
+    eq.setByPath("variance", 1.5);
+    expectNear(eq.getParam(0), 0.25, tol, "EQ set lengthscale=2 stores inverseWidth=1/4");
+    expectNear(eq.getByPath("lengthscale"), 2.0, tol, "EQ get lengthscale recovers 2");
+    rbf.setInverseWidth(0.25);
+    rbf.setVariance(1.5);
+
+    CMatrix X(3, 2);
+    X.randn(1.0, 0.0);
+    CMatrix Keq(3, 3);
+    CMatrix Krbf(3, 3);
+    eq.compute(Keq, X);
+    rbf.compute(Krbf, X);
+    expect(Keq.equals(Krbf, 1e-12), "EQ K matches RBF at equivalent inverseWidth");
+
+    CCmpndKern cmpnd(2);
+    CEqKern eqLeaf(2);
+    CWhiteKern white(2);
+    cmpnd.addKern(&eqLeaf);
+    cmpnd.addKern(&white);
+    vector<string> paths=cmpnd.paramPaths();
+    expect(paths.size()>=3 && paths[0]=="ExpQuad.lengthscale" && paths[1]=="ExpQuad.variance",
+           "compound EQ paths use ExpQuad component name");
+    cmpnd.setByPath("ExpQuad.lengthscale", 3.0);
+    expectNear(cmpnd.getByPath("ExpQuad.lengthscale"), 3.0, tol, "compound ExpQuad.lengthscale round-trip");
+
+    // Stream write preserves type eq (read aliases covered by factory).
+    ostringstream out;
+    eq.writeParamsToStream(out);
+    expect(out.str().find("eq")!=string::npos, "EQ writeParamsToStream mentions type eq");
   }
 
   // --- Matern spelling ---

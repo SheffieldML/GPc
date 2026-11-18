@@ -303,8 +303,9 @@ void CClivm::learn() {
 	incrementArgument(); 
 	if(kernelTypes.size()==0)
 	  exitError("Inverse width specification must come after kernel type is specified.");
-        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
-          exitError("Inverse width parameter only valid for RBF, exponential and rational quadratic covariance function.");
+        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="eq"
+           && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
+          exitError("Inverse width parameter only valid for RBF/EQ, exponential and rational quadratic covariance function.");
         rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if(isCurrentArg("-@", "--alpha")) {
@@ -555,6 +556,17 @@ void CClivm::learn() {
 	kernels[i]->setParam(variances[i], 1); /// set variance parameter as specified.
       if(missingData)	
 	kernels[i]->addPrior(prior, 1);// place L1 regulariser on variance for ncnm model.
+    }
+    else if(kernelTypes[i]=="eq" || kernelTypes[i]=="ExpQuad" || kernelTypes[i]=="expquad") {
+      if(selectInputs[i])
+        exitError("EQ/ExpQuad covariance does not map to ARD via -i; use -k rbfard.");
+      kernels.push_back(new CEqKern(X));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setParam(rbfInvWidths[i], 0);
+      if(variances[i]!=-1.0)
+        kernels[i]->setParam(variances[i], 1);
+      if(missingData)
+        kernels[i]->addPrior(prior, 1);
     }
     else if(kernelTypes[i]=="exp") {
       if(selectInputs[i])
@@ -1289,7 +1301,7 @@ void CClivm::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Kernel options:" << endl;
-    helpArgument("-k, --kernel string", "Type of kernel function. CLI learn path: lin, poly, rbf, exp, ratquad, mlp. Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian, plus bias/white/ard variants.");
+    helpArgument("-k, --kernel string", "Type of kernel function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad; prefer -P ExpQuad.lengthscale=…), exp, ratquad, mlp. Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian, plus bias/white/ard variants.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic kernel.");
     helpArgument("-v, --variance float", "Variance parameter for kernel.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP kernel.");

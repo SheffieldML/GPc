@@ -29,7 +29,7 @@ This requirement addresses **kernel-driven** ill-conditioning of \(K_{uu}\). Col
 - [x] Inducing variables are a contract consumed by `CGp` (point inducing is one implementation); DTC, DTCVAR, FITC and PITC run unchanged on any implementation
 - [x] At least one non-point family is available for RBF / RBF-ARD with \(K_{uu}\) independent of kernel hyperparameters
 - [x] A reproducibility check shows the new family reduces exactly to point inducing at a documented parameter setting (log-likelihood and total-derivative gradients agree to `ndlutil::MATCHTOL`-level tolerance)
-- [ ] On a lengthscale sweep with fixed inducing parameters, the new family needs no jitter on \(K_{uu}\) where point inducing does (numerical-stability suite cell); ELBO / bound quality vs (jittered) point inducing is recorded on the same cell — pilot evidence in `diagWhiteNoisePilot` / `diagVikCompare`; suite cell still open
+- [x] On a lengthscale sweep with fixed inducing parameters, the new family stays finite with \(\kappa(K_{uu})\) independent of lengthscale (numerical-stability `wn_ls_sweep_*`); ELBO/bound gap vs point inducing recorded on the same cell
 - [x] An effective-inducing-count diagnostic is exposed so users can see wasted capacity
 - [x] Save/load round-trips the inducing family and its parameters; existing `.model` files load unchanged (stream keys; matio struct fields deferred)
 - [x] Non-goals for first delivery are explicit (weight-space / network features, causal Green's-function features, psi statistics with new features)

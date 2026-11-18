@@ -32,11 +32,11 @@ The façade is an **ease-of-use and sharing surface**, not a second modelling en
 - [ ] Ambiguous or missing parameter paths, and shape mismatches, fail loudly with clear errors; no silent truncation of arrays or parameter vectors
 - [ ] Automated checks compare façade results to the native GPc path and/or GPy-generated fixtures within documented tolerances (objective and/or predictions on a tiny seeded problem)
 - [ ] Documentation shows a short “GPy → GPc façade” side-by-side for the first subset so a GPy user can port a basic script in an afternoon
-- [ ] Non-goals for the first delivery are explicit: full GPy/`paramz` object graph and `__setattr__` tree; regex parameter indexing; replacing native demos/CLI as the primary share format for [REQ-0009](./req0009_gpy-tutorial-parity-native.md); file interchange (owned by [REQ-000A](./req000A_shared-model-interchange.md)); EP/Laplace, SVGP/SVI, HMC, Poisson/Student-t/warped GPs, mean functions; putting Python allocations or interpreters in the SCG inner loop; claiming API identity with GPy
+- [ ] Non-goals for the first delivery are explicit: full GPy/`paramz` object graph and `__setattr__` tree; regex parameter indexing; replacing native demos/CLI as the primary share format for [REQ-0009](./req0009_gpy-tutorial-parity-native.md); file interchange (owned by [REQ-000A](./req000A_shared-model-interchange.md)); EP/Laplace, SVGP/SVI, HMC, Poisson/Student-t/warped GPs, mean functions; putting Python allocations or interpreters *inside* objective/gradient evaluation or kernel `compute`; claiming API identity with GPy. (Outer-iteration live progress is owned with [REQ-000F](./req000F_interceptable-optimiser-model-display.md), not forbidden.)
 
 ## Notes (Optional)
 
-HOW is [CIP-001D](../cip/cip001D.md) (In Progress). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11).
+HOW is [CIP-001D](../cip/cip001D.md) (In Progress). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Live progress and structured repr consume [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11).
 
 ## References
 
@@ -57,3 +57,6 @@ CIP-001D Accepted → In Progress on worktree/branch `cip001D-python-facade`. Re
 
 ### 2026-11-18 (Phase A/B + layering)
 Phase A green; Phase B `GPRegression` smoke green. Locked: notebooks/`pods`/matplotlib stay optional extras and examples (Phase E), not core `gpc` — same split as GPy.
+
+### 2026-11-18 (display / progress)
+Clarified non-goals: outer-iteration live progress and structured model repr are in scope via [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md); CIP-001D Phase B2 binds them.

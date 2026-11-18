@@ -46,6 +46,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-001F](./cip001F.md): L2/L3 concurrency contract — docs, RNG hygiene, BLAS nesting (**Proposed**). Implements [REQ-0010](../requirements/req0010_documented-concurrency-contract.md). Extends CIP-0009 L1; orthogonal to CIP-0013 P7; consumed by CIP-001D/001E docs/GIL.
 - [CIP-0020](./cip0020.md): CMake when packaging forces it — keep makefile as blessed native path (**Proposed**). Extends [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0007](../requirements/req0007_competitive-default-build.md); supports [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [CIP-001D](./cip001D.md) wheels. Phase 0 archives dead `CMakeLists.txt`; no CI cutover until matio parity.
 - [CIP-0021](./cip0021.md): Resuscitate Probabilistic Point Assimilation (PPA) from Nat King MATLAB (**Accepted**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md). Reference: [lawrennd/ppa](https://github.com/lawrennd/ppa).
+- [CIP-0022](./cip0022.md): CSV and pods as preferred data path; SVM-light as legacy (**Proposed**). Implements [REQ-0011](../requirements/req0011_csv-pods-data-access.md). Orthogonal to [CIP-0016](./cip0016.md) (model files); complements [CIP-0015](./cip0015.md) / [CIP-001D](./cip001D.md) Phase E.
 
 ## Creating a Good CIP
 

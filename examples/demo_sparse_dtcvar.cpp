@@ -25,7 +25,7 @@ int main(int argc, char** argv)
 
   CMatrix X(1, 1);
   CMatrix y(1, 1);
-  ctrl.readSvmlDataFile(X, y, "examples/spgp1d.svml");
+  ctrl.readData(X, y, "examples/spgp1d.csv");
 
   CCmpndKern kern(X);
   kern.addKern(new CRbfKern(X));

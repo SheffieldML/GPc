@@ -19,6 +19,16 @@ Fixture data (30 points from the MATLAB `demPpa1` set):
 ./ppa display /tmp/phase0.model
 ```
 
+## Gnuplot decision boundary
+
+Two-input probit models plot like `./ivm gnuplot` (positive / negative points, full-data “active” set, 0.5 decision contour and 0.25/0.75 probability contours):
+
+```bash
+./ppa gnuplot -r 30 testdata/ppa/phase0.svml /tmp/phase0.model phase0
+gnuplot phase0_plot.gp
+# or: gnuplot -e "GPLOT_OUT='phase0.png'" phase0_plot.gp
+```
+
 Verification without MATLAB in CI:
 
 ```bash

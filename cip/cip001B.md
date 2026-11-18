@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001B"
 last_updated: "2026-11-18"
-status: "Proposed"
+status: "Accepted"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0012", "000E", "0013", "0019", "001A"]
@@ -28,9 +28,9 @@ title: "LQ factorisation for collapsed VFE/DTC (and FITC) sparse bounds"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -345,16 +345,20 @@ The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it save
 
 ## Implementation Status
 
-- [ ] Proposed design reviewed (Accept) — including §3 reverse-mode plan
-- [ ] LAPACK LQ/QR wrapper + sign policy
-- [ ] DTCVAR forward LL via augmented LQ
-- [ ] DTC + FITC variants
-- [ ] Prediction
-- [ ] `_lqAdjoint` helper + unit tests (Seeger §4.3)
-- [ ] DTCVAR reverse through LQ → whitening adjoints + FD/dual-path gate
-- [ ] FITC \(\Lambda\) reverse formulae + gate
-- [ ] CLI mode + docs
-- [ ] Stress / mpmath soak; default decision
+- [x] Proposed design reviewed (Accept) — including §3 reverse-mode plan
+- [x] LAPACK LQ/QR wrapper + sign policy (`dgelqf`/`dorglq`, `CLQAdjoint`, positive-diag normalise)
+- [x] DTCVAR forward LL via LQ of \([I,\sqrt{\beta}B]\) (data-fit still via Legacy \(A^{-1}\) / StableFactor \(C\) consumers)
+- [x] DTC + FITC variants (FITC: LQ for `LcholC`/`logDetC`; `Lm`/`bet` unchanged)
+- [x] Prediction (reuses upper `LcholC` from LQ)
+- [x] `_lqAdjoint` helper + unit tests (Seeger §4.3) — `testLQAdjoint`
+- [x] DTCVAR/DTC reverse through LQ seeds + `lqAdjoint` → whitening adjoints; dual-path vs StableFactor in `testCGp`
+- [x] FITC: \(C\)-block via `lqAdjoint` (then existing \(\bar D\) / \(\bar B\) chain); dual-path vs StableFactor
+- [x] CLI mode + docs (`--sparse-linalg lq`, `docs/numerics.md`)
+- [x] Ill-conditioned \(K_{uf}K_{fu}\) gate (`testLQAdjoint`): large-\(N\) clustered \(X\), OK \(K_{uu}\); LQ logdet beats Gram+chol vs SVD
+- [ ] Stress / mpmath soak on GP LL/grad for that cell; default decision
+- [ ] Crowded-\(Z\) remains \(K_{mm}\)-limited (LQ ≡ StableFactor there) — not the Seeger/C-side regime
+
+**Accept notes (2026-11-18):** introduce `SparseLinalgLQ` (`--sparse-linalg lq`); keep StableFactor default; GPc stores the LQ \(L\) as upper \(R=L^\top\) in `LcholC` for prediction reuse; PITC stays on the StableFactor Gram path in v1.
 
 ## References
 

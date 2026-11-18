@@ -109,19 +109,25 @@ docs/whats_next_script.md
 docs/yaml_frontmatter_examples.md
 diagPitc
 genTestGpPitc
+diagLqVsStable
+diagSparseStable
 .venv/
 benchGPc
 demo_bayes_gplvm
 demo_mrd
 bgplvm
 testNumericalStability
+testCGp
+testLQAdjoint
 
 # CIP-0019 / CIP-001A numerical stability generated reports
 numerical_stability/suite.log
+numerical_stability/suite_lq_branch_stable.log
 numerical_stability/report.md
 numerical_stability/outcomes.json
 numerical_stability/metrics.json
 numerical_stability/trend.md
 numerical_stability/last-compare.md
 numerical_stability/baseline/
+numerical_stability/mode_compare/
 numerical_stability/__pycache__/

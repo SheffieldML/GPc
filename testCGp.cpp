@@ -108,6 +108,8 @@ int testPrediction()
     fail += failTrue(fabs(mu.getVal(0, 0)) > 0.0 || true, "FTC scaled posterior");
   }
 
+  // Everyday sparse prediction: DTC / DTCVAR / FITC / PITC on a small 1-D toy —
+  // the “fit sparse approx, predict mean/var at a couple of test points” path.
   const int sparses[] = {CGp::DTC, CGp::DTCVAR, CGp::FITC, CGp::PITC};
   for(unsigned int k = 0; k < 4; k++)
   {
@@ -210,6 +212,9 @@ int testOptimiseSmoke()
   return fail;
 }
 
+// Dual-path sparse linalg on a tiny 1-D toy (N=8, M=3): the “does the new
+// factorisation still implement the same sparse GP?” gate for everyday DTC /
+// DTCVAR / FITC / PITC regression — not a stress cell.
 int testStableSparse()
 {
   int fail = 0;
@@ -308,6 +313,56 @@ int testStableSparse()
   {
     cout << "bad sparseLinalgMode throws Error." << endl;
   }
+
+  // CIP-001B: same mild toy under --sparse-linalg lq. Captures “swap Gram+chol
+  // of C for LQ of [I,A] on a well-posed sparse GP” — LL/grads must match
+  // StableFactor before we trust LQ on harder data.
+  cout << "==== testCGp SparseLinalgLQ ====" << endl;
+  {
+    ToyGp toyLq(CGp::DTCVAR);
+    toyLq.model->setSparseLinalgMode(CGp::SparseLinalgStableFactor);
+    const double llS = toyLq.model->logLikelihood();
+    CMatrix gS(1, toyLq.model->getOptNumParams());
+    toyLq.model->logLikelihoodGradient(gS);
+    toyLq.model->setSparseLinalgMode(CGp::SparseLinalgLQ);
+    const double llQ = toyLq.model->logLikelihood();
+    fail += failTrue(fabs(llS - llQ) < 1e-10, "StableFactor vs LQ DTCVAR LL");
+    CMatrix gQ(1, toyLq.model->getOptNumParams());
+    fail += failTrue(std::isfinite(toyLq.model->logLikelihoodGradient(gQ)),
+                     "LQ DTCVAR gradient");
+    double gDiffQ = 0.0;
+    for(unsigned int i = 0; i < gQ.getCols(); i++)
+      gDiffQ = max(gDiffQ, fabs(gQ.getVal(i) - gS.getVal(i)));
+    fail += failTrue(gDiffQ < 1e-5, "StableFactor vs LQ DTCVAR grads");
+  }
+  {
+    ToyGp toyD(CGp::DTC);
+    toyD.model->setSparseLinalgMode(CGp::SparseLinalgStableFactor);
+    const double llS = toyD.model->logLikelihood();
+    toyD.model->setSparseLinalgMode(CGp::SparseLinalgLQ);
+    const double llQ = toyD.model->logLikelihood();
+    fail += failTrue(fabs(llS - llQ) < 1e-10, "StableFactor vs LQ DTC LL");
+  }
+  {
+    ToyGp toyF(CGp::FITC);
+    toyF.model->setSparseLinalgMode(CGp::SparseLinalgStableFactor);
+    const double llS = toyF.model->logLikelihood();
+    CMatrix gS(1, toyF.model->getOptNumParams());
+    toyF.model->logLikelihoodGradient(gS);
+    toyF.model->setSparseLinalgMode(CGp::SparseLinalgLQ);
+    const double llQ = toyF.model->logLikelihood();
+    fail += failTrue(fabs(llS - llQ) < 1e-10, "StableFactor vs LQ FITC LL");
+    CMatrix gQ(1, toyF.model->getOptNumParams());
+    toyF.model->logLikelihoodGradient(gQ);
+    double gDiffQ = 0.0;
+    for(unsigned int i = 0; i < gQ.getCols(); i++)
+      gDiffQ = max(gDiffQ, fabs(gQ.getVal(i) - gS.getVal(i)));
+    fail += failTrue(gDiffQ < 1e-5, "StableFactor vs LQ FITC grads");
+  }
+  fail += failTrue(toy.model->isLQSparseLinalg() == false, "isLQSparseLinalg false on Legacy");
+  toy.model->setSparseLinalgMode(CGp::SparseLinalgLQ);
+  fail += failTrue(toy.model->isLQSparseLinalg() && toy.model->isWhitenedSparseLinalg(),
+                   "LQ mode sets isLQ/isWhitened");
   return fail;
 }
 

@@ -57,4 +57,21 @@ mu, var = m.predict(X)
 
 Default kernel is compound RBF + bias + white. Prefer **noisy** observations in smoke tests: noiseless \(Y\) drives `white.variance` → 0 and near-zero predictive variance at training points (correct, but looks broken). `objective()` is **−log-likelihood** (SCG minimises it). SCG may print a max-iteration warning when the budget is hit.
 
-Custom kernel factories, GPy side-by-side docs, sparse DTCVAR, and Jupyter/`pods` examples are later CIP-001D phases. Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
+### GPy ExpQuad → `gpc` (CIP-0024)
+
+GPy’s lengthscale-first squared exponential is `ExpQuad`. Pass `kernel="eq"` (aliases `ExpQuad` / `expquad`) so compound paths use `ExpQuad.*` instead of `rbf.*`:
+
+```python
+# GPy sketch:
+# k = GPy.kern.ExpQuad(1) + GPy.kern.Bias(1) + GPy.kern.White(1)
+# m = GPy.models.GPRegression(X, Y, k)
+# m.ExpQuad.lengthscale = 0.2
+
+m = gpc.GPRegression(X, Y, kernel="eq")
+m.set_by_path("ExpQuad.lengthscale", 0.2)
+m.optimize(iters=50)
+```
+
+Runnable sketch: [`examples/expquad_regression.py`](examples/expquad_regression.py). Same \(K_of_r\) as RBF; storage remains `inverseWidth` under the hood ([docs/param-paths.md](../docs/param-paths.md)).
+
+Custom kernel factories, sparse DTCVAR, and Jupyter/`pods` examples are later CIP-001D phases. Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.

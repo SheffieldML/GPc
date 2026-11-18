@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Build core tools
-        run: make gp ivm gplvm bgplvm
+        run: make gp ivm gplvm bgplvm ppa
 
       - name: Smoke help
         run: |
@@ -55,3 +55,4 @@ jobs:
           ./bgplvm -h
           ./bgplvm learn -h
           ./bgplvm gnuplot -h
+          ./ppa -h

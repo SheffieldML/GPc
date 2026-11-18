@@ -212,6 +212,13 @@ testPsi: testPsi.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CD
 testPsi.o: testPsi.cpp CKern.h CDist.h CTransform.h CMatrix.h
 	$(CC) -c testPsi.cpp -o testPsi.o $(CCFLAGS)
 
+# CIP-001C Phase 3: Hankel / spectralDensity white-noise K_fu gate.
+testWnHankel: testWnHankel.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testWnHankel testWnHankel.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testWnHankel.o: testWnHankel.cpp CKern.h CDist.h CTransform.h CMatrix.h
+	$(CC) -c testWnHankel.cpp -o testWnHankel.o $(CCFLAGS)
+
 # CIP-0017 Phase 2: Bayesian GP-LVM.
 CBayesGplvm.o: CBayesGplvm.cpp CBayesGplvm.h CKern.h COptimisable.h CTransform.h CMatrix.h
 	$(CC) -c CBayesGplvm.cpp -o CBayesGplvm.o $(CCFLAGS)

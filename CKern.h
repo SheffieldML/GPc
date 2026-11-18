@@ -460,6 +460,23 @@ class CStationaryKern : public CKern {
   // k(r) with r already lengthscale-scaled (GPy K_of_r).
   virtual double K_of_r(double r) const = 0;
 
+  // CIP-001C Phase 3: Bochner spectral density S(||ω||). Default throws.
+  virtual double spectralDensity(double rho) const;
+  // Lengthscale for spectral formulas. Default 1/scaleFactor(); Matérn overrides to lengthScale.
+  virtual double spectralLengthScale() const;
+  // Hankel / cosine path for white-noise cross-cov (N×M Kfu).
+  void wnCrossComputeHankel(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  // Default wnCross* for stationary: Hankel (+ FD grads). RBF keeps closed-form overrides.
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                    const CMatrix& gKfu) const;
+  void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+
   double computeElement(const CMatrix& X1, unsigned int index1,
                         const CMatrix& X2, unsigned int index2) const;
   void compute(CMatrix& K, const CMatrix& X) const;
@@ -902,6 +919,7 @@ class CRbfKern: public CStationaryKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  double spectralDensity(double rho) const;
   void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
   void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
                     const CMatrix& gKfu) const;
@@ -969,6 +987,7 @@ class CExpKern: public CStationaryKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  double spectralDensity(double rho) const;
 
  private:
   void _init();
@@ -1053,6 +1072,8 @@ class CMatern32Kern: public CStationaryKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  double spectralDensity(double rho) const;
+  double spectralLengthScale() const;
   
  private:
   void _init();
@@ -1096,6 +1117,8 @@ class CMatern52Kern: public CStationaryKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  double spectralDensity(double rho) const;
+  double spectralLengthScale() const;
   
  private:
   void _init();

@@ -70,6 +70,8 @@ bool typesCompatible(const string& type, const string& name)
     return true;
   if((type=="rbf" || type=="rbfard") && name=="rbf")
     return true;
+  if(type=="eq" && (name=="ExpQuad" || name=="eq" || name=="expquad"))
+    return true;
   if((type=="mlp" || type=="mlpard") && name=="mlp")
     return true;
   if(type=="poly" && name=="poly")
@@ -97,6 +99,7 @@ string CKern::gpyComponentName() const
   if(t=="cosine") return "Cosine";
   if(t=="brownian") return "Brownian";
   if(t=="rbfard") return "rbf";
+  if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
   return t;
 }
@@ -1658,6 +1661,36 @@ void CRbfKern::_init()
   setParamName("variance", 1);
   addTransform(CTransform::defaultPositive(), 1);
   setStationary(true);
+}
+
+// CIP-0024: GPy ExpQuad / EQ — thin RBF subclass, lengthscale-first surface.
+void CEqKern::_markEq()
+{
+  setType("eq");
+  setName("ExpQuad");
+}
+CEqKern::CEqKern() : CRbfKern()
+{
+  _markEq();
+}
+CEqKern::CEqKern(unsigned int inDim) : CRbfKern(inDim)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CMatrix& X) : CRbfKern(X)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CEqKern& kern) : CRbfKern(kern)
+{
+  _markEq();
+}
+CEqKern::~CEqKern()
+{
+}
+string CEqKern::gpyComponentName() const
+{
+  return "ExpQuad";
 }
 void CRbfKern::setInitParam()
 {
@@ -6584,6 +6617,8 @@ CKern* readKernFromStream(istream& in)
 
   else if(type=="rbf")
     pkern = new CRbfKern();
+  else if(type=="eq" || type=="ExpQuad" || type=="expquad")
+    pkern = new CEqKern();
   else if(type=="exp")
     pkern = new CExpKern();
   else if(type=="ratquad")
@@ -6770,6 +6805,8 @@ void CComponentKern::extractParamFromMxArray(const mxArray* matlabArray)
       kernNum = addKern(new CLinKern(getInputDim()));
     else if(kernType == "rbf")  
       kernNum = addKern(new CRbfKern(getInputDim()));
+    else if(kernType == "eq" || kernType == "ExpQuad" || kernType == "expquad")
+      kernNum = addKern(new CEqKern(getInputDim()));
     else if(kernType == "ratquad")  
       kernNum = addKern(new CRatQuadKern(getInputDim()));
     else if(kernType == "matern32")  

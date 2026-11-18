@@ -36,13 +36,13 @@ make.inc
 gp
 gplvm
 ivm
-ppa
+/ppa
 demo_regression_1d
 demo_sparse_dtcvar
 testGp
 testOptimisable
-testPpa
-testIvm
+/testPpa
+/testIvm
 diagDtcvar
 genTestGpDtcvar
 diag_dtc_state.txt

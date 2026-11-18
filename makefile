@@ -128,6 +128,10 @@ numerical_stability/testNumericalStability.o: numerical_stability/testNumericalS
 run-numerical-stability: testNumericalStability
 	./testNumericalStability
 
+# CIP-0012 dual-path: StableFactor vs Legacy under the numerical-stability suite.
+compare-sparse-modes: testNumericalStability
+	python3 numerical_stability/compare_sparse_modes.py --skip-build
+
 
 testDist: testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testDist testDist.o CMatrix.o ndlfortran.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

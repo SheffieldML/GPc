@@ -124,4 +124,5 @@ numerical_stability/metrics.json
 numerical_stability/trend.md
 numerical_stability/last-compare.md
 numerical_stability/baseline/
+numerical_stability/mode_compare/
 numerical_stability/__pycache__/

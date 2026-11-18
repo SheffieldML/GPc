@@ -36,6 +36,16 @@ Sparse probes cover DTC, DTCVAR, FITC, and PITC. Each also emits an in-process
 Legacy↔StableFactor LL/grad gap (`*_legacy_stable_*`) so a single run already
 shows dual-path agreement; a dual-cell run compares the full metric surface.
 
+**Improvement experiments** (always both modes, ignore `GPC_SPARSE_LINALG`):
+
+| Probe | What it checks |
+|-------|----------------|
+| `*_crowdZ_*` / `*_protocol_*` | Stable finite; Stable FD not worse than Legacy; if Legacy throws → `*_legacy_breaks_stable_ok` |
+| `sparse_gamma_M_dual_path_slice` | Reduced γ×M dual-path LL/grad gaps (DTCVAR+FITC) |
+
+Mild GPs often agree to ~1e-12 (Stable **is** the default). Stress cells are where
+StableFactor can win — better FD under crowded inducing, or Legacy nonfinite.
+
 ```bash
 # StableFactor vs Legacy: two suite runs + compare_metrics trend
 python3 numerical_stability/compare_sparse_modes.py

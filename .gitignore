@@ -33,6 +33,14 @@ make.inc
 # CIP-0020 out-of-tree CMake build directory
 /build/
 
+# CIP-0020 / CIP-001D Python packaging
+python/.venv/
+python/build/
+python/*.egg-info/
+python/gpc/_gpc*.so
+python/gpc/_gpc*.dylib
+python/src/*.o
+
 #
 *.dat
 *~

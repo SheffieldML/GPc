@@ -36,7 +36,7 @@ This requirement addresses **kernel-driven** ill-conditioning of \(K_{uu}\). Col
 
 ## Notes (Optional)
 
-HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features; weight-space features for dot-product kernels) should also cite this requirement. Phase 3 Hankel / Matérn spectral path and stability-suite cells remain backlog follow-ups.
+HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features; weight-space features for dot-product kernels) should also cite this requirement. Phase 3 Hankel / Matérn spectral path is done (`testWnHankel`); stability-suite cell remains a backlog follow-up.
 
 ## References
 
@@ -50,3 +50,6 @@ Requirement created alongside CIP-001C (Proposed). Pilot worktree `cip001C-wn-pi
 
 ### 2026-11-18 (implementation)
 CIP-001C Accepted and Implemented for Phases 1–2 + Phase 4 essentials. `CInducing` / white-noise RBF path in tree; equivalence gate ~1e-14; full-SCG DTCVAR matches point ELBO with far better \(\kappa(K_{uu})\`. Status → Implemented (stability-suite cell and Hankel path still open).
+
+### 2026-11-18 (Phase 3 Hankel)
+`spectralDensity` + Hankel / cosine \(K_{fu}\) path landed for Exp / Matérn-3/2 / Matérn-5/2 (RBF closed form retained). RBF-via-Hankel max relative error \(\sim 8.6\times10^{-11}\) on `testWnHankel`. Stability-suite cell still open.

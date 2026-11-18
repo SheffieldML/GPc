@@ -41,7 +41,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-001B](./cip001B.md): LQ factorisation for collapsed VFE/DTC (and FITC) sparse bounds (**Accepted / In Progress**). Extends CIP-0012 whitening: LQ of \([I,A]\) (or \(y\)-augmented) instead of Gram+chol of \(I+AA^\top\); Seeger et al. 2017 BLR trick on the sparse bound.
 - [CIP-001C](./cip001C.md): White-noise inducing features for stationary kernels (kernel-free \(K_{uu}\)) (**Implemented** — Phases 1–4; Close after PR/CI). Implements [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md).
 - [CIP-001D](./cip001D.md): Light Python façade over GPc for GPy users (**In Progress** — Phase A done; Phase B FTC smoke green). Implements [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md). Consumes [CIP-001E](./cip001E.md) for live progress / repr. Orthogonal to CIP-0015 (native tutorials) and CIP-0016 (file interchange).
-- [CIP-001E](./cip001E.md): Interceptable optimiser events and structured model display (**Accepted**). Implements [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md). C++ `OptimiserEvent`/observer + `ModelDescription`; CIP-001D binds thin Python progress and repr.
+- [CIP-001E](./cip001E.md): Interceptable optimiser events and structured model display (**Implemented** — close after review). Implements [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md). C++ `OptimiserEvent`/observer + `ModelDescription`; CIP-001D binds thin Python progress and repr.
 
 ## Creating a Good CIP
 

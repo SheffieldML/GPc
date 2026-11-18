@@ -10,6 +10,47 @@
 #include "CMatrix.h"
 #include "ndlutil.h"
 #include "ndlfortran.h"
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <string>
+#include <vector>
+
+/// Outer-iteration / terminal progress (CIP-001E). Not fired from objective/gradient.
+enum class OptimiserPhase
+{
+  Start,
+  Iter,
+  Converged,
+  MaxIters,
+  Failed
+};
+
+struct OptimiserEvent
+{
+  OptimiserPhase phase;
+  int optimiser;       // COptimisable::CG / SCG / GD / BFGS / LBFGS
+  int iter;
+  int funcEval;        // -1 if not tracked
+  double objective;
+  double gradNorm;     // NaN if unused
+  double stepOrScale;  // e.g. SCG lambda; NaN if unused
+  std::string message;
+
+  OptimiserEvent()
+    : phase(OptimiserPhase::Iter),
+      optimiser(-1),
+      iter(0),
+      funcEval(-1),
+      objective(0.0),
+      gradNorm(std::numeric_limits<double>::quiet_NaN()),
+      stepOrScale(std::numeric_limits<double>::quiet_NaN()),
+      message()
+  {
+  }
+};
+
+typedef std::function<void(const OptimiserEvent&)> OptimiserObserver;
 
 // abstract base class for making a class optimisable.
 class COptimisable {
@@ -38,6 +79,8 @@ class COptimisable {
     setMomentum(0.9);
     iter = 0;
     funcEval = 0;
+    defaultTextProgress = true;
+    progressStream = &std::cout;
   }
   virtual ~COptimisable() {}
   virtual inline void setVerbosity(int val) const 
@@ -48,6 +91,36 @@ class COptimisable {
   {
     return verbosity;
   }
+
+  /// Register an outer-iteration observer (CIP-001E). Cleared with clearOptimiserObservers().
+  void addOptimiserObserver(const OptimiserObserver& obs)
+  {
+    optimiserObservers.push_back(obs);
+  }
+  void clearOptimiserObservers()
+  {
+    optimiserObservers.clear();
+  }
+  /// When true (default), verbosity-gated text is written to the progress stream.
+  void setDefaultTextProgress(bool on)
+  {
+    defaultTextProgress = on;
+  }
+  bool isDefaultTextProgress() const
+  {
+    return defaultTextProgress;
+  }
+  void setOptimiserProgressStream(std::ostream* os)
+  {
+    progressStream = os;
+  }
+  std::ostream* getOptimiserProgressStream() const
+  {
+    return progressStream;
+  }
+
+  /// Fire default text (if enabled) then all registered observers.
+  void notifyOptimiserEvent(const OptimiserEvent& event) const;
   virtual unsigned int getOptNumParams() const=0;
   virtual void getOptParams(CMatrix& param) const=0;
   virtual void setOptParams(const CMatrix& param)=0;
@@ -242,10 +315,21 @@ class COptimisable {
 
   bool funcEvalTerminate;
   bool iterTerminate;
+
+  bool defaultTextProgress;
+  mutable std::ostream* progressStream;
+  mutable std::vector<OptimiserObserver> optimiserObservers;
   
   CMatrix direction; // direction for 1-D optimisation.
   CMatrix paramStoreOne;
   CMatrix paramStoreTwo;
+
+  void writeDefaultOptimiserText(const OptimiserEvent& event) const;
+  OptimiserEvent makeOptimiserEvent(OptimiserPhase phase,
+                                    int optimiserId,
+                                    double objectiveVal,
+                                    double stepOrScale = std::numeric_limits<double>::quiet_NaN(),
+                                    const std::string& message = std::string()) const;
 }; 
 
 class CProbabilisticOptimisable : public COptimisable

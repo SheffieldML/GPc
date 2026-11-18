@@ -1,7 +1,7 @@
 ---
 id: "000F"
 title: "Callers can intercept optimiser progress and render structured model descriptions"
-status: "Ready"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -36,7 +36,7 @@ The Python façade ([REQ-000E](./req000E_gpy-facing-python-facade.md)) may attac
 
 ## Notes (Optional)
 
-HOW is [CIP-001E](../cip/cip001E.md) (Accepted). Extends [REQ-0008](./req0008_gpy-like-parameter-access.md) for display paths/units and feeds [REQ-000E](./req000E_gpy-facing-python-facade.md) / [CIP-001D](../cip/cip001D.md) for live progress and rich repr. Orthogonal to [REQ-000A](./req000A_shared-model-interchange.md) (file interchange ≠ live display).
+HOW is [CIP-001E](../cip/cip001E.md) (Implemented). Extends [REQ-0008](./req0008_gpy-like-parameter-access.md) for display paths/units and feeds [REQ-000E](./req000E_gpy-facing-python-facade.md) / [CIP-001D](../cip/cip001D.md) for live progress and rich repr. Orthogonal to [REQ-000A](./req000A_shared-model-interchange.md) (file interchange ≠ live display).
 
 ## References
 
@@ -50,3 +50,6 @@ Requirement created as Proposed WHAT after design discussion: data-first optimis
 
 ### 2026-11-18 (accept)
 CIP-001E Accepted; requirement moved to Ready pending backlog + implementation on worktree `cip001E-interceptable-display`.
+
+### 2026-11-18 (implemented)
+CIP-001E Phases A–C landed on `cip001E-interceptable-display`: C++ observer + ModelDescription, Python `messages`/`callback` and `__str__`. Requirement → Implemented; await Close after review.

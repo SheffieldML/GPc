@@ -432,14 +432,22 @@ void CComponentKern::constrainNone(const string& path)
   syncTransformsFromComponents();
 }
 
+ModelDescription CKern::describe() const
+{
+  ModelDescription desc;
+  desc.title = getName() + " kernel:";
+  const vector<string> paths = paramPaths();
+  for(unsigned int i = 0; i < paths.size(); i++)
+  {
+    ParamRow row(paths[i], getByPath(paths[i]));
+    desc.params.push_back(row);
+  }
+  return desc;
+}
+
 ostream& CKern::display(ostream& os) const
 {
-  os << getName() << " kernel:" << endl;
-  for(unsigned int i=0; i<nParams; i++)
-  {
-    os << getParamName(i) << ": " << getParam(i) << endl;
-  }
-  return os;
+  return formatModelDescription(describe(), os);
 }
 
 void CKern::writeParamsToStream(ostream& out) const

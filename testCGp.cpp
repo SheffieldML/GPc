@@ -976,6 +976,21 @@ int testModelPaths()
   {
     cout << "setByPath scale OOB throws Error." << endl;
   }
+  // CIP-001E: describe/display writes only to the provided stream.
+  {
+    ToyGp dispToy(CGp::FTC);
+    dispToy.model->setByPath("rbf.lengthscale", 1.5);
+    std::ostringstream oss;
+    dispToy.model->display(oss);
+    const string text = oss.str();
+    fail += failTrue(text.find("Standard GP Model") != string::npos,
+                     "CGp display title on ostream");
+    fail += failTrue(text.find("kern.rbf.lengthscale") != string::npos,
+                     "CGp display includes GPy path");
+    ModelDescription desc = dispToy.model->describe();
+    fail += failTrue(desc.params.size() >= 2, "CGp describe has params");
+  }
+
   toy.model->clearFixes(); // hits scaleParamFixed clear loop while learnt
   toy.model->setOutputScaleLearnt(false);
 

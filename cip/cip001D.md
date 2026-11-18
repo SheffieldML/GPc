@@ -5,8 +5,8 @@ id: "001D"
 last_updated: "2026-11-18"
 status: "In Progress"
 compressed: false
-related_requirements: ["000E", "0008", "0005", "0009"]
-related_cips: ["0014", "0015", "0016", "000C", "000D", "000E"]
+related_requirements: ["000E", "0008", "0005", "0009", "000F"]
+related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E"]
 tags:
 - cip
 - python
@@ -20,7 +20,7 @@ title: "Light Python façade over GPc for GPy users"
 
 # CIP-001D: Light Python façade over GPc for GPy users
 
-> CIPs describe HOW to achieve requirements (WHAT). This CIP implements [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md). It reuses path/unit policy from [CIP-0014](./cip0014.md) / [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md), the kernel catalogue from [CIP-000C](./cip000C.md) / [REQ-0005](../requirements/req0005_gpy-aligned-kernel-coverage.md), and the native tutorial subset checklist from [CIP-0015](./cip0015.md) / [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). It is **orthogonal** to [CIP-0016](./cip0016.md) (file interchange): this CIP is a live API, not model YAML/JSON.
+> CIPs describe HOW to achieve requirements (WHAT). This CIP implements [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md). It reuses path/unit policy from [CIP-0014](./cip0014.md) / [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md), the kernel catalogue from [CIP-000C](./cip000C.md) / [REQ-0005](../requirements/req0005_gpy-aligned-kernel-coverage.md), and the native tutorial subset checklist from [CIP-0015](./cip0015.md) / [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Live optimiser progress and structured model repr consume [CIP-001E](./cip001E.md) / [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md). It is **orthogonal** to [CIP-0016](./cip0016.md) (file interchange): this CIP is a live API, not model YAML/JSON.
 
 ## Status
 
@@ -59,7 +59,7 @@ Ecosystem Interoperability asks us to meet those users in Python. Compose Throug
 1. **pybind11 extension module.** One compiled module (working name `_gpc`) plus a thin pure-Python package `gpc` for ergonomics. Rationale: mature NumPy buffer protocol, good C++ class wrapping, familiar to scientific Python. **Rejected for v1:** ctypes/`cffi` only (too much hand marshaling for `CMatrix` and ownership); SWIG (heavier codegen; no current `.i` surface to revive); nanobind (lighter, but smaller ecosystem for contributors copying GPy-era patterns — revisit later if build cost bites); pure Python reimplementation of kernels (violates REQ-000E and Flexibility Without a Performance Tax).
 2. **Package name `gpc`.** Import as `import gpc`. Document clearly that this is **not** GPy and does not claim API identity. PyPI namespace / `sheffieldml-gpc` distribution name can differ from the import name if publishing requires it; decide at Phase A without blocking the API sketch.
 3. **Ergonomics ≈ GPy recipes, not a paramz clone.** First delivery exposes constructors and methods that feel familiar (`GPRegression`, kernel factories, `optimize`, `predict`, path get/set). It does **not** implement GPy’s full `Parameterized` tree, `__setattr__` magic, or regex `m['.*']`. Paths use the CIP-0014 grammar (`set_by_path` / `get_by_path` / `param_paths`), optionally with a small `m['rbf.lengthscale']` sugar that delegates to that grammar.
-4. **NumPy at the boundary only.** `X`, `Y`, and prediction outputs convert to/from `CMatrix` (copy is the default for safety; optional zero-copy later if layout matches and lifetime is proven). No Python callbacks from SCG, kernel `compute`, or sparse factorisation.
+4. **NumPy at the boundary only; outer-iteration progress allowed.** `X`, `Y`, and prediction outputs convert to/from `CMatrix` (copy is the default for safety; optional zero-copy later if layout matches and lifetime is proven). **No** Python callbacks inside objective/gradient evaluation, kernel `compute`, or sparse factorisation. **Allowed:** a thin outer-iteration / terminal observer ([CIP-001E](./cip001E.md) `OptimiserEvent`) for `messages=` text and `callback=` (tqdm / notebook widgets). Opt-out is free (`messages=False`, no callback → zero Python traffic during the run). A slow callback stalls the next iteration — same contract as SciPy/`paramz`.
 5. **Own the same first subset as the native tutorials.** Map explicitly to CIP-0015’s checklist: FTC Gaussian + compound RBF-style kernel + path get/set; sparse DTCVAR; document “not yet” for coreg / IVM / Bayesian GPLVM until later phases or follow-ups. Coregionalization helpers from CIP-0015 Phase A may be wrapped once they exist natively — not a blocker for Phase B.
 6. **Build stays makefile-friendly.** Extension builds against the same BLAS/LAPACK/`make.inc` the rest of GPc uses (via scikit-build-core + CMake, or a documented `python/setup` that links existing objects). Ordinary users install a wheel or `pip install -e python/` after a one-time native build; they do not edit makefiles for day-to-day modelling.
 7. **Errors are loud.** Shape mismatches and unknown paths raise Python exceptions that wrap GPc asserts / typed errors; no silent truncation.
@@ -78,8 +78,10 @@ k = gpc.kern.RBF(input_dim=1) + gpc.kern.White(input_dim=1)
 m = gpc.models.GPRegression(X, Y, kernel=k)   # FTC + Gaussian noise
 
 m.set_by_path("rbf.lengthscale", 0.2)
-m.optimize()
+m.optimize(max_iters=100, messages=True)   # CIP-001E text observer / default lines
+# m.optimize(callback=lambda e: print(e.iter, e.objective))
 mu, var = m.predict(X)
+print(m)                   # __str__ / __repr__ from ModelDescription (CIP-001E)
 print(m.param_paths())
 print(m.get_by_path("rbf.variance"))
 ```
@@ -91,7 +93,7 @@ m = gpc.models.SparseGPRegression(X, Y, kernel=k, Z=Z, approx="dtcvar")
 m.optimize()
 ```
 
-Python kernel objects are thin handles around `CKern` subclasses (or factory strings that build them in C++). Compound `+` maps to `CCmpndKern`. Parameter paths hit the existing C++ façade — no second naming table in Python.
+Python kernel objects are thin handles around `CKern` subclasses (or factory strings that build them in C++). Compound `+` maps to `CCmpndKern`. Parameter paths hit the existing C++ façade — no second naming table in Python. Progress and repr bind CIP-001E; they do not invent a parallel logging or naming path.
 
 ### Layout (proposed)
 
@@ -128,6 +130,8 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 | `SparseGPRegression` | `CGp` DTCVAR (or documented sparse enum) + inducing `Z` |
 | `set_by_path` / `get_by_path` | CIP-0014 path API |
 | `optimize` | existing `COptimisable` / SCG (or model’s established train entry) |
+| `optimize(..., messages= / callback=)` | CIP-001E outer-iteration `OptimiserEvent` observer (pybind `py::function`) |
+| `print(m)` / `__repr__` | CIP-001E `ModelDescription` (+ optional `_repr_html_` later) |
 | `predict` | existing posterior mean/variance path |
 
 ### Rejected / deferred
@@ -139,6 +143,8 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 | Bundling `pods` / matplotlib into core `gpc` | Rejected — keep as optional extras / notebook deps (GPy’s own split) |
 | Full GPy `m.plot()` surface | Rejected for v1; optional thin `plot_1d` helper under extras only |
 | Reimplementing likelihood in Python | Rejected |
+| Python callbacks *inside* objective/gradient / kernel `compute` | Rejected (Flexibility Without a Performance Tax) |
+| Outer-iteration live progress / `callback=` | **In scope** via CIP-001E (not a paramz clone) |
 | Wrapping IVM / Bayesian GPLVM / MRD in v1 | Deferred to follow-up once FTC+sparse façade is green |
 | Putting YAML interchange in this CIP | Owned by CIP-0016 |
 | Reviving mex / MATLAB as the Python story | Rejected |
@@ -155,8 +161,8 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 
 ### Tenet trade-offs
 
-- **Ecosystem vs Flexibility:** Python is allowed at the boundary for ease of use; hot path stays C++/BLAS.
-- **Compose vs clone:** Prefer fulfilling `CKern`/`CGp` contracts via bindings over mimicking GPy’s inheritance tree.
+- **Ecosystem vs Flexibility:** Python is allowed at the boundary for ease of use; hot path stays C++/BLAS. Outer-iteration progress is a rare boundary call, not an inner-loop tax.
+- **Compose vs clone:** Prefer fulfilling `CKern`/`CGp` contracts via bindings over mimicking GPy’s inheritance tree; progress/repr compose CIP-001E rather than reimplementing print logic in Python.
 - **Assert:** Extension tests must fail closed on bad shapes/paths; do not disable `DIMENSIONMATCH`-class checks to “make NumPy happier.”
 
 ## Implementation Plan
@@ -173,22 +179,27 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
    - Side-by-side doc fragment: GPy `basic_gp` / toy 1D → `gpc` script.
    - Pytest: façade vs native C++ on a tiny seeded problem (objective and/or predictions).
 
-3. **Phase C — Sparse DTCVAR**
+3. **Phase B2 — Live progress + repr (depends on CIP-001E Phases A–B)**
+   - Bind `OptimiserEvent`; wire `optimize(messages=..., callback=...)`.
+   - `__str__` / `__repr__` from `ModelDescription`; optional `_repr_html_` later.
+   - Pytest: callback fires on outer iterations; silent when opted out; `str(m)` contains canonical path labels.
+
+4. **Phase C — Sparse DTCVAR**
    - `SparseGPRegression` (or equivalent) with inducing inputs and `dtcvar`.
    - Pytest vs native sparse path; document FITC-not-default (same policy as CIP-0015).
 
-4. **Phase D — Subset map + polish**
+5. **Phase D — Subset map + polish**
    - Checklist table: CIP-0015 tutorial item → `gpc` recipe or “not in Python subset.”
    - Loud error tests (bad shapes, missing paths).
    - README install blurb; optional wheel CI later (not a close blocker if editable install is documented).
 
-5. **Phase E — Notebooks and optional plot extras**
+6. **Phase E — Notebooks and optional plot extras**
    - Example Jupyter notebooks (toy 1-D; olympic marathon via `pods`) that call core `gpc` only.
    - Optional `gpc[plot]` / `gpc[examples]` extras: thin `plot_1d` over `predict`; `pods` + matplotlib as extra deps, not core.
    - Document noisy-observation smoke recipes (noiseless \(Y\) drives white→0 and looks pathological).
    - Does **not** make Jupyter the primary share format (CIP-0015 remains native-first).
 
-6. **Follow-ups (not this CIP’s close criteria)**
+7. **Follow-ups (not this CIP’s close criteria)**
    - Coreg / `build_XY` once CIP-0015 Phase A helpers exist.
    - Bayesian GPLVM / MRD façades.
    - CIP-0016 load/save helpers on the Python object.
@@ -212,11 +223,13 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 - [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md) — path/unit policy reused from Python
 - [REQ-0005](../requirements/req0005_gpy-aligned-kernel-coverage.md) — kernel catalogue exposed
 - [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md) — subset checklist mirrored; not replaced
+- [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md) — live progress + structured display consumed by Phase B2
 
 ## Implementation Status
 
 - [x] Phase A: package scaffold + NumPy/`CMatrix` bridge
 - [ ] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native (wrapper + smoke tests green; docs/compare open)
+- [ ] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML)
 - [ ] Phase C: sparse DTCVAR façade + pytest
 - [ ] Phase D: subset checklist, negative tests, README install notes
 - [ ] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
@@ -225,6 +238,7 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 ## References
 
 - [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md)
+- [REQ-000F](../requirements/req000F_interceptable-optimiser-model-display.md) / [CIP-001E](./cip001E.md)
 - [CIP-0014](./cip0014.md) / [docs/param-paths.md](../docs/param-paths.md)
 - [CIP-0015](./cip0015.md) (deferred Python bindings → this CIP)
 - [CIP-0016](./cip0016.md) (orthogonal file interchange)

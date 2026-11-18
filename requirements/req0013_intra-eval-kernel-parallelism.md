@@ -1,7 +1,7 @@
 ---
 id: "0013"
 title: "Intra-evaluation covariance work can use BLAS and OpenMP without app-managed threads"
-status: "Proposed"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"

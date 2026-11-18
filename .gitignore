@@ -49,10 +49,13 @@ __pycache__/
 gp
 gplvm
 ivm
+/ppa
 demo_regression_1d
 demo_sparse_dtcvar
 testGp
 testOptimisable
+/testPpa
+/testIvm
 diagDtcvar
 genTestGpDtcvar
 diag_dtc_state.txt

@@ -20,10 +20,36 @@ def test_construct_and_paths():
     m = gpc.GPRegression(X, Y)
     assert m.n == 12
     assert m.input_dim == 1
+    assert m.kernel_type == "rbf"
     paths = m.param_paths()
     assert any("rbf" in p for p in paths)
     m.set_by_path("rbf.lengthscale", 0.5)
     assert m.get_by_path("rbf.lengthscale") == pytest.approx(0.5)
+
+
+def test_expquad_kernel_paths():
+    """CIP-0024: GPy ExpQuad lengthscale-first surface via kernel='eq'."""
+    X, Y = _toy()
+    m = gpc.GPRegression(X, Y, kernel="ExpQuad")
+    assert m.kernel_type == "eq"
+    paths = m.param_paths()
+    assert any("ExpQuad." in p for p in paths)
+    assert not any("rbf." in p for p in paths)
+    # Model paths are kern.ExpQuad.*; bare ExpQuad.* is also accepted.
+    m.set_by_path("ExpQuad.lengthscale", 0.5)
+    assert m.get_by_path("ExpQuad.lengthscale") == pytest.approx(0.5)
+    assert m.get_by_path("kern.ExpQuad.lengthscale") == pytest.approx(0.5)
+    m.set_by_path("ExpQuad.variance", 1.25)
+    assert m.get_by_path("ExpQuad.variance") == pytest.approx(1.25)
+    before = m.objective()
+    m.optimize(iters=15)
+    assert m.objective() <= before + 1e-6
+
+
+def test_unknown_kernel_raises():
+    X, Y = _toy()
+    with pytest.raises(gpc.GpcError):
+        gpc.GPRegression(X, Y, kernel="matern32")
 
 
 def test_optimize_and_predict():

@@ -226,7 +226,7 @@ void CClppa::relearn()
   int numNoiseParams = pmodel->noise.getNumParams();
   CMatrix noiseParams(1, numNoiseParams);
   pmodel->noise.getParams(noiseParams);
-  pmodel->noise.setTarget(y);
+  pmodel->noise.setTarget(&y);
   pmodel->noise.setParams(noiseParams);
   CPpa model(X, y, pmodel->kern, pmodel->noise, getVerbosity());
   model.optimise(extIters, kernIters, noiseIters);
@@ -659,7 +659,7 @@ void CClppa::learn()
 
   kern.addKern(whiteKern);
   
-  noise->setTarget(y);
+  noise->setTarget(&y);
   noise->initParams();
   CPpa model(X, y, kern, *noise, getVerbosity());
   model.optimise(extIters, kernIters, noiseIters);
@@ -1082,7 +1082,7 @@ void CClppa::gnuplot()
     }
   if(pmodel->noise.getType()=="probit" || pmodel->noise.getType()=="ncnm")
     {
-      pmodel->activeX.toFile(name+"_active_set.dat");
+      pmodel->activeX.toUnheadedFile(name+"_active_set.dat");
       int numPos = 0;
       int numNeg = 0;
       int numUnlab = 0;
@@ -1095,9 +1095,16 @@ void CClppa::gnuplot()
 	  else
 	    numUnlab++;
 	}
-      CMatrix XPos(numPos, X.getCols()+1);
-      CMatrix XNeg(numNeg, X.getCols()+1);
-      CMatrix XUnlab(numUnlab, X.getCols()+1);
+      // Avoid CMatrix(0, c) under GPC_CHECKS (BOUNDCHECK); match ivm.cpp.
+      CMatrix XPos;
+      CMatrix XNeg;
+      CMatrix XUnlab;
+      if(numPos>0)
+	XPos.resize(numPos, X.getCols()+1);
+      if(numNeg>0)
+	XNeg.resize(numNeg, X.getCols()+1);
+      if(numUnlab>0)
+	XUnlab.resize(numUnlab, X.getCols()+1);
       int posIndex = 0;
       int negIndex = 0;
       int unlabIndex = 0;
@@ -1126,11 +1133,11 @@ void CClppa::gnuplot()
 	    }
 	}
       if(numPos>0)
-	XPos.toFile(name+"_positive.dat");
+	XPos.toUnheadedFile(name+"_positive.dat");
       if(numNeg>0)
-	XNeg.toFile(name+"_negative.dat");
+	XNeg.toUnheadedFile(name+"_negative.dat");
       if(numUnlab>0)
-	XUnlab.toFile(name+"_unlabelled.dat");
+	XUnlab.toUnheadedFile(name+"_unlabelled.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);
@@ -1175,7 +1182,7 @@ void CClppa::gnuplot()
       out << "# Prepared plot of model file " << endl;
       for(int i=0; i<numy; i++)
 	{
-	  probOut[i]->toStream(out);
+	  probOut[i]->toUnheadedStream(out);
 	  out << endl;
 	}
       out.close();
@@ -1226,7 +1233,7 @@ void CClppa::gnuplot()
 	  scatterActive.setVal(pmodel->trainY.getVal(i, 0), i, pmodel->activeX.getCols());
 	}
       
-      scatterActive.toFile(name+"_active_set.dat");
+      scatterActive.toUnheadedFile(name+"_active_set.dat");
       CMatrix scatterData(X.getRows(), X.getCols()+1);
       for(int i=0; i<X.getRows(); i++)
 	{
@@ -1234,7 +1241,7 @@ void CClppa::gnuplot()
 	    scatterData.setVal(X.getVal(i, j), i, j);
 	  scatterData.setVal(y.getVal(i, 0), i, X.getCols());
 	}
-      scatterData.toFile(name+"_scatter_data.dat");
+      scatterData.toUnheadedFile(name+"_scatter_data.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);
@@ -1280,7 +1287,7 @@ void CClppa::gnuplot()
 	  out << "# Prepared plot of model file " << endl;
 	  for(int i=0; i<numy; i++)
 	    {
-	      regressOut[i]->toStream(out);
+	      regressOut[i]->toUnheadedStream(out);
 	      out << endl;
 	    }
 	  out.close();
@@ -1325,7 +1332,7 @@ void CClppa::gnuplot()
 	      errorBarMinus.setVal(val - stdVals.getVal(j), j, 1);
 	    }
 	  string lineFile = name + "_line_data.dat";
-	  regressOut.toFile(lineFile);
+	  regressOut.toUnheadedFile(lineFile);
 	  string errorFile = name + "_error_bar_data.dat";
 	  ofstream out(errorFile.c_str());
 	  if(!out) throw ndlexceptions::FileWriteError(errorFile);

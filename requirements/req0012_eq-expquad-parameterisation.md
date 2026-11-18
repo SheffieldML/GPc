@@ -1,7 +1,7 @@
 ---
 id: "0012"
 title: "Squared-exponential covariance exposes GPy ExpQuad lengthscale-first parameterisation"
-status: "Ready"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -54,3 +54,6 @@ Internal storage may still use `inverseWidth` for a shared engine with `CRbfKern
 
 ### 2026-11-18
 Drafted as REQ-0011 alongside an early CIP-0022 sketch; renumbered to **REQ-0012** / **CIP-0024** after CIP-0022+REQ-0011 were claimed by CSV/pods work, and CIP-0023 by PPA renumber. Centred on lengthscale-first ExpQuad parameterisation. Moved to **Ready** when CIP-0024 was Accepted.
+
+### 2026-11-18 (later)
+PPA integrated on main; CIP-0024 → In Progress on `cip0024-eq-expquad`.

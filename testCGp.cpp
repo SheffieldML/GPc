@@ -1193,6 +1193,65 @@ int testBlocksAndApi()
   return fail;
 }
 
+int testWhiteNoiseInducing()
+{
+  int fail = 0;
+  cout << "==== testCGp white-noise inducing (CIP-001C) ====" << endl;
+
+  // Smoke: RBF+White compound, DTCVAR, few SCG iters, finite LL.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingFixed(false);
+    toy.model->setInducingType("whitenoise");
+    fail += failTrue(toy.model->getInducingType() == "whitenoise", "inducing type whitenoise");
+    const double ll0 = toy.model->logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "WN DTCVAR initial LL finite");
+    toy.model->setDefaultOptimiser(CGp::SCG);
+    toy.model->setVerbosity(0);
+    toy.model->optimise(5);
+    const double ll1 = toy.model->logLikelihood();
+    fail += failTrue(std::isfinite(ll1), "WN DTCVAR after optimise LL finite");
+    const double meff = toy.model->getEffectiveInducingCount();
+    fail += failTrue(std::isfinite(meff) && meff >= 0.0 && meff <= (double)M_ACTIVE + 1e-8,
+                     "Meff in [0,M]");
+  }
+
+  // Equivalence: pure RBF, s = ell/sqrt(2) ⇒ point vs WN LL within 1e-8.
+  {
+    CMatrix X(N, Q), y(N, 1), Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    CRbfKern kern(X);
+    kern.setInverseWidth(2.0);
+    kern.setVariance(1.5);
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+
+    CGp pt(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    pt.setInducingVals(Xu);
+    pt.setInducingFixed(true);
+    pt.setBetaVal(10.0);
+    pt.setInducingType("points");
+
+    CGp wn(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    wn.setInducingVals(Xu);
+    wn.setInducingFixed(true);
+    wn.setBetaVal(10.0);
+    wn.setInducingType("whitenoise");
+    const double ell = kern.getLengthScale();
+    wn.getInducing()->setWindowWidth(ell / sqrt(2.0));
+
+    const double llPt = pt.logLikelihood();
+    const double llWn = wn.logLikelihood();
+    const double diff = fabs(llPt - llWn);
+    cout << "point LL=" << llPt << " WN LL=" << llWn << " |diff|=" << diff << endl;
+    fail += failTrue(diff < 1e-8, "point vs WN LL equivalence at s=ell/sqrt(2)");
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -1210,6 +1269,7 @@ int main()
     fail += testBlocksAndApi();
     fail += testFixMask();
     fail += testModelPaths();
+    fail += testWhiteNoiseInducing();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

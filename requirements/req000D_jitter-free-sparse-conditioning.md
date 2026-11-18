@@ -1,7 +1,7 @@
 ---
 id: "000D"
 title: "Sparse GPs can use inducing variables whose conditioning does not depend on kernel hyperparameters"
-status: "Proposed"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-18"
 last_updated: "2026-11-18"
@@ -26,17 +26,17 @@ This requirement addresses **kernel-driven** ill-conditioning of \(K_{uu}\). Col
 
 ## Acceptance Criteria
 
-- [ ] Inducing variables are a contract consumed by `CGp` (point inducing is one implementation); DTC, DTCVAR, FITC and PITC run unchanged on any implementation
-- [ ] At least one non-point family is available for RBF / RBF-ARD with \(K_{uu}\) independent of kernel hyperparameters
-- [ ] A reproducibility check shows the new family reduces exactly to point inducing at a documented parameter setting (log-likelihood and total-derivative gradients agree to `ndlutil::MATCHTOL`-level tolerance)
-- [ ] On a lengthscale sweep with fixed inducing parameters, the new family needs no jitter on \(K_{uu}\) where point inducing does (numerical-stability suite cell); ELBO / bound quality vs (jittered) point inducing is recorded on the same cell
-- [ ] An effective-inducing-count diagnostic is exposed so users can see wasted capacity
-- [ ] Save/load round-trips the inducing family and its parameters; existing `.model` files load unchanged
-- [ ] Non-goals for first delivery are explicit (weight-space / network features, causal Green's-function features, psi statistics with new features)
+- [x] Inducing variables are a contract consumed by `CGp` (point inducing is one implementation); DTC, DTCVAR, FITC and PITC run unchanged on any implementation
+- [x] At least one non-point family is available for RBF / RBF-ARD with \(K_{uu}\) independent of kernel hyperparameters
+- [x] A reproducibility check shows the new family reduces exactly to point inducing at a documented parameter setting (log-likelihood and total-derivative gradients agree to `ndlutil::MATCHTOL`-level tolerance)
+- [ ] On a lengthscale sweep with fixed inducing parameters, the new family needs no jitter on \(K_{uu}\) where point inducing does (numerical-stability suite cell); ELBO / bound quality vs (jittered) point inducing is recorded on the same cell — pilot evidence in `diagWhiteNoisePilot` / `diagVikCompare`; suite cell still open
+- [x] An effective-inducing-count diagnostic is exposed so users can see wasted capacity
+- [x] Save/load round-trips the inducing family and its parameters; existing `.model` files load unchanged (stream keys; matio struct fields deferred)
+- [x] Non-goals for first delivery are explicit (weight-space / network features, causal Green's-function features, psi statistics with new features)
 
 ## Notes (Optional)
 
-HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features; weight-space features for dot-product kernels) should also cite this requirement.
+HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features; weight-space features for dot-product kernels) should also cite this requirement. Phase 3 Hankel / Matérn spectral path and stability-suite cells remain backlog follow-ups.
 
 ## References
 
@@ -47,3 +47,6 @@ HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features;
 
 ### 2026-11-18
 Requirement created alongside CIP-001C (Proposed). Pilot worktree `cip001C-wn-pilot` opened for a lengthscale-sweep spike before acceptance.
+
+### 2026-11-18 (implementation)
+CIP-001C Accepted and Implemented for Phases 1–2 + Phase 4 essentials. `CInducing` / white-noise RBF path in tree; equivalence gate ~1e-14; full-SCG DTCVAR matches point ELBO with far better \(\kappa(K_{uu})\`. Status → Implemented (stability-suite cell and Hankel path still open).

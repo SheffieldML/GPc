@@ -240,6 +240,18 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
                           const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                           bool add=false) const;
 
+  // White-noise inducing cross-covariance (CIP-001C Phase 2).
+  // Kfu is N×M; defaults throw NotImplementedError.
+  virtual void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  virtual void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                            const CMatrix& gKfu) const;
+  virtual void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                       const CMatrix& gKfu) const;
+
   virtual bool isUpdateXused() const
   {
     return updateXused;
@@ -633,6 +645,15 @@ class CCmpndKern: public CComponentKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                    const CMatrix& gKfu) const;
+  void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
 private:
   void _init();
 };
@@ -721,6 +742,15 @@ class CWhiteKern: public CKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                    const CMatrix& gKfu) const;
+  void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -807,6 +837,7 @@ class CBiasKern: public CKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
 
  private:
   void _init();
@@ -871,6 +902,15 @@ class CRbfKern: public CStationaryKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                    const CMatrix& gKfu) const;
+  void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1275,6 +1315,15 @@ class CRbfardKern: public CArdKern {
                   const CMatrix& dL_dpsi0, const CMatrix& dL_dpsi1, const CMatrix& dL_dpsi2,
                   const CMatrix& mu, const CMatrix& S, const CMatrix& Z,
                   bool add=false) const;
+  void wnCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void wnGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                    const CMatrix& gKfu) const;
+  void wnGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
+  void wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+               const CMatrix& gKfu) const;
 
  private:
   void _init();

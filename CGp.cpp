@@ -2,6 +2,9 @@
 #include "CCholAdjoint.h"
 #include "CLQAdjoint.h"
 #include <cmath>
+#include <cstdlib>
+#include <vector>
+#include "ndlstrutil.h"
 CGp::CGp() 
   : CMapModel(), CProbabilisticOptimisable()
 {
@@ -111,6 +114,13 @@ void CGp::_init()
   sparseLinalgMode = SparseLinalgLQ;
   setApproximationType(FTC);
   numActive = 0;
+  pInducing = 0;
+}
+
+CGp::~CGp()
+{
+  delete pInducing;
+  pInducing = 0;
 }
 
 void CGp::initKernStoreage() 
@@ -147,6 +157,9 @@ void CGp::initSparseStoreage()
   if (isSparseApproximation()) 
   {
     X_u.resize(numActive, getInputDim());
+    // CIP-001C: default point inducing aliases X_u storage.
+    if(pInducing == 0)
+      pInducing = new CInducingPoints(&X_u);
     if (!isInducingFixed()) 
     {
       gX_u.resize(numActive, getInputDim());
@@ -554,6 +567,92 @@ bool CGp::isFixed(const string& path) const
   return scaleParamFixed[index];
 }
 
+void CGp::setInducing(CInducing* pInd)
+{
+  if(!isSparseApproximation())
+    throw ndlexceptions::Error("setInducing requires a sparse approximation.");
+  if(pInd == 0)
+    throw ndlexceptions::Error("setInducing requires a non-null inducing object.");
+  delete pInducing;
+  pInducing = pInd;
+  setKupToDate(false);
+}
+
+void CGp::setInducingType(const string& typeName)
+{
+  if(!isSparseApproximation())
+    throw ndlexceptions::Error("setInducingType requires a sparse approximation.");
+  if(typeName == "points")
+  {
+    delete pInducing;
+    pInducing = new CInducingPoints(&X_u);
+  }
+  else if(typeName == "whitenoise")
+  {
+    double s0 = CInducingWhiteNoise::medianSpacing(X_u);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    delete pInducing;
+    pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+  }
+  else
+    throw ndlexceptions::Error("Unknown inducing type (use points or whitenoise): " + typeName);
+  setKupToDate(false);
+}
+
+string CGp::getInducingType() const
+{
+  if(pInducing == 0)
+    return "points";
+  return pInducing->typeName();
+}
+
+double CGp::getEffectiveInducingCount() const
+{
+  if(!isSparseApproximation())
+    return 0.0;
+  ensureADUpToDate();
+  const unsigned int M = numActive;
+  if(M == 0)
+    return 0.0;
+  // Meff = M - tr(C^{-1}). Whitened path: solve against LcholC.
+  // Legacy: C ≡ β A Kuu^{-1} is not formed; use A and Kuu via
+  // tr(C^{-1}) = tr(β^{-1} Kuu A^{-1}) when spherical, but cheapest
+  // consistent diagnostic on legacy is from Ainv if present.
+  if(isWhitenedSparseLinalg())
+  {
+    CMatrix Inv(M, M);
+    Inv.eye();
+    Inv.trsm(LcholC, 1.0, "l", "u", "t", "n");
+    Inv.trsm(LcholC, 1.0, "l", "u", "n", "n");
+    double trInv = 0.0;
+    for(unsigned int i = 0; i < M; i++)
+      trInv += Inv.getVal(i, i);
+    return (double)M - trInv;
+  }
+  // Legacy: tr(C^{-1}) with C = I + β B B^T ≈ use Ainv Kuu scaled.
+  // |A| = |C| |Kuu| / β^M ⇒ C^{-1} related; form via whitening on the fly.
+  CMatrix Btmp(M, getNumData());
+  _whitenKuf(Btmp, K_uf);
+  CMatrix Ctmp(M, M);
+  Ctmp.eye();
+  const double betaVal = getBetaVal();
+  Ctmp.syrk(Btmp, betaVal, 1.0, "u", "n");
+  Ctmp.setSymmetric(true);
+  CMatrix Lc(M, M);
+  Lc.deepCopy(Ctmp);
+  Lc.chol();
+  Lc.setTriangular(true);
+  CMatrix Inv(M, M);
+  Inv.eye();
+  Inv.trsm(Lc, 1.0, "l", "u", "t", "n");
+  Inv.trsm(Lc, 1.0, "l", "u", "n", "n");
+  double trInv = 0.0;
+  for(unsigned int i = 0; i < M; i++)
+    trInv += Inv.getVal(i, i);
+  return (double)M - trInv;
+}
+
 unsigned int CGp::getOptNumParams() const
 {
   int tot = 0;
@@ -580,7 +679,10 @@ unsigned int CGp::getOptNumParams() const
   {
     if(!isInducingFixed()) 
     {
-      tot += numActive*getInputDim();
+      if(pInducing != 0)
+        tot += pInducing->getNumParams();
+      else
+        tot += numActive*getInputDim();
     }
     if(!betaFixed)
       tot++; // for beta value.
@@ -624,13 +726,21 @@ void CGp::getOptParams(CMatrix& param) const
   {
     if(!isInducingFixed()) 
     {
-      for(unsigned int j=0; j<getInputDim(); j++) 
-      { 
-	for(unsigned int i=0; i<numActive; i++) 
-	{
-	  param.setVal(X_u.getVal(i, j), counter);
-	  counter++;
-	}
+      if(pInducing != 0)
+      {
+        pInducing->getParams(param, counter);
+        counter += pInducing->getNumParams();
+      }
+      else
+      {
+        for(unsigned int j=0; j<getInputDim(); j++) 
+        { 
+          for(unsigned int i=0; i<numActive; i++) 
+          {
+            param.setVal(X_u.getVal(i, j), counter);
+            counter++;
+          }
+        }
       }
     }
   }
@@ -687,12 +797,20 @@ void CGp::setOptParams(const CMatrix& param)
   {
     if(!isInducingFixed()) 
     {
-      for(unsigned int j=0; j<getInputDim(); j++) 
+      if(pInducing != 0)
       {
-        for(unsigned int i=0; i<numActive; i++) 
+        pInducing->setParams(param, counter);
+        counter += pInducing->getNumParams();
+      }
+      else
+      {
+        for(unsigned int j=0; j<getInputDim(); j++) 
         {
-          X_u.setVal(param.getVal(counter), i, j);
-          counter++;
+          for(unsigned int i=0; i<numActive; i++) 
+          {
+            X_u.setVal(param.getVal(counter), i, j);
+            counter++;
+          }
         }
       }
     }
@@ -866,8 +984,11 @@ void CGp::_testComputeKx(CMatrix &kX, const CMatrix& Xin) const
 {
   if(isSparseApproximation())
   {
-    DIMENSIONMATCH(kX.getRows()==X_u.getRows() && kX.getCols()==Xin.getRows());  
-    pkern->compute(kX, X_u, Xin);
+    DIMENSIONMATCH(kX.getRows()==X_u.getRows() && kX.getCols()==Xin.getRows());
+    if(pInducing != 0)
+      pInducing->computeKux(kX, *pkern, Xin);
+    else
+      pkern->compute(kX, X_u, Xin);
   }
   else
   {
@@ -1059,8 +1180,16 @@ void CGp::_updateK() const
   case DTCVAR:
   case FITC:
   case PITC:
-    pkern->compute(K_uu, X_u);
-    pkern->compute(K_uf, X_u, *pX);
+    if(pInducing != 0)
+    {
+      pInducing->computeKuu(K_uu, *pkern);
+      pInducing->computeKuf(K_uf, *pkern, *pX);
+    }
+    else
+    {
+      pkern->compute(K_uu, X_u);
+      pkern->compute(K_uf, X_u, *pX);
+    }
     break;
   }
   switch(getApproximationType()) 
@@ -1628,6 +1757,7 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   {
     if(!isInducingFixed()) 
     {
+      // Centre grads live in gX_u (inducing params; s fixed by default).
       for(unsigned int j=0; j<getInputDim(); j++) 
       {
         for(unsigned int i=0; i<numActive; i++) 
@@ -1739,47 +1869,56 @@ void CGp::updateG() const
   case FITC:
   case PITC:
     gpCovGrads();
-    pkern->getGradTransParams(tempG, X_u, gK_uu, true);
-    // should we regularize here? I.e. should the true at the end be false?
-    pkern->getGradTransParams(tempG2, X_u, *pX, gK_uf, true);
-    for(unsigned int i=0; i<numKernParams; i++) 
+    if(pInducing != 0)
     {
-      g_param.addVal(tempG.getVal(i), i);
-      g_param.addVal(tempG2.getVal(i), i);
+      CMatrix* gXptr = isOptimiseX() ? &gXorW : 0;
+      pInducing->gradFromKuuKuf(g_param, gX_u, gXptr, *pkern, *pX,
+                               gK_uu, gK_uf, isOptimiseX(), true);
     }
-    if(!isInducingFixed()) 
+    else
     {
-      // Compute gradients with respect to X_u
-      pkern->getDiagGradX(dgKX, X_u);
-      // compute portion associated with gK_uf
-      for(unsigned int i=0; i<numActive; i++) 
+      pkern->getGradTransParams(tempG, X_u, gK_uu, true);
+      // should we regularize here? I.e. should the true at the end be false?
+      pkern->getGradTransParams(tempG2, X_u, *pX, gK_uf, true);
+      for(unsigned int i=0; i<numKernParams; i++) 
       {
-        pkern->getGradX(gKX_uf, X_u, i, *pX);
-        pkern->getGradX(gKX, X_u, i, X_u);
-        gKX.scale(2.0); // accounts for fact that covGrad is symmetric.
-        gKX.copyRowRow(i, dgKX, i);
-        gX_u.resize(numActive, getInputDim());
-        for(unsigned int j=0; j<getInputDim(); j++) 
-        {
-          gX_u.setVal(gKX.dotColCol(j, gK_uu, i), i, j);
-        }
-        for(unsigned int j=0; j<getInputDim(); j++) 
-        {
-          gX_u.addVal(gKX_uf.dotColRow(j, gK_uf, i), i, j); 
-        }
+        g_param.addVal(tempG.getVal(i), i);
+        g_param.addVal(tempG2.getVal(i), i);
       }
-      if(isOptimiseX())
+      if(!isInducingFixed()) 
       {
-	// for FITC and PITC need extra terms (see matlab code). This
-	// is sufficient for DTC and DTCVAR.
-	for(unsigned int i=0; i<getNumData(); i++)
-	{
-	  pkern->getGradX(gKX_uf2, *pX, i, X_u);
-	  for(unsigned int j=0; j<getInputDim(); j++)
-	  {
-	    gXorW.setVal(gKX_uf2.dotColCol(j, gK_uf, i), i, j);
-	  }
-	}
+        // Compute gradients with respect to X_u
+        pkern->getDiagGradX(dgKX, X_u);
+        // compute portion associated with gK_uf
+        for(unsigned int i=0; i<numActive; i++) 
+        {
+          pkern->getGradX(gKX_uf, X_u, i, *pX);
+          pkern->getGradX(gKX, X_u, i, X_u);
+          gKX.scale(2.0); // accounts for fact that covGrad is symmetric.
+          gKX.copyRowRow(i, dgKX, i);
+          gX_u.resize(numActive, getInputDim());
+          for(unsigned int j=0; j<getInputDim(); j++) 
+          {
+            gX_u.setVal(gKX.dotColCol(j, gK_uu, i), i, j);
+          }
+          for(unsigned int j=0; j<getInputDim(); j++) 
+          {
+            gX_u.addVal(gKX_uf.dotColRow(j, gK_uf, i), i, j); 
+          }
+        }
+        if(isOptimiseX())
+        {
+          // for FITC and PITC need extra terms (see matlab code). This
+          // is sufficient for DTC and DTCVAR.
+          for(unsigned int i=0; i<getNumData(); i++)
+          {
+            pkern->getGradX(gKX_uf2, *pX, i, X_u);
+            for(unsigned int j=0; j<getInputDim(); j++)
+            {
+              gXorW.setVal(gKX_uf2.dotColCol(j, gK_uf, i), i, j);
+            }
+          }
+        }
       }
     }
     break;
@@ -2874,6 +3013,56 @@ void CGp::readParamsFromStream(istream& in)
     X_u.fromStream(in);
     if(X_u.getCols()!=getInputDim())
       throw ndlexceptions::StreamFormatError("inputDim", "X_u columns doesn't match input dimension.");
+    // CIP-001C optional keys (absent ⇒ points). Peek without failing old files.
+    string inducingType = "points";
+    double windowWidth = -1.0;
+    if(in.good() && !in.eof())
+    {
+      streampos pos = in.tellg();
+      string line;
+      if(ndlstrutil::getline(in, line) && line.size() > 0)
+      {
+        vector<string> tokens;
+        ndlstrutil::tokenise(tokens, line, "=");
+        if(tokens.size() == 2 && tokens[0] == "inducingType")
+        {
+          inducingType = tokens[1];
+          if(inducingType == "whitenoise" && in.good() && !in.eof())
+          {
+            streampos pos2 = in.tellg();
+            string line2;
+            if(ndlstrutil::getline(in, line2) && line2.size() > 0)
+            {
+              vector<string> t2;
+              ndlstrutil::tokenise(t2, line2, "=");
+              if(t2.size() == 2 && t2[0] == "windowWidth")
+                windowWidth = atof(t2[1].c_str());
+              else
+                in.seekg(pos2);
+            }
+          }
+        }
+        else
+          in.seekg(pos);
+      }
+      else if(pos != streampos(-1))
+        in.seekg(pos);
+    }
+    if(inducingType == "whitenoise")
+    {
+      double s0 = windowWidth;
+      if(!(s0 > 0.0))
+        s0 = CInducingWhiteNoise::medianSpacing(X_u);
+      if(!(s0 > 0.0))
+        s0 = 1.0;
+      delete pInducing;
+      pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+    }
+    else
+    {
+      delete pInducing;
+      pInducing = new CInducingPoints(&X_u);
+    }
   }
   setMupToDate(false);
   // Don't update M as you need py to be set for that.
@@ -2903,6 +3092,11 @@ void CGp::writeParamsToStream(ostream& out) const
   {
     writeToStream(out, "fixInducing", isInducingFixed());
     X_u.toStream(out);
+    // CIP-001C: additive keys (absent on load ⇒ points).
+    const string indType = getInducingType();
+    writeToStream(out, "inducingType", indType);
+    if(indType == "whitenoise" && pInducing != 0)
+      writeToStream(out, "windowWidth", pInducing->getWindowWidth());
   }
   //py->toStream(out);
   //pX->toStream(out);

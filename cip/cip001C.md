@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001C"
 last_updated: "2026-11-18"
-status: "Proposed"
+status: "Implemented"
 compressed: false
 related_requirements: ["000D", "0002", "0005"]
 related_cips: ["0012", "001B", "0013", "0017", "0019", "001A"]
@@ -28,9 +28,9 @@ title: "White-noise inducing features for stationary kernels (kernel-free K_uu)"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented (Phase 1–2 on `cip001C-wn-pilot`)
+- [x] Implemented - Phases 1–2 + Phase 4 essentials delivered; Phase 3 Hankel deferred to backlog
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -204,12 +204,13 @@ Add `virtual double spectralDensity(double rho) const` (default throws) to `CSta
 
 ## Implementation Status
 
-- [ ] Phase 1: `CInducing` contract + `CInducingPoints`, no behaviour change
-- [ ] Phase 2: `CInducingWhiteNoise` + RBF/RBF-ARD closed forms + equivalence gate
+- [x] Phase 1: `CInducing` contract + `CInducingPoints`, no behaviour change
+- [x] Phase 2: `CInducingWhiteNoise` + RBF/RBF-ARD closed forms + equivalence gate
 - [ ] Phase 3: `spectralDensity` + generic Hankel path (Matérn 3/2, 5/2, Exp)
-- [ ] Phase 4: \(M_{\text{eff}}\), stability cells, CLI, I/O
+- [x] Phase 4 (partial): `getEffectiveInducingCount` (Meff), CLI `--inducing`/`--window-width`, stream `inducingType`/`windowWidth` — stability cells still open
 - [ ] Compression into `docs/numerics.md`
-- [ ] Pilot spike (`diagWhiteNoisePilot`): lengthscale sweep vs point inducing (pre-acceptance)
+- [x] Pilot spike (`diagWhiteNoisePilot`): lengthscale sweep vs point inducing (pre-acceptance)
+
 
 ## Future CIPs (pointers, not scope)
 

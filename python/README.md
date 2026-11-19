@@ -32,6 +32,18 @@ pytest -q python/tests
 
 `python/Makefile` stays supported for editable development without scikit-build.
 
+### Binary wheels (CIP-002C)
+
+GitHub Actions workflow [`.github/workflows/wheels.yml`](../.github/workflows/wheels.yml) builds manylinux and macOS wheels with **cibuildwheel** (soft gate until soak). Config lives in this `pyproject.toml` under `[tool.cibuildwheel]`.
+
+- **Linux:** `auditwheel` vendors OpenBLAS + libgfortran into the wheel.
+- **macOS:** `delocate` vendors the same; `MACOSX_DEPLOYMENT_TARGET` is aligned to Homebrew bottle `minOS` on the runner (currently `macos-15` → typically 15.x). Wheels are self-contained (no Homebrew at import). Lowering the macOS floor further needs rebuilding OpenBLAS/gfortran from source, not stock brew bottles.
+- **CI checks:** `python/scripts/check_native_deps.py` plus `pytest` on the repaired wheel.
+
+Ordinary users will eventually `pip install` a published wheel (Phase C); until then, use the editable path above. Windows wheels are Phase D (after CIP-002B).
+
+**Threading:** for wheel installs set `OPENBLAS_NUM_THREADS=1` (and avoid nesting with OpenMP; see [CIP-001F](../cip/cip001F.md) / [docs/build-and-ci.md](../docs/build-and-ci.md)) unless you have measured otherwise. CI wheel tests set this already.
+
 Optional extras (not required for `import gpc` or core tests):
 
 ```bash

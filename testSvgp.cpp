@@ -496,6 +496,31 @@ int main()
         cout << "  info: probit ELBO prior=" << L0 << " after natgrad=" << L1 << endl;
         expect(L1 > L0, "Phase 4: probit Gauss-Hermite natgrad increases ELBO");
         expect(isfinite(L1), "Phase 4: probit ELBO is finite");
+
+        // Error / default paths for patch coverage of ndlutil + CNoise base.
+        {
+          vector<double> x, w;
+          bool threw = false;
+          try { ndlutil::gaussHermite(10, x, w); } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: gaussHermite rejects n != 20");
+          threw = false;
+          double dgMu = 0.0, dgVar = 0.0;
+          try {
+            ndlutil::gaussHermiteExpect(-1.0, -0.5, 20,
+              [](double, void*) { return 0.0; },
+              [](double, void*) { return 0.0; },
+              nullptr, dgMu, dgVar);
+          } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: gaussHermiteExpect rejects negative var");
+          threw = false;
+          COrderedNoise ono(&y, 3);
+          try { ono.expectedLogLikelihood(0.0, 0.0, 1.0, dgMu, dgVar); }
+          catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: base expectedLogLikelihood throws for ordered");
+          threw = false;
+          try { CAdam bad(-1.0); } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 3: CAdam rejects non-positive learning rate");
+        }
       }
     }
   catch(ndlexceptions::Error& e)

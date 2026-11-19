@@ -1757,6 +1757,114 @@ int testWeightSpaceInducingPhase1b()
   return fail;
 }
 
+int testWeightSpaceInducingPhase2()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 2 arccos (CIP-0028) ====" << endl;
+
+  // Kernel basics: order 0/1 PSD-ish diag, stream round-trip.
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    fillXy(X, y);
+    CArcCosineKern k0(X);
+    k0.setOrder(0);
+    k0.setVariance(1.3);
+    fail += failTrue(fabs(k0.diagComputeElement(X, 0) - 1.3 * (M_PI / 2.0)) < 1e-12,
+                     "arccos0 diag = variance * pi/2");
+    CArcCosineKern k1(X);
+    k1.setOrder(1);
+    k1.setVariance(0.8);
+    fail += failTrue(k1.diagComputeElement(X, 0) > 0.0, "arccos1 diag positive");
+
+    ostringstream out;
+    k0.toStream(out);
+    istringstream in(out.str());
+    CKern* round = readKernFromStream(in);
+    CArcCosineKern* ak = dynamic_cast<CArcCosineKern*>(round);
+    fail += failTrue(ak != 0 && ak->getOrder() == 0, "stream restore arccos order 0");
+    fail += failTrue(ak != 0 && fabs(ak->getVariance() - 1.3) < 1e-12,
+                     "stream restore arccos variance");
+    delete round;
+  }
+
+  // Large-(w,b) MLP wsCross shape correlates with arccos order-0 formula.
+  {
+    CMatrix X(4, 1);
+    for(unsigned int i = 0; i < 4; i++)
+      X.setVal(-0.8 + 0.5 * (double)i, i, 0);
+    CMlpKern mlp(X);
+    const double big = 1.0e6;
+    mlp.setParam(big, 0);
+    mlp.setParam(big, 1);
+    mlp.setParam(1.0, 2);
+    CArcCosineKern arc(X);
+    arc.setOrder(0);
+    arc.setVariance(1.0);
+    CMatrix W(3, 2);
+    W.setVal(0.2, 0, 0); W.setVal(0.9, 0, 1);
+    W.setVal(-0.4, 1, 0); W.setVal(1.1, 1, 1);
+    W.setVal(0.0, 2, 0); W.setVal(0.7, 2, 1);
+    const double s = 0.5;
+    CMatrix Km(4, 3);
+    CMatrix Ka(4, 3);
+    mlp.wsCrossCompute(Km, X, W, s);
+    arc.wsCrossCompute(Ka, X, W, s);
+    double dot = 0.0, nm = 0.0, na = 0.0;
+    for(unsigned int n = 0; n < 4; n++)
+      for(unsigned int m = 0; m < 3; m++)
+      {
+        const double a = Km.getVal(n, m);
+        const double b = Ka.getVal(n, m);
+        dot += a * b;
+        nm += a * a;
+        na += b * b;
+      }
+    const double corr = dot / (sqrt(nm) * sqrt(na) + 1e-30);
+    fail += failTrue(corr > 0.999, "large-(w,b) MLP ws shape vs arccos0");
+    cout << "  MLP vs arccos0 shape corr=" << corr << endl;
+  }
+
+  // DTCVAR smoke order 0 and order 1 with weightspace.
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    for(unsigned int ord = 0; ord <= 1; ord++)
+    {
+      CCmpndKern kern(X);
+      CArcCosineKern* ak = new CArcCosineKern(X);
+      ak->setOrder(ord);
+      kern.addKern(ak);
+      kern.addKern(new CWhiteKern(X));
+      CGaussianNoise noise(&y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(true);
+      model.setBetaVal(6.0);
+      model.setInducingType("weightspace");
+      model.getInducing()->setWindowWidth(0.4);
+      const string tag = (ord == 0) ? "arccos0" : "arccos1";
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " weightspace DTCVAR LL finite");
+      CMatrix g(1, model.getOptNumParams());
+      fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                       tag + " weightspace DTCVAR grads finite");
+      model.setDefaultOptimiser(CGp::SCG);
+      model.setVerbosity(0);
+      model.optimise(4);
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " weightspace DTCVAR after SCG LL finite");
+    }
+  }
+
+  return fail;
+}
+
 int testGreensInducingPhase0()
 {
   int fail = 0;
@@ -2262,6 +2370,7 @@ int main()
     fail += testWeightSpaceInducingPhase0();
     fail += testWeightSpaceInducingPhase1();
     fail += testWeightSpaceInducingPhase1b();
+    fail += testWeightSpaceInducingPhase2();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

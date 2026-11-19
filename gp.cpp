@@ -105,6 +105,7 @@ void CClgp::learn()
   vector<double> biasVariances;
   vector<double> variances;
   vector<double> degrees;
+  vector<int> arccosOrders;
   vector<bool> selectInputs;
   vector<string> setSpecs;
   bool centreData=true;
@@ -173,7 +174,17 @@ void CClgp::learn()
         biasVariances.push_back(-1.0);
         variances.push_back(-1.0);
         degrees.push_back(-1.0);
+        arccosOrders.push_back(-1);
         selectInputs.push_back(false);
+      }
+      else if (isCurrentArg("--arccos-order", "--arccos-order")) {
+        incrementArgument();
+        if(kernelTypes.size()==0)
+          exitError("Arc-cosine order must come after -k arccos.");
+        if(kernelTypes[kernelTypes.size()-1]!="arccos"
+           && kernelTypes[kernelTypes.size()-1]!="arccosine")
+          exitError("--arccos-order only valid for arccos / arccosine covariance.");
+        arccosOrders[arccosOrders.size()-1]=getIntFromCurrentArgument();
       }
       else if (isCurrentArg("-g", "--gamma")) {
         incrementArgument(); 
@@ -339,6 +350,16 @@ void CClgp::learn()
         kernels[i]->setByPath("weight_variance", weightVariances[i]);
       if(biasVariances[i]!=-1.0)
         kernels[i]->setByPath("bias_variance", biasVariances[i]);
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i] == "arccos" || kernelTypes[i] == "arccosine") {
+      if(selectInputs[i])
+        exitError("Arc-cosine covariance does not map to ARD via -i yet.");
+      CArcCosineKern* ak = new CArcCosineKern(*M);
+      if(arccosOrders[i] >= 0)
+        ak->setOrder((unsigned int)arccosOrders[i]);
+      kernels.push_back(ak);
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
     }
@@ -1032,7 +1053,7 @@ void CClgp::helpInfo()
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
     helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: lq (LQ of [I,A], CIP-001B, default), stable (whitened C + Murray adjoints), or legacy (explicit invK_uu). Prefer --sparse-linalg over -L (short -L collides with Learn-scales).");
-    helpArgument("--inducing points|whitenoise|greens|weightspace", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 weight-space features for MLP/arccos (Phase 0 skeleton; K_fu in later phases).");
+    helpArgument("--inducing points|whitenoise|greens|weightspace", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 MLP/arccos weight-space features.");
     helpArgument("--window-width float", "Fixed window width s (with --inducing whitenoise, greens, or weightspace). Default: median nearest-neighbour spacing of inducing centres.");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
@@ -1043,7 +1064,8 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad lengthscale-first; use -P ExpQuad.lengthscale=…), exp, ratquad, mlp (default rbf). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-0029): ibrownian; (CIP-000D): coregionalize, indexwhite; plus bias/white/ard/tensor/cmpnd.");
+    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad lengthscale-first; use -P ExpQuad.lengthscale=…), exp, ratquad, mlp, arccos (CIP-0028; default rbf). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-0029): ibrownian; (CIP-000D): coregionalize, indexwhite; plus bias/white/ard/tensor/cmpnd.");
+    helpArgument("--arccos-order int", "Arc-cosine order 0 (angular / infinite-MLP) or 1 (ReLU). Only with -k arccos. Default 0.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
     helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");
     helpArgument("-v, --variance float", "Variance parameter for covariance function.");

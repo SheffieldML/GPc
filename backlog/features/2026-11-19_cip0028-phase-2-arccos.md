@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0028-phase-2-arccos"
 title: "CIP-0028 Phase 2: arc-cosine kernel + weight-space path"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -25,11 +25,11 @@ Implement `CArcCosineKern` (orders 0 and 1) with `testKern`-style checks / FD, s
 
 ## Acceptance Criteria
 
-- [ ] `CArcCosineKern` with order in \(\{0,1\}\); stream type `arccos` / `arccosine`
-- [ ] `wsCross*` for order 0 (infinite-\(\Sigma\) / angular) and order 1 (smoothed ReLU)
-- [ ] CLI `-k arccos` with `--arccos-order`
-- [ ] Gate: large finite \((w,b)\) on `CMlpKern` ws\* approaches order-0 formula
-- [ ] FD / smoke tests green
+- [x] `CArcCosineKern` with order in \(\{0,1\}\); stream type `arccos` / `arccosine`
+- [x] `wsCross*` for order 0 (infinite-\(\Sigma\) / angular) and order 1 (smoothed ReLU)
+- [x] CLI `-k arccos` with `--arccos-order`
+- [x] Gate: large finite \((w,b)\) on `CMlpKern` ws\* approaches order-0 formula
+- [x] FD / smoke tests green
 
 ## Related
 
@@ -43,3 +43,6 @@ Task created (Proposed) after CIP-0028 Accepted.
 
 ### 2026-11-19 (design)
 Order 0 designated as infinite-\((w,b)\) home vs finite-\(\Sigma\) `CMlpKern`; literature positioning vs Dutordoir/Sun in CIP-0028.
+
+### 2026-11-19 (done)
+`CArcCosineKern` + stream/CLI; order-0 ws matches large-\((w,b)\) MLP shape (corr=1); order-1 smoothed ReLU; DTCVAR smoke both orders green.

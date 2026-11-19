@@ -10,12 +10,14 @@ from ._gpc import (
     GPRegression,
     GpcError,
     Matrix,
+    SparseGPRegression,
     matrix_from_numpy,
     matrix_to_numpy,
 )
 
 __all__ = [
     "GPRegression",
+    "SparseGPRegression",
     "Matrix",
     "GpcError",
     "matrix_from_numpy",

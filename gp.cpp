@@ -393,8 +393,9 @@ void CClgp::learn()
       // still need jitter under poor conditioning, as with DTC.
     }
     else if(approxTypeStr=="fitc") {
+      // FITC works on the spherical Gaussian path (testCGp / StableFactor / LQ).
+      // Prefer -A dtcvar for tutorials; FITC remains available for parity/bench.
       approxType = CGp::FITC;
-      exitError("FITC Approximation currently not working.");
     }
     else if(approxTypeStr=="pitc") {
       approxType = CGp::PITC;

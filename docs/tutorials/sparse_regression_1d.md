@@ -1,7 +1,7 @@
 # Sparse 1D GP regression (DTCVAR)
 
 **GPy counterpart:** `sparse_gp_regression` / `SparseGPRegression` (VarDTC-style)  
-**GPc path:** `CGp::DTCVAR` — **not** FITC (CLI FITC still errors out)
+**GPc path:** `CGp::DTCVAR` by default — FITC/DTC also available via `-A fitc` / `-A dtc` (prefer DTCVAR for tutorials)
 
 ## Build
 
@@ -26,7 +26,7 @@ Sparse variational / DTCVAR with an active set (GPy sparse tutorial analogue):
 gnuplot spgp1d_dtcvar_plot.gp
 ```
 
-`-a` is required for any non-`ftc` approximation. Prefer `-A dtcvar` for tutorials; do not use `-A fitc` until that path is restored.
+`-a` is required for any non-`ftc` approximation. Prefer `-A dtcvar` for tutorials; `-A fitc` / `-A dtc` are available for parity and diagnostics.
 
 ## API demo (optional)
 

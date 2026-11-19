@@ -2,15 +2,16 @@
 
 Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay in C++; this package is an ease-of-use boundary for GPy users ([REQ-000E](../requirements/req000E_gpy-facing-python-facade.md)).
 
-## Setup
+## Install / build
 
 ### Makefile path (day-to-day, CIP-001D)
 
-From the repository root (with `make.inc` configured):
+From the repository root (with `make.inc` configured — copy `make.osx` or `make.linux`):
 
 ```bash
 python3 -m venv python/.venv
-python/.venv/bin/pip install pybind11 numpy pytest
+source python/.venv/bin/activate
+pip install pybind11 numpy pytest
 cd python && make && make test
 ```
 
@@ -31,6 +32,14 @@ pytest -q python/tests
 
 `python/Makefile` stays supported for editable development without scikit-build.
 
+Optional extras (not required for `import gpc` or core tests):
+
+```bash
+pip install matplotlib          # gpc[plot]
+pip install pods jupyter        # notebooks / examples
+# or: pip install -e "python/[plot,examples,test]"
+```
+
 ```python
 import numpy as np
 import gpc
@@ -41,32 +50,31 @@ assert m.rows == 2 and m.cols == 2
 np.testing.assert_allclose(m.to_numpy(), X)
 ```
 
-## Phase B (in progress)
+## FTC `GPRegression`
 
 ```python
 import numpy as np
 import gpc
 
 X = np.linspace(0, 1, 20)[:, None]
-Y = np.sin(2 * np.pi * X)
+Y = np.sin(2 * np.pi * X) + 0.05 * np.random.randn(20, 1)
 m = gpc.GPRegression(X, Y)
 m.set_by_path("rbf.lengthscale", 0.2)
 m.optimize(iters=50)
 mu, var = m.predict(X)
 ```
 
-Default kernel is compound RBF + bias + white. Prefer **noisy** observations in smoke tests: noiseless \(Y\) drives `white.variance` → 0 and near-zero predictive variance at training points (correct, but looks broken). `objective()` is **−log-likelihood** (SCG minimises it). SCG may print a max-iteration warning when the budget is hit.
+Default kernel is compound RBF + bias + white. Prefer **noisy** observations: noiseless \(Y\) drives `white.variance` → 0. `objective()` is **−log-likelihood** (SCG minimises it).
+
+- GPy porting fragment: [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md)
+- Tutorial map: [`docs/subset_checklist.md`](docs/subset_checklist.md)
+- Native objective compare: `make test` builds `ref_ftc_objective`
 
 ### GPy ExpQuad → `gpc` (CIP-0024)
 
 GPy’s lengthscale-first squared exponential is `ExpQuad`. Pass `kernel="eq"` (aliases `ExpQuad` / `expquad`) so compound paths use `ExpQuad.*` instead of `rbf.*`:
 
 ```python
-# GPy sketch:
-# k = GPy.kern.ExpQuad(1) + GPy.kern.Bias(1) + GPy.kern.White(1)
-# m = GPy.models.GPRegression(X, Y, k)
-# m.ExpQuad.lengthscale = 0.2
-
 m = gpc.GPRegression(X, Y, kernel="eq")
 m.set_by_path("ExpQuad.lengthscale", 0.2)
 m.optimize(iters=50)
@@ -74,4 +82,31 @@ m.optimize(iters=50)
 
 Runnable sketch: [`examples/expquad_regression.py`](examples/expquad_regression.py). Same \(K_of_r\) as RBF; storage remains `inverseWidth` under the hood ([docs/param-paths.md](../docs/param-paths.md)).
 
-Custom kernel factories, sparse DTCVAR, and Jupyter/`pods` examples are later CIP-001D phases. Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
+## Sparse `SparseGPRegression`
+
+```python
+Z = np.linspace(0.05, 0.95, 8)[:, None]
+m = gpc.SparseGPRegression(X, Y, Z)                 # approx="dtcvar" (default)
+m = gpc.SparseGPRegression(X, Y, Z, approx="fitc")  # also "dtc"
+m.optimize(iters=50)
+```
+
+Inducing inputs `Z` are **fixed** by default. Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
+
+## Plotting and notebooks
+
+```python
+from gpc.plot import plot_1d  # requires matplotlib
+plot_1d(m, X, Y)
+```
+
+Examples (Phase E):
+
+- [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb)
+- [`examples/olympic_marathon.ipynb`](examples/olympic_marathon.ipynb) — needs `pods`
+
+Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md)). Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
+
+## Later
+
+CIP-001E live progress / repr, custom kernel factories, coreg / GPLVM façades — follow-ups, not close blockers for the first subset.

@@ -52,6 +52,8 @@ ivm
 /ppa
 demo_regression_1d
 demo_sparse_dtcvar
+python/ref_ftc_objective
+python/ref_ftc_objective.dSYM/
 testGp
 testOptimisable
 /testPpa

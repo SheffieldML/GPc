@@ -218,7 +218,7 @@ You might also want to try a larger 1D set, `examples/spgp1d.svml`. Full GP:
 $ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
 ```
 
-Sparse variational (DTCVAR) with an inducing set — the maintained sparse tutorial path (prefer this over FITC; CLI FITC still errors out):
+Sparse variational (DTCVAR) with an inducing set — the maintained sparse tutorial path (prefer this over FITC; `-A fitc` / `-A dtc` also available):
 
 ```sh
 $ ./gp -v 3 learn -# 100 -A dtcvar -a 20 examples/spgp1d.svml spgp1d_dtcvar.model

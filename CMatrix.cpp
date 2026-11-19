@@ -647,9 +647,8 @@ void CMatrix::zeros()
 }
 void CMatrix::memAllocate()
 {
-  // totalAlloc += nrows*ncols;
-//   if(nrows*ncols > 10)
-//     cout << "Allocating " << nrows*ncols << " memory. Total " << totalAlloc << endl;
+  // CIP-002D QW7: count allocation events (not element count).
+  ++totalAlloc;
   BOUNDCHECK(nrows>0);
   BOUNDCHECK(ncols>0);
   switch(allocation)

@@ -226,6 +226,8 @@ $ ./gp display spgp1d_dtcvar.model
 $ ./gp gnuplot -r 400 examples/spgp1d.csv spgp1d_dtcvar.model spgp1d_dtcvar
 ```
 
+Optional inducing families (default `points`): `--inducing whitenoise` for stationary kernels when \(K_{uu}\) is lengthscale-ill-conditioned ([CIP-001C](cip/cip001C.md)); `--inducing greens` for **1-D** Brownian / Matérn causal features ([CIP-0029](cip/cip0029.md)). Window width: `--window-width`. See [`docs/numerics.md`](docs/numerics.md) (Sparse inducing families).
+
 See [`docs/tutorials/sparse_regression_1d.md`](docs/tutorials/sparse_regression_1d.md) and optional `make demo_sparse_dtcvar`.
 
 ### MATLAB and OCTAVE

@@ -77,6 +77,9 @@ bool typesCompatible(const string& type, const string& name)
     return true;
   if(type=="brownian" && (name=="Brownian" || name=="brownian"))
     return true;
+  if((type=="ibrownian" || type=="integratedbrownian")
+     && (name=="IntegratedBrownian" || name=="ibrownian" || name=="integratedbrownian"))
+    return true;
   if((type=="rbf" || type=="rbfard") && name=="rbf")
     return true;
   if(type=="eq" && (name=="ExpQuad" || name=="eq" || name=="expquad"))
@@ -107,6 +110,7 @@ string CKern::gpyComponentName() const
   if(t=="stdperiodic") return "std_periodic";
   if(t=="cosine") return "Cosine";
   if(t=="brownian") return "Brownian";
+  if(t=="ibrownian" || t=="integratedbrownian") return "IntegratedBrownian";
   if(t=="rbfard") return "rbf";
   if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
@@ -6390,6 +6394,320 @@ void CBrownianKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z,
   gS.setVal(acc, 0, 0);
 }
 
+// CIP-0029 Phase 3: integrated Brownian I(t)=∫_0^t W.
+CIntegratedBrownianKern::CIntegratedBrownianKern() : CKern()
+{
+  _init();
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(const CIntegratedBrownianKern& kern)
+  : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+}
+CIntegratedBrownianKern::~CIntegratedBrownianKern()
+{
+}
+double CIntegratedBrownianKern::getVariance() const
+{
+  return variance;
+}
+void CIntegratedBrownianKern::_init()
+{
+  nParams = 1;
+  setType("ibrownian");
+  setName("Integrated Brownian");
+  setParamName("variance", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setStationary(false);
+}
+void CIntegratedBrownianKern::setInitParam()
+{
+  if(getInputDim()!=1)
+    throw ndlexceptions::Error("The integrated Brownian kernel is only defined for a single (1-D) input dimension.");
+  variance = 1.0;
+}
+double CIntegratedBrownianKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  const double ax = fabs(X.getVal(index, 0));
+  return variance * ax * ax * ax / 3.0;
+}
+void CIntegratedBrownianKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo==0);
+  variance = val;
+}
+double CIntegratedBrownianKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo==0);
+  return variance;
+}
+double CIntegratedBrownianKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                              const CMatrix& X2, unsigned int index2) const
+{
+  const double x = X1.getVal(index1, 0);
+  const double y = X2.getVal(index2, 0);
+  const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+  if(!sameSign)
+    return 0.0;
+  const double a = fabs(x) < fabs(y) ? fabs(x) : fabs(y);
+  const double b = fabs(x) < fabs(y) ? fabs(y) : fabs(x);
+  // 0≤a≤b: k = variance (a² b / 2 − a³ / 6)
+  return variance * (0.5 * a * a * b - a * a * a / 6.0);
+}
+void CIntegratedBrownianKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row,
+                                      const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  const double x = X.getVal(row, 0);
+  const double sgnX = (x>0.0) - (x<0.0);
+  const double ax = fabs(x);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    const double y = X2.getVal(k, 0);
+    const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+    double val = 0.0;
+    if(sameSign)
+    {
+      const double ay = fabs(y);
+      // ∂/∂ax of k(ax,ay); chain with sgnX.
+      double dAbs = 0.0;
+      if(ax <= ay)
+        dAbs = variance * (ax * ay - 0.5 * ax * ax);
+      else
+        dAbs = variance * (0.5 * ay * ay);
+      val = dAbs * sgnX;
+    }
+    if(addG)
+      gX.addVal(val, k, 0);
+    else
+      gX.setVal(val, k, 0);
+  }
+}
+void CIntegratedBrownianKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    const double x = X.getVal(i, 0);
+    const double sgnX = (x>0.0) - (x<0.0);
+    const double ax = fabs(x);
+    // d(v |x|³/3)/dx = v x² sgn(x)
+    const double val = variance * ax * ax * sgnX;
+    if(addG)
+      gX.addVal(val, i, 0);
+    else
+      gX.setVal(val, i, 0);
+  }
+}
+double CIntegratedBrownianKern::getWhite() const
+{
+  return 0.0;
+}
+void CIntegratedBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
+                                           const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1 = 0.0;
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    const double x = X.getVal(i, 0);
+    for(unsigned int j=0; j<X2.getRows(); j++)
+    {
+      const double y = X2.getVal(j, 0);
+      const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+      double base = 0.0;
+      if(sameSign)
+      {
+        const double a = fabs(x) < fabs(y) ? fabs(x) : fabs(y);
+        const double b = fabs(x) < fabs(y) ? fabs(y) : fabs(x);
+        base = 0.5 * a * a * b - a * a * a / 6.0;
+      }
+      g1 += covGrad.getVal(i, j) * base;
+    }
+  }
+  g.setVal(g1, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+void CIntegratedBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad,
+                                           bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise);
+}
+double CIntegratedBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2,
+                                             const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not implemented for CIntegratedBrownianKern");
+}
+double CIntegratedBrownianKern::getGradParam(unsigned int index, const CMatrix& X,
+                                             const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not implemented for CIntegratedBrownianKern");
+}
+
+// Causal root g(u)=σ u 1_{u≥0} on [0,t]:
+// K_fu = σ c [(t−z)(Φ(α)−Φ(β)) + s(φ(α)−φ(β))], α=(t−z)/s, β=−z/s.
+void CIntegratedBrownianKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X,
+                                                 const CMatrix& Z, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dPhiDens = ndlutil::ngaussian(alpha) - ndlutil::ngaussian(beta);
+      Kfu.setVal(amp * ((t - z) * dPhi + s * dPhiDens), n, m);
+    }
+  }
+}
+void CIntegratedBrownianKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z,
+                                               double s, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  double gVar = 0.0;
+  const double inv2var = (variance == 0.0) ? 0.0 : 0.5 / variance;
+  CMatrix Kfu;
+  greensCrossCompute(Kfu, X, Z, s);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gVar += gKfu.getVal(n, m) * Kfu.getVal(n, m) * inv2var;
+  g.setVal(gVar, 0);
+}
+void CIntegratedBrownianKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z = Z.getVal(m, 0);
+    const double beta = -z / s;
+    const double phiBeta = ndlutil::ngaussian(beta);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      const double alpha = (t - z) / s;
+      const double phiAlpha = ndlutil::ngaussian(alpha);
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      // ∂B/∂z, B=(t−z)ΔΦ + s Δφ
+      const double dBdz = -dPhi
+                          + (t - z) / s * (-phiAlpha + phiBeta)
+                          + alpha * phiAlpha - beta * phiBeta;
+      acc += gKfu.getVal(n, m) * amp * dBdz;
+    }
+    gZ.setVal(acc, m, 0);
+  }
+}
+void CIntegratedBrownianKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      // ∂B/∂t = ΔΦ
+      acc += gKfu.getVal(n, m) * amp * dPhi;
+    }
+    gX.setVal(acc, n, 0);
+  }
+}
+void CIntegratedBrownianKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gS.resize(1, 1);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double phiA = ndlutil::ngaussian(alpha);
+      const double phiB = ndlutil::ngaussian(beta);
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dPhiDens = phiA - phiB;
+      const double B = (t - z) * dPhi + s * dPhiDens;
+      const double dBds = -(t - z) / s * (alpha * phiA - beta * phiB)
+                          + dPhiDens
+                          + alpha * alpha * phiA - beta * beta * phiB;
+      // K = σ c B; dc/ds = c/(2s)
+      const double dKdS = sigma * ((c / (2.0 * s)) * B + c * dBds);
+      acc += gKfu.getVal(n, m) * dKdS;
+    }
+  }
+  gS.setVal(acc, 0, 0);
+}
+
 // Coregionalize kernel (CIP-000D / GPy Coregionalize).
 CCoregionalizeKern::CCoregionalizeKern() : CKern(), outputDim(1), rank(1)
 {
@@ -6906,6 +7224,8 @@ CKern* readKernFromStream(istream& in)
     pkern = new CCosineKern();
   else if(type=="brownian")
     pkern = new CBrownianKern();
+  else if(type=="ibrownian" || type=="integratedbrownian")
+    pkern = new CIntegratedBrownianKern();
   else if(type=="coregionalize")
     pkern = new CCoregionalizeKern();
   else if(type=="indexwhite")

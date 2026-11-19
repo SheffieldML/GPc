@@ -1766,6 +1766,50 @@ class CBrownianKern: public CKern {
   double variance;
 };
 
+// Integrated Brownian --- I(t)=∫_0^t W(s) ds on a same-signed 1-D index (CIP-0029 Phase 3).
+// For 0≤s≤t: k(s,t)=variance*(s² t / 2 − s³ / 6). Causal root g(u)=σ u 1_{u≥0}
+// gives smoothed-ramp (soft-ReLU) features under Gaussian windows.
+class CIntegratedBrownianKern: public CKern {
+ public:
+  CIntegratedBrownianKern();
+  CIntegratedBrownianKern(unsigned int inDim);
+  CIntegratedBrownianKern(const CMatrix& X);
+  ~CIntegratedBrownianKern();
+  CIntegratedBrownianKern(const CIntegratedBrownianKern&);
+  CIntegratedBrownianKern* clone() const
+  {
+    return new CIntegratedBrownianKern(*this);
+  }
+  double getVariance() const;
+  void setVariance(double val) { variance = val; }
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const;
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  void greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                        const CMatrix& gKfu) const;
+  void greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+
+ private:
+  void _init();
+  double variance;
+};
+
 // Coregionalize Kernel --- GPy Coregionalize: B = W W' + diag(kappa), K_nm = B_{i_n,i_m}.
 // inputDim is 1; setActiveDims({q}) when X has the index in column q (CIP-000D).
 class CCoregionalizeKern: public CKern {

@@ -615,35 +615,13 @@ void CGp::setInducingType(const string& typeName)
   }
   else if(typeName == "weightspace")
   {
-    // CIP-0028 ridge default: W is M × (d+2) = [direction ∈ R^{d+1} | offset].
+    // CIP-0028 ridge default: orthogonal direction blocks (≤ D'=d+1), n_off
+    // offsets, s from spacing so κ(K_uu) stays in the Phase-1 budget (~10^4).
+    // Random per-row directions collapse in low D' at large M.
     const unsigned int d = getInputDim();
     const unsigned int Dp = d + 1;
-    CMatrix W(numActive, Dp + 1);
-    W.zeros();
-    ndlutil::init_genrand(7u);
-    const unsigned int nOff = 4;
-    for(unsigned int i = 0; i < numActive; i++)
-    {
-      double nrm = 0.0;
-      for(unsigned int j = 0; j < Dp; j++)
-      {
-        double v = ndlutil::randn();
-        if(X_u.getRows() == numActive && X_u.getCols() == d && j < d)
-          v = X_u.getVal(i, j) + 0.1 * v;
-        else if(j == d)
-          v = 1.0 + 0.1 * v;
-        W.setVal(v, i, j);
-        nrm += v * v;
-      }
-      nrm = sqrt(nrm);
-      if(nrm > 1e-15)
-        for(unsigned int j = 0; j < Dp; j++)
-          W.setVal(W.getVal(i, j) / nrm, i, j);
-      const unsigned int denomOff = (nOff > 1) ? (nOff - 1) : 1;
-      const double a0 = -2.5 + 5.0 * (double)(i % nOff) / (double)denomOff;
-      W.setVal(a0, i, Dp);
-    }
-    double s0 = 0.6;
+    CMatrix W;
+    const double s0 = CInducingWeightSpace::makeRidgeInit(W, numActive, d, 7u);
     delete pInducing;
     pInducing = new CInducingWeightSpace(W, s0, false, true);
     if(!isInducingFixed())

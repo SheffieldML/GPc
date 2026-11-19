@@ -1,8 +1,8 @@
 ---
 id: "2026-11-19_cip0028-python-weightspace-notebook"
 title: "CIP-0028: Python gpc weight-space API + illustrative notebook"
-status: "Proposed"
-priority: "Medium"
+status: "Completed"
+priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-19"
 category: "features"
@@ -33,12 +33,12 @@ The NumPy prototype under `cip/cip0028/prototype/deepws/` stays evidence-only; t
 
 ## Acceptance Criteria
 
-- [ ] `SparseGPRegression` (or a thin sibling) accepts `kernel="mlp"` / `"arccos"` and `inducing="weightspace"` (default remains RBF + `points`)
-- [ ] Optional: `window_width`, `inducing_fixed`, arccos `order`; centres owned by inducing object (Z may be a size hint / unused for weight-space)
-- [ ] Compound rule matches C++: one signal + optional white; noise via β / likelihood variance
-- [ ] Pytest smoke: construct, `objective` finite, `optimize`, `predict` for MLP + weightspace DTCVAR
-- [ ] Notebook under `python/examples/` (e.g. `weightspace_ridge_1d.ipynb`) that illustrates ridges vs points for a reader who has not read the CIP
-- [ ] `python/README.md` / examples index mention the notebook; plotting via existing `gpc.plot.plot_1d` extras
+- [x] `SparseGPRegression` (or a thin sibling) accepts `kernel="mlp"` / `"arccos"` and `inducing="weightspace"` (default remains RBF + `points`)
+- [x] Optional: `window_width`, `inducing_fixed`, arccos `order`; centres owned by inducing object (Z may be a size hint / unused for weight-space)
+- [x] Compound rule matches C++: one signal + optional white; noise via β / likelihood variance
+- [x] Pytest smoke: construct, `objective` finite, `optimize`, `predict` for MLP + weightspace DTCVAR
+- [x] Notebook under `python/examples/` (e.g. `weightspace_ridge_1d.ipynb`) that illustrates ridges vs points for a reader who has not read the CIP
+- [x] `python/README.md` / examples index mention the notebook; plotting via existing `gpc.plot.plot_1d` extras
 
 ## Implementation Notes
 
@@ -58,3 +58,6 @@ The NumPy prototype under `cip/cip0028/prototype/deepws/` stays evidence-only; t
 
 ### 2026-11-19
 Task created (Proposed) for a follow-on after the CIP-0028 C++ PR; tracked on main separately from that PR.
+
+### 2026-11-19 (later)
+Moved to In Progress on `cip001D-phase-f-mlp-weightspace` with CIP-001D Phase F (`kernel="mlp"` / `"arccos"` on FTC). Extends `SparseGPRegression` with `inducing="weightspace"`, `window_width`, and `weightspace_ridge_1d.ipynb`.

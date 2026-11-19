@@ -131,16 +131,32 @@ m.optimize(iters=50)
 
 Runnable sketch: [`examples/expquad_regression.py`](examples/expquad_regression.py). Same \(K_of_r\) as RBF; storage remains `inverseWidth` under the hood ([docs/param-paths.md](../docs/param-paths.md)).
 
+### MLP / arc-cosine (CIP-001D Phase F)
+
+Williams infinite-MLP (arcsin) and Cho–Saul arc-cosine:
+
+```python
+m = gpc.GPRegression(X, Y, kernel="mlp")       # mlp.weight_variance, bias_variance, variance
+m = gpc.GPRegression(X, Y, kernel="arccos", arccos_order=0)  # or 1
+```
+
+Side-by-side olympic demo: [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb).
+
 ## Sparse `SparseGPRegression`
 
 ```python
 Z = np.linspace(0.05, 0.95, 8)[:, None]
 m = gpc.SparseGPRegression(X, Y, Z)                 # approx="dtcvar" (default)
 m = gpc.SparseGPRegression(X, Y, Z, approx="fitc")  # also "dtc"
+m = gpc.SparseGPRegression(X, Y, Z, kernel="mlp")   # point inducing + MLP
+# CIP-0028 weight-space ridges (MLP / arccos only; Z rows = M):
+m = gpc.SparseGPRegression(
+    X, Y, Z, kernel="mlp", inducing="weightspace", window_width=0.55
+)
 m.optimize(iters=50)
 ```
 
-Inducing inputs `Z` are **fixed** by default. Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
+Inducing inputs `Z` are **fixed** by default (`inducing_fixed=True`). Weight-space compounds are one signal + optional white (no Bias); observation noise stays in β. Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
 
 ## Plotting and notebooks
 
@@ -149,10 +165,12 @@ from gpc.plot import plot_1d  # requires matplotlib
 plot_1d(m, X, Y)
 ```
 
-Examples (Phase E):
+Examples:
 
 - [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb)
 - [`examples/olympic_marathon.ipynb`](examples/olympic_marathon.ipynb) — needs `pods`
+- [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb) — RBF vs MLP (Phase F)
+- [`examples/weightspace_ridge_1d.ipynb`](examples/weightspace_ridge_1d.ipynb) — points vs ridges (CIP-0028)
 
 Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md)). Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
 

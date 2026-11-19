@@ -7,11 +7,22 @@
 
 using namespace std;
 
-// CIP-0025: minimum input dimension to prefer the GEMM distance path over
-// the scalar dist2Active loop in fillSymWorkspace / fillRectWorkspace.
-// Measured knee: for q < 8 the dgemm overhead exceeds the per-element gain on
-// the standard bench (n=100, q=2 protocol from REQ-0007 / CIP-0013).
+// CIP-0025 / CIP-002D QW5: prefer GEMM distance when input dim is large enough
+// that dgemm amortises, or when the block is large (sparse K_uf at q=2).
+// Small n,q keep the scalar path (CIP-0025 knee: n≈100, q<8).
 static const unsigned int kGemmDistMinQ = 8;
+static const unsigned int kGemmDistMinNM = 1024;
+
+static bool useGemmDistance(unsigned int q, unsigned int inputDim,
+                            bool defaultActive, unsigned int nRows,
+                            unsigned int nCols)
+{
+  if(!defaultActive || q != inputDim)
+    return false;
+  if(q >= kGemmDistMinQ)
+    return true;
+  return nRows * nCols >= kGemmDistMinNM;
+}
 
 namespace {
 
@@ -1543,9 +1554,9 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
   const double s = scaleFactor();
   const unsigned int q = X.getCols();
 
-  if(isDefaultActiveDims() && q == getInputDim() && q >= kGemmDistMinQ)
+  if(useGemmDistance(q, getInputDim(), isDefaultActiveDims(), n, n))
   {
-    // CIP-0025 Track 1 — GEMM distance path.
+    // CIP-0025 Track 1 / CIP-002D QW5 — GEMM distance path.
     // R^2_ij = ||xi||^2 + ||xj||^2 - 2 xi·xj
     // Step 1: m_workR2Sym = -2 * X * X^T  (column-major dgemm, beta=0)
     m_workR2Sym.gemm(X, X, -2.0, 0.0, "n", "t");
@@ -1626,10 +1637,10 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
   const double s = scaleFactor();
   const unsigned int q = X.getCols();
 
-  if(isDefaultActiveDims() && q == getInputDim()
-     && X2.getCols() == getInputDim() && q >= kGemmDistMinQ)
+  if(X2.getCols() == getInputDim()
+     && useGemmDistance(q, getInputDim(), isDefaultActiveDims(), n, m))
   {
-    // CIP-0025 Track 1 — GEMM distance path for rectangular blocks.
+    // CIP-0025 Track 1 / CIP-002D QW5 — GEMM distance path for rectangular blocks.
     // R^2_ij = ||xi||^2 + ||x2j||^2 - 2 xi·x2j
     m_workR2Rect.gemm(X, X2, -2.0, 0.0, "n", "t");
     // Row squared norms for X and X2
@@ -1867,14 +1878,28 @@ void CRbfKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const C
   DIMENSIONMATCH(gX.getCols()==X2.getCols());
   if(!addG)
     gX.zeros();
+  // CIP-002D QW5: hoist isDefaultActiveDims out of the inner loop (via dist2Active).
+  const bool defaultActive = isDefaultActiveDims();
+  const unsigned int q = defaultActive ? X.getCols() : 0;
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    double n2 = dist2Active(X, row, X2, k);
+    double n2 = 0.0;
+    if(defaultActive)
+    {
+      for(unsigned int j = 0; j < q; j++)
+      {
+        const double d = X2.getVal(k, j) - X.getVal(row, j);
+        n2 += d * d;
+      }
+    }
+    else
+      n2 = dist2Active(X, row, X2, k);
+    const double e = exp(-n2*wi2);
     for(unsigned int d=0; d<activeDims.size(); d++)
     {
       unsigned int j = activeDims[d];
       BOUNDCHECK(j<X2.getCols());
-      double val = pf*(X2.getVal(k, j)-X.getVal(row, j))*exp(-n2*wi2);
+      double val = pf*(X2.getVal(k, j)-X.getVal(row, j))*e;
       gX.addVal(val, k, j);
     }
   }
@@ -1905,25 +1930,37 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
   const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  for(unsigned int j=0; j<nrows; j++)
+  if(useWork)
   {
-    for(unsigned int i=0; i<ncols; i++)
+    // CIP-002D QW5: fuse K ⊙ r² ⊙ covGrad over contiguous workspaces.
+    const double* r2 = rectR2Vals();
+    const double* Kw = rectKVals();
+    const double* cg = covGrad.getVals();
+    for(unsigned int i = 0; i < ncols; i++)
     {
-      double dist2 = 0.0;
-      double k = 0.0;
-      if(useWork)
+      const size_t col = (size_t)i * nrows;
+      for(unsigned int j = 0; j < nrows; j++)
       {
-        dist2 = rectR2(j, i);
-        k = rectK(j, i) * invVar;
+        const size_t ix = col + j;
+        const double k = Kw[ix] * invVar;
+        const double kcg = k * cg[ix];
+        g1 -= halfVariance * r2[ix] * kcg;
+        g2 += kcg;
       }
-      else
+    }
+  }
+  else
+  {
+    for(unsigned int j=0; j<nrows; j++)
+    {
+      for(unsigned int i=0; i<ncols; i++)
       {
-        dist2 = dist2Active(X, j, X2, i);
-        k = exp(-dist2*halfInverseWidth);
+        const double dist2 = dist2Active(X, j, X2, i);
+        const double k = exp(-dist2*halfInverseWidth);
+        const double kcg_ij = k*covGrad.getVal(j,i);
+        g1 -= halfVariance*dist2*kcg_ij;
+        g2 += kcg_ij;
       }
-      double kcg_ij = k*covGrad.getVal(j,i);
-      g1 -= halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
-      g2 += kcg_ij;                    // dk()/dalpha in SBIK paper
     }
   }
   g.setVal(g1, 0);
@@ -1945,26 +1982,38 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGra
   const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  for(unsigned int j=0; j<nrows; j++)
+  if(useWork)
   {
-    g2 += covGrad.getVal(j,j);
-    for(unsigned int i=0; i<j; i++)
+    // CIP-002D QW5: fused symmetric pass over workspace (lower triangle + diag).
+    const double* r2 = symR2Vals();
+    const double* Kw = symKVals();
+    const double* cg = covGrad.getVals();
+    for(unsigned int j = 0; j < nrows; j++)
     {
-      double k = 0.0;
-      double dist2 = 0.0;
-      if(useWork)
+      g2 += cg[j + (size_t)j * nrows];
+      for(unsigned int i = 0; i < j; i++)
       {
-        dist2 = symR2(i, j);
-        k = symK(i, j) * invVar;
+        const size_t ix = i + (size_t)j * nrows;
+        const double k = Kw[ix] * invVar;
+        const double kcg = k * cg[ix];
+        g1 -= 2.0 * halfVariance * r2[ix] * kcg;
+        g2 += 2.0 * kcg;
       }
-      else
+    }
+  }
+  else
+  {
+    for(unsigned int j=0; j<nrows; j++)
+    {
+      g2 += covGrad.getVal(j,j);
+      for(unsigned int i=0; i<j; i++)
       {
-        dist2 = dist2Active(X, i, X, j);
-        k = exp(-dist2*halfInverseWidth);
+        const double dist2 = dist2Active(X, i, X, j);
+        const double k = exp(-dist2*halfInverseWidth);
+        const double kcg_ij = k*covGrad.getVal(i,j);
+        g1 -= 2.0*halfVariance*dist2*kcg_ij;
+        g2 += 2.0*kcg_ij;
       }
-      double kcg_ij = k*covGrad.getVal(i,j);
-      g1 -= 2.0*halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
-      g2 += 2.0*kcg_ij;                    // dk()/dalpha in SBIK paper
     }
   }
   g.setVal(g1, 0);

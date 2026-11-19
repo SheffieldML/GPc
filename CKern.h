@@ -507,6 +507,11 @@ class CStationaryKern : public CKern {
   double symK(unsigned int i, unsigned int j) const { return m_workKSym.getVal(i, j); }
   double rectR2(unsigned int i, unsigned int j) const { return m_workR2Rect.getVal(i, j); }
   double rectK(unsigned int i, unsigned int j) const { return m_workKRect.getVal(i, j); }
+  // CIP-002D QW5: contiguous workspace views for fused gradient passes.
+  const double* symR2Vals() const { return m_workR2Sym.getVals(); }
+  const double* symKVals() const { return m_workKSym.getVals(); }
+  const double* rectR2Vals() const { return m_workR2Rect.getVals(); }
+  const double* rectKVals() const { return m_workKRect.getVals(); }
 
  private:
   void fillSymWorkspace(const CMatrix& X) const;

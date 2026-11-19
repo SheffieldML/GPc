@@ -51,6 +51,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0025](./cip0025.md): BLAS-owned distances and OpenMP bulk \(K(r)\) — parallelism without a GPc thread pool (**Implemented** — close after PR/CI). Implements [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md); takes CIP-0013 P7; respects [CIP-001F](./cip001F.md) / [REQ-0010](../requirements/req0010_documented-concurrency-contract.md).
 - [CIP-0026](./cip0026.md): Sparse PPA via CGp-backed EM (DTC first, DTCVAR bound later) (**Implemented** — close after review). Prototype notes: [`cip/cip0026/prototype_notes.md`](./cip0026/prototype_notes.md). Extends [CIP-0023](./cip0023.md); verification under [REQ-0002](../requirements/req0002_runnable-verification.md).
 - [CIP-0027](./cip0027.md): GPy-aligned defaults — `Gaussian_noise.variance`; drop auto White/Bias for regression/PPA; **IVM keeps trained White** (softener write-up [`cip0027/ivm_softener.md`](./cip0027/ivm_softener.md)); EP/non-linear likelihoods deferred (**Proposed**). Implements [REQ-0014](../requirements/req0014_observation-noise-in-likelihood.md).
+- [CIP-002A](./cip002A.md): SVGP — explicit whitened \(q(u)\) with natural gradients (CVI form), Adam for hyperparameters, seeded minibatches; Phase 1 prototype `CSvgp`/`testSvgp` matches `CGp` DTCVAR exactly (**Proposed**). Implements [REQ-0015](../requirements/req0015_stochastic-variational-sparse-gp.md).
 
 ## Creating a Good CIP
 

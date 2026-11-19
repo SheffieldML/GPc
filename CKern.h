@@ -1036,6 +1036,15 @@ class CExpKern: public CStationaryKern {
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double spectralDensity(double rho) const;
+  void greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                        const CMatrix& gKfu) const;
+  void greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1122,6 +1131,15 @@ class CMatern32Kern: public CStationaryKern {
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double spectralDensity(double rho) const;
   double spectralLengthScale() const;
+  void greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                        const CMatrix& gKfu) const;
+  void greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
   
  private:
   void _init();
@@ -1167,6 +1185,15 @@ class CMatern52Kern: public CStationaryKern {
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double spectralDensity(double rho) const;
   double spectralLengthScale() const;
+  void greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const;
+  void greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                        const CMatrix& gKfu) const;
+  void greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
+  void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                   const CMatrix& gKfu) const;
   
  private:
   void _init();

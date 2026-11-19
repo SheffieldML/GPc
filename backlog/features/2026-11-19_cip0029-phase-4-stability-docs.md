@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0029-phase-4-stability-docs"
 title: "CIP-0029 Phase 4: greens stability cells + numerics docs"
-status: "Proposed"
+status: "Ready"
 priority: "Medium"
 created: "2026-11-19"
 last_updated: "2026-11-19"

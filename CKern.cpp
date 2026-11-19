@@ -7693,6 +7693,262 @@ double CMatern52Kern::spectralDensity(double rho) const
   return maternSpectralDensity(rho, variance, lengthScale, 2.5, getInputDim());
 }
 
+// CIP-0029 Phase 2: causal Matérn / Exp × Gaussian windows (1-D).
+namespace {
+
+inline double greensPsiNorm1d(double s)
+{
+  return pow(4.0 * M_PI * s * s, 0.25);
+}
+
+// Shared FD grads for greensCrossCompute (mirrors Hankel wnGrad* FD).
+const double GREENS_FD_EPS = 1e-6;
+
+void greensFdGradParams(CKern& kern, CMatrix& g, const CMatrix& X, const CMatrix& Z,
+                        double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(g.getCols() == nParams);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  g.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int p = 0; p < nParams; p++)
+  {
+    const double p0 = kern.getParam(p);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(p0));
+    kern.setParam(p0 + h, p);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    kern.setParam(p0 - h, p);
+    kern.greensCrossCompute(Km, X, Z, s);
+    kern.setParam(p0, p);
+    double gp = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+        gp += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    g.setVal(gp, p);
+  }
+}
+
+void greensFdGradZ(const CKern& kern, CMatrix& gZ, const CMatrix& X, CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(Z.getCols() == 1);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z0 = Z.getVal(m, 0);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(z0));
+    Z.setVal(z0 + h, m, 0);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    Z.setVal(z0 - h, m, 0);
+    kern.greensCrossCompute(Km, X, Z, s);
+    Z.setVal(z0, m, 0);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    gZ.setVal(acc, m, 0);
+  }
+}
+
+void greensFdGradX(const CKern& kern, CMatrix& gX, CMatrix& X, const CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double x0 = X.getVal(n, 0);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(x0));
+    X.setVal(x0 + h, n, 0);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    X.setVal(x0 - h, n, 0);
+    kern.greensCrossCompute(Km, X, Z, s);
+    X.setVal(x0, n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    gX.setVal(acc, n, 0);
+  }
+}
+
+void greensFdGradS(const CKern& kern, CMatrix& gS, const CMatrix& X, const CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gS.resize(1, 1);
+  const double h = GREENS_FD_EPS * max(1.0, fabs(s));
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  kern.greensCrossCompute(Kp, X, Z, s + h);
+  kern.greensCrossCompute(Km, X, Z, max(s - h, 1e-12));
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+  gS.setVal(acc, 0, 0);
+}
+
+// Causal g*ψ for Matérn ν=1/2,3/2,5/2 (polynomial × exp decay).
+// degree 0: g ∝ e^{-λt}; 1: ∝ t e^{-λt}; 2: ∝ t² e^{-λt}.
+void maternCausalGreensKfu(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                           double s, double variance, double lambda, int polyDegree)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  BOUNDCHECK(lambda > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm1d(s);
+  double amp = 0.0;
+  if(polyDegree == 0)
+    amp = sigma * sqrt(2.0 * lambda) * c;
+  else if(polyDegree == 1)
+    amp = sigma * 2.0 * pow(lambda, 1.5) * c;
+  else if(polyDegree == 2)
+    amp = sigma * sqrt(4.0 / 3.0) * pow(lambda, 2.5) * c;
+  else
+    throw ndlexceptions::Error("maternCausalGreensKfu: unsupported polyDegree");
+
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double x = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double mu = z + lambda * s * s;
+      const double alpha = (x - mu) / s;
+      const double Phi = ndlutil::cumGaussian(alpha);
+      const double phi = ndlutil::ngaussian(alpha);
+      const double efac = exp(-lambda * (x - z) + 0.5 * lambda * lambda * s * s);
+      double shape = 0.0;
+      if(polyDegree == 0)
+        shape = Phi;
+      else if(polyDegree == 1)
+      {
+        // ∫ (x-τ) e^{λτ} N = efac_raw * [(x-μ)Φ + s φ]; overall efac includes e^{-λx+...}
+        shape = (x - mu) * Phi + s * phi;
+      }
+      else
+      {
+        // ∫ (x-τ)² e^{λτ} N; I0,I1,I2 without outer e^{-λx}
+        const double I0 = Phi;
+        const double I1 = mu * Phi - s * phi;
+        const double I2 = (mu * mu + s * s) * Phi - s * (mu + x) * phi;
+        shape = x * x * I0 - 2.0 * x * I1 + I2;
+      }
+      Kfu.setVal(amp * efac * shape, n, m);
+    }
+  }
+}
+
+} // namespace
+
+void CExpKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                  double s) const
+{
+  // λ = inverseWidth (scaleFactor); g(t)=σ√(2λ) e^{-λt} 1_{t≥0}.
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, inverseWidth, 0);
+}
+void CExpKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CExpKern&>(*this), g, X, Z, s, gKfu);
+}
+void CExpKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CExpKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CExpKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
+}
+
+void CMatern32Kern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, scaleFactor(), 1);
+}
+void CMatern32Kern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CMatern32Kern&>(*this), g, X, Z, s, gKfu);
+}
+void CMatern32Kern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CMatern32Kern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CMatern32Kern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
+}
+
+void CMatern52Kern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, scaleFactor(), 2);
+}
+void CMatern52Kern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CMatern52Kern&>(*this), g, X, Z, s, gKfu);
+}
+void CMatern52Kern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CMatern52Kern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CMatern52Kern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
+}
+
 void CStationaryKern::wnCrossComputeHankel(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const
 {
   const unsigned int N = X.getRows();

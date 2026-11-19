@@ -49,3 +49,6 @@ Order 0 designated as infinite-\((w,b)\) home vs finite-\(\Sigma\) `CMlpKern`; l
 
 ### 2026-11-19 (ridge revision)
 Phase 2 revised = smoothed-ReLU ridge features (derive \(\mathbb E[\mathrm{ReLU}]\) closed form; same variance-captured gates). Blocked on ridge erf Phase 1. Isotropic arccos ws is interim.
+
+### 2026-11-19 (analytic grads)
+Arc-cosine analytic `wsGrad*` (order 0/1); production FD removed for the weight-space path.

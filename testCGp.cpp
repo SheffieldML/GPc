@@ -1591,7 +1591,7 @@ int testWeightSpaceInducingPhase1()
          << "  (no √p)=" << maxRelNoSqrtP << endl;
   }
 
-  // FD: wsGradParams / W / X / s agree with wsCrossCompute.
+  // Analytic wsGrad* vs central FD through wsCrossCompute.
   {
     CMatrix X(3, 1);
     X.setVal(-0.5, 0, 0); X.setVal(0.0, 1, 0); X.setVal(0.7, 2, 0);
@@ -1626,22 +1626,64 @@ int testWeightSpaceInducingPhase1()
     kern.wsGradS(gS, X, W, s, gKfu);
     fail += failTrue(std::isfinite(gS.getVal(0)), "wsGradS finite");
 
-    // Spot-check weightVariance FD vs wsGradParams.
-    const double p0 = kern.getParam(0);
-    const double h = 1e-6 * max(1.0, fabs(p0));
     CMatrix Kp(3, 2);
     CMatrix Km(3, 2);
-    kern.setParam(p0 + h, 0);
-    kern.wsCrossCompute(Kp, X, W, s);
-    kern.setParam(p0 - h, 0);
-    kern.wsCrossCompute(Km, X, W, s);
-    kern.setParam(p0, 0);
-    double fd = 0.0;
-    for(unsigned int n = 0; n < 3; n++)
-      for(unsigned int m = 0; m < 2; m++)
-        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
-    const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
-    fail += failTrue(rel < 1e-4, "wsGradParams vs FD weightVariance");
+    auto fdDot = [&](const CMatrix& A, const CMatrix& B, double h) {
+      double acc = 0.0;
+      for(unsigned int n = 0; n < 3; n++)
+        for(unsigned int m = 0; m < 2; m++)
+          acc += gKfu.getVal(n, m) * (A.getVal(n, m) - B.getVal(n, m)) / (2.0 * h);
+      return acc;
+    };
+
+    // weightVariance
+    {
+      const double p0 = kern.getParam(0);
+      const double h = 1e-6 * max(1.0, fabs(p0));
+      kern.setParam(p0 + h, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      kern.setParam(p0 - h, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      kern.setParam(p0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradParams vs FD weightVariance");
+    }
+    // W[0,0]
+    {
+      const double w0 = W.getVal(0, 0);
+      const double h = 1e-6 * max(1.0, fabs(w0));
+      W.setVal(w0 + h, 0, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      W.setVal(w0 - h, 0, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      W.setVal(w0, 0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gW.getVal(0, 0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradW vs FD W00");
+    }
+    // X[0,0]
+    {
+      const double x0 = X.getVal(0, 0);
+      const double h = 1e-6 * max(1.0, fabs(x0));
+      X.setVal(x0 + h, 0, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      X.setVal(x0 - h, 0, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      X.setVal(x0, 0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gX.getVal(0, 0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradX vs FD X00");
+    }
+    // s
+    {
+      const double h = 1e-6 * max(1.0, fabs(s));
+      kern.wsCrossCompute(Kp, X, W, s + h);
+      kern.wsCrossCompute(Km, X, W, max(s - h, 1e-12));
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gS.getVal(0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradS vs FD s");
+    }
   }
 
   return fail;

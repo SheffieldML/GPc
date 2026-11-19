@@ -812,6 +812,100 @@ void CInducingWeightSpace::computeKux(CMatrix& Kux, const CKern& kern, const CMa
   kufFromKfu(Kux, Kfu);
 }
 
+void CInducingWeightSpace::gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKuu) const
+{
+  // Analytic ∂⟨gKuu, Kuu⟩ through unit directions / offsets, then chain to raw W.
+  ridgeFactors(Vtmp, atmp);
+  const unsigned int M = numInducing();
+  const unsigned int Dp = weightDim();
+  const double s2 = s * s;
+  const double alpha = 1.0 / s2 - 0.5;
+  CMatrix gV(M, Dp);
+  CMatrix ga(M, 1);
+  gV.zeros();
+  ga.zeros();
+
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = i; j < M; j++)
+    {
+      double c = 0.0;
+      for(unsigned int k = 0; k < Dp; k++)
+        c += Vtmp.getVal(i, k) * Vtmp.getVal(j, k);
+      if(c > 1.0) c = 1.0;
+      if(c < -1.0) c = -1.0;
+      const double am = atmp.getVal(i, 0);
+      const double an = atmp.getVal(j, 0);
+      const double detI = (1.0 + alpha) * (1.0 + alpha) - (alpha * c) * (alpha * c);
+      BOUNDCHECK(detI > 0.0);
+      const double inv11 = (1.0 + alpha) / detI;
+      const double inv12 = -alpha * c / detI;
+      const double H11 = inv11 + c * inv12;
+      const double H12 = inv12 + c * inv11;
+      const double bm = am / s2;
+      const double bn = an / s2;
+      const double quad = H11 * (bm * bm + bn * bn) + 2.0 * H12 * bm * bn;
+      const double lognorm2 = -0.5 * log(M_PI * s2)
+                              - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
+      const double logK = lognorm2 + 0.5 * (double)Dp * log(2.0 * M_PI)
+                          - 0.5 * log(detI) + 0.5 * quad
+                          - (am * am + an * an) / (2.0 * s2);
+      const double Kij = exp(logK);
+      const double gsym = (i == j) ? gKuu.getVal(i, j)
+                                   : (gKuu.getVal(i, j) + gKuu.getVal(j, i));
+
+      // ∂logK/∂am, ∂logK/∂an
+      const double dlog_dam = (H11 * bm + H12 * bn) / s2 - am / s2;
+      const double dlog_dan = (H11 * bn + H12 * bm) / s2 - an / s2;
+      ga.addVal(gsym * Kij * dlog_dam, i, 0);
+      if(i != j)
+        ga.addVal(gsym * Kij * dlog_dan, j, 0);
+
+      if(i != j)
+      {
+        const double ddet = -2.0 * alpha * alpha * c;
+        const double dinv11 = -(1.0 + alpha) / (detI * detI) * ddet;
+        const double dinv12 = -alpha / detI
+                              + alpha * c / (detI * detI) * ddet;
+        const double dH11 = dinv11 + inv12 + c * dinv12;
+        const double dH12 = dinv12 + inv11 + c * dinv11;
+        const double dquad = dH11 * (bm * bm + bn * bn) + 2.0 * dH12 * bm * bn;
+        const double dlog_dc = -0.5 / detI * ddet + 0.5 * dquad;
+        const double coeff = gsym * Kij * dlog_dc;
+        for(unsigned int k = 0; k < Dp; k++)
+        {
+          gV.addVal(coeff * Vtmp.getVal(j, k), i, k);
+          gV.addVal(coeff * Vtmp.getVal(i, k), j, k);
+        }
+      }
+    }
+  }
+
+  // Chain through v = w_dir / ||w_dir||: g_w = (I - vv^T) g_v / ||w||.
+  gRaw.resize(M, Dp + 1);
+  gRaw.zeros();
+  for(unsigned int i = 0; i < M; i++)
+  {
+    double nrm = 0.0;
+    for(unsigned int k = 0; k < Dp; k++)
+    {
+      const double wk = W.getVal(i, k);
+      nrm += wk * wk;
+    }
+    nrm = sqrt(nrm);
+    BOUNDCHECK(nrm > 1e-15);
+    double gdotv = 0.0;
+    for(unsigned int k = 0; k < Dp; k++)
+      gdotv += gV.getVal(i, k) * Vtmp.getVal(i, k);
+    for(unsigned int k = 0; k < Dp; k++)
+    {
+      const double gv = gV.getVal(i, k) - gdotv * Vtmp.getVal(i, k);
+      gRaw.setVal(gv / nrm, i, k);
+    }
+    gRaw.setVal(ga.getVal(i, 0), i, Dp);
+  }
+}
+
 void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                                          const CKern& kern, const CMatrix& X,
                                          const CMatrix& gKuu, const CMatrix& gKuf,
@@ -827,14 +921,6 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
 
   CMatrix Kuu(M, M);
   fillKuu(Kuu);
-  // Ridge K_uu grads w.r.t. raw (unnormalised) centres via FD below; isotropic uses analytic.
-  if(!ridge)
-    gradWFromKuu(gZ, gKuu, Kuu);
-  else
-  {
-    gZ.resize(M, d);
-    gZ.zeros();
-  }
 
   Kfu.resize(N, M);
   gKfu.resize(N, M);
@@ -847,50 +933,36 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
 
   if(ridge)
   {
+    gradRawFromKuuRidge(gZ, gKuu);
     ridgeFactors(Vtmp, atmp);
     kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
     kern.wsRidgeGradParams(tempG, X, Vtmp, atmp, s, gKfu);
 
-    // FD grads of Kuu + Kfu through raw W = [v_raw | a] (sphere via normalisation).
-    CMatrix Wmut(W);
-    const double h = 1e-6;
-    CMatrix Kp(M, M);
-    CMatrix Km(M, M);
-    CMatrix Kfup(N, M);
-    CMatrix Kfum(N, M);
+    CMatrix gV(M, weightDim());
+    CMatrix ga(M, 1);
+    kern.wsRidgeGradVA(gV, ga, X, Vtmp, atmp, s, gKfu);
+    // Chain Kfu grads through normalisation into raw W.
     for(unsigned int i = 0; i < M; i++)
     {
-      for(unsigned int j = 0; j < d; j++)
+      double nrm = 0.0;
+      for(unsigned int k = 0; k < weightDim(); k++)
+        nrm += W.getVal(i, k) * W.getVal(i, k);
+      nrm = sqrt(nrm);
+      BOUNDCHECK(nrm > 1e-15);
+      double gdotv = 0.0;
+      for(unsigned int k = 0; k < weightDim(); k++)
+        gdotv += gV.getVal(i, k) * Vtmp.getVal(i, k);
+      for(unsigned int k = 0; k < weightDim(); k++)
       {
-        const double w0 = Wmut.getVal(i, j);
-        const double step = h * max(1.0, fabs(w0));
-        Wmut.setVal(w0 + step, i, j);
-        // temporarily swap W via const_cast pattern: mutate then restore through local copy path
-        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0 + step, i, j);
-        fillKuu(Kp);
-        ridgeFactors(Vtmp, atmp);
-        kern.wsRidgeCrossCompute(Kfup, X, Vtmp, atmp, s);
-        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0 - step, i, j);
-        fillKuu(Km);
-        ridgeFactors(Vtmp, atmp);
-        kern.wsRidgeCrossCompute(Kfum, X, Vtmp, atmp, s);
-        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0, i, j);
-        Wmut.setVal(w0, i, j);
-
-        double acc = 0.0;
-        for(unsigned int r = 0; r < M; r++)
-          for(unsigned int c = 0; c < M; c++)
-            acc += gKuu.getVal(r, c) * (Kp.getVal(r, c) - Km.getVal(r, c)) / (2.0 * step);
-        for(unsigned int n = 0; n < N; n++)
-          for(unsigned int m = 0; m < M; m++)
-            acc += gKfu.getVal(n, m) * (Kfup.getVal(n, m) - Kfum.getVal(n, m)) / (2.0 * step);
-        gZ.setVal(acc, i, j);
+        const double gv = gV.getVal(i, k) - gdotv * Vtmp.getVal(i, k);
+        gZ.addVal(gv / nrm, i, k);
       }
+      gZ.addVal(ga.getVal(i, 0), i, weightDim());
     }
-    ridgeFactors(Vtmp, atmp); // restore caches
   }
   else
   {
+    gradWFromKuu(gZ, gKuu, Kuu);
     kern.wsCrossCompute(Kfu, X, W, s);
     kern.wsGradParams(tempG, X, W, s, gKfu);
     CMatrix gWfromKuf(M, d);

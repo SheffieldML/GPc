@@ -215,6 +215,8 @@ class CInducingWeightSpace : public CInducing
   void fillKuuRidge(CMatrix& Kuu) const;
   void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
   void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
+  // Analytic ∂⟨gKuu,Kuu⟩/∂(unit V, a); then chain to raw W via normalisation.
+  void gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKuu) const;
 
   CMatrix W; // owned; ridge: M×(d+2); isotropic: M×(d+1)
   double s;

@@ -54,6 +54,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0027](./cip0027.md): GPy-aligned defaults — `Gaussian_noise.variance`; drop auto White/Bias for regression/PPA; **IVM keeps trained White** (softener write-up [`cip0027/ivm_softener.md`](./cip0027/ivm_softener.md)); EP/non-linear likelihoods deferred (**Proposed**). Implements [REQ-0014](../requirements/req0014_observation-noise-in-likelihood.md).
 - [CIP-0028](./cip0028.md): Weight-space inducing features for MLP and arc-cosine kernels (**Proposed**). Extends [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md) / [CIP-001C](./cip001C.md) beyond stationary white-noise.
 - [CIP-0029](./cip0029.md): Green's-function (causal-root) inducing features for 1-D kernels (**Proposed**). Extends [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md) / [CIP-001C](./cip001C.md); sibling of [CIP-0028](./cip0028.md).
+- [CIP-002A](./cip002A.md): SVGP — explicit whitened \(q(u)\) with natural gradients (CVI form), Adam for hyperparameters, seeded minibatches; Phase 1 prototype `CSvgp`/`testSvgp` matches `CGp` DTCVAR exactly (**Proposed**). Implements [REQ-0015](../requirements/req0015_stochastic-variational-sparse-gp.md).
 
 ## Creating a Good CIP
 

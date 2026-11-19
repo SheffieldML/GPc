@@ -12,6 +12,7 @@ Maintainer notes for how GPc builds and how verification is gated. Short command
 - **Windows (experimental, [CIP-002B](../cip/cip002B.md)):** CMake only — MSVC `cl` + Intel Fortran `ifx` + OpenBLAS (vcpkg). No blessed `make.win`. Actions job `windows-msvc-cmake` in `compile.yml` is a **soft gate** (`continue-on-error`) until Phase B soak. Local sketch (Developer Command Prompt + oneAPI `ifx` on `PATH`):
 
 ```bat
+vcpkg install openblas:x64-windows lapack-reference:x64-windows
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_CXX_COMPILER=cl -DCMAKE_Fortran_COMPILER=ifx ^
   -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
@@ -20,7 +21,7 @@ cmake --build build
 build\gp.exe -h
 ```
 
-  Platform define is `_WIN32`. Historical CLAPACK/`blaswrap.h` is opt-in via `-DGPC_USE_CLAPACK` (off by default; header not in tree).
+  Platform define is `_WIN32`. vcpkg’s `openblas` port is BLAS-only (`NOFORTRAN`); install `lapack-reference` for Fortran-ABI LAPACK (`dpotrf_` / `dsyev_`). Historical CLAPACK/`blaswrap.h` is opt-in via `-DGPC_USE_CLAPACK` (off by default; header not in tree).
 - **Python packaging (Phase B):** from `python/`, `pip install -e ".[test]"` uses scikit-build-core against the repo-root CMake (`GPC_BUILD_PYTHON`). Day-to-day façade work can still use `python/Makefile` + root `libgp`. See [`python/README.md`](../python/README.md).
 - **Optional CTest (Phase C):** `cmake -B build -DGPC_BUILD_TESTS=ON -DGPC_USE_MATIO=ON -DCMAKE_PREFIX_PATH="…openblas;…libmatio" && cmake --build build && ctest --test-dir build` mirrors the makefile matio-gate binaries. **Actions still hard-gates on make**; CMake ctest is maintainer/packaging confidence only ([CIP-0020](../cip/cip0020.md) cutover decision).
 - Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) and the archived 2020 stub `CMakeLists.txt.archive-2020` live under [`make/legacy/`](../make/legacy/); they are not CI targets.

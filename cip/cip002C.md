@@ -142,7 +142,7 @@ Specifically, this CIP implements:
 
 ## Implementation Status
 
-- [x] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts (`.github/workflows/wheels.yml`; `continue-on-error: true` until green)
+- [x] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts (`.github/workflows/wheels.yml`; `continue-on-error: true` until green). macOS skips delocate until Phase B (Homebrew bottles are minOS 26 on `macos-latest`).
 - [ ] Phase B: auditwheel/delocate (or equivalent) self-contained OpenBLAS + gfortran; pytest on wheel
 - [ ] Phase C: docs + TestPyPI/Release; PyPI after sign-off; distribution name locked
 - [ ] Phase D: Windows wheels after CIP-002B

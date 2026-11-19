@@ -8,7 +8,13 @@ endif()
 include(${GPC_ROOT}/cmake/GpcSources.cmake)
 
 add_library(gp_fortran OBJECT ${GPC_LIBGP_FORTRAN_SOURCES})
-target_compile_options(gp_fortran PRIVATE -std=legacy -funroll-all-loops -O3 -fPIC)
+# GNU gfortran flags from the makefile path; Intel ifx (CIP-002B) uses defaults / build type.
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(gp_fortran PRIVATE -std=legacy -funroll-all-loops -O3)
+  if(UNIX)
+    target_compile_options(gp_fortran PRIVATE -fPIC)
+  endif()
+endif()
 
 add_library(gpc_lib STATIC ${GPC_LIBGP_CXX_SOURCES} $<TARGET_OBJECTS:gp_fortran>)
 set_target_properties(gpc_lib PROPERTIES OUTPUT_NAME gp)

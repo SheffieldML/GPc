@@ -56,3 +56,64 @@ jobs:
           ./bgplvm learn -h
           ./bgplvm gnuplot -h
           ./ppa -h
+
+  # CIP-002B: Windows MSVC + Intel ifx + OpenBLAS via thin CMake (soft gate).
+  windows-msvc-cmake:
+    name: Windows MSVC CMake (soft)
+    runs-on: windows-2022
+    continue-on-error: true
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Intel Fortran (ifx)
+        uses: fortran-lang/setup-fortran@v1
+        id: setup-fortran
+        with:
+          compiler: intel
+          version: "2025.0"
+
+      - name: Enable MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Install OpenBLAS (vcpkg)
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%VCPKG_ROOT%"
+          call "%VCPKG_ROOT%\bootstrap-vcpkg.bat"
+          "%VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows
+        shell: cmd
+
+      - name: Configure CMake (MSVC cl + ifx + OpenBLAS)
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DCMAKE_Fortran_COMPILER=ifx ^
+            -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+            -DVCPKG_TARGET_TRIPLET=x64-windows ^
+            -DGPC_BUILD_EXTRA_CLIS=ON ^
+            -DGPC_BUILD_GP_CLI=ON ^
+            -DGPC_USE_MATIO=OFF ^
+            -DGPC_BUILD_TESTS=OFF
+        shell: cmd
+
+      - name: Build
+        run: cmake --build build --parallel
+        shell: cmd
+
+      - name: Smoke help
+        shell: cmd
+        run: |
+          set "PATH=%VCPKG_ROOT%\installed\x64-windows\bin;%PATH%"
+          build\gp.exe -h
+          build\ivm.exe -h
+          build\gplvm.exe -h
+          build\bgplvm.exe -h
+          build\ppa.exe -h

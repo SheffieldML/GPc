@@ -31,7 +31,7 @@ Users and bindings can rely on a published concurrency contract: one live model 
 
 ## Notes (Optional)
 
-- Performance parallelism inside one evaluation (multi-threaded BLAS or OpenMP over kernel loops) remains [CIP-0013](../cip/cip0013.md) P7 — orthogonal to this safety/documentation requirement.
+- Performance parallelism inside one evaluation (multi-threaded BLAS or OpenMP over kernel loops) is [REQ-0013](./req0013_intra-eval-kernel-parallelism.md) / [CIP-0025](../cip/cip0025.md) (was CIP-0013 P7) — orthogonal to this safety/documentation requirement.
 - Debug-only owner-thread asserts are allowed as HOW; they are not required for Validated if documentation + RNG policy alone meet the criteria.
 
 ## References

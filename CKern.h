@@ -937,6 +937,25 @@ class CRbfKern: public CStationaryKern {
 
 };
 
+// Exponentiated quadratic (GPy ExpQuad): same maths as CRbfKern, lengthscale-first
+// GPy surface (CIP-0024 / REQ-0012). Storage remains inverseWidth via the RBF engine.
+class CEqKern: public CRbfKern {
+ public:
+  CEqKern();
+  CEqKern(unsigned int inDim);
+  CEqKern(const CMatrix& X);
+  CEqKern(const CEqKern& kern);
+  ~CEqKern();
+  CEqKern* clone() const
+  {
+    return new CEqKern(*this);
+  }
+  string gpyComponentName() const;
+
+ private:
+  void _markEq();
+};
+
 // Exponential Kernel, written by Karel Lebeda with no guarantees whatsoever...
 class CExpKern: public CStationaryKern {
  public:

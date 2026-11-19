@@ -1,4 +1,5 @@
 #include "ppa.h"
+#include "CSparsePpa.h"
 
 int main(int argc, char* argv[])
 {
@@ -226,7 +227,7 @@ void CClppa::relearn()
   int numNoiseParams = pmodel->noise.getNumParams();
   CMatrix noiseParams(1, numNoiseParams);
   pmodel->noise.getParams(noiseParams);
-  pmodel->noise.setTarget(y);
+  pmodel->noise.setTarget(&y);
   pmodel->noise.setParams(noiseParams);
   CPpa model(X, y, pmodel->kern, pmodel->noise, getVerbosity());
   model.optimise(extIters, kernIters, noiseIters);
@@ -282,6 +283,9 @@ void CClppa::learn()
   int noiseIters=20;
   int extIters=4;
   string modelFileName="ppa_model";
+  // CIP-0026: dense (default) or sparse via CSparsePpa / CGp.
+  string approxTypeStr="dense";
+  int activeSetSize=-1;
 
   while(isFlags())
     {
@@ -304,6 +308,18 @@ void CClppa::learn()
 		confirmCurrentArg("--help");
 	      helpInfo(); 
 	      exit(0);
+	    case 'a':
+	      if(j==2)
+		confirmCurrentArg("--active-set-size");
+	      incrementArgument();
+	      activeSetSize=getIntFromCurrentArgument();
+	      break;
+	    case 'A':
+	      if(j==2)
+		confirmCurrentArg("--Approximation-type");
+	      incrementArgument();
+	      approxTypeStr=getCurrentArgument();
+	      break;
 	    case 'l':
 	      if(j==2)
 		confirmCurrentArg("--labelled-indices-file");
@@ -648,49 +664,93 @@ void CClppa::learn()
   CKern* biasKern = new CBiasKern(X);
   if(missingData)
     biasKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(biasKernVariance, 0);
 
-  CKern* whiteKern = new CWhiteKern(X);
-  if(missingData)
-    whiteKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(whiteKernVariance, 0);
-  
   kern.addKern(biasKern);
 
-  kern.addKern(whiteKern);
-  
-  noise->setTarget(y);
-  noise->initParams();
-  CPpa model(X, y, kern, *noise, getVerbosity());
-  model.optimise(extIters, kernIters, noiseIters);
-  string comment="";
-  switch(getFileFormat())
+  // Sparse PPA (CIP-0026): observation noise lives in β — do not add white
+  // (CWhiteKern cross-covariance is zero, so DTC M=N would not recover dense).
+  const bool useSparse = (approxTypeStr!="dense" && approxTypeStr!="ftc");
+  if(!useSparse)
     {
-    case 0: /// PPA file format.
-      comment = "Run as: ";
-      for(int i=0; i<argc; i++)
-	{
-	  comment+=argv[i];
-	  comment+=" ";
-	}
-      writePpaToFile(model, modelFileName, comment);
-      break;
-    case 1: /// Matlab file format.
-#ifdef _NDLMATLAB
-      // Write matlab output.
-      model.writeMatlabFile(modelFileName, "ppaInfo");
-      model.kern.updateMatlabFile(modelFileName, "kern");
-      model.noise.updateMatlabFile(modelFileName, "noise");
-      X.updateMatlabFile(modelFileName, "X");
-      y.updateMatlabFile(modelFileName, "y");
-#else 
-      exitError("Error MATLAB not incorporated at compile time.");
-#endif
-      break;
-    default:
-      exitError("Unrecognised file format number.");
-      
+      CKern* whiteKern = new CWhiteKern(X);
+      if(missingData)
+	whiteKern->addPrior(prior, 0);
+      kern.addKern(whiteKern);
     }
+
+  noise->setTarget(&y);
+  noise->initParams();
+
+  if(!useSparse)
+    {
+      // Requested ftc/dense: full-data CPpa (CIP-0023).
+      CPpa model(X, y, kern, *noise, getVerbosity());
+      model.optimise(extIters, kernIters, noiseIters);
+      string comment="";
+      switch(getFileFormat())
+	{
+	case 0:
+	  comment = "Run as: ";
+	  for(int i=0; i<argc; i++)
+	    {
+	      comment+=argv[i];
+	      comment+=" ";
+	    }
+	  writePpaToFile(model, modelFileName, comment);
+	  break;
+	case 1:
+#ifdef _NDLMATLAB
+	  model.writeMatlabFile(modelFileName, "ppaInfo");
+	  model.kern.updateMatlabFile(modelFileName, "kern");
+	  model.noise.updateMatlabFile(modelFileName, "noise");
+	  X.updateMatlabFile(modelFileName, "X");
+	  y.updateMatlabFile(modelFileName, "y");
+#else
+	  exitError("Error MATLAB not incorporated at compile time.");
+#endif
+	  break;
+	default:
+	  exitError("Unrecognised file format number.");
+	}
+      exit(0);
+    }
+
+  int approxType = CGp::DTC;
+  if(approxTypeStr=="dtc")
+    approxType = CGp::DTC;
+  else if(approxTypeStr=="dtcvar")
+    approxType = CGp::DTCVAR;
+  else if(approxTypeStr=="fitc")
+    approxType = CGp::FITC;
+  else if(approxTypeStr=="pitc")
+    approxType = CGp::PITC;
+  else
+    exitError("Unknown PPA approximation: " + approxTypeStr
+              + " (use dense, dtc, dtcvar, fitc, or pitc).");
+  if(activeSetSize < 1)
+    exitError("Sparse PPA requires -a / --active-set-size > 0.");
+  if(static_cast<unsigned int>(activeSetSize) > X.getRows())
+    exitError("Active set size cannot exceed number of data.");
+
+  CSparsePpa sparse(X, y, kern, *noise, approxType,
+                    static_cast<unsigned int>(activeSetSize),
+                    1.0, getVerbosity());
+  sparse.optimise(extIters, kernIters);
+  if(getVerbosity()>0)
+    {
+      cout << "Sparse PPA learn finished. ppaBound="
+           << sparse.ppaBound() << endl;
+    }
+  string comment = "Run as: ";
+  for(int i=0; i<argc; i++)
+    {
+      comment+=argv[i];
+      comment+=" ";
+    }
+  writeSparsePpaToFile(sparse, modelFileName, comment);
+  if(getVerbosity()>0)
+    cout << "Saved sparse PPA (ppaVersion=" << SPARSE_PPAVERSION
+         << ") to " << modelFileName << endl;
   exit(0);
 }
 
@@ -1082,7 +1142,7 @@ void CClppa::gnuplot()
     }
   if(pmodel->noise.getType()=="probit" || pmodel->noise.getType()=="ncnm")
     {
-      pmodel->activeX.toFile(name+"_active_set.dat");
+      pmodel->activeX.toUnheadedFile(name+"_active_set.dat");
       int numPos = 0;
       int numNeg = 0;
       int numUnlab = 0;
@@ -1095,9 +1155,16 @@ void CClppa::gnuplot()
 	  else
 	    numUnlab++;
 	}
-      CMatrix XPos(numPos, X.getCols()+1);
-      CMatrix XNeg(numNeg, X.getCols()+1);
-      CMatrix XUnlab(numUnlab, X.getCols()+1);
+      // Avoid CMatrix(0, c) under GPC_CHECKS (BOUNDCHECK); match ivm.cpp.
+      CMatrix XPos;
+      CMatrix XNeg;
+      CMatrix XUnlab;
+      if(numPos>0)
+	XPos.resize(numPos, X.getCols()+1);
+      if(numNeg>0)
+	XNeg.resize(numNeg, X.getCols()+1);
+      if(numUnlab>0)
+	XUnlab.resize(numUnlab, X.getCols()+1);
       int posIndex = 0;
       int negIndex = 0;
       int unlabIndex = 0;
@@ -1126,11 +1193,11 @@ void CClppa::gnuplot()
 	    }
 	}
       if(numPos>0)
-	XPos.toFile(name+"_positive.dat");
+	XPos.toUnheadedFile(name+"_positive.dat");
       if(numNeg>0)
-	XNeg.toFile(name+"_negative.dat");
+	XNeg.toUnheadedFile(name+"_negative.dat");
       if(numUnlab>0)
-	XUnlab.toFile(name+"_unlabelled.dat");
+	XUnlab.toUnheadedFile(name+"_unlabelled.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);
@@ -1175,7 +1242,7 @@ void CClppa::gnuplot()
       out << "# Prepared plot of model file " << endl;
       for(int i=0; i<numy; i++)
 	{
-	  probOut[i]->toStream(out);
+	  probOut[i]->toUnheadedStream(out);
 	  out << endl;
 	}
       out.close();
@@ -1226,7 +1293,7 @@ void CClppa::gnuplot()
 	  scatterActive.setVal(pmodel->trainY.getVal(i, 0), i, pmodel->activeX.getCols());
 	}
       
-      scatterActive.toFile(name+"_active_set.dat");
+      scatterActive.toUnheadedFile(name+"_active_set.dat");
       CMatrix scatterData(X.getRows(), X.getCols()+1);
       for(int i=0; i<X.getRows(); i++)
 	{
@@ -1234,7 +1301,7 @@ void CClppa::gnuplot()
 	    scatterData.setVal(X.getVal(i, j), i, j);
 	  scatterData.setVal(y.getVal(i, 0), i, X.getCols());
 	}
-      scatterData.toFile(name+"_scatter_data.dat");
+      scatterData.toUnheadedFile(name+"_scatter_data.dat");
       CMatrix minVals(1, X.getCols());
       CMatrix maxVals(1, X.getCols());
       X.maxRow(maxVals);
@@ -1280,7 +1347,7 @@ void CClppa::gnuplot()
 	  out << "# Prepared plot of model file " << endl;
 	  for(int i=0; i<numy; i++)
 	    {
-	      regressOut[i]->toStream(out);
+	      regressOut[i]->toUnheadedStream(out);
 	      out << endl;
 	    }
 	  out.close();
@@ -1325,7 +1392,7 @@ void CClppa::gnuplot()
 	      errorBarMinus.setVal(val - stdVals.getVal(j), j, 1);
 	    }
 	  string lineFile = name + "_line_data.dat";
-	  regressOut.toFile(lineFile);
+	  regressOut.toUnheadedFile(lineFile);
 	  string errorFile = name + "_error_bar_data.dat";
 	  ofstream out(errorFile.c_str());
 	  if(!out) throw ndlexceptions::FileWriteError(errorFile);
@@ -1384,14 +1451,16 @@ void CClppa::helpInfo()
   else if(command=="learn")
     {
       helpHeader();
-      helpUsage("ppa [options] learn -a int [command-options] example_file [model_file]");
-      helpDescriptor("This file is for learning a data set with an PPA. By default the kernel parameters are also optimised for 4 iterations.");
+      helpUsage("ppa [options] learn [command-options] example_file [model_file]");
+      helpDescriptor("Learn a PPA model. Default is dense CPpa (CIP-0023). Sparse path (CIP-0026) uses CGp via -A dtc|dtcvar|fitc|pitc and -a M; observation noise is β (no white kernel). Sparse models use ppaVersion=0.3.");
       cout << "Arguments:" << endl;
       helpArgument("example_file", "File with the training data. The data file is in the format used by SVM light.");
-      helpArgument("model_file", "File to store the resulting model in. By default this is set to ppa_model.");
+      helpArgument("model_file", "File to store the resulting model in. Default ppa_model.");
       cout << endl;
       cout << "Command Options:" << endl;
       helpArgument("-?, -h, --help", "This help.");
+      helpArgument("-A, --Approximation-type {dense,dtc,dtcvar,fitc,pitc}", "Dense (default) or sparse CGp-backed PPA.");
+      helpArgument("-a, --active-set-size int", "Inducing size M for sparse approx (required if -A is not dense).");
       helpArgument("-o, --output-type {c,r,n}", "select between classification, regression and null category noise model.");
       helpArgument("-e, --external-iterations int", "Number of external iterations. Default is 4.");
       helpArgument("-l, --labelled-indices-file string", "File containing indices of labelled points. The index starts from 1.");

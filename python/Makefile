@@ -16,6 +16,7 @@ EXT_SUFFIX := $(shell $(PY) -c 'import sysconfig; print(sysconfig.get_config_var
 
 MODULE := gpc/_gpc$(EXT_SUFFIX)
 OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o
+REF_FTC := ref_ftc_objective
 
 # Reuse root CCFLAGS (includes -fPIC, -std=c++17) plus pybind/numpy.
 PY_CCFLAGS = $(CCFLAGS) -I$(ROOT) -I$(PYBIND11_INCLUDE) -I$(NUMPY_INCLUDE) -I$(PYTHON_INCLUDE) -Isrc
@@ -24,6 +25,8 @@ ifeq ($(PLAT),_OSX)
 PY_UNDEF = -undefined dynamic_lookup
 endif
 PY_LDFLAGS = -L$(ROOT) -lgp $(LDFLAGS) $(PY_UNDEF)
+REF_CCFLAGS = $(CCFLAGS) -I$(ROOT)
+REF_LDFLAGS = -L$(ROOT) -lgp $(LDFLAGS)
 
 .PHONY: all test clean libgp
 
@@ -47,8 +50,11 @@ src/wrap_gp.o: src/wrap_gp.cpp src/wrap_gp.h src/matrix_numpy.h
 $(MODULE): $(OBJS) $(ROOT)/libgp$(LIBSEXT)
 	$(LD) ${XLINKERFLAGS} -shared -o $(MODULE) $(OBJS) $(PY_LDFLAGS)
 
-test: $(MODULE)
+$(REF_FTC): ref_ftc_objective.cpp $(ROOT)/libgp$(LIBSEXT)
+	$(CC) ref_ftc_objective.cpp -o $(REF_FTC) $(REF_CCFLAGS) $(REF_LDFLAGS)
+
+test: $(MODULE) $(REF_FTC)
 	cd $(CURDIR) && $(PY) -m pytest -q tests
 
 clean:
-	rm -f src/*.o $(MODULE)
+	rm -f src/*.o $(MODULE) $(REF_FTC) ref_ftc_objective.o

@@ -2,6 +2,55 @@
 #include "CNoise.h"
 
 using namespace std;
+
+double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
+                                     double& /*gMu*/, double& /*gVar*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "expectedLogLikelihood not implemented for noise type " + getType());
+}
+
+double CGaussianNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                             double& gMu, double& gVar) const
+{
+  // p(y|f) = N(y|f, sigma2); E_q[log p] with q(f)=N(mu,var).
+  const double betaLik = 1.0 / sigma2;
+  const double r = y - muVal;
+  gMu = betaLik * r;
+  gVar = -0.5 * betaLik;
+  return -ndlutil::HALFLOGTWOPI + 0.5 * log(betaLik)
+    - 0.5 * betaLik * (r * r + var);
+}
+
+namespace {
+struct ProbitEllCtx {
+  double y;
+  double bias;
+};
+double probitLogLik(double f, void* ctx)
+{
+  const ProbitEllCtx* c = static_cast<const ProbitEllCtx*>(ctx);
+  return ndlutil::lnCumGaussian(c->y * (f + c->bias));
+}
+double probitLogLikPrime(double f, void* ctx)
+{
+  const ProbitEllCtx* c = static_cast<const ProbitEllCtx*>(ctx);
+  return c->y * ndlutil::gradLnCumGaussian(c->y * (f + c->bias));
+}
+}
+
+double CProbitNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                           double& gMu, double& gVar) const
+{
+  // E_q[log Φ(y (f + bias))]; Gauss–Hermite n=20 (CIP-002A Phase 4).
+  // Bias: use process 0 by default; CSvgp sets process via setExpectedLogLikBias.
+  ProbitEllCtx ctx;
+  ctx.y = y;
+  ctx.bias = ellBias;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, probitLogLik, probitLogLikPrime,
+                                     &ctx, gMu, gVar);
+}
+
 void CNoise::getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const
 {
   DIMENSIONMATCH(g.dimensionsMatch(nu));
@@ -836,6 +885,7 @@ void CProbitNoise::_init()
 {
   setType("probit");
   setName("Probit");
+  ellBias = 0.0;
 }
 void CProbitNoise::initNames()
 {

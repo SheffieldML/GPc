@@ -3,7 +3,9 @@
 #  The machine (platform) identifier to append to the library names
 #
 #  CIP-0013 P1: default link is OpenBLAS (libopenblas-dev on Ubuntu/CI).
+#  CIP-002D QW1: bare make is -O2 -g with cheap checks (GPC_CHECKS=1).
 #  make RELEASE=1 selects -O2 -DNDEBUG and turns GPC_CHECKS off.
+#  make CHECKS=full restores exhaustive checks (GPC_CHECKS=2).
 #
 SHELL = /bin/sh
 
@@ -59,11 +61,13 @@ LD=g++
 LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS) $(OPENMPLDFLAGS)
 CC=g++
 # C++17: dynamic exception specifications removed from the sources (CIP-0002).
-# CIP-0013: RELEASE=1 is the timed / documented Linux run path.
+# CIP-0013 / CIP-002D: RELEASE=1 is the timed path; default is optimised + cheap checks.
 ifeq ($(RELEASE),1)
 CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
+else ifeq ($(CHECKS),full)
+CCFLAGS = -std=c++17 -O2 -g -DDBG -DGPC_CHECKS=2 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 else
-CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
+CCFLAGS = -std=c++17 -O2 -g -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 endif
 FC=gfortran
 FCFLAGS = -funroll-all-loops -O3 -fPIC

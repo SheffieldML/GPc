@@ -30,7 +30,8 @@ jobs:
           make clean || true
           # testSparsePpa: CIP-0026 — exercises CGp::sparsePpaElboGpTerms (CIP-0011 gate).
           # testSvgp: CIP-002A — CSvgp / CAdam / expectedLogLikelihood / gaussHermite.
-          make USE_MATIO=1 COVERAGE=1 matio-tests bgplvm testSparsePpa testSvgp
+          # CIP-002D: exhaustive checks for correctness coverage.
+          make USE_MATIO=1 COVERAGE=1 CHECKS=full matio-tests bgplvm testSparsePpa testSvgp
 
       - name: Run matio reference tests
         run: make run-matio-tests

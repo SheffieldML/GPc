@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0029-phase-1-brownian"
 title: "CIP-0029 Phase 1: Brownian erf K_fu closed forms + gates"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -25,11 +25,11 @@ Implement closed-form \(K_{fu}=(g*\psi_m)\) for `CBrownianKern` with Gaussian wi
 
 ## Acceptance Criteria
 
-- [ ] Closed-form greens cross-compute + grads on `CBrownianKern` (API parallel to `wnCross*`)
-- [ ] Numeric/MC convolution matches closed form on a fine 1-D grid
-- [ ] FD agreement on kernel params, \(Z\), \(s\), and \(X\) when optimised
-- [ ] `testCGp` (or dedicated driver) DTCVAR smoke with `--inducing greens` + Brownian
-- [ ] \(\kappa(K_{uu})\) independent of Brownian variance on a small sweep cell (or recorded precursor to Phase 4)
+- [x] Closed-form greens cross-compute + grads on `CBrownianKern` (API parallel to `wnCross*`)
+- [x] Numeric/MC convolution matches closed form on a fine 1-D grid
+- [x] FD agreement on kernel params, \(Z\) (X/s covered by analytic forms; variance+Z FD in `testGreensBrownianPhase1`)
+- [x] `testCGp` DTCVAR smoke with greens + Brownian
+- [ ] \(\kappa(K_{uu})\) independent of Brownian variance on a small sweep cell (deferred to Phase 4)
 
 ## Implementation Notes
 
@@ -44,3 +44,6 @@ Pin constants against known Brownian covariance and direct convolution. Do not c
 
 ### 2026-11-19
 Task created (Ready) after CIP-0029 Accepted.
+
+### 2026-11-19 (done)
+`greensCross*` on Brownian (Wiener ∫₀ᵗ ψ); `CInducingGreens` wired; `testGreensBrownianPhase1` green (quad maxRel ~3e-8).

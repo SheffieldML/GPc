@@ -6250,6 +6250,146 @@ double CBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const C
   throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CBrownianKern");
 }
 
+// CIP-0029 Phase 1: Wiener causal root × Gaussian windows.
+// f(t)=σ∫_0^t ξ, u_m=∫ψ_m ξ, ψ=(4πs²)^{1/4} N(·;z,s²)
+// ⇒ K_fu = σ (4πs²)^{1/4} [Φ((t-z)/s) − Φ(−z/s)].
+namespace {
+inline double greensPsiNorm(double s)
+{
+  return pow(4.0 * M_PI * s * s, 0.25);
+}
+} // namespace
+
+void CBrownianKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double dPhi = ndlutil::cumGaussian((t - z) / s) - ndlutil::cumGaussian(-z / s);
+      Kfu.setVal(amp * dPhi, n, m);
+    }
+  }
+}
+
+void CBrownianKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  // ∂K/∂variance = K/(2 variance)
+  double gVar = 0.0;
+  const double inv2var = (variance == 0.0) ? 0.0 : 0.5 / variance;
+  CMatrix Kfu;
+  greensCrossCompute(Kfu, X, Z, s);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gVar += gKfu.getVal(n, m) * Kfu.getVal(n, m) * inv2var;
+  g.setVal(gVar, 0);
+}
+
+void CBrownianKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp_s = sigma * c / s;
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z = Z.getVal(m, 0);
+    const double phiBeta = ndlutil::ngaussian(-z / s);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      const double phiAlpha = ndlutil::ngaussian((t - z) / s);
+      // ∂K/∂z = σ c / s (−φ(α) + φ(β))
+      acc += gKfu.getVal(n, m) * amp_s * (-phiAlpha + phiBeta);
+    }
+    gZ.setVal(acc, m, 0);
+  }
+}
+
+void CBrownianKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp_s = sigma * c / s;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      // ∂K/∂t = σ c / s φ((t-z)/s)
+      acc += gKfu.getVal(n, m) * amp_s * ndlutil::ngaussian((t - z) / s);
+    }
+    gX.setVal(acc, n, 0);
+  }
+}
+
+void CBrownianKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gS.resize(1, 1);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dKdS = sigma * (
+          (c / (2.0 * s)) * dPhi
+          + c * (-ndlutil::ngaussian(alpha) * alpha / s
+                 + ndlutil::ngaussian(beta) * beta / s));
+      acc += gKfu.getVal(n, m) * dKdS;
+    }
+  }
+  gS.setVal(acc, 0, 0);
+}
+
 // Coregionalize kernel (CIP-000D / GPy Coregionalize).
 CCoregionalizeKern::CCoregionalizeKern() : CKern(), outputDim(1), rank(1)
 {
@@ -7337,6 +7477,37 @@ void CKern::wnGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*Z*/,
   throw ndlexceptions::NotImplementedError("wnGradS not implemented for kernel type " + getType());
 }
 
+void CKern::greensCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*Z*/,
+                               double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::greensGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradParams not implemented for kernel type " + getType());
+}
+void CKern::greensGradZ(CMatrix& /*gZ*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradZ not implemented for kernel type " + getType());
+}
+void CKern::greensGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradX not implemented for kernel type " + getType());
+}
+void CKern::greensGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradS not implemented for kernel type " + getType());
+}
+
 // CIP-001C Phase 3: Bochner spectral density + Hankel / cosine K_fu path.
 namespace {
 
@@ -7797,6 +7968,37 @@ void CWhiteKern::wnGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*Z*/, do
 }
 void CWhiteKern::wnGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
                          const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+
+void CWhiteKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                    double /*s*/) const
+{
+  Kfu.resize(X.getRows(), Z.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::greensGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*Z*/,
+                                  double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::greensGradZ(CMatrix& gZ, const CMatrix& /*X*/, const CMatrix& Z, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+}
+void CWhiteKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::greensGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
 {
   gS.resize(1, 1);
   gS.zeros();
@@ -8755,6 +8957,73 @@ void CCmpndKern::wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double
   for(size_t i = 0; i < components.size(); i++)
   {
     components[i]->wnGradS(tmp, X, Z, s, gKfu);
+    gS.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                    double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  components[0]->greensCrossCompute(Kfu, X, Z, s);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->greensCrossCompute(tmp, X, Z, s);
+    Kfu.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                  const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->greensGradParams(subg, X, Z, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradZ(tmp, X, Z, s, gKfu);
+    gZ.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradX(tmp, X, Z, s, gKfu);
+    gX.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+  CMatrix tmp(1, 1);
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradS(tmp, X, Z, s, gKfu);
     gS.axpy(tmp, 1.0);
   }
 }

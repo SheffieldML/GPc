@@ -448,29 +448,110 @@ void CInducingGreens::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
   fillKuu(Kuu);
 }
 
-void CInducingGreens::computeKuf(CMatrix& /*Kuf*/, const CKern& /*kern*/,
-                                 const CMatrix& /*X*/) const
+void CInducingGreens::kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingGreens::computeKuf: causal K_fu closed forms land in CIP-0029 Phase 1 "
-      "(Brownian) / Phase 2 (Exp/Matérn).");
+  const unsigned int N = Kfu.getRows();
+  const unsigned int M = Kfu.getCols();
+  DIMENSIONMATCH(Kuf.getRows() == M && Kuf.getCols() == N);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < N; n++)
+      Kuf.setVal(Kfu.getVal(n, m), m, n);
 }
 
-void CInducingGreens::computeKux(CMatrix& /*Kux*/, const CKern& /*kern*/,
-                                 const CMatrix& /*Xstar*/) const
+void CInducingGreens::gradZFromKuu(CMatrix& gZ, const CMatrix& gKuu, const CMatrix& Kuu) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingGreens::computeKux: awaits CIP-0029 Phase 1 greens cross-covariance.");
+  const unsigned int M = numInducing();
+  const double inv2s2 = 1.0 / (2.0 * s * s);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = 0; j < M; j++)
+    {
+      if(i == j)
+        continue;
+      const double g = 2.0 * gKuu.getVal(i, j);
+      const double k = Kuu.getVal(i, j);
+      const double coeff = -g * k * inv2s2;
+      const double dz = pZ->getVal(i, 0) - pZ->getVal(j, 0);
+      gZ.addVal(coeff * dz, i, 0);
+    }
+  }
 }
 
-void CInducingGreens::gradFromKuuKuf(CMatrix& /*gKernParams*/, CMatrix& /*gZ*/,
-                                     CMatrix* /*gXOrNull*/,
-                                     const CKern& /*kern*/, const CMatrix& /*X*/,
-                                     const CMatrix& /*gKuu*/, const CMatrix& /*gKuf*/,
-                                     bool /*wantX*/, bool /*regulariseKern*/) const
+void CInducingGreens::computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingGreens::gradFromKuuKuf: awaits CIP-0029 Phase 1 greens gradients.");
+  assertOneD();
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  Kfu.resize(N, M);
+  kern.greensCrossCompute(Kfu, X, *pZ, s);
+  kufFromKfu(Kuf, Kfu);
+}
+
+void CInducingGreens::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const
+{
+  assertOneD();
+  const unsigned int M = numInducing();
+  const unsigned int Ns = Xstar.getRows();
+  Kfu.resize(Ns, M);
+  kern.greensCrossCompute(Kfu, Xstar, *pZ, s);
+  kufFromKfu(Kux, Kfu);
+}
+
+void CInducingGreens::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                                     const CKern& kern, const CMatrix& X,
+                                     const CMatrix& gKuu, const CMatrix& gKuf,
+                                     bool wantX, bool regulariseKern) const
+{
+  assertOneD();
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(gKernParams.getCols() == nParams);
+  DIMENSIONMATCH(gKuu.getRows() == M && gKuu.getCols() == M);
+  DIMENSIONMATCH(gKuf.getRows() == M && gKuf.getCols() == N);
+
+  CMatrix Kuu(M, M);
+  fillKuu(Kuu);
+  gradZFromKuu(gZ, gKuu, Kuu);
+
+  Kfu.resize(N, M);
+  kern.greensCrossCompute(Kfu, X, *pZ, s);
+  gKfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gKfu.setVal(gKuf.getVal(m, n), n, m);
+
+  tempG.resize(1, nParams);
+  tempG.zeros();
+  kern.greensGradParams(tempG, X, *pZ, s, gKfu);
+  for(unsigned int i = 0; i < kern.getNumTransforms(); i++)
+  {
+    const unsigned int idx = kern.getTransformIndex(i);
+    const double val = tempG.getVal(idx);
+    const double param = kern.getParam(idx);
+    tempG.setVal(val * kern.getTransformGradFact(param, i), idx);
+  }
+  if(regulariseKern)
+    kern.addPriorGrad(tempG);
+  for(unsigned int i = 0; i < nParams; i++)
+    gKernParams.addVal(tempG.getVal(i), i);
+
+  CMatrix gZfromKuf(M, 1);
+  gZfromKuf.zeros();
+  kern.greensGradZ(gZfromKuf, X, *pZ, s, gKfu);
+  for(unsigned int i = 0; i < M; i++)
+    gZ.addVal(gZfromKuf.getVal(i, 0), i, 0);
+
+  if(wantX && gXOrNull != 0)
+  {
+    gXOrNull->resize(N, 1);
+    gXOrNull->zeros();
+    kern.greensGradX(*gXOrNull, X, *pZ, s, gKfu);
+  }
+
+  (void)learnS;
 }
 
 unsigned int CInducingGreens::getNumParams() const

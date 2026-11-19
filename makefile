@@ -233,15 +233,18 @@ testSparsePpa.o: testSparsePpa.cpp CSparsePpa.h CPpa.h CGp.h CKern.h CMatrix.h
 CSparsePpa.o: CSparsePpa.cpp CSparsePpa.h CGp.h CKern.h CNoise.h
 	$(CC) -c CSparsePpa.cpp -o CSparsePpa.o $(CCFLAGS)
 
-# CIP-002A prototype: SVGP q(u) natural gradients (full batch, Gaussian) vs CGp DTCVAR.
-testSvgp: testSvgp.o CSvgp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testSvgp testSvgp.o CSvgp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+# CIP-002A: SVGP q(u) natural gradients, ELBO grads, Adam (Gaussian).
+testSvgp: testSvgp.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testSvgp testSvgp.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testSvgp.o: testSvgp.cpp CSvgp.h CGp.h CKern.h CMatrix.h CNoise.h
+testSvgp.o: testSvgp.cpp CSvgp.h CAdam.h CGp.h CKern.h CMatrix.h CNoise.h
 	$(CC) -c testSvgp.cpp -o testSvgp.o $(CCFLAGS)
 
-CSvgp.o: CSvgp.cpp CSvgp.h CKern.h CMatrix.h
+CSvgp.o: CSvgp.cpp CSvgp.h CAdam.h CStochasticOptimisable.h CKern.h CMatrix.h CCholAdjoint.h CInducing.h
 	$(CC) -c CSvgp.cpp -o CSvgp.o $(CCFLAGS)
+
+CAdam.o: CAdam.cpp CAdam.h CStochasticOptimisable.h CMatrix.h
+	$(CC) -c CAdam.cpp -o CAdam.o $(CCFLAGS)
 
 testKern: testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testKern testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

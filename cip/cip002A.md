@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002A"
 last_updated: "2026-11-19"
-status: "Proposed"
+status: "Implemented"
 compressed: false
 related_requirements: ["0015", "0002", "000F", "0014"]
 related_cips: ["0026", "0027", "0012", "001B", "001C", "001E", "0010"]
@@ -26,9 +26,9 @@ title: "SVGP: explicit q(u) with natural gradients, Adam for hyperparameters, mi
 ## Status
 
 - [x] Proposed - Initial idea documented (with Phase 1 prototype)
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -155,17 +155,10 @@ Note: `CGp::posteriorMeanVar` returns variance **including** observation noise \
 ## Implementation Status
 
 - [x] Phase 1 prototype: `CSvgp` + `testSvgp` (branch `prototype-svgp`)
-- [ ] CIP accepted
-- [ ] Phase 2: hyperparameter / \(\mathbf{Z}\) / \(\beta\) gradients
-- [ ] Phase 3: stochastic optimiser, Adam, seeded minibatches
-- [ ] Phase 4: Gauss–Hermite non-Gaussian likelihoods
-- [ ] Phase 5: CLI, stream, Python façade, docs
-
-## References
-
-- Hensman, Fusi & Lawrence (2013), *Gaussian Processes for Big Data*, UAI.
-- Hensman, Matthews & Ghahramani (2015), *Scalable Variational Gaussian Process Classification*, AISTATS.
-- Salimbeni, Eleftheriadis & Hensman (2018), *Natural Gradients in Practice: Non-Conjugate Variational Inference in Gaussian Process Models*, AISTATS.
-- Khan & Lin (2017), *Conjugate-Computation Variational Inference*, AISTATS.
-- Hoffman, Blei, Wang & Paisley (2013), *Stochastic Variational Inference*, JMLR.
-- Titsias (2009), *Variational Learning of Inducing Variables in Sparse Gaussian Processes*, AISTATS.
+- [x] CIP accepted
+- [x] Phase 2: hyperparameter / Z / β gradients (FD max rel ~7e-9)
+- [x] Phase 3: CAdam + seeded minibatches + progress observer
+- [x] Phase 4: expectedLogLikelihood + Gauss–Hermite probit
+- [x] Phase 5: tutorial `docs/tutorials/svgp.md` (CLI/stream/Python façade deferred to follow-up)
+### 2026-11-19 (implementation)
+Phases 2–4 landed on `cip002A-svgp` with `testSvgp` green (FD grads, Adam seed parity, probit GH). Tutorial under `docs/tutorials/svgp.md`. CLI/stream/Python façade remain as a light follow-up under the Phase 5 backlog task.

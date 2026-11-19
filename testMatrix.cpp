@@ -11,6 +11,7 @@ int testNorm();
 int testDist2();
 int testInv();
 int testCholesky();
+int testJitChol();
 int testTranspose();
 int testRandn();
 int testGemm();
@@ -41,6 +42,7 @@ int main()
       fail += testSyev();
       fail += testInv();
       fail += testCholesky();
+      fail += testJitChol();
       fail += testTranspose();
       fail += testRandn();
       
@@ -371,6 +373,98 @@ int testCholesky()
       cout << "FAILURE: Upper Cholesky." << endl;
       fail++;
     }
+  return fail;
+}
+
+int testJitChol()
+{
+  // CIP-002D: free-function jitChol — SPD success, jitter rescue, null raises.
+  int fail = 0;
+
+  CMatrix spd(3, 3);
+  spd.eye();
+  spd.setVal(0.2, 0, 1);
+  spd.setVal(0.2, 1, 0);
+  spd.setSymmetric(true);
+  CMatrix L(3, 3);
+  try
+    {
+      const double j = jitChol(L, spd, 10);
+      bool ok = (j >= 0.0);
+      for(unsigned int i = 0; i < 3; i++)
+        if(!(L.getVal(i, i) > 0.0))
+          ok = false;
+      if(!ok)
+        {
+          cout << "FAILURE: jitChol SPD factor." << endl;
+          fail++;
+        }
+      else
+        cout << "jitChol SPD factor ok." << endl;
+      CMatrix Lret = jitChol(spd, 10);
+      if(Lret.getRows() != 3 || Lret.getCols() != 3)
+        {
+          cout << "FAILURE: jitChol returning overload shape." << endl;
+          fail++;
+        }
+      else
+        cout << "jitChol returning overload ok." << endl;
+    }
+  catch(...)
+    {
+      cout << "FAILURE: jitChol SPD threw." << endl;
+      fail++;
+    }
+
+  // Rank-1 ones matrix: needs diagonal jitter (exercises warning / addDiag path).
+  CMatrix ones(3, 3);
+  for(unsigned int i = 0; i < 3; i++)
+    for(unsigned int k = 0; k < 3; k++)
+      ones.setVal(1.0, i, k);
+  ones.setSymmetric(true);
+  CMatrix L2(3, 3);
+  try
+    {
+      const double j = jitChol(L2, ones, 20);
+      if(j <= 0.0)
+        {
+          cout << "FAILURE: jitChol ones should add positive jitter." << endl;
+          fail++;
+        }
+      else
+        cout << "jitChol ones rescued with jitter=" << j << endl;
+    }
+  catch(ndlexceptions::MatrixNonPosDef&)
+    {
+      cout << "FAILURE: jitChol ones exhausted tries." << endl;
+      fail++;
+    }
+
+  CMatrix Z(3, 3);
+  Z.zeros();
+  Z.setSymmetric(true);
+  CMatrix Lz(3, 3);
+  bool threw = false;
+  try
+    {
+      jitChol(Lz, Z, 5);
+    }
+  catch(ndlexceptions::MatrixNonPosDef&)
+    {
+      threw = true;
+    }
+  catch(...)
+    {
+      threw = true;
+    }
+  if(!threw)
+    {
+      cout << "FAILURE: jitChol zero should raise." << endl;
+      fail++;
+    }
+  else
+    cout << "jitChol zero raises." << endl;
+
   return fail;
 }
 

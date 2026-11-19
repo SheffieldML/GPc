@@ -10,6 +10,7 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 | Compile | [![Compile](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml?query=branch%3Amain) |
 | Reference tests | [![Reference tests](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml?query=branch%3Amain) |
 | Coverage | [![Coverage](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml?query=branch%3Amain) |
+| Wheels | [![Wheels](https://github.com/SheffieldML/GPc/actions/workflows/wheels.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/wheels.yml?query=branch%3Amain) |
 | Codecov | [![codecov](https://codecov.io/gh/SheffieldML/GPc/branch/main/graph/badge.svg)](https://codecov.io/gh/SheffieldML/GPc/branch/main) |
 
 **Platforms:** Ubuntu and macOS are the blessed build targets (CIP-0006). Compile and Reference tests are hard gates on both. Coverage stays on Ubuntu. **Windows** has an experimental soft-gated CMake smoke job (MSVC + Intel `ifx` + OpenBLAS, [CIP-002B](cip/cip002B.md)); there is no blessed `make` path on Windows.
@@ -21,6 +22,8 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
 
 **Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md).
+
+**Python façade (`gpc`):** NumPy-facing wrapper ([CIP-001D](cip/cip001D.md) / [CIP-002C](cip/cip002C.md)). Users: `pip install gpc` once published (see [`python/README.md`](python/README.md)). Contributors: `pip install -e "python/[test]"` with OpenBLAS + gfortran (same page).
 
 **Binaries / demos:** `make gp ivm gplvm bgplvm ppa` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
 

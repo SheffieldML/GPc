@@ -10,6 +10,7 @@
 #include <cmath>
 #include <climits>
 #include <cfloat>
+#include <vector>
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795
 #endif
@@ -72,6 +73,15 @@ namespace ndlutil {
   double randn();
   // uniform deviates from (0.0, 1.0)
   double rand(); 
+
+  // Gauss–Hermite nodes/weights for ∫ g(x) exp(-x²) dx ≈ Σ w_i g(x_i).
+  // For f ~ N(mu, var): E[g(f)] ≈ Σ (w_i/√π) g(mu + √(2 var) x_i).
+  void gaussHermite(unsigned int n, vector<double>& x, vector<double>& w);
+  // Default n=20 quadrature of E[g(f)] and grads w.r.t. mu and var (via chain rule on nodes).
+  double gaussHermiteExpect(double mu, double var, unsigned int n,
+                            double (*g)(double f, void* ctx),
+                            double (*gPrime)(double f, void* ctx),
+                            void* ctx, double& gMu, double& gVar);
 
   // Give a random perumation of numbers.
   vector<unsigned long> randperm(unsigned long maxVal);

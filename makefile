@@ -99,7 +99,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -232,6 +232,19 @@ testSparsePpa.o: testSparsePpa.cpp CSparsePpa.h CPpa.h CGp.h CKern.h CMatrix.h
 
 CSparsePpa.o: CSparsePpa.cpp CSparsePpa.h CGp.h CKern.h CNoise.h
 	$(CC) -c CSparsePpa.cpp -o CSparsePpa.o $(CCFLAGS)
+
+# CIP-002A: SVGP q(u) natural gradients, ELBO grads, Adam (Gaussian).
+testSvgp: testSvgp.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testSvgp testSvgp.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testSvgp.o: testSvgp.cpp CSvgp.h CAdam.h CGp.h CKern.h CMatrix.h CNoise.h
+	$(CC) -c testSvgp.cpp -o testSvgp.o $(CCFLAGS)
+
+CSvgp.o: CSvgp.cpp CSvgp.h CAdam.h CStochasticOptimisable.h CKern.h CMatrix.h CCholAdjoint.h CInducing.h
+	$(CC) -c CSvgp.cpp -o CSvgp.o $(CCFLAGS)
+
+CAdam.o: CAdam.cpp CAdam.h CStochasticOptimisable.h CMatrix.h
+	$(CC) -c CAdam.cpp -o CAdam.o $(CCFLAGS)
 
 testKern: testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testKern testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 

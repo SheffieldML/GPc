@@ -15,9 +15,17 @@ target_include_directories(_gpc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${GPC_RO
 target_link_libraries(_gpc PRIVATE gpc_lib)
 
 if(APPLE)
-  set_target_properties(_gpc PROPERTIES
-    BUILD_RPATH "/opt/homebrew/opt/openblas/lib;/opt/homebrew/opt/gcc/lib/gcc/current"
-    INSTALL_RPATH "@loader_path;/opt/homebrew/opt/openblas/lib;/opt/homebrew/opt/gcc/lib/gcc/current")
+  if(DEFINED SKBUILD)
+    # CIP-002C Phase B: wheel builds — relative RPATH only; delocate vendors dylibs.
+    set_target_properties(_gpc PROPERTIES
+      BUILD_RPATH "@loader_path"
+      INSTALL_RPATH "@loader_path")
+  else()
+    # Contributor editable / plain CMake: Homebrew absolute RPATH for local runs.
+    set_target_properties(_gpc PROPERTIES
+      BUILD_RPATH "/opt/homebrew/opt/openblas/lib;/opt/homebrew/opt/gcc/lib/gcc/current"
+      INSTALL_RPATH "@loader_path;/opt/homebrew/opt/openblas/lib;/opt/homebrew/opt/gcc/lib/gcc/current")
+  endif()
 endif()
 
 # scikit-build-core installs into the wheel; plain CMake installs beside the build tree.

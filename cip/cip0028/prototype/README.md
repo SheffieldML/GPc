@@ -1,16 +1,28 @@
 # CIP-0028 prototype (NumPy)
 
-NumPy evidence for the 2026-11-19 ridge-window revision of [CIP-0028](../cip0028.md).
+NumPy evidence for the 2026-11-19 ridge-window revision of [CIP-0028](../../cip0028.md).
 
-## Expected contents
+Source archive: `deepws_experiment.zip` (unpacked as `deepws/`).
 
-Unpack `deepws_experiment.zip` here so this directory holds the scripts that reproduce:
+## Contents (`deepws/`)
 
-- \(\sqrt{p}\) isotropic \(K_{fu}\) vs quadrature / FD
-- isotropic vs ridge variance-captured tables (\(\kappa(K_{uu})\le10^4\))
-- ridge \(K_{uu}\) / \(K_{fu}\) closed-form checks
-- deep Jacobian spread table (design notes only; not a CIP-0028 deliverable)
+| Path | Role |
+|---|---|
+| `wsfeatures.py`, `ridge.py` | Isotropic √p and ridge closed forms |
+| `check_features.py` | Quadrature / Monte Carlo checks |
+| `dim_sweep.py`, `ridge_sweep.py`, `budget_sweep.py` | Variance-captured tables under \(\kappa(K_{uu})\le10^4\) |
+| `deep.py`, `ws_deep.py`, `tied_*.py` | Jacobian-spread / deep design notes (non-goal of this CIP) |
+| `*.json`, `deep_ws_jacobians.png` | Cached results and figure |
+| `cip0028_update.md` | Draft section appended to the CIP |
 
-## Status
+## Reproduce
 
-As of 2026-11-19 incorporation: the zip was not found under Downloads / Desktop / SheffieldML. Place `deepws_experiment.zip` next to this README (or drop its contents into this directory) and refresh this note.
+```bash
+cd deepws
+python check_features.py
+python dim_sweep.py
+python ridge_sweep.py
+python budget_sweep.py
+```
+
+Deep Jacobian sweeps need the high-precision stack used when the JSON was produced; prefer the checked-in `*_results.json` / `*_sweep.json` unless re-running intentionally.

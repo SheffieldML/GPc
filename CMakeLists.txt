@@ -71,9 +71,43 @@ if(GPC_OPENMP)
   add_compile_definitions(GPC_OPENMP=1)
 endif()
 
-set(BLA_VENDOR OpenBLAS)
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
+# Unix: FindBLAS/FindLAPACK with BLA_VENDOR=OpenBLAS (makefile parity).
+# Windows (CIP-002B): vcpkg openblas is NOFORTRAN + BUILD_WITHOUT_LAPACK, and
+# FindBLAS's Fortran sgemm probe fails under MSVC+ifx. Prefer OpenBLAS CONFIG
+# for BLAS; pair with a separate LAPACK (lapack-reference) from vcpkg.
+set(GPC_BLAS_LINK_LIBS "")
+if(WIN32)
+  find_package(OpenBLAS CONFIG QUIET)
+  if(OpenBLAS_FOUND)
+    list(APPEND GPC_BLAS_LINK_LIBS OpenBLAS::OpenBLAS)
+    message(STATUS "OpenBLAS via CONFIG (Windows/vcpkg)")
+  endif()
+  # Netlib LAPACK (Fortran ABI with trailing underscores, matching lapack.h).
+  find_library(GPC_LAPACK_LIB NAMES lapack liblapack)
+  if(GPC_LAPACK_LIB)
+    list(APPEND GPC_BLAS_LINK_LIBS ${GPC_LAPACK_LIB})
+    message(STATUS "LAPACK library: ${GPC_LAPACK_LIB}")
+  elseif(OpenBLAS_FOUND)
+    # Some OpenBLAS builds embed LAPACK; still try FindLAPACK as a fallback.
+    find_package(LAPACK QUIET)
+    if(LAPACK_FOUND)
+      list(APPEND GPC_BLAS_LINK_LIBS ${LAPACK_LIBRARIES})
+    else()
+      message(WARNING "OpenBLAS found but no separate LAPACK; link may fail on dpotrf_/dsyev_")
+    endif()
+  endif()
+endif()
+if(NOT GPC_BLAS_LINK_LIBS)
+  set(BLA_VENDOR OpenBLAS)
+  find_package(BLAS REQUIRED)
+  find_package(LAPACK REQUIRED)
+  list(APPEND GPC_BLAS_LINK_LIBS ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+endif()
+if(WIN32 AND OpenBLAS_FOUND AND NOT GPC_LAPACK_LIB AND NOT LAPACK_FOUND)
+  message(FATAL_ERROR
+    "Windows build needs LAPACK alongside vcpkg OpenBLAS "
+    "(e.g. vcpkg install lapack-reference:x64-windows).")
+endif()
 
 include(${GPC_ROOT}/cmake/GpcLib.cmake)
 
@@ -108,5 +142,5 @@ endif()
 message(STATUS "GPc CMake (CIP-0020): build=${CMAKE_BUILD_TYPE} plat=${GPC_PLAT} matio=${GPC_USE_MATIO}")
 message(STATUS "  CXX=${CMAKE_CXX_COMPILER}")
 message(STATUS "  Fortran=${CMAKE_Fortran_COMPILER}")
-message(STATUS "  BLAS=${BLAS_LIBRARIES}")
+message(STATUS "  BLAS_LINK=${GPC_BLAS_LINK_LIBS}")
 message(STATUS "  python=${GPC_BUILD_PYTHON} gp_cli=${GPC_BUILD_GP_CLI} tests=${GPC_BUILD_TESTS}")

@@ -86,12 +86,17 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      - name: Install OpenBLAS (vcpkg)
+      - name: Install OpenBLAS + LAPACK (vcpkg)
         run: |
           if exist "%GPC_VCPKG_ROOT%" rmdir /s /q "%GPC_VCPKG_ROOT%"
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "%GPC_VCPKG_ROOT%"
           call "%GPC_VCPKG_ROOT%\bootstrap-vcpkg.bat"
-          "%GPC_VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows
+          rem vcpkg openblas is NOFORTRAN/no-LAPACK; lapack-reference supplies dpotrf_/dsyev_.
+          rem Prefer ifx for the Fortran LAPACK build (on PATH from setup-fortran).
+          set "FC=ifx"
+          set "F77=ifx"
+          "%GPC_VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows lapack-reference:x64-windows
+          dir "%GPC_VCPKG_ROOT%\installed\x64-windows\lib"
         shell: cmd
 
       - name: Configure CMake (MSVC cl + ifx + OpenBLAS)
@@ -101,6 +106,7 @@ jobs:
             -DCMAKE_Fortran_COMPILER=ifx ^
             -DCMAKE_TOOLCHAIN_FILE=%GPC_VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
             -DVCPKG_TARGET_TRIPLET=x64-windows ^
+            -DCMAKE_PREFIX_PATH=%GPC_VCPKG_ROOT%\installed\x64-windows ^
             -DGPC_BUILD_EXTRA_CLIS=ON ^
             -DGPC_BUILD_GP_CLI=ON ^
             -DGPC_USE_MATIO=OFF ^

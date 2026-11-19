@@ -50,3 +50,6 @@ CIP-0028 corrected: MC oracle is \(\int\phi\sqrt{p}\,\psi\); \(\kappa(K_{uu})\) 
 
 ### 2026-11-19 (done)
 `CMlpKern` ws\* closed form with √p Gaussian product; FD grads; White zeros + Cmpnd sum; `testWeightSpaceInducingPhase1` green (MC √p max rel ~5e-3; no-√p control fails; DTCVAR SCG smoke). Informative `ws_wv_sweep_*` deferred to Phase 3.
+
+### 2026-11-19 (superseded as shipping design)
+NumPy prototype: isotropic overlap collapses with \(d\) (e.g. ~2% variance at \(d=16\), \(M=64\) under \(\kappa\le10^4\)). Shipping design moves to ridge windows — see [`2026-11-19_cip0028-phase-1-ridge`](./2026-11-19_cip0028-phase-1-ridge.md). Keep this isotropic path as a low-\(d\) oracle until ridge lands.

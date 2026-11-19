@@ -349,6 +349,13 @@ testCGp: testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfo
 testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c testCGp.cpp -o testCGp.o $(CCFLAGS)
 
+# CIP-0028: FTC vs DTCVAR ridge free/fixed centres (tighter bound demo).
+diagWeightSpaceRidge: tools/diagWeightSpaceRidge.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagWeightSpaceRidge tools/diagWeightSpaceRidge.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+tools/diagWeightSpaceRidge.o: tools/diagWeightSpaceRidge.cpp CGp.h CKern.h CNoise.h
+	$(CC) -c tools/diagWeightSpaceRidge.cpp -o tools/diagWeightSpaceRidge.o $(CCFLAGS)
+
 testMltools: testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testMltools  testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o $(LDFLAGS)
 

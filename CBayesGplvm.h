@@ -34,7 +34,8 @@ public:
 
   // VarDTC bound without KL (CIP-0018 multi-view assembly).
   double varDtcBound() const;
-  // Natural grads for Z/mu/S; unconstrained (transform-scaled) grads for kern and beta.
+  // Untransformed grads for Z/mu/S; unconstrained (transform-scaled) grads for kern and beta.
+  // (Not Fisher-preconditioned natural gradients — see CIP-002A / CSvgp.)
   // If includeKl, subtracts KL grads from gMu/gS. Returns varDtcBound() [- KL if includeKl].
   double computeVarDtcGrads(CMatrix& gKern, CMatrix& gZ, CMatrix& gMu, CMatrix& gS,
                             double& gBeta, bool includeKl) const;

@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0028-phase-1b-mlp-ard"
 title: "CIP-0028 Phase 1b: MLP ARD weight-space path"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -26,9 +26,9 @@ Extend weight-space cross-covariance to `CMlpardKern` (`wsCross*` overrides). St
 
 ## Acceptance Criteria
 
-- [ ] `CMlpardKern` implements `wsCross*` / grads
-- [ ] FD gates for ARD weight/bias variances and centres
-- [ ] Sparse DTCVAR smoke with MLP-ARD + weight-space
+- [x] `CMlpardKern` implements `wsCross*` / grads
+- [x] FD gates for ARD weight/bias variances and centres
+- [x] Sparse DTCVAR smoke with MLP-ARD + weight-space
 
 ## Related
 
@@ -39,3 +39,6 @@ Extend weight-space cross-covariance to `CMlpardKern` (`wsCross*` overrides). St
 
 ### 2026-11-19
 Task created (Proposed) after CIP-0028 Accepted.
+
+### 2026-11-19 (done)
+Diagonal \(\Sigma=\mathrm{diag}(\alpha s_j,\,\beta)\) with isotropic window \(s\); scales=1 matches isotropic; DTCVAR 2-D smoke + FD on inputScale green.

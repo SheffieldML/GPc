@@ -3335,46 +3335,41 @@ namespace {
 
 const double WS_FD_EPS = 1e-6;
 
-// φ = sqrt(π variance / 2) erf(wᵀx̃ / √2) recovers CMlpKern asin (no 2/π).
+// φ = sqrt(π variance / 2) erf(wᵀx̃ / √2) recovers MLP asin (no 2/π).
 // K_fu = ∫ φ √p ψ with ψ L²-normalised Gaussian windows on weight space.
-inline double mlpWsKfuElement(double variance, double weightVar, double biasVar,
-                              const CMatrix& X, unsigned int n,
-                              const CMatrix& W, unsigned int m, double s)
+// sigmaDiag length D=d+1: isotropic uses (α,...,α,β); ARD uses (α s_0,...,α s_{d-1},β).
+inline double mlpWsKfuElementDiag(double variance, const vector<double>& sigmaDiag,
+                                  const CMatrix& X, unsigned int n,
+                                  const CMatrix& W, unsigned int m, double s)
 {
   const unsigned int d = X.getCols();
   const unsigned int D = d + 1;
   BOUNDCHECK(W.getCols() == D);
-  BOUNDCHECK(weightVar > 0.0 && biasVar > 0.0 && s > 0.0 && variance >= 0.0);
+  BOUNDCHECK(sigmaDiag.size() == D);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
 
   const double s2 = s * s;
   const double invS2 = 1.0 / s2;
-  // Λ_eff = I/s² + (2Σ)^{-1}; Σ = diag(weightVar I_d, biasVar).
   double logDetSeff = 0.0;
   double quadW = 0.0;
   double quadMuLamW = 0.0;
-  // Store μ and diagonal S in stack vectors (D is small for tests; heap for safety).
+  double logAbsSigma = 0.0;
   vector<double> mu(D);
   vector<double> Sdiag(D);
   for(unsigned int j = 0; j < D; j++)
   {
-    const double sig2 = (j < d) ? weightVar : biasVar;
+    const double sig2 = sigmaDiag[j];
+    BOUNDCHECK(sig2 > 0.0);
     const double lamP = 1.0 / (2.0 * sig2);
     const double lamEff = invS2 + lamP;
     Sdiag[j] = 1.0 / lamEff;
     const double wh = W.getVal(m, j);
     mu[j] = Sdiag[j] * invS2 * wh;
     logDetSeff += log(Sdiag[j]);
+    logAbsSigma += log(sig2);
     quadW += wh * wh * invS2;
     quadMuLamW += mu[j] * wh * invS2;
   }
-
-  // ∫ √p ψ = C_√p C_ψ (2π)^{D/2} |S|^{1/2} exp(-½ ŵᵀΛ_s ŵ + ½ μᵀΛ_eff μ)
-  // C_√p = (2π)^{-D/4} |Σ|^{-1/4}
-  // C_ψ = (4π s²)^{D/4} (2π s²)^{-D/2}
-  double logAbsSigma = 0.0;
-  for(unsigned int j = 0; j < d; j++)
-    logAbsSigma += log(weightVar);
-  logAbsSigma += log(biasVar);
 
   const double logCsqrtP = -0.25 * (double)D * log(2.0 * M_PI) - 0.25 * logAbsSigma;
   const double logCpsi = 0.25 * (double)D * log(4.0 * M_PI * s2)
@@ -3385,9 +3380,8 @@ inline double mlpWsKfuElement(double variance, double weightVar, double biasVar,
                         + (-0.5 * quadW + 0.5 * quadMuLamW);
   const double intSqrtPPsi = exp(logInt);
 
-  // E[erf(wᵀx̃/√2)] under N(μ, S)
-  double muDot = mu[d]; // bias component × 1
-  double xSx = Sdiag[d]; // 1ᵀ S 1 for bias
+  double muDot = mu[d];
+  double xSx = Sdiag[d];
   for(unsigned int j = 0; j < d; j++)
   {
     const double xj = X.getVal(n, j);
@@ -3396,9 +3390,18 @@ inline double mlpWsKfuElement(double variance, double weightVar, double biasVar,
   }
   const double erfArg = (muDot / sqrt(2.0)) / sqrt(1.0 + xSx);
   const double erfMean = erf(erfArg);
-
   const double B = sqrt(variance * M_PI / 2.0);
   return B * intSqrtPPsi * erfMean;
+}
+
+inline double mlpWsKfuElement(double variance, double weightVar, double biasVar,
+                              const CMatrix& X, unsigned int n,
+                              const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  vector<double> sigmaDiag(d + 1, weightVar);
+  sigmaDiag[d] = biasVar;
+  return mlpWsKfuElementDiag(variance, sigmaDiag, X, n, W, m, s);
 }
 
 void wsFdGradParams(CKern& kern, CMatrix& g, const CMatrix& X, const CMatrix& W,
@@ -3416,15 +3419,22 @@ void wsFdGradParams(CKern& kern, CMatrix& g, const CMatrix& X, const CMatrix& W,
   {
     const double p0 = kern.getParam(p);
     const double h = WS_FD_EPS * max(1.0, fabs(p0));
-    kern.setParam(p0 + h, p);
+    // Keep positive / interior for MLP weight/bias/scales (and ARD inputScale in (0,1)).
+    const double pPlus = min(p0 + h, (p0 > 0.0 && p0 < 1.0) ? 0.999999 : p0 + h);
+    const double pMinus = max(p0 - h, 1e-12);
+    kern.setParam(pPlus, p);
     kern.wsCrossCompute(Kp, X, W, s);
-    kern.setParam(max(p0 - h, 1e-12), p);
+    kern.setParam(pMinus, p);
     kern.wsCrossCompute(Km, X, W, s);
     kern.setParam(p0, p);
+    const double denom = pPlus - pMinus;
     double gp = 0.0;
-    for(unsigned int n = 0; n < N; n++)
-      for(unsigned int m = 0; m < M; m++)
-        gp += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    if(denom > 0.0)
+    {
+      for(unsigned int n = 0; n < N; n++)
+        for(unsigned int m = 0; m < M; m++)
+          gp += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / denom;
+    }
     g.setVal(gp, p);
   }
 }
@@ -3522,6 +3532,50 @@ void CMlpKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, 
   for(unsigned int n = 0; n < N; n++)
     for(unsigned int m = 0; m < M; m++)
       Kfu.setVal(mlpWsKfuElement(variance, weightVariance, biasVariance, X, n, W, m, s), n, m);
+}
+
+void CMlpardKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(W.getCols() == d + 1);
+  BOUNDCHECK(s > 0.0);
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpWsKfuElementDiag(variance, sigmaDiag, X, n, W, m, s), n, m);
+}
+
+void CMlpardKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                               const CMatrix& gKfu) const
+{
+  wsFdGradParams(const_cast<CMlpardKern&>(*this), g, X, W, s, gKfu);
+}
+
+void CMlpardKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  CMatrix Wmut(W);
+  wsFdGradW(*this, gW, X, Wmut, s, gKfu);
+}
+
+void CMlpardKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  wsFdGradX(*this, gX, Xmut, W, s, gKfu);
+}
+
+void CMlpardKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  wsFdGradS(*this, gS, X, W, s, gKfu);
 }
 
 void CMlpKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,

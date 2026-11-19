@@ -33,22 +33,27 @@ endif()
 
 set(GPC_ROOT ${CMAKE_SOURCE_DIR})
 
+# CIP-002B: distinguish Windows from Linux (do not fall through to _LINUX).
 if(APPLE)
   set(GPC_PLAT "_OSX")
   list(APPEND CMAKE_PREFIX_PATH /opt/homebrew/opt/openblas /usr/local/opt/openblas)
+elseif(WIN32)
+  set(GPC_PLAT "_WIN32")
 else()
   set(GPC_PLAT "_LINUX")
 endif()
 
 add_compile_definitions(${GPC_PLAT})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  add_compile_definitions(NDEBUG GPC_CHECKS=0)
-else()
-  add_compile_definitions(DBG GPC_CHECKS=1)
-  if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
-  endif()
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
+# Generator expressions cover Ninja (CMAKE_BUILD_TYPE) and multi-config VS (CIP-002B).
+add_compile_definitions(
+  $<$<CONFIG:Release>:NDEBUG>
+  $<$<CONFIG:Release>:GPC_CHECKS=0>
+  $<$<NOT:$<CONFIG:Release>>:DBG>
+  $<$<NOT:$<CONFIG:Release>>:GPC_CHECKS=1>
+)
 
 if(GPC_USE_MATIO)
   add_compile_definitions(_NDLMATIO)

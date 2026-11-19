@@ -12,7 +12,7 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 | Coverage | [![Coverage](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml?query=branch%3Amain) |
 | Codecov | [![codecov](https://codecov.io/gh/SheffieldML/GPc/branch/main/graph/badge.svg)](https://codecov.io/gh/SheffieldML/GPc/branch/main) |
 
-**Platforms:** Ubuntu and macOS are the blessed build targets (CIP-0006). Compile and Reference tests are hard gates on both. Coverage stays on Ubuntu. **Windows is not supported** in the current tree (no maintained `make` path / CI).
+**Platforms:** Ubuntu and macOS are the blessed build targets (CIP-0006). Compile and Reference tests are hard gates on both. Coverage stays on Ubuntu. **Windows** has an experimental soft-gated CMake smoke job (MSVC + Intel `ifx` + OpenBLAS, [CIP-002B](cip/cip002B.md)); there is no blessed `make` path on Windows.
 
 **Verification:** reference fixtures under `matfiles/` load through **libmatio** — MATLAB is not required to build or run the test gate (`make USE_MATIO=1 run-matio-tests`). Optional object-level MATLAB I/O remains behind `_NDLMATLAB`.
 

@@ -47,6 +47,21 @@ Intra-evaluation parallelism (GEMM distances via multi-threaded BLAS; optional O
 
 FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/DTCVAR/PITC. An earlier FITC-only `+ N log 2π` before `L *= -0.5` double-counted that constant (offset \(\tfrac{d N}{2}\log 2\pi\); gradients unaffected). Removed 2026-11-16 — see backlog `2026-11-15_fitc-logtwopi-double-count`. MATLAB-era FITC fixtures may still differ by that amount; `testGp` accepts either convention via `logLikMatchesFixture`.
 
+## Sparse inducing families
+
+`CGp` sparse approximations (DTC / DTCVAR / FITC / PITC) take an inducing family via `--inducing` / `setInducingType`:
+
+| Family | CLI | \(K_{uu}\) | When to use |
+|---|---|---|---|
+| **points** (default) | `points` | \(k(Z,Z)\) | General case; inducing centres in input space |
+| **whitenoise** | `whitenoise` | window Gram \(\langle\psi_m,\psi_n\rangle\) (kernel-free) | Stationary kernels (RBF, Matérn, …) in any \(d\); lengthscale-driven \(\kappa(K_{uu})\) blow-up ([CIP-001C](../cip/cip001C.md)) |
+| **greens** | `greens` | same window Gram as WN | **1-D** causal / Markov kernels (Brownian, integrated Brownian, Exp / Matérn-\(\nu=p+\tfrac12\)); erf / smoothed-ramp \(K_{fu}\) ([CIP-0029](../cip/cip0029.md)) |
+| **weightspace** | *(CIP-0028)* | TBD | MLP / arc-cosine weight-space windows — Proposed, not shipped |
+
+Fixed window width: `--window-width` (default: median nearest-neighbour spacing of centres). Greens rejects \(d\neq1\). Prefer DTCVAR for the variational bound; points remain the right default when \(K_{uu}\) is well conditioned.
+
+Stability cells: `wn_ls_sweep_*` (point vs white-noise RBF); `greens_var_sweep_*` / `greens_ls_sweep_*` (Brownian variance and Matérn lengthscale vs greens).
+
 ## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md) / [CIP-001B](../cip/cip001B.md))
 
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setSparseLinalgMode` or `gp … --sparse-linalg stable|lq|legacy` (prefer the long form: short `-L` collides with `--Learn-scales`).

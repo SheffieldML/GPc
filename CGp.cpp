@@ -595,8 +595,21 @@ void CGp::setInducingType(const string& typeName)
     delete pInducing;
     pInducing = new CInducingWhiteNoise(&X_u, s0, false);
   }
+  else if(typeName == "greens")
+  {
+    if(getInputDim() != 1 || X_u.getCols() != 1)
+      throw ndlexceptions::Error(
+          "Inducing type greens requires 1-D inputs (CIP-0029); "
+          "got inputDim=" + std::to_string(getInputDim()) + ".");
+    double s0 = CInducingWhiteNoise::medianSpacing(X_u);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    delete pInducing;
+    pInducing = new CInducingGreens(&X_u, s0, false);
+  }
   else
-    throw ndlexceptions::Error("Unknown inducing type (use points or whitenoise): " + typeName);
+    throw ndlexceptions::Error(
+        "Unknown inducing type (use points, whitenoise, or greens): " + typeName);
   setKupToDate(false);
 }
 
@@ -3089,7 +3102,8 @@ void CGp::readParamsFromStream(istream& in)
         if(tokens.size() == 2 && tokens[0] == "inducingType")
         {
           inducingType = tokens[1];
-          if(inducingType == "whitenoise" && in.good() && !in.eof())
+          if((inducingType == "whitenoise" || inducingType == "greens")
+             && in.good() && !in.eof())
           {
             streampos pos2 = in.tellg();
             string line2;
@@ -3119,6 +3133,20 @@ void CGp::readParamsFromStream(istream& in)
         s0 = 1.0;
       delete pInducing;
       pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+    }
+    else if(inducingType == "greens")
+    {
+      if(getInputDim() != 1 || X_u.getCols() != 1)
+        throw ndlexceptions::StreamFormatError(
+            "inducingType",
+            "greens inducing requires 1-D inputs (CIP-0029).");
+      double s0 = windowWidth;
+      if(!(s0 > 0.0))
+        s0 = CInducingWhiteNoise::medianSpacing(X_u);
+      if(!(s0 > 0.0))
+        s0 = 1.0;
+      delete pInducing;
+      pInducing = new CInducingGreens(&X_u, s0, false);
     }
     else
     {
@@ -3154,10 +3182,10 @@ void CGp::writeParamsToStream(ostream& out) const
   {
     writeToStream(out, "fixInducing", isInducingFixed());
     X_u.toStream(out);
-    // CIP-001C: additive keys (absent on load ⇒ points).
+    // CIP-001C / CIP-0029: additive keys (absent on load ⇒ points).
     const string indType = getInducingType();
     writeToStream(out, "inducingType", indType);
-    if(indType == "whitenoise" && pInducing != 0)
+    if((indType == "whitenoise" || indType == "greens") && pInducing != 0)
       writeToStream(out, "windowWidth", pInducing->getWindowWidth());
   }
   //py->toStream(out);

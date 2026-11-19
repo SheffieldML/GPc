@@ -1409,7 +1409,7 @@ int testWeightSpaceInducingPhase0()
   int fail = 0;
   cout << "==== testCGp weightspace inducing Phase 0 (CIP-0028) ====" << endl;
 
-  // Type + window width + kernel-free Kuu; Kuf still NotImplemented.
+  // Type + window width + kernel-free Kuu; RBF still lacks wsCross.
   {
     ToyGp toy(CGp::DTCVAR);
     toy.model->setInducingType("weightspace");
@@ -1426,7 +1426,7 @@ int testWeightSpaceInducingPhase0()
     toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
     fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
                      "weightspace Kuu diagonal finite positive");
-    // RBF+White has no wsCross ⇒ NotImplemented until Phase 1 MLP.
+    // RBF+White: RBF has no wsCross ⇒ NotImplemented.
     try
     {
       (void)toy.model->logLikelihood();
@@ -1481,6 +1481,162 @@ int testWeightSpaceInducingPhase0()
                      "switch → whitenoise");
     fail += failTrue(std::isfinite(toy.model->logLikelihood()),
                      "WN LL finite after weightspace");
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase1()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 1 MLP (CIP-0028) ====" << endl;
+
+  // DTCVAR smoke: MLP + White + weightspace finite LL / grads.
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(10.0);
+    model.setInducingType("weightspace");
+    model.getInducing()->setWindowWidth(0.35);
+    fail += failTrue(model.getInducingType() == "weightspace", "Phase1 inducing type");
+    const double ll0 = model.logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "MLP weightspace DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "MLP weightspace DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP weightspace DTCVAR after SCG LL finite");
+  }
+
+  // Closed-form vs MC of ∫ φ √p ψ (1-D); control without √p must disagree.
+  {
+    CMatrix X(4, 1);
+    for(unsigned int i = 0; i < 4; i++)
+      X.setVal(-0.75 + 0.5 * (double)i, i, 0);
+    CMlpKern kern(X);
+    kern.setParam(2.0, 0); // weightVariance
+    kern.setParam(1.5, 1); // biasVariance
+    kern.setParam(1.1, 2); // variance
+    CMatrix W(2, 2);
+    W.setVal(0.3, 0, 0); W.setVal(0.8, 0, 1);
+    W.setVal(-0.4, 1, 0); W.setVal(1.1, 1, 1);
+    const double s = 0.45;
+    CMatrix Kfu(4, 2);
+    kern.wsCrossCompute(Kfu, X, W, s);
+
+    // MC: sample w ~ N(ŵ, s² I), estimate E[φ √p] * (4π s²)^{D/4}
+    const unsigned int D = 2;
+    const unsigned int nMc = 8000;
+    ndlutil::init_genrand(42u);
+    double maxRel = 0.0;
+    double maxRelNoSqrtP = 0.0;
+    const double alpha = kern.getParam(0);
+    const double beta = kern.getParam(1);
+    const double var = kern.getParam(2);
+    const double B = sqrt(var * M_PI / 2.0);
+    const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+    for(unsigned int m = 0; m < 2; m++)
+    {
+      for(unsigned int n = 0; n < 4; n++)
+      {
+        double acc = 0.0;
+        double accNo = 0.0;
+        for(unsigned int t = 0; t < nMc; t++)
+        {
+          double w0 = W.getVal(m, 0) + s * ndlutil::randn();
+          double w1 = W.getVal(m, 1) + s * ndlutil::randn();
+          const double logAbsSigma = log(alpha) + log(beta);
+          const double logSqrtP = -0.25 * (double)D * log(2.0 * M_PI) - 0.25 * logAbsSigma
+                                 - 0.25 * (w0 * w0 / alpha + w1 * w1 / beta);
+          const double sqrtP = exp(logSqrtP);
+          const double xt = X.getVal(n, 0);
+          const double lin = (w0 * xt + w1) / sqrt(2.0);
+          const double phi = B * erf(lin);
+          acc += phi * sqrtP;
+          accNo += phi; // missing √p — false oracle
+        }
+        const double mc = psiScale * acc / (double)nMc;
+        const double mcNo = psiScale * accNo / (double)nMc;
+        const double cf = Kfu.getVal(n, m);
+        const double rel = fabs(mc - cf) / max(1.0, fabs(cf));
+        const double relNo = fabs(mcNo - cf) / max(1.0, fabs(cf));
+        if(rel > maxRel) maxRel = rel;
+        if(relNo > maxRelNoSqrtP) maxRelNoSqrtP = relNo;
+      }
+    }
+    fail += failTrue(maxRel < 0.08, "wsCross MC vs closed form (√p)");
+    fail += failTrue(maxRelNoSqrtP > 0.15,
+                     "control without √p disagrees with closed form");
+    cout << "  MC max rel err (√p)=" << maxRel
+         << "  (no √p)=" << maxRelNoSqrtP << endl;
+  }
+
+  // FD: wsGradParams / W / X / s agree with wsCrossCompute.
+  {
+    CMatrix X(3, 1);
+    X.setVal(-0.5, 0, 0); X.setVal(0.0, 1, 0); X.setVal(0.7, 2, 0);
+    CMlpKern kern(X);
+    CMatrix W(2, 2);
+    W.setVal(0.2, 0, 0); W.setVal(0.9, 0, 1);
+    W.setVal(-0.3, 1, 0); W.setVal(1.2, 1, 1);
+    const double s = 0.5;
+    CMatrix Kfu(3, 2);
+    kern.wsCrossCompute(Kfu, X, W, s);
+    CMatrix gKfu(3, 2);
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        gKfu.setVal(1.0, n, m);
+
+    CMatrix gParams(1, 3);
+    kern.wsGradParams(gParams, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gParams.getVal(0))
+                     && std::isfinite(gParams.getVal(1))
+                     && std::isfinite(gParams.getVal(2)),
+                     "wsGradParams finite");
+
+    CMatrix gW(2, 2);
+    kern.wsGradW(gW, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gW.getVal(0, 0)), "wsGradW finite");
+
+    CMatrix gX(3, 1);
+    kern.wsGradX(gX, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gX.getVal(0, 0)), "wsGradX finite");
+
+    CMatrix gS(1, 1);
+    kern.wsGradS(gS, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gS.getVal(0)), "wsGradS finite");
+
+    // Spot-check weightVariance FD vs wsGradParams.
+    const double p0 = kern.getParam(0);
+    const double h = 1e-6 * max(1.0, fabs(p0));
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    kern.setParam(p0 + h, 0);
+    kern.wsCrossCompute(Kp, X, W, s);
+    kern.setParam(p0 - h, 0);
+    kern.wsCrossCompute(Km, X, W, s);
+    kern.setParam(p0, 0);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-4, "wsGradParams vs FD weightVariance");
   }
 
   return fail;
@@ -1989,6 +2145,7 @@ int main()
     fail += testModelPaths();
     fail += testWhiteNoiseInducing();
     fail += testWeightSpaceInducingPhase0();
+    fail += testWeightSpaceInducingPhase1();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

@@ -703,6 +703,15 @@ class CCmpndKern: public CComponentKern {
                    const CMatrix& gKfu) const;
   void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                    const CMatrix& gKfu) const;
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
 private:
   void _init();
 };
@@ -809,6 +818,15 @@ class CWhiteKern: public CKern {
                    const CMatrix& gKfu) const;
   void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                    const CMatrix& gKfu) const;
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1288,7 +1306,18 @@ class CMlpKern: public CKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  
+
+  // CIP-0028 Phase 1: weight-space inducing (√p Gaussian-product erf features).
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+
  private:
   void _init();
   double weightVariance;

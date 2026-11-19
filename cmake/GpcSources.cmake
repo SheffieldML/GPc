@@ -30,4 +30,9 @@ set(GPC_LIBGP_FORTRAN_SOURCES
 set(GPC_IVM_EXTRA_SOURCES ${GPC_ROOT}/CIvm.cpp)
 set(GPC_GPLVM_EXTRA_SOURCES ${GPC_ROOT}/CGplvm.cpp)
 set(GPC_BGPLVM_EXTRA_SOURCES ${GPC_ROOT}/CBayesGplvm.cpp)
-set(GPC_PPA_EXTRA_SOURCES ${GPC_ROOT}/CPpa.cpp)
+# Match makefile ppa link line: CPpa + CSparsePpa + CMltools (CIP-0026 sparse path).
+set(GPC_PPA_EXTRA_SOURCES
+  ${GPC_ROOT}/CPpa.cpp
+  ${GPC_ROOT}/CSparsePpa.cpp
+  ${GPC_ROOT}/CMltools.cpp
+)

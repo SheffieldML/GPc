@@ -210,7 +210,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 
 1. **Phase 1 (small):** QW1 default build, QW2 inline bounds checks and levels, QW3 `lqAdjoint` via BLAS. Gate: all suites green in full-checks and release builds; E1/E2 re-measured (combined-effect claim is a hypothesis until then).
 2. **Phase 2 (medium):** QW4 `gpCovGrads` / sparse-path loops; QW5 rectangular distance GEMM and fused stationary gradients. **Defer** MLP / directional / inducing batched-\(\partial Z\) bulk until [CIP-0028](./cip0028.md) merges (that branch owns `CMlpKern` / `ws*` / `CInducing`; it does not touch `gpCovGrads` or `CStationaryKern` GEMM).
-3. **Phase 3 (medium):** QW6 batched `CSvgp` / `CSparsePpa`, with per-minibatch \(K_{uB}\); QW7 workspaces and allocation counts.
+3. **Phase 3 (medium):** QW6 batched `CSvgp` (per-minibatch \(K_{uB}\) when \(B\ll N\)); QW7 workspaces and allocation counts. `CSparsePpa` has no SVGP-style per-point marginal loop on main — skipped.
 4. **Phase 4 (ongoing):** QW8 benchmark artifacts + self-baseline gate design. Write a GPU decision record (new requirement) when a use case is concrete; Part B's options table is the starting point.
 
 ## Backward Compatibility
@@ -240,7 +240,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 - [x] CIP accepted
 - [x] Phase 1: QW1–QW3 (code + docs; `testLQAdjoint` / `testCGp` green under `CHECKS=full` and `RELEASE=1`; E1/E2 re-measure still open)
 - [x] Phase 2: QW4–QW5 stationary (MLP/0028 bulk deferred; `testCGp` / `testKern` / `testLQAdjoint` green)
-- [ ] Phase 3: QW6–QW7
+- [x] Phase 3: QW6–QW7 (`CSvgp` batched marginals/sites; workspaces; `CMatrix::totalAlloc` + `benchGPc --kind svgp`; `CSparsePpa` skipped — no analogous per-point marginal hot path)
 - [ ] Phase 4: QW8 and GPU decision record
 
 ## References

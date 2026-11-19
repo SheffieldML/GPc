@@ -119,6 +119,12 @@ class CSvgp : public CStochasticOptimisable {
   double expectedLogLikBetaDeriv(double yv, double mu, double var) const;
   // Marginals of q(f_i) for output j at training point i.
   void marginal(unsigned int i, unsigned int j, double& mu, double& var) const;
+  // CIP-002D QW6: batch form of A_B and marginals (BLAS-3).
+  bool isFullOrderedBatch(const vector<unsigned int>& batch) const;
+  void formAB(const vector<unsigned int>& batch, CMatrix& AB,
+              CMatrix& dK, CMatrix& dQ) const;
+  void fillMarginals(const vector<unsigned int>& batch,
+                     CMatrix& muOut, CMatrix& varOut) const;
   double dataTerm(const vector<unsigned int>& batch) const;
   vector<unsigned int> allIndices() const;
 
@@ -147,6 +153,17 @@ class CSvgp : public CStochasticOptimisable {
   // Whitened variational parameters q(v_j) = N(qMean(:,j), qCov[j]).
   CMatrix qMean;         // M x d
   vector<CMatrix> qCov;  // d of M x M
+
+  // CIP-002D QW7: reusable buffers (resized only when shape changes).
+  mutable CMatrix wsAB;
+  mutable CMatrix wsDK;
+  mutable CMatrix wsDQ;
+  mutable CMatrix wsMu;
+  mutable CMatrix wsVar;
+  mutable CMatrix wsSAB;
+  mutable CMatrix wsABS;
+  mutable CMatrix wsCoeffs;
+  mutable CMatrix wsXB;
 };
 
 #endif

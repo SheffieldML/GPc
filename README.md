@@ -226,7 +226,7 @@ $ ./gp display spgp1d_dtcvar.model
 $ ./gp gnuplot -r 400 examples/spgp1d.csv spgp1d_dtcvar.model spgp1d_dtcvar
 ```
 
-Optional inducing families (default `points`): `--inducing whitenoise` for stationary kernels when \(K_{uu}\) is lengthscale-ill-conditioned ([CIP-001C](cip/cip001C.md)); `--inducing greens` for **1-D** Brownian / Matérn causal features ([CIP-0029](cip/cip0029.md)). Window width: `--window-width`. See [`docs/numerics.md`](docs/numerics.md) (Sparse inducing families).
+Optional inducing families (default `points`): `--inducing whitenoise` for stationary kernels when \(K_{uu}\) is lengthscale-ill-conditioned ([CIP-001C](cip/cip001C.md)); `--inducing greens` for **1-D** Brownian / Matérn causal features ([CIP-0029](cip/cip0029.md)); `--inducing weightspace` for MLP / arc-cosine **ridge** windows in whitened weight space ([CIP-0028](cip/cip0028.md) — finite \(\Sigma\) via `-k mlp`, angular limit via `-k arccos --arccos-order 0`). Window width: `--window-width`. Compounds: one of `mlp`/`mlpard`/`arccos` plus optional `white`; noise in \(\beta\). See [`docs/numerics.md`](docs/numerics.md) (Sparse inducing families).
 
 See [`docs/tutorials/sparse_regression_1d.md`](docs/tutorials/sparse_regression_1d.md) and optional `make demo_sparse_dtcvar`.
 

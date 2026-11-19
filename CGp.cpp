@@ -615,25 +615,39 @@ void CGp::setInducingType(const string& typeName)
   }
   else if(typeName == "weightspace")
   {
-    // CIP-0028 Design A: inducing owns W (M × (d+1)); X_u left unused.
+    // CIP-0028 ridge default: W is M × (d+2) = [direction ∈ R^{d+1} | offset].
     const unsigned int d = getInputDim();
-    CMatrix W(numActive, d + 1);
+    const unsigned int Dp = d + 1;
+    CMatrix W(numActive, Dp + 1);
     W.zeros();
-    if(X_u.getRows() == numActive && X_u.getCols() == d)
-    {
-      for(unsigned int i = 0; i < numActive; i++)
-        for(unsigned int j = 0; j < d; j++)
-          W.setVal(X_u.getVal(i, j), i, j);
-    }
+    ndlutil::init_genrand(7u);
+    const unsigned int nOff = 4;
     for(unsigned int i = 0; i < numActive; i++)
-      W.setVal(1.0, i, d);
-    double s0 = CInducingWhiteNoise::medianSpacing(W);
-    if(!(s0 > 0.0) || !isfinite(s0))
-      s0 = 1.0;
+    {
+      double nrm = 0.0;
+      for(unsigned int j = 0; j < Dp; j++)
+      {
+        double v = ndlutil::randn();
+        if(X_u.getRows() == numActive && X_u.getCols() == d && j < d)
+          v = X_u.getVal(i, j) + 0.1 * v;
+        else if(j == d)
+          v = 1.0 + 0.1 * v;
+        W.setVal(v, i, j);
+        nrm += v * v;
+      }
+      nrm = sqrt(nrm);
+      if(nrm > 1e-15)
+        for(unsigned int j = 0; j < Dp; j++)
+          W.setVal(W.getVal(i, j) / nrm, i, j);
+      const unsigned int denomOff = (nOff > 1) ? (nOff - 1) : 1;
+      const double a0 = -2.5 + 5.0 * (double)(i % nOff) / (double)denomOff;
+      W.setVal(a0, i, Dp);
+    }
+    double s0 = 0.6;
     delete pInducing;
-    pInducing = new CInducingWeightSpace(W, s0, false);
+    pInducing = new CInducingWeightSpace(W, s0, false, true);
     if(!isInducingFixed())
-      gX_u.resize(numActive, d + 1);
+      gX_u.resize(numActive, Dp + 1);
   }
   else
     throw ndlexceptions::Error(
@@ -3205,37 +3219,55 @@ void CGp::readParamsFromStream(istream& in)
     else if(inducingType == "weightspace")
     {
       const unsigned int d = getInputDim();
-      CMatrix W(numActive, d + 1);
+      const unsigned int Dp = d + 1;
+      CMatrix W(numActive, Dp + 1);
+      bool ridge = true;
       if(haveWeightCentres)
       {
-        if(weightCentres.getRows() != numActive
-           || weightCentres.getCols() != d + 1)
+        if(weightCentres.getRows() != numActive)
           throw ndlexceptions::StreamFormatError(
               "weightCentres",
-              "weightCentres must be numActive x (inputDim+1).");
-        W.deepCopy(weightCentres);
+              "weightCentres must have numActive rows.");
+        if(weightCentres.getCols() == Dp + 1)
+        {
+          W.deepCopy(weightCentres);
+          ridge = true;
+        }
+        else if(weightCentres.getCols() == Dp)
+        {
+          // Legacy isotropic stream: M × (d+1).
+          W.resize(numActive, Dp);
+          W.deepCopy(weightCentres);
+          ridge = false;
+        }
+        else
+          throw ndlexceptions::StreamFormatError(
+              "weightCentres",
+              "weightCentres must be numActive x (inputDim+2) ridge "
+              "or numActive x (inputDim+1) isotropic.");
       }
       else
       {
         W.zeros();
-        if(X_u.getRows() == numActive && X_u.getCols() == d)
-        {
-          for(unsigned int i = 0; i < numActive; i++)
-            for(unsigned int j = 0; j < d; j++)
-              W.setVal(X_u.getVal(i, j), i, j);
-        }
         for(unsigned int i = 0; i < numActive; i++)
+        {
+          for(unsigned int j = 0; j < d; j++)
+            W.setVal((X_u.getRows() == numActive && X_u.getCols() == d)
+                         ? X_u.getVal(i, j) : 0.0,
+                     i, j);
           W.setVal(1.0, i, d);
+          W.setVal(0.0, i, Dp);
+        }
       }
       double s0 = windowWidth;
       if(!(s0 > 0.0))
-        s0 = CInducingWhiteNoise::medianSpacing(W);
+        s0 = ridge ? 0.6 : CInducingWhiteNoise::medianSpacing(W);
       if(!(s0 > 0.0))
         s0 = 1.0;
       delete pInducing;
-      pInducing = new CInducingWeightSpace(W, s0, false);
+      pInducing = new CInducingWeightSpace(W, s0, false, ridge);
       if(!isInducingFixed())
-        gX_u.resize(numActive, d + 1);
+        gX_u.resize(numActive, W.getCols());
     }
     else
     {

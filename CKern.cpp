@@ -3608,6 +3608,216 @@ void CMlpKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s
   wsFdGradS(*this, gS, X, W, s, gKfu);
 }
 
+// ---- CIP-0028 ridge erf windows (prior-whitened weight space) ----
+namespace {
+
+// GPc MLP feature φ = √(π v / 2) erf(ωᵀ x̂ / √2). Ridge measure: t~N(μ,c_s) along v,
+// N(0,I) on the orthogonal complement. Matches CMlpKern::computeElement (v asin, no 2/π).
+inline double mlpRidgeKfuElementDiag(double variance, const vector<double>& sigmaDiag,
+                                     const CMatrix& X, unsigned int n,
+                                     const CMatrix& V, unsigned int m,
+                                     double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  BOUNDCHECK(V.getCols() == Dp);
+  BOUNDCHECK(sigmaDiag.size() == Dp);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
+
+  const double s2 = s * s;
+  const double cs = 2.0 * s2 / (2.0 + s2);
+  const double mu = a * cs / s2;
+  const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                    * sqrt(2.0 * M_PI * cs)
+                    * exp(mu * mu / (2.0 * cs) - a * a / (2.0 * s2));
+  const double B = sqrt(variance * M_PI / 2.0);
+
+  // x̂ = Σ^{1/2} x̃
+  double xhatN2 = 0.0;
+  double vtx = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xh = sqrt(sigmaDiag[j]) * X.getVal(n, j);
+    xhatN2 += xh * xh;
+    vtx += V.getVal(m, j) * xh;
+  }
+  {
+    const double xh = sqrt(sigmaDiag[d]); // bias coord of x̃ is 1
+    xhatN2 += xh * xh;
+    vtx += V.getVal(m, d) * xh;
+  }
+
+  const double varLin = xhatN2 - (1.0 - cs) * vtx * vtx;
+  const double den = sqrt(1.0 + max(varLin, 0.0));
+  const double erfArg = (mu * vtx / sqrt(2.0)) / den;
+  return B * Am * erf(erfArg);
+}
+
+inline double mlpRidgeKfuElement(double variance, double weightVar, double biasVar,
+                                 const CMatrix& X, unsigned int n,
+                                 const CMatrix& V, unsigned int m,
+                                 double a, double s)
+{
+  const unsigned int d = X.getCols();
+  vector<double> sigmaDiag(d + 1, weightVar);
+  sigmaDiag[d] = biasVar;
+  return mlpRidgeKfuElementDiag(variance, sigmaDiag, X, n, V, m, a, s);
+}
+
+void wsRidgeFdGradParams(CKern& kern, CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(g.getCols() == nParams);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  g.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int p = 0; p < nParams; p++)
+  {
+    const double p0 = kern.getParam(p);
+    const double h = 1e-6 * max(1.0, fabs(p0));
+    kern.setParam(p0 + h, p);
+    kern.wsRidgeCrossCompute(Kp, X, V, a, s);
+    kern.setParam(p0 - h, p);
+    kern.wsRidgeCrossCompute(Km, X, V, a, s);
+    kern.setParam(p0, p);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+        acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    g.setVal(acc, p);
+  }
+}
+
+void wsRidgeFdGradX(const CKern& kern, CMatrix& gX, CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int M = V.getRows();
+  gX.resize(N, d);
+  gX.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int j = 0; j < d; j++)
+    {
+      const double x0 = X.getVal(n, j);
+      const double h = 1e-6 * max(1.0, fabs(x0));
+      X.setVal(x0 + h, n, j);
+      kern.wsRidgeCrossCompute(Kp, X, V, a, s);
+      X.setVal(x0 - h, n, j);
+      kern.wsRidgeCrossCompute(Km, X, V, a, s);
+      X.setVal(x0, n, j);
+      double acc = 0.0;
+      for(unsigned int m = 0; m < M; m++)
+        acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+      gX.setVal(acc, n, j);
+    }
+  }
+}
+
+void wsRidgeFdGradS(const CKern& kern, CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  gS.resize(1, 1);
+  const double h = 1e-6 * max(1.0, fabs(s));
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  kern.wsRidgeCrossCompute(Kp, X, V, a, s + h);
+  kern.wsRidgeCrossCompute(Km, X, V, a, max(s - h, 1e-12));
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+  gS.setVal(acc, 0);
+}
+
+} // namespace
+
+void CMlpKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpRidgeKfuElement(variance, weightVariance, biasVariance, X, n, V, m,
+                                    a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CMlpKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                 const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  wsRidgeFdGradParams(const_cast<CMlpKern&>(*this), g, X, V, a, s, gKfu);
+}
+
+void CMlpKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  wsRidgeFdGradX(*this, gX, Xmut, V, a, s, gKfu);
+}
+
+void CMlpKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  wsRidgeFdGradS(*this, gS, X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                      const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpRidgeKfuElementDiag(variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CMlpardKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                    const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  wsRidgeFdGradParams(const_cast<CMlpardKern&>(*this), g, X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                               const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  wsRidgeFdGradX(*this, gX, Xmut, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                               const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  wsRidgeFdGradS(*this, gS, X, V, a, s, gKfu);
+}
+
 // ---- CIP-0028 Phase 2: arc-cosine kernel ----
 namespace {
 
@@ -8503,6 +8713,31 @@ void CKern::wsGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*W*/,
       "wsGradS not implemented for kernel type " + getType());
 }
 
+void CKern::wsRidgeCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                                const CMatrix& /*a*/, double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradParams not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                         const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradX not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                         const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradS not implemented for kernel type " + getType());
+}
+
 // CIP-001C Phase 3: Bochner spectral density + Hankel / cosine K_fu path.
 namespace {
 
@@ -9280,6 +9515,34 @@ void CWhiteKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*W*/, do
 }
 void CWhiteKern::wsGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
                          const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+
+void CWhiteKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                     const CMatrix& /*a*/, double /*s*/) const
+{
+  Kfu.resize(X.getRows(), V.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::wsRidgeGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                                   const CMatrix& /*a*/, double /*s*/,
+                                   const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::wsRidgeGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
 {
   gS.resize(1, 1);
   gS.zeros();
@@ -10371,6 +10634,60 @@ void CCmpndKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double
   for(size_t i = 0; i < components.size(); i++)
   {
     components[i]->wsGradS(tmp, X, W, s, gKfu);
+    gS.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                     const CMatrix& a, double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  components[0]->wsRidgeCrossCompute(Kfu, X, V, a, s);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->wsRidgeCrossCompute(tmp, X, V, a, s);
+    Kfu.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->wsRidgeGradParams(subg, X, V, a, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                              const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->wsRidgeGradX(tmp, X, V, a, s, gKfu);
+    gX.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                              const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+  CMatrix tmp(1, 1);
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->wsRidgeGradS(tmp, X, V, a, s, gKfu);
     gS.axpy(tmp, 1.0);
   }
 }

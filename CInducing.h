@@ -175,13 +175,18 @@ class CInducingGreens : public CInducing
 class CInducingWeightSpace : public CInducing
 {
  public:
-  CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn = false);
+  // Ridge (default): W is M × (d+2) = [direction v ∈ R^{d+1} | offset a].
+  // Isotropic oracle: W is M × (d+1) centres; pass ridgeIn=false.
+  CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn = false,
+                       bool ridgeIn = true);
   virtual ~CInducingWeightSpace() {}
 
   unsigned int numInducing() const;
   unsigned int domainDim() const;
   bool kuuDependsOnKernel() const { return false; }
   std::string typeName() const { return "weightspace"; }
+  bool isRidge() const { return ridge; }
+  unsigned int weightDim() const; // d+1 (direction / isotropic centre dim)
 
   void computeKuu(CMatrix& Kuu, const CKern& kern) const;
   void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
@@ -201,17 +206,25 @@ class CInducingWeightSpace : public CInducing
   double getWindowWidth() const { return s; }
   void setWindowWidth(double sIn);
 
+  // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
+  void ridgeFactors(CMatrix& V, CMatrix& a) const;
+
  private:
   void fillKuu(CMatrix& Kuu) const;
+  void fillKuuIsotropic(CMatrix& Kuu) const;
+  void fillKuuRidge(CMatrix& Kuu) const;
   void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
   void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
 
-  CMatrix W; // owned; M × (d+1) weight centres
+  CMatrix W; // owned; ridge: M×(d+2); isotropic: M×(d+1)
   double s;
   bool learnS;
+  bool ridge;
   mutable CMatrix Kfu;
   mutable CMatrix gKfu;
   mutable CMatrix tempG;
+  mutable CMatrix Vtmp;
+  mutable CMatrix atmp;
 };
 
 #endif /* CINDUCING_H */

@@ -1415,10 +1415,15 @@ int testWeightSpaceInducingPhase0()
     toy.model->setInducingType("weightspace");
     fail += failTrue(toy.model->getInducingType() == "weightspace",
                      "inducing type weightspace");
-    fail += failTrue(toy.model->getInducing()->domainDim() == Q + 1,
-                     "weightspace domainDim == inputDim+1");
-    fail += failTrue(toy.model->getInducing()->centres().getCols() == Q + 1,
-                     "weightspace centres cols == d+1");
+    fail += failTrue(toy.model->getInducing()->domainDim() == Q + 2,
+                     "weightspace ridge domainDim == inputDim+2");
+    fail += failTrue(toy.model->getInducing()->centres().getCols() == Q + 2,
+                     "weightspace centres cols == d+2");
+    {
+      CInducingWeightSpace* pws =
+          dynamic_cast<CInducingWeightSpace*>(toy.model->getInducing());
+      fail += failTrue(pws != 0 && pws->isRidge(), "weightspace default is ridge");
+    }
     toy.model->getInducing()->setWindowWidth(0.42);
     fail += failTrue(fabs(toy.model->getInducing()->getWindowWidth() - 0.42) < 1e-12,
                      "weightspace windowWidth set");
@@ -1461,9 +1466,9 @@ int testWeightSpaceInducingPhase0()
                      && fabs(round->getInducing()->getWindowWidth() - 0.27) < 1e-12,
                      "stream restore weightspace windowWidth");
     fail += failTrue(round != 0 && round->getInducing() != 0
-                     && round->getInducing()->centres().getCols() == Q + 1
+                     && round->getInducing()->centres().getCols() == Q + 2
                      && round->getInducing()->centres().getRows() == M_ACTIVE,
-                     "stream restore weightCentres shape");
+                     "stream restore weightCentres shape (ridge)");
     delete round;
   }
 
@@ -1642,6 +1647,182 @@ int testWeightSpaceInducingPhase1()
   return fail;
 }
 
+int testWeightSpaceInducingPhase1Ridge()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace ridge Phase 1 revised (CIP-0028) ====" << endl;
+
+  // K_uu closed form vs 2-D quadrature (D'=2).
+  {
+    CMatrix W(2, 3); // [v0 v1 | a]
+    W.setVal(1.0, 0, 0); W.setVal(0.0, 0, 1); W.setVal(0.5, 0, 2);
+    W.setVal(0.6, 1, 0); W.setVal(0.8, 1, 1); W.setVal(-0.3, 1, 2);
+    const double s = 0.7;
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix Kuu(2, 2);
+    CMlpKern dummy(1);
+    ind.computeKuu(Kuu, dummy);
+
+    const unsigned int nq = 401;
+    const double span = 9.0;
+    const double dg = 2.0 * span / (double)(nq - 1);
+    const double dA = dg * dg;
+    auto psi = [&](double w0, double w1, double vx, double vy, double a) {
+      const double t = w0 * vx + w1 * vy;
+      const double perp = -w0 * vy + w1 * vx;
+      return pow(M_PI * s * s, -0.25) * exp(-(t - a) * (t - a) / (2.0 * s * s))
+             * pow(2.0 * M_PI, -0.25) * exp(-perp * perp / 4.0);
+    };
+    double quad = 0.0;
+    for(unsigned int i = 0; i < nq; i++)
+    {
+      const double w0 = -span + dg * (double)i;
+      for(unsigned int j = 0; j < nq; j++)
+      {
+        const double w1 = -span + dg * (double)j;
+        quad += psi(w0, w1, 1.0, 0.0, 0.5) * psi(w0, w1, 0.6, 0.8, -0.3);
+      }
+    }
+    quad *= dA;
+    const double rel = fabs(Kuu.getVal(0, 1) - quad) / max(1.0, fabs(quad));
+    fail += failTrue(rel < 1e-6, "ridge Kuu vs 2-D quadrature");
+    fail += failTrue(fabs(Kuu.getVal(0, 0) - 1.0) < 1e-10, "ridge Kuu diagonal 1");
+    cout << "  Kuu[0,1] closed=" << Kuu.getVal(0, 1) << " quad=" << quad
+         << " rel=" << rel << endl;
+  }
+
+  // K_fu FD grads (params through x̂, s) and DTCVAR smoke already covered in Phase1.
+  {
+    CMatrix X(3, 1);
+    X.setVal(-0.5, 0, 0); X.setVal(0.0, 1, 0); X.setVal(0.7, 2, 0);
+    CMlpKern kern(X);
+    CMatrix V(2, 2);
+    V.setVal(0.6, 0, 0); V.setVal(0.8, 0, 1);
+    V.setVal(-0.8, 1, 0); V.setVal(0.6, 1, 1);
+    CMatrix a(2, 1);
+    a.setVal(0.4, 0, 0); a.setVal(-0.2, 1, 0);
+    const double s = 0.55;
+    CMatrix Kfu(3, 2);
+    kern.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    fail += failTrue(std::isfinite(Kfu.getVal(0, 0)), "ridge Kfu finite");
+
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix gParams(1, 3);
+    kern.wsRidgeGradParams(gParams, X, V, a, s, gKfu);
+    const double p0 = kern.getParam(0);
+    const double h = 1e-6 * max(1.0, fabs(p0));
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    kern.setParam(p0 + h, 0);
+    kern.wsRidgeCrossCompute(Kp, X, V, a, s);
+    kern.setParam(p0 - h, 0);
+    kern.wsRidgeCrossCompute(Km, X, V, a, s);
+    kern.setParam(p0, 0);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-4, "ridge wsRidgeGradParams vs FD weightVariance");
+  }
+
+  // Variance-captured gate: d=16, M=64, κ≤1e4 ⇒ capture ≥ 0.80.
+  {
+    const unsigned int d = 16;
+    const unsigned int M = 64;
+    const unsigned int nOff = 4;
+    const double s = 0.8; // budget_sweep best at d=16,M=64
+    CMatrix W(M, d + 2);
+    ndlutil::init_genrand(11u);
+    const unsigned int nDir = M / nOff;
+    for(unsigned int di = 0; di < nDir; di++)
+    {
+      double nrm = 0.0;
+      vector<double> v(d + 1);
+      for(unsigned int j = 0; j < d + 1; j++)
+      {
+        v[j] = ndlutil::randn();
+        nrm += v[j] * v[j];
+      }
+      nrm = sqrt(nrm);
+      for(unsigned int o = 0; o < nOff; o++)
+      {
+        const unsigned int m = di * nOff + o;
+        for(unsigned int j = 0; j < d + 1; j++)
+          W.setVal(v[j] / nrm, m, j);
+        W.setVal(-2.5 + 5.0 * (double)o / (double)(nOff - 1), m, d + 1);
+      }
+    }
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix X(1, d); // dummy for kernel input dim
+    X.zeros();
+    CMlpKern kern(X);
+    kern.setParam(1.0 / (double)d, 0); // weightVariance
+    kern.setParam(0.01, 1);            // biasVariance
+    kern.setParam(1.0, 2);             // variance
+    CMatrix Kuu(M, M);
+    ind.computeKuu(Kuu, kern);
+    CMatrix KuuEig(Kuu);
+    KuuEig.setSymmetric(true);
+    CMatrix lam(1, M);
+    KuuEig.syev(lam, "n", "l");
+    double lmin = lam.getVal(0);
+    double lmax = lam.getVal(0);
+    for(unsigned int i = 1; i < M; i++)
+    {
+      const double li = lam.getVal(i);
+      if(li < lmin) lmin = li;
+      if(li > lmax) lmax = li;
+    }
+    const double kappa = lmax / max(lmin, 1e-18);
+    fail += failTrue(kappa <= 1e4, "ridge Kuu cond <= 1e4 at d=16 M=64");
+
+    const unsigned int nProbe = 20;
+    CMatrix Xp(nProbe, d);
+    ndlutil::init_genrand(12u);
+    for(unsigned int n = 0; n < nProbe; n++)
+      for(unsigned int j = 0; j < d; j++)
+        Xp.setVal(0.5 * ndlutil::randn(), n, j);
+
+    CMatrix V(M, d + 1);
+    CMatrix a(M, 1);
+    ind.ridgeFactors(V, a);
+    CMatrix Kfu(nProbe, M);
+    kern.wsRidgeCrossCompute(Kfu, Xp, V, a, s);
+
+    // Q_ii = ||L^{-1} kfu_i||^2 with L = chol(Kuu) (upper by default).
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol(); // upper triangular
+    double capture = 0.0;
+    for(unsigned int n = 0; n < nProbe; n++)
+    {
+      vector<double> y(M);
+      // Solve U^T y = kfu^T, then q = ||y||^2.
+      for(unsigned int i = 0; i < M; i++)
+      {
+        double sum = Kfu.getVal(n, i);
+        for(unsigned int k = 0; k < i; k++)
+          sum -= Uchol.getVal(k, i) * y[k];
+        y[i] = sum / Uchol.getVal(i, i);
+      }
+      double q = 0.0;
+      for(unsigned int i = 0; i < M; i++)
+        q += y[i] * y[i];
+      const double kii = kern.diagComputeElement(Xp, n);
+      capture += q / max(kii, 1e-18);
+    }
+    capture /= (double)nProbe;
+    fail += failTrue(capture >= 0.80, "ridge variance captured >= 0.80 at d=16 M=64");
+    cout << "  variance captured=" << capture << " kappa=" << kappa << endl;
+  }
+
+  return fail;
+}
+
 int testWeightSpaceInducingPhase1b()
 {
   int fail = 0;
@@ -1674,8 +1855,8 @@ int testWeightSpaceInducingPhase1b()
     model.setBetaVal(8.0);
     model.setInducingType("weightspace");
     model.getInducing()->setWindowWidth(0.4);
-    fail += failTrue(model.getInducing()->domainDim() == Q2 + 1,
-                     "ARD weightspace domainDim == d+1");
+    fail += failTrue(model.getInducing()->domainDim() == Q2 + 2,
+                     "ARD weightspace ridge domainDim == d+2");
     fail += failTrue(std::isfinite(model.logLikelihood()),
                      "MLP-ARD weightspace DTCVAR LL finite");
     CMatrix g(1, model.getOptNumParams());
@@ -1846,8 +2027,16 @@ int testWeightSpaceInducingPhase2()
       model.setInducingVals(Xu);
       model.setInducingFixed(true);
       model.setBetaVal(6.0);
-      model.setInducingType("weightspace");
-      model.getInducing()->setWindowWidth(0.4);
+      // Arc-cosine ridge closed forms are Phase 2 revised; use isotropic oracle here.
+      CMatrix Wiso(M_ACTIVE, Q + 1);
+      Wiso.zeros();
+      for(unsigned int i = 0; i < M_ACTIVE; i++)
+      {
+        for(unsigned int j = 0; j < Q; j++)
+          Wiso.setVal(Xu.getVal(i, j), i, j);
+        Wiso.setVal(1.0, i, Q);
+      }
+      model.setInducing(new CInducingWeightSpace(Wiso, 0.4, false, false));
       const string tag = (ord == 0) ? "arccos0" : "arccos1";
       fail += failTrue(std::isfinite(model.logLikelihood()),
                        tag + " weightspace DTCVAR LL finite");
@@ -2369,6 +2558,7 @@ int main()
     fail += testWhiteNoiseInducing();
     fail += testWeightSpaceInducingPhase0();
     fail += testWeightSpaceInducingPhase1();
+    fail += testWeightSpaceInducingPhase1Ridge();
     fail += testWeightSpaceInducingPhase1b();
     fail += testWeightSpaceInducingPhase2();
     fail += testGreensInducingPhase0();

@@ -607,13 +607,19 @@ void CInducingGreens::setCentres(const CMatrix& Z)
   pZ->deepCopy(Z);
 }
 
-// ---- CInducingWeightSpace (CIP-0028 Phase 0, Design A) ----
+// ---- CInducingWeightSpace (CIP-0028 Design A; ridge default 2026-11-19) ----
 
-CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn)
-  : W(WIn), s(sIn), learnS(learnSIn)
+CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn,
+                                           bool ridgeIn)
+  : W(WIn), s(sIn), learnS(learnSIn), ridge(ridgeIn)
 {
   if(W.getRows() == 0 || W.getCols() == 0)
-    throw ndlexceptions::Error("CInducingWeightSpace requires non-empty W (M x (d+1)).");
+    throw ndlexceptions::Error("CInducingWeightSpace requires non-empty W.");
+  if(ridge && W.getCols() < 2)
+    throw ndlexceptions::Error(
+        "CInducingWeightSpace ridge requires W with cols >= 2 (d+1 direction + offset).");
+  if(!ridge && W.getCols() < 1)
+    throw ndlexceptions::Error("CInducingWeightSpace isotropic requires W M x (d+1).");
   if(!(s > 0.0))
     throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
 }
@@ -628,6 +634,11 @@ unsigned int CInducingWeightSpace::domainDim() const
   return W.getCols();
 }
 
+unsigned int CInducingWeightSpace::weightDim() const
+{
+  return ridge ? (domainDim() - 1) : domainDim();
+}
+
 void CInducingWeightSpace::setWindowWidth(double sIn)
 {
   if(!(sIn > 0.0))
@@ -635,9 +646,32 @@ void CInducingWeightSpace::setWindowWidth(double sIn)
   s = sIn;
 }
 
-void CInducingWeightSpace::fillKuu(CMatrix& Kuu) const
+void CInducingWeightSpace::ridgeFactors(CMatrix& V, CMatrix& aOut) const
 {
-  // Same Gaussian-window Gram as CInducingWhiteNoise, now in weight dim d+1.
+  BOUNDCHECK(ridge);
+  const unsigned int M = numInducing();
+  const unsigned int Dp = weightDim();
+  V.resize(M, Dp);
+  aOut.resize(M, 1);
+  for(unsigned int m = 0; m < M; m++)
+  {
+    double nrm = 0.0;
+    for(unsigned int j = 0; j < Dp; j++)
+    {
+      const double v = W.getVal(m, j);
+      nrm += v * v;
+    }
+    nrm = sqrt(nrm);
+    if(!(nrm > 1e-15))
+      throw ndlexceptions::Error("CInducingWeightSpace ridge direction has zero norm.");
+    for(unsigned int j = 0; j < Dp; j++)
+      V.setVal(W.getVal(m, j) / nrm, m, j);
+    aOut.setVal(W.getVal(m, Dp), m, 0);
+  }
+}
+
+void CInducingWeightSpace::fillKuuIsotropic(CMatrix& Kuu) const
+{
   const unsigned int M = numInducing();
   const unsigned int d = domainDim();
   const double s2 = s * s;
@@ -656,6 +690,56 @@ void CInducingWeightSpace::fillKuu(CMatrix& Kuu) const
     }
   }
   Kuu.setSymmetric(true);
+}
+
+void CInducingWeightSpace::fillKuuRidge(CMatrix& Kuu) const
+{
+  // K_uu[m,n] from 2×2 Woodbury in cosines (CIP-0028 Update 2026-11-19 §3).
+  ridgeFactors(Vtmp, atmp);
+  const unsigned int M = numInducing();
+  const unsigned int Dp = weightDim();
+  const double s2 = s * s;
+  const double alpha = 1.0 / s2 - 0.5;
+  const double lognorm2 = -0.5 * log(M_PI * s2) - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
+  Kuu.resize(M, M);
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = i; j < M; j++)
+    {
+      double c = 0.0;
+      for(unsigned int k = 0; k < Dp; k++)
+        c += Vtmp.getVal(i, k) * Vtmp.getVal(j, k);
+      if(c > 1.0) c = 1.0;
+      if(c < -1.0) c = -1.0;
+      const double am = atmp.getVal(i, 0);
+      const double an = atmp.getVal(j, 0);
+      const double detI = (1.0 + alpha) * (1.0 + alpha) - (alpha * c) * (alpha * c);
+      BOUNDCHECK(detI > 0.0);
+      const double inv11 = (1.0 + alpha) / detI;
+      const double inv12 = -alpha * c / detI;
+      const double H11 = inv11 + c * inv12;
+      const double H12 = inv12 + c * inv11;
+      const double bm = am / s2;
+      const double bn = an / s2;
+      const double quad = H11 * (bm * bm + bn * bn) + 2.0 * H12 * bm * bn;
+      const double logK = lognorm2 + 0.5 * (double)Dp * log(2.0 * M_PI)
+                          - 0.5 * log(detI) + 0.5 * quad
+                          - (am * am + an * an) / (2.0 * s2);
+      const double kij = exp(logK);
+      Kuu.setVal(kij, i, j);
+      if(j != i)
+        Kuu.setVal(kij, j, i);
+    }
+  }
+  Kuu.setSymmetric(true);
+}
+
+void CInducingWeightSpace::fillKuu(CMatrix& Kuu) const
+{
+  if(ridge)
+    fillKuuRidge(Kuu);
+  else
+    fillKuuIsotropic(Kuu);
 }
 
 void CInducingWeightSpace::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
@@ -703,7 +787,13 @@ void CInducingWeightSpace::computeKuf(CMatrix& Kuf, const CKern& kern, const CMa
   const unsigned int M = numInducing();
   const unsigned int N = X.getRows();
   Kfu.resize(N, M);
-  kern.wsCrossCompute(Kfu, X, W, s);
+  if(ridge)
+  {
+    ridgeFactors(Vtmp, atmp);
+    kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
+  }
+  else
+    kern.wsCrossCompute(Kfu, X, W, s);
   kufFromKfu(Kuf, Kfu);
 }
 
@@ -712,7 +802,13 @@ void CInducingWeightSpace::computeKux(CMatrix& Kux, const CKern& kern, const CMa
   const unsigned int M = numInducing();
   const unsigned int Ns = Xstar.getRows();
   Kfu.resize(Ns, M);
-  kern.wsCrossCompute(Kfu, Xstar, W, s);
+  if(ridge)
+  {
+    ridgeFactors(Vtmp, atmp);
+    kern.wsRidgeCrossCompute(Kfu, Xstar, Vtmp, atmp, s);
+  }
+  else
+    kern.wsCrossCompute(Kfu, Xstar, W, s);
   kufFromKfu(Kux, Kfu);
 }
 
@@ -731,10 +827,16 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
 
   CMatrix Kuu(M, M);
   fillKuu(Kuu);
-  gradWFromKuu(gZ, gKuu, Kuu);
+  // Ridge K_uu grads w.r.t. raw (unnormalised) centres via FD below; isotropic uses analytic.
+  if(!ridge)
+    gradWFromKuu(gZ, gKuu, Kuu);
+  else
+  {
+    gZ.resize(M, d);
+    gZ.zeros();
+  }
 
   Kfu.resize(N, M);
-  kern.wsCrossCompute(Kfu, X, W, s);
   gKfu.resize(N, M);
   for(unsigned int n = 0; n < N; n++)
     for(unsigned int m = 0; m < M; m++)
@@ -742,7 +844,63 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
 
   tempG.resize(1, nParams);
   tempG.zeros();
-  kern.wsGradParams(tempG, X, W, s, gKfu);
+
+  if(ridge)
+  {
+    ridgeFactors(Vtmp, atmp);
+    kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
+    kern.wsRidgeGradParams(tempG, X, Vtmp, atmp, s, gKfu);
+
+    // FD grads of Kuu + Kfu through raw W = [v_raw | a] (sphere via normalisation).
+    CMatrix Wmut(W);
+    const double h = 1e-6;
+    CMatrix Kp(M, M);
+    CMatrix Km(M, M);
+    CMatrix Kfup(N, M);
+    CMatrix Kfum(N, M);
+    for(unsigned int i = 0; i < M; i++)
+    {
+      for(unsigned int j = 0; j < d; j++)
+      {
+        const double w0 = Wmut.getVal(i, j);
+        const double step = h * max(1.0, fabs(w0));
+        Wmut.setVal(w0 + step, i, j);
+        // temporarily swap W via const_cast pattern: mutate then restore through local copy path
+        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0 + step, i, j);
+        fillKuu(Kp);
+        ridgeFactors(Vtmp, atmp);
+        kern.wsRidgeCrossCompute(Kfup, X, Vtmp, atmp, s);
+        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0 - step, i, j);
+        fillKuu(Km);
+        ridgeFactors(Vtmp, atmp);
+        kern.wsRidgeCrossCompute(Kfum, X, Vtmp, atmp, s);
+        const_cast<CInducingWeightSpace*>(this)->W.setVal(w0, i, j);
+        Wmut.setVal(w0, i, j);
+
+        double acc = 0.0;
+        for(unsigned int r = 0; r < M; r++)
+          for(unsigned int c = 0; c < M; c++)
+            acc += gKuu.getVal(r, c) * (Kp.getVal(r, c) - Km.getVal(r, c)) / (2.0 * step);
+        for(unsigned int n = 0; n < N; n++)
+          for(unsigned int m = 0; m < M; m++)
+            acc += gKfu.getVal(n, m) * (Kfup.getVal(n, m) - Kfum.getVal(n, m)) / (2.0 * step);
+        gZ.setVal(acc, i, j);
+      }
+    }
+    ridgeFactors(Vtmp, atmp); // restore caches
+  }
+  else
+  {
+    kern.wsCrossCompute(Kfu, X, W, s);
+    kern.wsGradParams(tempG, X, W, s, gKfu);
+    CMatrix gWfromKuf(M, d);
+    gWfromKuf.zeros();
+    kern.wsGradW(gWfromKuf, X, W, s, gKfu);
+    for(unsigned int i = 0; i < M; i++)
+      for(unsigned int j = 0; j < d; j++)
+        gZ.addVal(gWfromKuf.getVal(i, j), i, j);
+  }
+
   for(unsigned int i = 0; i < kern.getNumTransforms(); i++)
   {
     const unsigned int idx = kern.getTransformIndex(i);
@@ -755,18 +913,17 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
   for(unsigned int i = 0; i < nParams; i++)
     gKernParams.addVal(tempG.getVal(i), i);
 
-  CMatrix gWfromKuf(M, d);
-  gWfromKuf.zeros();
-  kern.wsGradW(gWfromKuf, X, W, s, gKfu);
-  for(unsigned int i = 0; i < M; i++)
-    for(unsigned int j = 0; j < d; j++)
-      gZ.addVal(gWfromKuf.getVal(i, j), i, j);
-
   if(wantX && gXOrNull != 0)
   {
     gXOrNull->resize(N, X.getCols());
     gXOrNull->zeros();
-    kern.wsGradX(*gXOrNull, X, W, s, gKfu);
+    if(ridge)
+    {
+      ridgeFactors(Vtmp, atmp);
+      kern.wsRidgeGradX(*gXOrNull, X, Vtmp, atmp, s, gKfu);
+    }
+    else
+      kern.wsGradX(*gXOrNull, X, W, s, gKfu);
   }
 
   (void)learnS;

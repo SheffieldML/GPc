@@ -33,22 +33,27 @@ endif()
 
 set(GPC_ROOT ${CMAKE_SOURCE_DIR})
 
+# CIP-002B: distinguish Windows from Linux (do not fall through to _LINUX).
 if(APPLE)
   set(GPC_PLAT "_OSX")
   list(APPEND CMAKE_PREFIX_PATH /opt/homebrew/opt/openblas /usr/local/opt/openblas)
+elseif(WIN32)
+  set(GPC_PLAT "_WIN32")
 else()
   set(GPC_PLAT "_LINUX")
 endif()
 
 add_compile_definitions(${GPC_PLAT})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  add_compile_definitions(NDEBUG GPC_CHECKS=0)
-else()
-  add_compile_definitions(DBG GPC_CHECKS=1)
-  if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
-  endif()
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
+# Generator expressions cover Ninja (CMAKE_BUILD_TYPE) and multi-config VS (CIP-002B).
+add_compile_definitions(
+  $<$<CONFIG:Release>:NDEBUG>
+  $<$<CONFIG:Release>:GPC_CHECKS=0>
+  $<$<NOT:$<CONFIG:Release>>:DBG>
+  $<$<NOT:$<CONFIG:Release>>:GPC_CHECKS=1>
+)
 
 if(GPC_USE_MATIO)
   add_compile_definitions(_NDLMATIO)
@@ -66,9 +71,43 @@ if(GPC_OPENMP)
   add_compile_definitions(GPC_OPENMP=1)
 endif()
 
-set(BLA_VENDOR OpenBLAS)
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
+# Unix: FindBLAS/FindLAPACK with BLA_VENDOR=OpenBLAS (makefile parity).
+# Windows (CIP-002B): vcpkg openblas is NOFORTRAN + BUILD_WITHOUT_LAPACK, and
+# FindBLAS's Fortran sgemm probe fails under MSVC+ifx. Prefer OpenBLAS CONFIG
+# for BLAS; pair with a separate LAPACK (lapack-reference) from vcpkg.
+set(GPC_BLAS_LINK_LIBS "")
+if(WIN32)
+  find_package(OpenBLAS CONFIG QUIET)
+  if(OpenBLAS_FOUND)
+    list(APPEND GPC_BLAS_LINK_LIBS OpenBLAS::OpenBLAS)
+    message(STATUS "OpenBLAS via CONFIG (Windows/vcpkg)")
+  endif()
+  # Netlib LAPACK (Fortran ABI with trailing underscores, matching lapack.h).
+  find_library(GPC_LAPACK_LIB NAMES lapack liblapack)
+  if(GPC_LAPACK_LIB)
+    list(APPEND GPC_BLAS_LINK_LIBS ${GPC_LAPACK_LIB})
+    message(STATUS "LAPACK library: ${GPC_LAPACK_LIB}")
+  elseif(OpenBLAS_FOUND)
+    # Some OpenBLAS builds embed LAPACK; still try FindLAPACK as a fallback.
+    find_package(LAPACK QUIET)
+    if(LAPACK_FOUND)
+      list(APPEND GPC_BLAS_LINK_LIBS ${LAPACK_LIBRARIES})
+    else()
+      message(WARNING "OpenBLAS found but no separate LAPACK; link may fail on dpotrf_/dsyev_")
+    endif()
+  endif()
+endif()
+if(NOT GPC_BLAS_LINK_LIBS)
+  set(BLA_VENDOR OpenBLAS)
+  find_package(BLAS REQUIRED)
+  find_package(LAPACK REQUIRED)
+  list(APPEND GPC_BLAS_LINK_LIBS ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+endif()
+if(WIN32 AND OpenBLAS_FOUND AND NOT GPC_LAPACK_LIB AND NOT LAPACK_FOUND)
+  message(FATAL_ERROR
+    "Windows build needs LAPACK alongside vcpkg OpenBLAS "
+    "(e.g. vcpkg install lapack-reference:x64-windows).")
+endif()
 
 include(${GPC_ROOT}/cmake/GpcLib.cmake)
 
@@ -103,5 +142,5 @@ endif()
 message(STATUS "GPc CMake (CIP-0020): build=${CMAKE_BUILD_TYPE} plat=${GPC_PLAT} matio=${GPC_USE_MATIO}")
 message(STATUS "  CXX=${CMAKE_CXX_COMPILER}")
 message(STATUS "  Fortran=${CMAKE_Fortran_COMPILER}")
-message(STATUS "  BLAS=${BLAS_LIBRARIES}")
+message(STATUS "  BLAS_LINK=${GPC_BLAS_LINK_LIBS}")
 message(STATUS "  python=${GPC_BUILD_PYTHON} gp_cli=${GPC_BUILD_GP_CLI} tests=${GPC_BUILD_TESTS}")

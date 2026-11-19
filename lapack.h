@@ -1,8 +1,9 @@
 #ifndef LAPACK_H
 #define LAPACK_H
 
-#ifdef _MSC_VER
-/* For MSVC I'm using clapack/cblas */
+#if defined(_MSC_VER) && defined(GPC_USE_CLAPACK)
+/* Historical Baxter CLAPACK path; blaswrap.h is not in this tree.
+   Default CIP-002B Windows path uses OpenBLAS Fortran ABI (same as Unix). */
 #include "blaswrap.h"
 #endif
 

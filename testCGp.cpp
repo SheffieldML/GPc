@@ -1446,7 +1446,7 @@ int testWeightSpaceInducingPhase0()
     }
   }
 
-  // Stream round-trip.
+  // Stream round-trip (ridge).
   {
     ToyGp toy(CGp::DTC);
     toy.model->setInducingType("weightspace");
@@ -1472,6 +1472,113 @@ int testWeightSpaceInducingPhase0()
                      && round->getInducing()->centres().getRows() == M_ACTIVE,
                      "stream restore weightCentres shape (ridge)");
     delete round;
+  }
+
+  // Stream branches for CIP-0011 CGp.cpp coverage: isotropic restore, missing
+  // centres / windowWidth seek-back, and StreamFormatError on bad shapes.
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("weightspace");
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    string blob = out.str();
+
+    // weightspace without windowWidth line (seek) still loads centres.
+    {
+      const string needle = "windowWidth=";
+      const size_t wpos = blob.find(needle);
+      fail += failTrue(wpos != string::npos, "weightspace blob has windowWidth");
+      if(wpos != string::npos)
+      {
+        const size_t eol = blob.find('\n', wpos);
+        string noWin = blob;
+        noWin.replace(wpos, (eol == string::npos ? needle.size() : eol - wpos + 1),
+                      "notWindow=1\n");
+        istringstream in(noWin);
+        CGp* round = readGpFromStream(in);
+        fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                         "stream weightspace without windowWidth still loads");
+        delete round;
+      }
+    }
+
+    // weightspace without weightCentres → fallback W from X_u (ridge layout).
+    {
+      const string needle = "weightCentres=";
+      const size_t cpos = blob.find(needle);
+      fail += failTrue(cpos != string::npos, "weightspace blob has weightCentres");
+      if(cpos != string::npos)
+      {
+        string noCentres = blob.substr(0, cpos) + "otherTail=1\n";
+        istringstream in(noCentres);
+        CGp* round = readGpFromStream(in);
+        fail += failTrue(round != 0 && round->getInducingType() == "weightspace"
+                         && round->getInducing() != 0
+                         && round->getInducing()->centres().getCols() == Q + 2,
+                         "stream weightspace without centres uses X_u fallback");
+        delete round;
+      }
+    }
+
+    // Legacy isotropic stream: M × (d+1) centres.
+    {
+      CMatrix Wiso(M_ACTIVE, Q + 1);
+      Wiso.zeros();
+      for(unsigned int i = 0; i < M_ACTIVE; i++)
+      {
+        for(unsigned int j = 0; j < Q; j++)
+          Wiso.setVal(0.1 * (double)(i + j), i, j);
+        Wiso.setVal(1.0, i, Q);
+      }
+      toy.model->setInducing(new CInducingWeightSpace(Wiso, 0.35, false, false));
+      ostringstream outIso;
+      writeGpToStream(*toy.model, outIso);
+      istringstream inIso(outIso.str());
+      CGp* round = readGpFromStream(inIso);
+      fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                       "stream restore isotropic weightspace type");
+      CInducingWeightSpace* pws =
+          dynamic_cast<CInducingWeightSpace*>(round ? round->getInducing() : 0);
+      fail += failTrue(pws != 0 && !pws->isRidge()
+                       && pws->centres().getCols() == Q + 1,
+                       "stream restore isotropic weightCentres shape");
+      delete round;
+    }
+
+    // Bad weightCentres column count ⇒ StreamFormatError.
+    {
+      string bad = blob;
+      const string needle = "weightCentres=";
+      const size_t cpos = bad.find(needle);
+      if(cpos != string::npos)
+      {
+        // Truncate after the key and inject a 1×1 matrix stream (wrong shape).
+        bad = bad.substr(0, cpos + needle.size()) + "\n";
+        {
+          ostringstream mat;
+          CMatrix tiny(1, 1);
+          tiny.setVal(0.0, 0, 0);
+          tiny.toStream(mat);
+          bad += mat.str();
+        }
+        try
+        {
+          istringstream in(bad);
+          CGp* round = readGpFromStream(in);
+          delete round;
+          cout << "FAILURE: bad weightCentres shape should throw." << endl;
+          fail += 1;
+        }
+        catch(ndlexceptions::StreamFormatError&)
+        {
+          cout << "bad weightCentres shape throws StreamFormatError." << endl;
+        }
+        catch(ndlexceptions::Error&)
+        {
+          cout << "bad weightCentres shape throws Error." << endl;
+        }
+      }
+    }
   }
 
   // Points / WN still selectable after weightspace (regression smoke).

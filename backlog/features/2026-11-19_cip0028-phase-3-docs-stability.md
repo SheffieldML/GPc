@@ -22,13 +22,14 @@ tags:
 
 ## Description
 
-Document compound-kernel rules for weight-space (one dot-product component), add stability cells (`ws_wv_sweep_*`), and update README / `docs/numerics.md` sparse section for points vs whitenoise vs greens vs weightspace. Compression after Close is a separate checklist item.
+Document compound-kernel rules for weight-space (one dot-product component; align with CIP-0027 defaults), add stability cells (`ws_wv_sweep_*`) focused on approximation quality, and update README / `docs/numerics.md` sparse section for points vs whitenoise vs greens vs weightspace. Compression after Close is a separate checklist item.
 
 ## Acceptance Criteria
 
 - [ ] Compound rules enforced with clear errors
-- [ ] Stability cells for \(\kappa(K_{uu})\) vs `weightVariance`
-- [ ] README / `docs/numerics.md` mention weight-space inducing
+- [ ] Stability cells: primary metric sparse bound/ELBO vs exact (or dense FTC) gap vs `weightVariance` with fixed windows; finiteness; \(\kappa(K_{uu})\) sanity only
+- [ ] README / `docs/numerics.md` mention weight-space inducing; MLP (finite \(\Sigma\)) vs arccos-0 (infinite / angular)
+- [ ] Optional: note / sketch comparison vs Dutordoir activated features (conditioning) — full GPflow bake-off can be a follow-on
 
 ## Related
 

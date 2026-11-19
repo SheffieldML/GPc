@@ -21,13 +21,14 @@ tags:
 
 ## Description
 
-Implement `CArcCosineKern` (orders 0 and 1) with `testKern`-style checks / FD, stream factory, CLI `-k arccos` / `--arccos-order`, and weight-space `wsCross*` for order 1 (smoothed ReLU); order 0 if the integral is cheap.
+Implement `CArcCosineKern` (orders 0 and 1) with `testKern`-style checks / FD, stream factory, CLI `-k arccos` / `--arccos-order`, and weight-space paths. Order 0 is the public kernel for the \(w,b\to\infty\) MLP limit (simple smoothed units, no learnable \(\Sigma\)); order 1 is smoothed ReLU. Do not fold “infinite MLP” into a `CMlpKern` flag.
 
 ## Acceptance Criteria
 
-- [ ] `CArcCosineKern` with order in \(\{0,1\}\`; stream type `arccos` / `arccosine`
-- [ ] `wsCross*` path for order 1; order 0 if feasible
+- [ ] `CArcCosineKern` with order in \(\{0,1\}\); stream type `arccos` / `arccosine`
+- [ ] `wsCross*` for order 0 (infinite-\(\Sigma\) / angular) and order 1 (smoothed ReLU)
 - [ ] CLI `-k arccos` with `--arccos-order`
+- [ ] Gate: large finite \((w,b)\) on `CMlpKern` ws\* approaches order-0 formula
 - [ ] FD / smoke tests green
 
 ## Related
@@ -39,3 +40,6 @@ Implement `CArcCosineKern` (orders 0 and 1) with `testKern`-style checks / FD, s
 
 ### 2026-11-19
 Task created (Proposed) after CIP-0028 Accepted.
+
+### 2026-11-19 (design)
+Order 0 designated as infinite-\((w,b)\) home vs finite-\(\Sigma\) `CMlpKern`; literature positioning vs Dutordoir/Sun in CIP-0028.

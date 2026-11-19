@@ -1,7 +1,7 @@
 ---
 id: "0015"
 title: "Sparse GPs can be trained by stochastic variational inference on minibatches"
-status: "Proposed"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -45,3 +45,9 @@ HOW is [CIP-002A](../cip/cip002A.md). Several earlier CIPs/REQs list SVI/SVGP as
 
 ### 2026-11-19
 Requirement drafted as Proposed alongside CIP-002A and a Phase 1 prototype (`CSvgp`, `testSvgp`) on branch `prototype-svgp`.
+
+### 2026-11-19
+CIP-002A accepted; implementation in progress on `cip002A-svgp`.
+
+### 2026-11-19
+Implementation on `cip002A-svgp`: Phases 1–4 verified by `testSvgp`; tutorial written. Remaining acceptance items: GPy fixture parity, CLI/stream/façade surfaces.

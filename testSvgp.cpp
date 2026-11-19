@@ -11,15 +11,20 @@
      to the full-batch values over a partition of the data.
    Each check runs with and without CWhiteKern (zero cross-covariance) and d = 2. */
 
+#include "CAdam.h"
 #include "CGp.h"
 #include "CKern.h"
 #include "CMatrix.h"
 #include "CNoise.h"
 #include "CSvgp.h"
+#include "ndlexceptions.h"
 #include <cmath>
 #include <iostream>
 #include <random>
 #include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -348,6 +353,174 @@ int main()
         threw = false;
         try { sv.elbo(vector<unsigned int>()); } catch(ndlexceptions::Error&) { threw = true; }
         expect(threw, "empty batch rejected");
+      }
+
+      // 6. Phase 2: finite-difference gradients at fixed whitened q.
+      {
+        const unsigned int N = 20, M = 5, D = 1;
+        const double beta = 10.0;
+        mt19937 rng(7);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-2.0, 2.0);
+        CMatrix X(N, 1), y(N, D), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(ud(rng), i, 0);
+            y.setVal(sin(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.8 + 3.6 * (double)k / (double)(M - 1), k, 0);
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CSvgp sv(&kern, &X, &y, Z, beta, 0);
+        sv.naturalGradientStep(1.0);  // at Titsias q
+
+        CMatrix g(1, sv.getOptNumParams());
+        vector<unsigned int> all(N);
+        for(unsigned int i = 0; i < N; i++) all[i] = i;
+        const double L = sv.objectiveGradBatch(all, g);
+        CMatrix p0(1, sv.getOptNumParams());
+        sv.getOptParams(p0);
+        const double eps = 1e-6;
+        double maxRel = 0.0;
+        for(unsigned int i = 0; i < sv.getOptNumParams(); i++)
+          {
+            CMatrix pp(p0), pm(p0);
+            pp.setVal(p0.getVal(i) + eps, i);
+            pm.setVal(p0.getVal(i) - eps, i);
+            sv.setOptParams(pp);
+            // keep whitened q fixed across param perturbations: restore after setOptParams
+            // setOptParams does not touch q — good.
+            const double Lp = sv.elbo();
+            sv.setOptParams(pm);
+            const double Lm = sv.elbo();
+            sv.setOptParams(p0);
+            const double fd = (Lp - Lm) / (2.0 * eps);
+            const double an = g.getVal(i);
+            const double scale = max(1.0, max(fabs(fd), fabs(an)));
+            maxRel = max(maxRel, fabs(fd - an) / scale);
+          }
+        cout << "  info: FD vs analytic max relative diff=" << maxRel << " ELBO=" << L << endl;
+        expect(maxRel < 2e-4, "Phase 2: analytic gradients match finite differences");
+      }
+
+      // 7. Phase 3: Adam seed reproducibility + interleaved natgrad improves ELBO.
+      {
+        const unsigned int N = 40, M = 8, D = 1;
+        const double beta = 15.0;
+        mt19937 rng(11);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-2.5, 2.5);
+        CMatrix X(N, 1), y(N, D), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(ud(rng), i, 0);
+            y.setVal(0.5 * X.getVal(i, 0) + 0.15 * nd(rng), i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-2.0 + 4.0 * (double)k / (double)(M - 1), k, 0);
+
+        auto runAdam = [&](uint64_t seed, unsigned int batch) {
+          CCmpndKern kern(X);
+          makeKern(kern, X, false);
+          CMatrix kp(1, kern.getNumParams());
+          kern.getParams(kp);
+          kp.setVal(kp.getVal(0) * 0.5, 0);
+          kern.setParams(kp);
+          CSvgp sv(&kern, &X, &y, Z, beta * 0.5, 0);
+          const double Linit = sv.elbo();
+          sv.setNatGradGamma(0.5);
+          CAdam adam(0.08, 0.9, 0.999, 1e-8);
+          adam.setBatchSize(batch);
+          adam.setMaxIters(25);
+          adam.setSeed(seed);
+          unsigned int nEvents = 0;
+          sv.setProgressObserver([&](const StochasticOptimiserEvent& ev) {
+            nEvents++;
+            (void)ev;
+          });
+          adam.maximise(sv);
+          CMatrix p(1, sv.getOptNumParams());
+          sv.getOptParams(p);
+          return make_tuple(sv.elbo(), p, Linit, nEvents);
+        };
+
+        auto a = runAdam(123, 8);
+        auto b = runAdam(123, 8);
+        auto c = runAdam(999, 8);
+        expect(fabs(get<0>(a) - get<0>(b)) < 1e-12, "Phase 3: same seed => identical ELBO");
+        expect(maxAbsDiff(get<1>(a), get<1>(b)) < 1e-12, "Phase 3: same seed => identical params");
+        expect(get<3>(a) == 25, "Phase 3: progress observer fires each iteration");
+        expect(get<0>(a) > get<2>(a), "Phase 3: Adam+natgrad improves ELBO from initial");
+        expect(maxAbsDiff(get<1>(a), get<1>(c)) > 1e-8,
+               "Phase 3: different minibatch seeds yield different params");
+      }
+
+      // 8. Phase 4: Gaussian expectedLogLikelihood matches closed form; probit GH + natgrad.
+      {
+        CMatrix yDummy(1, 1);
+        yDummy.setVal(0.0, 0, 0);
+        CGaussianNoise gnoise(&yDummy);
+        gnoise.setParam(0.04, gnoise.getNumParams() - 1);  // sigma2
+        double gMu = 0.0, gVar = 0.0;
+        const double ell = gnoise.expectedLogLikelihood(1.0, 0.5, 0.3, gMu, gVar);
+        const double betaLik = 1.0 / 0.04;
+        const double r = 1.0 - 0.5;
+        const double ellExact = -ndlutil::HALFLOGTWOPI + 0.5 * log(betaLik)
+          - 0.5 * betaLik * (r * r + 0.3);
+        expect(fabs(ell - ellExact) < 1e-12, "Phase 4: Gaussian expectedLogLikelihood closed form");
+        expect(fabs(gMu - betaLik * r) < 1e-12 && fabs(gVar + 0.5 * betaLik) < 1e-12,
+               "Phase 4: Gaussian expectedLogLikelihood grads");
+
+        const unsigned int N = 30, M = 8;
+        mt19937 rng(21);
+        uniform_real_distribution<double> ud(-2.0, 2.0);
+        CMatrix X(N, 1), y(N, 1), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            const double x = ud(rng);
+            X.setVal(x, i, 0);
+            y.setVal(x > 0.0 ? 1.0 : -1.0, i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.8 + 3.6 * (double)k / (double)(M - 1), k, 0);
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CProbitNoise pnoise(&y);
+        CSvgp sv(&kern, &X, &y, Z, 1.0, 0);
+        sv.setLikelihood(&pnoise);
+        const double L0 = sv.elbo();
+        for(unsigned int t = 0; t < 15; t++)
+          sv.naturalGradientStep(0.2);
+        const double L1 = sv.elbo();
+        cout << "  info: probit ELBO prior=" << L0 << " after natgrad=" << L1 << endl;
+        expect(L1 > L0, "Phase 4: probit Gauss-Hermite natgrad increases ELBO");
+        expect(isfinite(L1), "Phase 4: probit ELBO is finite");
+
+        // Error / default paths for patch coverage of ndlutil + CNoise base.
+        {
+          vector<double> x, w;
+          bool threw = false;
+          try { ndlutil::gaussHermite(10, x, w); } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: gaussHermite rejects n != 20");
+          threw = false;
+          double dgMu = 0.0, dgVar = 0.0;
+          try {
+            ndlutil::gaussHermiteExpect(-1.0, -0.5, 20,
+              [](double, void*) { return 0.0; },
+              [](double, void*) { return 0.0; },
+              nullptr, dgMu, dgVar);
+          } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: gaussHermiteExpect rejects negative var");
+          threw = false;
+          COrderedNoise ono(&y, 3);
+          try { ono.expectedLogLikelihood(0.0, 0.0, 1.0, dgMu, dgVar); }
+          catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 4: base expectedLogLikelihood throws for ordered");
+          threw = false;
+          try { CAdam bad(-1.0); } catch(ndlexceptions::Error&) { threw = true; }
+          expect(threw, "Phase 3: CAdam rejects non-positive learning rate");
+        }
       }
     }
   catch(ndlexceptions::Error& e)

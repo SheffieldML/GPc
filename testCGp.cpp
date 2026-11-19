@@ -1642,6 +1642,121 @@ int testWeightSpaceInducingPhase1()
   return fail;
 }
 
+int testWeightSpaceInducingPhase1b()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 1b MLP-ARD (CIP-0028) ====" << endl;
+
+  // DTCVAR smoke with 2-D MLP-ARD + weightspace.
+  {
+    const unsigned int Q2 = 2;
+    CMatrix X(N, Q2);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q2);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      const double xv = -1.0 + 2.0 * (double)i / (double)(N - 1);
+      X.setVal(xv, i, 0);
+      X.setVal(0.5 * xv, i, 1);
+      y.setVal(sin(xv) + 0.1 * xv, i, 0);
+    }
+    for(unsigned int i = 0; i < M_ACTIVE; i++)
+      Xu.copyRowRow(i, X, i);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpardKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(8.0);
+    model.setInducingType("weightspace");
+    model.getInducing()->setWindowWidth(0.4);
+    fail += failTrue(model.getInducing()->domainDim() == Q2 + 1,
+                     "ARD weightspace domainDim == d+1");
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP-ARD weightspace DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "MLP-ARD weightspace DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP-ARD weightspace DTCVAR after SCG LL finite");
+  }
+
+  // ARD reduces to isotropic when all scales equal 1 (after matching Σ).
+  // With scales=0.5 default, match isotropic by α_iso = α_ard * scale.
+  {
+    CMatrix X(3, 2);
+    X.setVal(-0.4, 0, 0); X.setVal(0.2, 0, 1);
+    X.setVal(0.0, 1, 0); X.setVal(-0.3, 1, 1);
+    X.setVal(0.6, 2, 0); X.setVal(0.5, 2, 1);
+    CMlpardKern kard(X);
+    kard.setParam(4.0, 0);
+    kard.setParam(2.0, 1);
+    kard.setParam(1.0, 2);
+    kard.setParam(1.0, 3); // scale0
+    kard.setParam(1.0, 4); // scale1
+    CMlpKern kiso(X);
+    kiso.setParam(4.0, 0);
+    kiso.setParam(2.0, 1);
+    kiso.setParam(1.0, 2);
+    CMatrix W(2, 3);
+    W.setVal(0.2, 0, 0); W.setVal(-0.1, 0, 1); W.setVal(0.9, 0, 2);
+    W.setVal(-0.3, 1, 0); W.setVal(0.4, 1, 1); W.setVal(1.1, 1, 2);
+    const double s = 0.55;
+    CMatrix KfuArd(3, 2);
+    CMatrix KfuIso(3, 2);
+    kard.wsCrossCompute(KfuArd, X, W, s);
+    kiso.wsCrossCompute(KfuIso, X, W, s);
+    double maxAbs = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        maxAbs = max(maxAbs, fabs(KfuArd.getVal(n, m) - KfuIso.getVal(n, m)));
+    fail += failTrue(maxAbs < 1e-10, "ARD scales=1 matches isotropic wsCross");
+  }
+
+  // FD spot-check on an ARD inputScale param.
+  {
+    CMatrix X(3, 2);
+    X.setVal(-0.5, 0, 0); X.setVal(0.1, 0, 1);
+    X.setVal(0.0, 1, 0); X.setVal(-0.2, 1, 1);
+    X.setVal(0.4, 2, 0); X.setVal(0.3, 2, 1);
+    CMlpardKern kern(X);
+    CMatrix W(2, 3);
+    W.setVal(0.1, 0, 0); W.setVal(0.2, 0, 1); W.setVal(1.0, 0, 2);
+    W.setVal(-0.2, 1, 0); W.setVal(0.3, 1, 1); W.setVal(0.8, 1, 2);
+    const double s = 0.5;
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix gParams(1, kern.getNumParams());
+    kern.wsGradParams(gParams, X, W, s, gKfu);
+    const unsigned int scaleIdx = 3;
+    const double p0 = kern.getParam(scaleIdx);
+    const double h = 1e-6;
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    kern.setParam(min(p0 + h, 0.999), scaleIdx);
+    kern.wsCrossCompute(Kp, X, W, s);
+    kern.setParam(max(p0 - h, 1e-6), scaleIdx);
+    kern.wsCrossCompute(Km, X, W, s);
+    kern.setParam(p0, scaleIdx);
+    double fd = 0.0;
+    const double denom = min(p0 + h, 0.999) - max(p0 - h, 1e-6);
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / denom;
+    const double rel = fabs(fd - gParams.getVal(scaleIdx)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-3, "wsGradParams vs FD ARD inputScale");
+  }
+
+  return fail;
+}
+
 int testGreensInducingPhase0()
 {
   int fail = 0;
@@ -2146,6 +2261,7 @@ int main()
     fail += testWhiteNoiseInducing();
     fail += testWeightSpaceInducingPhase0();
     fail += testWeightSpaceInducingPhase1();
+    fail += testWeightSpaceInducingPhase1b();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

@@ -1501,8 +1501,18 @@ class CMlpardKern: public CArdKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  
-  
+
+  // CIP-0028 Phase 1b: weight-space inducing with diagonal Σ (isotropic window s).
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+
  private:
   void _init();
   double weightVariance;

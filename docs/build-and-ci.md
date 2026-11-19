@@ -2,7 +2,7 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md) · [CIP-002B](../cip/cip002B.md) · [CIP-002D](../cip/cip002D.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md) · [CIP-002B](../cip/cip002B.md) · [CIP-002C](../cip/cip002C.md) · [CIP-002D](../cip/cip002D.md)
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
@@ -22,7 +22,7 @@ build\gp.exe -h
 ```
 
   Platform define is `_WIN32`. vcpkg’s `openblas` port is BLAS-only (`NOFORTRAN`); install `lapack-reference` for Fortran-ABI LAPACK (`dpotrf_` / `dsyev_`). Historical CLAPACK/`blaswrap.h` is opt-in via `-DGPC_USE_CLAPACK` (off by default; header not in tree).
-- **Python packaging (Phase B):** from `python/`, `pip install -e ".[test]"` uses scikit-build-core against the repo-root CMake (`GPC_BUILD_PYTHON`). Day-to-day façade work can still use `python/Makefile` + root `libgp`. See [`python/README.md`](../python/README.md).
+- **Python packaging:** from `python/`, `pip install -e ".[test]"` uses scikit-build-core against the repo-root CMake (`GPC_BUILD_PYTHON`). Day-to-day façade work can still use `python/Makefile` + root `libgp`. See [`python/README.md`](../python/README.md). **Binary wheels** ([CIP-002C](../cip/cip002C.md)): soft-gated [`wheels.yml`](../.github/workflows/wheels.yml) — cibuildwheel manylinux + `macos-15`; Linux `auditwheel` / macOS `delocate`; pytest + `check_native_deps.py`. **Publish:** [`publish-wheels.yml`](../.github/workflows/publish-wheels.yml) (artifacts-only / TestPyPI / PyPI via Trusted Publisher; distribution name **`gpc`**). Prefer `OPENBLAS_NUM_THREADS=1`. Windows wheels after [CIP-002B](../cip/cip002B.md).
 - **Optional CTest (Phase C):** `cmake -B build -DGPC_BUILD_TESTS=ON -DGPC_USE_MATIO=ON -DCMAKE_PREFIX_PATH="…openblas;…libmatio" && cmake --build build && ctest --test-dir build` mirrors the makefile matio-gate binaries. **Actions still hard-gates on make**; CMake ctest is maintainer/packaging confidence only ([CIP-0020](../cip/cip0020.md) cutover decision).
 - Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) and the archived 2020 stub `CMakeLists.txt.archive-2020` live under [`make/legacy/`](../make/legacy/); they are not CI targets.
 - Maintainer diagnostics / fixture stampers (`diag*`, `genTest*`) live under [`tools/`](../tools/); binaries still build to the repo root.
@@ -75,6 +75,9 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 | **Compile** | Ubuntu + macOS hard gate (make): build `gp` / `ivm` / `gplvm` / `bgplvm` / `ppa`, help smoke. Soft: Windows MSVC CMake ([CIP-002B](../cip/cip002B.md)) |
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
+| **Wheels** | Soft: cibuildwheel manylinux + macos-15; auditwheel/delocate; pytest + native-dep check ([CIP-002C](../cip/cip002C.md)) |
+| **Publish wheels** | Manual / Release: build wheels; optional TestPyPI or PyPI (OIDC Trusted Publisher); Release attaches `.whl` assets ([CIP-002C](../cip/cip002C.md) Phase C) |
+| **Bench timing** | Soft: `RELEASE=1` fixed cases (E1/E2/E5); artifact + warn-only self-baseline vs main ([CIP-002D](../cip/cip002D.md) QW8) |
 
 Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps; `testSparsePpa` hits `CGp::sparsePpaElboGpTerms` (CIP-0026); `testSvgp` hits `CSvgp` / `CAdam` / `expectedLogLikelihood` / `gaussHermite` (CIP-002A). Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
 

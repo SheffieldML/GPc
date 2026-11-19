@@ -1,0 +1,171 @@
+# CIP-002C Phase C: build wheels and optionally publish (TestPyPI / PyPI).
+# Default workflow_dispatch target is artifacts-only (no PyPI credentials needed).
+# Trusted Publisher (OIDC): configure once on TestPyPI/PyPI for this repo + environment.
+# See python/README.md § Publishing.
+name: Publish wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to:
+        description: Publish destination
+        type: choice
+        options:
+          - artifacts-only
+          - testpypi
+          - pypi
+        default: artifacts-only
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build_wheels:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install macOS OpenBLAS + gfortran; align deployment target
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install openblas gcc cmake
+          CXX="$(/bin/ls "$(brew --prefix gcc)/bin"/g++-[0-9]* | sort -V | tail -1)"
+          FC="$(/bin/ls "$(brew --prefix gcc)/bin"/gfortran-[0-9]* | sort -V | tail -1)"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix openblas)" >> "$GITHUB_ENV"
+          echo "CXX=$CXX" >> "$GITHUB_ENV"
+          echo "FC=$FC" >> "$GITHUB_ENV"
+          echo "CC=$CXX" >> "$GITHUB_ENV"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import re, subprocess
+          from pathlib import Path
+
+          def minos(path: Path) -> tuple[int, int]:
+              out = subprocess.check_output(["otool", "-l", str(path.resolve())], text=True)
+              m = re.search(r"\bminos\s+(\d+)\.(\d+)", out)
+              if not m:
+                  raise SystemExit(f"no minos in otool -l {path}")
+              return int(m.group(1)), int(m.group(2))
+
+          brew_openblas = Path(subprocess.check_output(
+              ["brew", "--prefix", "openblas"], text=True).strip())
+          brew_gcc = Path(subprocess.check_output(
+              ["brew", "--prefix", "gcc"], text=True).strip())
+          libs = [
+              brew_openblas / "lib" / "libopenblas.dylib",
+              brew_gcc / "lib" / "gcc" / "current" / "libgfortran.5.dylib",
+          ]
+          best = max(minos(p) for p in libs)
+          print(f"MACOSX_DEPLOYMENT_TARGET={best[0]}.{best[1]}")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.22.0
+        with:
+          package-dir: python
+          output-dir: wheelhouse
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: wheelhouse/*.whl
+
+  merge_wheels:
+    name: Merge wheel artifacts
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-wheels-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Stage wheelhouse
+        run: |
+          mkdir -p wheelhouse
+          find artifacts -name '*.whl' -exec cp {} wheelhouse/ \;
+          ls -la wheelhouse
+
+      - name: Upload merged wheelhouse
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpc-wheels
+          path: wheelhouse/*.whl
+
+  publish_testpypi:
+    name: Publish to TestPyPI
+    needs: merge_wheels
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_to == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download merged wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: gpc-wheels
+          path: wheelhouse
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: wheelhouse/
+
+  publish_pypi:
+    name: Publish to PyPI
+    needs: merge_wheels
+    if: >
+      (github.event_name == 'workflow_dispatch' && inputs.publish_to == 'pypi') ||
+      (github.event_name == 'release' && github.event.action == 'published')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download merged wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: gpc-wheels
+          path: wheelhouse
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheelhouse/
+
+  attach_release_assets:
+    name: Attach wheels to GitHub Release
+    needs: merge_wheels
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download merged wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: gpc-wheels
+          path: wheelhouse
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wheelhouse/*.whl

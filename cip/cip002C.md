@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002C"
 last_updated: "2026-11-19"
-status: "In Progress"
+status: "In Progress"  # Phase A workflow landed; soft gate until green on Actions
 compressed: false
 related_requirements: ["000E", "0007"]
 related_cips: ["001D", "0020", "0021", "002B"]
@@ -142,9 +142,9 @@ Specifically, this CIP implements:
 
 ## Implementation Status
 
-- [ ] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts
-- [ ] Phase B: auditwheel/delocate (or equivalent) self-contained OpenBLAS + gfortran; pytest on wheel
-- [ ] Phase C: docs + TestPyPI/Release; PyPI after sign-off; distribution name locked
+- [x] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts (`.github/workflows/wheels.yml`; `continue-on-error: true` until green). macOS skips delocate until Phase B (Homebrew bottles are minOS 26 on `macos-latest`).
+- [x] Phase B: auditwheel/delocate self-contained OpenBLAS + gfortran; pytest + `check_native_deps.py` on repaired wheel; macOS deployment target aligned to brew bottle minOS (`macos-15`)
+- [x] Phase C: distribution name **`gpc`**; `publish-wheels.yml` (artifacts / TestPyPI / PyPI OIDC); `smoke_installed_gpc.py`; user vs contributor docs. First TestPyPI/PyPI upload needs Trusted Publisher + Environments (maintainer).
 - [ ] Phase D: Windows wheels after CIP-002B
 
 ## References

@@ -39,6 +39,7 @@ Mirror GPy: examples `try: import pods` / tell user to `pip install pods`. Noteb
 ## Related
 
 - CIP: 001D
+- Related data I/O (native CSV + pods preference): [CIP-0022](../../cip/cip0022.md) / [REQ-0011](../../requirements/req0011_csv-pods-data-access.md)
 - External: [pods](https://pypi.org/project/pods/), GPy `examples/regression.py`
 
 ## Progress Updates

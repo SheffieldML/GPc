@@ -134,11 +134,12 @@ Add a review rule, and optionally a CI grep, flagging any `getVal`/`setVal` loop
 **QW5. Bulk kernel paths for cross-covariances and gradients.** Extending [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md) / [CIP-0013](./cip0013.md) P4:
 - **Distances:**
   - rectangular \(r^2 = \|x\|^2 + \|z\|^2 - 2XZ^\top\) by `gemm`, with clamping;
+  - use GEMM for large blocks even at \(q=2\) (sparse \(K_{uf}\)); keep the CIP-0025 small-\(n\) scalar knee;
   - hoist the `isDefaultActiveDims()` test out of inner loops.
 - **RBF/stationary gradients from cached workspaces:**
   - \(\partial/\partial\ell\) as one fused pass over \(K \odot r^2 \odot \bar K\);
-  - \(\partial/\partial Z\) for all inducing points as a `gemm`-shaped contraction (e.g. \(\bar K_\odot X - \mathrm{diag}(\bar K_\odot \mathbf 1) Z\)) instead of \(M\) calls to `getGradX`.
-- **Dot-product kernels** (`CMlpKern`, linear, and the [CIP-0028](./cip0028.md) directional features): bulk path = one `gemm` plus an element-wise map.
+  - \(\partial/\partial Z\) for all inducing points as a `gemm`-shaped contraction (e.g. \(\bar K_\odot X - \mathrm{diag}(\bar K_\odot \mathbf 1) Z\)) instead of \(M\) calls to `getGradX` — **coordinate with CIP-0028** (`gradFromKuuKuf` / ridge features); do not reimplement on this branch while 0028 is In Progress.
+- **Dot-product kernels** (`CMlpKern`, linear, and CIP-0028 weight-space / directional features): bulk path = one `gemm` plus an element-wise map — **deferred** until 0028 merges (`cip0028-weightspace-inducing` already edits these APIs heavily).
 - Agreement with the element-wise oracle to `MATCHTOL` remains the gate.
 
 **QW6. Batched model code.** `CSvgp` marginals, ELBO data term and natural-gradient sites in BLAS-3 form:
@@ -208,7 +209,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 ## Implementation Plan
 
 1. **Phase 1 (small):** QW1 default build, QW2 inline bounds checks and levels, QW3 `lqAdjoint` via BLAS. Gate: all suites green in full-checks and release builds; E1/E2 re-measured (combined-effect claim is a hypothesis until then).
-2. **Phase 2 (medium):** QW4 `gpCovGrads` / sparse-path loops; QW5 rectangular distance GEMM, fused stationary gradients, batched \(\partial Z\), dot-product bulk path.
+2. **Phase 2 (medium):** QW4 `gpCovGrads` / sparse-path loops; QW5 rectangular distance GEMM and fused stationary gradients. **Defer** MLP / directional / inducing batched-\(\partial Z\) bulk until [CIP-0028](./cip0028.md) merges (that branch owns `CMlpKern` / `ws*` / `CInducing`; it does not touch `gpCovGrads` or `CStationaryKern` GEMM).
 3. **Phase 3 (medium):** QW6 batched `CSvgp` / `CSparsePpa`, with per-minibatch \(K_{uB}\); QW7 workspaces and allocation counts.
 4. **Phase 4 (ongoing):** QW8 benchmark artifacts + self-baseline gate design. Write a GPU decision record (new requirement) when a use case is concrete; Part B's options table is the starting point.
 
@@ -238,7 +239,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 - [x] Evidence gathered (E1–E5) and `lqAdjoint` `gemm` prototype measured
 - [x] CIP accepted
 - [x] Phase 1: QW1–QW3 (code + docs; `testLQAdjoint` / `testCGp` green under `CHECKS=full` and `RELEASE=1`; E1/E2 re-measure still open)
-- [ ] Phase 2: QW4–QW5
+- [x] Phase 2: QW4–QW5 stationary (MLP/0028 bulk deferred; `testCGp` / `testKern` / `testLQAdjoint` green)
 - [ ] Phase 3: QW6–QW7
 - [ ] Phase 4: QW8 and GPU decision record
 

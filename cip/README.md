@@ -55,6 +55,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0028](./cip0028.md): Weight-space inducing features for MLP and arc-cosine kernels (**In Progress**). Extends [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md) / [CIP-001C](./cip001C.md) beyond stationary white-noise.
 - [CIP-0029](./cip0029.md): Green's-function (causal-root) inducing features for 1-D kernels (**Closed**). Extends [REQ-000D](../requirements/req000D_jitter-free-sparse-conditioning.md) / [CIP-001C](./cip001C.md); sibling of [CIP-0028](./cip0028.md).
 - [CIP-002A](./cip002A.md): SVGP — explicit whitened \(q(u)\) with natural gradients (CVI form), Adam for hyperparameters, seeded minibatches; Phase 1 prototype `CSvgp`/`testSvgp` matches `CGp` DTCVAR exactly (**Implemented** — Phases 1–4 + tutorial; CLI/stream/façade follow-up). Implements [REQ-0015](../requirements/req0015_stochastic-variational-sparse-gp.md).
+- [CIP-002B](./cip002B.md): Windows MSVC CMake compile smoke on GitHub Actions (**In Progress**). Extends [REQ-0001](../requirements/req0001_contemporary-build.md) / [REQ-0007](../requirements/req0007_competitive-default-build.md); MSVC + Intel `ifx` + OpenBLAS. Delivers the Windows driver from [CIP-0020](./cip0020.md). Orthogonal to [CIP-0021](./cip0021.md) (Unix CMake cutover).
 
 ## Creating a Good CIP
 

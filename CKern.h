@@ -1327,6 +1327,56 @@ class CMlpKern: public CKern {
   mutable CMatrix innerProdj;
 };
 
+// Arc-cosine kernel (Cho & Saul). Order 0 ≈ Williams MLP at infinite weight/bias variance
+// (CIP-0028); order 1 is the ReLU / ridge form. Inputs are augmented as x̃=(x,1).
+class CArcCosineKern: public CKern {
+ public:
+  CArcCosineKern();
+  CArcCosineKern(unsigned int inDim);
+  CArcCosineKern(const CMatrix& X);
+  ~CArcCosineKern();
+  CArcCosineKern(const CArcCosineKern&);
+  CArcCosineKern* clone() const
+  {
+    return new CArcCosineKern(*this);
+  }
+  double getVariance() const;
+  void setVariance(double val) { variance = val; }
+  void setOrder(unsigned int ord);
+  unsigned int getOrder() const { return order; }
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const;
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+  // CIP-0028 Phase 2: weight-space (order 0 = no √p; order 1 = smoothed ReLU).
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+
+ private:
+  void _init();
+  double variance;
+  unsigned int order; // 0 or 1
+};
+
 // Polynomial Kernel, not generally recommended as it `extreme behaviour' outside the region where the argument's absolute value is less than 1.
 class CPolyKern: public CKern {
  public:

@@ -86,6 +86,8 @@ bool typesCompatible(const string& type, const string& name)
     return true;
   if((type=="mlp" || type=="mlpard") && name=="mlp")
     return true;
+  if((type=="arccos" || type=="arccosine") && (name=="ArcCosine" || name=="arccos" || name=="arccosine"))
+    return true;
   if(type=="poly" && name=="poly")
     return true;
   if(type=="white" && name=="white")
@@ -114,6 +116,7 @@ string CKern::gpyComponentName() const
   if(t=="rbfard") return "rbf";
   if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
+  if(t=="arccos" || t=="arccosine") return "ArcCosine";
   return t;
 }
 
@@ -3601,6 +3604,370 @@ void CMlpKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s
 
 void CMlpKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
                        const CMatrix& gKfu) const
+{
+  wsFdGradS(*this, gS, X, W, s, gKfu);
+}
+
+// ---- CIP-0028 Phase 2: arc-cosine kernel ----
+namespace {
+
+inline void arccosAugmentStats(const CMatrix& X1, unsigned int i1,
+                               const CMatrix& X2, unsigned int i2,
+                               double& dot, double& n1, double& n2)
+{
+  const unsigned int d = X1.getCols();
+  dot = 1.0; // bias components
+  double n1sq = 1.0;
+  double n2sq = 1.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double a = X1.getVal(i1, j);
+    const double b = X2.getVal(i2, j);
+    dot += a * b;
+    n1sq += a * a;
+    n2sq += b * b;
+  }
+  n1 = sqrt(n1sq);
+  n2 = sqrt(n2sq);
+}
+
+inline double arccosClampCos(double c)
+{
+  if(c > 1.0) return 1.0;
+  if(c < -1.0) return -1.0;
+  return c;
+}
+
+inline double arccosNormPdf(double z)
+{
+  return exp(-0.5 * z * z) / sqrt(2.0 * M_PI);
+}
+
+inline double arccosNormCdf(double z)
+{
+  return 0.5 * (1.0 + erf(z / sqrt(2.0)));
+}
+
+inline double arccos0WsElement(double variance, const CMatrix& X, unsigned int n,
+                               const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  double n2 = 1.0;
+  double muDot = W.getVal(m, d); // bias weight × 1
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xj = X.getVal(n, j);
+    n2 += xj * xj;
+    muDot += W.getVal(m, j) * xj;
+  }
+  const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+  const double B = sqrt(variance * M_PI / 2.0);
+  const double erfArg = (muDot / sqrt(2.0)) / sqrt(1.0 + s * s * n2);
+  return B * psiScale * erf(erfArg);
+}
+
+inline double arccos1WsElement(double variance, const CMatrix& X, unsigned int n,
+                               const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  double n2 = 1.0;
+  double mu = W.getVal(m, d);
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xj = X.getVal(n, j);
+    n2 += xj * xj;
+    mu += W.getVal(m, j) * xj;
+  }
+  const double nx = sqrt(n2);
+  const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+  const double B = sqrt(variance);
+  const double sig = s * nx;
+  double soft = 0.0;
+  if(sig < 1e-14)
+    soft = (mu > 0.0) ? mu : 0.0;
+  else
+  {
+    const double z = mu / sig;
+    soft = mu * arccosNormCdf(z) + sig * arccosNormPdf(z);
+  }
+  return B * psiScale * soft;
+}
+
+} // namespace
+
+CArcCosineKern::CArcCosineKern() : CKern(), order(0)
+{
+  _init();
+}
+CArcCosineKern::CArcCosineKern(unsigned int inDim) : CKern(inDim), order(0)
+{
+  _init();
+  setInputDim(inDim);
+}
+CArcCosineKern::CArcCosineKern(const CMatrix& X) : CKern(X), order(0)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CArcCosineKern::CArcCosineKern(const CArcCosineKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  order = kern.order;
+}
+CArcCosineKern::~CArcCosineKern()
+{
+}
+double CArcCosineKern::getVariance() const
+{
+  return variance;
+}
+void CArcCosineKern::setOrder(unsigned int ord)
+{
+  if(ord > 1)
+    throw ndlexceptions::Error("CArcCosineKern order must be 0 or 1.");
+  order = ord;
+}
+void CArcCosineKern::_init()
+{
+  nParams = 1;
+  setType("arccos");
+  setName("ArcCosine");
+  setParamName("variance", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setStationary(false);
+  order = 0;
+}
+void CArcCosineKern::setInitParam()
+{
+  variance = 1.0;
+}
+void CArcCosineKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  variance = val;
+}
+double CArcCosineKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  return variance;
+}
+double CArcCosineKern::getWhite() const
+{
+  return 0.0;
+}
+
+double CArcCosineKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  if(order == 0)
+    return variance * (M_PI / 2.0); // asin(1)
+  // order 1: σ² ||x̃||²
+  double n2 = 1.0;
+  for(unsigned int j = 0; j < X.getCols(); j++)
+  {
+    const double x = X.getVal(index, j);
+    n2 += x * x;
+  }
+  return variance * n2;
+}
+
+double CArcCosineKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                      const CMatrix& X2, unsigned int index2) const
+{
+  double dot = 0.0, n1 = 0.0, n2 = 0.0;
+  arccosAugmentStats(X1, index1, X2, index2, dot, n1, n2);
+  if(!(n1 > 0.0) || !(n2 > 0.0))
+    return 0.0;
+  const double c = arccosClampCos(dot / (n1 * n2));
+  const double theta = acos(c);
+  if(order == 0)
+    return variance * asin(c); // Williams infinite-MLP angular form
+  // Cho & Saul order 1: (σ²/π) ||x||||y|| (sinθ + (π-θ)cosθ)
+  const double J1 = sin(theta) + (M_PI - theta) * c;
+  return variance * (n1 * n2 / M_PI) * J1;
+}
+
+void CArcCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
+                                   const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getCols() == nParams);
+  double g0 = 0.0;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+    for(unsigned int j = 0; j < X2.getRows(); j++)
+    {
+      const double k = computeElement(X, i, X2, j);
+      if(variance > 0.0)
+        g0 += (k / variance) * covGrad.getVal(i, j);
+    }
+  g.setVal(g0, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CArcCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad,
+                                   bool regularise) const
+{
+  DIMENSIONMATCH(g.getCols() == nParams);
+  double g0 = 0.0;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < i; j++)
+    {
+      const double k = computeElement(X, i, X, j);
+      if(variance > 0.0)
+        g0 += 2.0 * (k / variance) * covGrad.getVal(i, j);
+    }
+    const double kd = diagComputeElement(X, i);
+    if(variance > 0.0)
+      g0 += (kd / variance) * covGrad.getVal(i, i);
+  }
+  g.setVal(g0, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CArcCosineKern::getGradParam(unsigned int /*index*/, const CMatrix& /*X*/,
+                                    const CMatrix& /*X2*/, const CMatrix& /*cvGrd*/) const
+{
+  throw ndlexceptions::NotImplementedError("getGradParam not implemented for CArcCosineKern");
+}
+double CArcCosineKern::getGradParam(unsigned int /*index*/, const CMatrix& /*X*/,
+                                    const CMatrix& /*cvGrd*/) const
+{
+  throw ndlexceptions::NotImplementedError("getGradParam not implemented for CArcCosineKern");
+}
+
+void CArcCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row,
+                              const CMatrix& X2, bool addG) const
+{
+  // FD w.r.t. X row for both orders (keeps order-1 tractable).
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols() == X2.getCols());
+  CMatrix Xp(X);
+  CMatrix Xm(X);
+  const double eps = 1e-6;
+  for(unsigned int j = 0; j < X.getCols(); j++)
+  {
+    const double x0 = X.getVal(row, j);
+    const double h = eps * max(1.0, fabs(x0));
+    Xp.setVal(x0 + h, row, j);
+    Xm.setVal(x0 - h, row, j);
+    for(unsigned int k = 0; k < X2.getRows(); k++)
+    {
+      const double gp = computeElement(Xp, row, X2, k);
+      const double gm = computeElement(Xm, row, X2, k);
+      double val = 0.0;
+      if(addG)
+        val = gX.getVal(k, j);
+      val += (gp - gm) / (2.0 * h);
+      gX.setVal(val, k, j);
+    }
+    Xp.setVal(x0, row, j);
+    Xm.setVal(x0, row, j);
+  }
+}
+
+void CArcCosineKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  CMatrix Xp(X);
+  CMatrix Xm(X);
+  const double eps = 1e-6;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < X.getCols(); j++)
+    {
+      const double x0 = X.getVal(i, j);
+      const double h = eps * max(1.0, fabs(x0));
+      Xp.setVal(x0 + h, i, j);
+      Xm.setVal(x0 - h, i, j);
+      const double gp = diagComputeElement(Xp, i);
+      const double gm = diagComputeElement(Xm, i);
+      double val = 0.0;
+      if(addG)
+        val = gX.getVal(i, j);
+      val += (gp - gm) / (2.0 * h);
+      gX.setVal(val, i, j);
+      Xp.setVal(x0, i, j);
+      Xm.setVal(x0, i, j);
+    }
+  }
+}
+
+void CArcCosineKern::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "inputDim", getInputDim());
+  writeToStream(out, "numParams", getNumParams());
+  writeToStream(out, "order", (int)order);
+  CMatrix par(1, getNumParams());
+  getParams(par);
+  par.toStream(out);
+  writeToStream(out, "numPriors", getNumPriors());
+  writePriorsToStream(out);
+}
+
+void CArcCosineKern::readParamsFromStream(istream& in)
+{
+  setInputDim(readIntFromStream(in, "inputDim"));
+  unsigned int numParams = readIntFromStream(in, "numParams");
+  setOrder((unsigned int)readIntFromStream(in, "order"));
+  CMatrix par(1, numParams);
+  par.fromStream(in);
+  if(numParams == getNumParams())
+    setParams(par);
+  else
+    throw ndlexceptions::StreamFormatError("numParams",
+        "Listed number of parameters does not match computed number of parameters.");
+  unsigned int numPriors = readIntFromStream(in, "numPriors");
+  readPriorsFromStream(in, numPriors);
+}
+
+void CArcCosineKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(W.getCols() == d + 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double val = (order == 0)
+        ? arccos0WsElement(variance, X, n, W, m, s)
+        : arccos1WsElement(variance, X, n, W, m, s);
+      Kfu.setVal(val, n, m);
+    }
+  }
+}
+
+void CArcCosineKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                                  const CMatrix& gKfu) const
+{
+  wsFdGradParams(const_cast<CArcCosineKern&>(*this), g, X, W, s, gKfu);
+}
+void CArcCosineKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
+{
+  CMatrix Wmut(W);
+  wsFdGradW(*this, gW, X, Wmut, s, gKfu);
+}
+void CArcCosineKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  wsFdGradX(*this, gX, Xmut, W, s, gKfu);
+}
+void CArcCosineKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
 {
   wsFdGradS(*this, gS, X, W, s, gKfu);
 }
@@ -7479,6 +7846,8 @@ CKern* readKernFromStream(istream& in)
     pkern = new CPolyKern();
   else if(type=="mlp")
     pkern = new CMlpKern();
+  else if(type=="arccos" || type=="arccosine")
+    pkern = new CArcCosineKern();
   else if(type=="rbfard")
     pkern = new CRbfardKern();
   else if(type=="linard")

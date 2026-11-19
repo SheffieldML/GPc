@@ -3,9 +3,9 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002D"
 last_updated: "2026-11-19"
-status: "In Progress"
+status: "Implemented"
 compressed: false
-related_requirements: ["0013", "0007", "0010", "0015", "0002"]
+related_requirements: ["0013", "0007", "0010", "0015", "0002", "0016"]
 related_cips: ["0013", "0009", "0012", "001B", "002A", "0028", "001F", "0020", "002B", "002C"]
 tags:
 - cip
@@ -28,7 +28,7 @@ title: "CPU quick wins that also prepare for GPUs; GPU backend options sketched"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -154,9 +154,9 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 
 **QW8. Timing as a gate (reconciles CIP-0013 runner noise).**
 - [CIP-0013](./cip0013.md) declined hard timing gates on shared runners as too noisy. QW8 does **not** reopen a blind absolute-threshold gate.
-- Extend `benchGPc` with `--kind svgp`, `--kern mlp`, and a checked-build mode.
-- Record per-PR timings for a fixed set of cases (E1, E2, E5) in CI on release builds as **artifacts first**.
-- Only after a same-runner **self-baseline** (compare to the previous successful run on that workflow, not a laptop number) may CI fail on a large regression, e.g. more than 25% on two consecutive runs. Until that baseline exists, treat regressions as warnings.
+- Extend `benchGPc` with `--kind svgp`, `--kern mlp`, and a checked-build mode. (`gpc_checks=` is already printed; `CHECKS=full` vs default/`RELEASE=1`.)
+- Record per-PR timings for a fixed set of cases (E1, E2, E5) in CI on release builds as **artifacts first** (`bench/timing_cases.json`, `bench-timing.yml`).
+- Only after a same-runner **self-baseline** (compare to the previous successful run on that workflow, not a laptop number) may CI fail on a large regression, e.g. more than 25% on two consecutive runs. Until that baseline exists, treat regressions as warnings (`compare_timing.py`; `--fail-on-regression` opt-in later).
 
 **Expected combined effect (Phase-1 hypothesis, not established fact):** QW1–QW3 are expected to bring the new default build from E1's left column toward or below today's `RELEASE=1` loop numbers for sparse models once cheap checks and `gemm` land together. **Phase 1 gates on re-measurement of E1/E2**, not on that combined claim. QW4–QW6 target the remaining hotspots in E4–E5.
 
@@ -233,6 +233,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 - [REQ-0010](../requirements/req0010_documented-concurrency-contract.md) — concurrency contract (B7).
 - [REQ-0015](../requirements/req0015_stochastic-variational-sparse-gp.md) — SVGP (QW6).
 - [REQ-0002](../requirements/req0002_runnable-verification.md) — verification of rewritten paths.
+- [REQ-0016](../requirements/req0016_gpu-training-decision.md) — GPU training route decision (Proposed; Part B).
 
 ## Implementation Status
 
@@ -241,7 +242,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 - [x] Phase 1: QW1–QW3 (code + docs; `testLQAdjoint` / `testCGp` green under `CHECKS=full` and `RELEASE=1`; E1/E2 re-measure still open)
 - [x] Phase 2: QW4–QW5 stationary (MLP/0028 bulk deferred; `testCGp` / `testKern` / `testLQAdjoint` green)
 - [x] Phase 3: QW6–QW7 (`CSvgp` batched marginals/sites; workspaces; `CMatrix::totalAlloc` + `benchGPc --kind svgp`; `CSparsePpa` skipped — no analogous per-point marginal hot path)
-- [ ] Phase 4: QW8 and GPU decision record
+- [x] Phase 4: QW8 (`--kern mlp`; `bench/run_timing_cases.py` + `compare_timing.py`; warn-only `.github/workflows/bench-timing.yml`) and [REQ-0016](../requirements/req0016_gpu-training-decision.md) Proposed from Part B
 
 ## References
 

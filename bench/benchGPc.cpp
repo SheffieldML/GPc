@@ -123,6 +123,7 @@ double median(vector<double>& v)
 int main(int argc, char** argv)
 {
   string kind = "ftc";
+  string kernName = "rbf";  // CIP-002D QW8: rbf (default) or mlp
   string dataDir;
   unsigned int N = 1000;
   unsigned int q = 2;
@@ -134,6 +135,8 @@ int main(int argc, char** argv)
   {
     if(!strcmp(argv[i], "--kind") && i + 1 < argc)
       kind = argv[++i];
+    else if(!strcmp(argv[i], "--kern") && i + 1 < argc)
+      kernName = argv[++i];
     else if(!strcmp(argv[i], "--N") && i + 1 < argc)
       N = (unsigned)atoi(argv[++i]);
     else if(!strcmp(argv[i], "--q") && i + 1 < argc)
@@ -148,8 +151,11 @@ int main(int argc, char** argv)
       inducingFixed = true;
     else if(!strcmp(argv[i], "--help"))
     {
-      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp] [--N N] [--q q] [--M M]\n"
-           << "                [--reps R] [--data-dir DIR] [--inducing-fixed]\n";
+      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp] [--kern rbf|mlp]\n"
+           << "                [--N N] [--q q] [--M M] [--reps R]\n"
+           << "                [--data-dir DIR] [--inducing-fixed]\n"
+           << "Checked-build timings: make CHECKS=full bench && ./benchGPc ...\n"
+           << "  (gpc_checks=on|off is printed; RELEASE=1 is the competitive path)\n";
       return 0;
     }
   }
@@ -180,11 +186,28 @@ int main(int argc, char** argv)
   }
 
   CCmpndKern kern(X);
-  kern.addKern(new CRbfKern(X));
-  kern.addKern(new CWhiteKern(X));
-  kern.setByPath("rbf.lengthscale", 1.0);
-  kern.setByPath("rbf.variance", 1.0);
-  kern.setByPath("white.variance", 0.01);
+  if(kernName == "rbf")
+  {
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    kern.setByPath("rbf.lengthscale", 1.0);
+    kern.setByPath("rbf.variance", 1.0);
+    kern.setByPath("white.variance", 0.01);
+  }
+  else if(kernName == "mlp")
+  {
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    kern.setByPath("mlp.weightVariance", 1.0);
+    kern.setByPath("mlp.biasVariance", 1.0);
+    kern.setByPath("mlp.variance", 1.0);
+    kern.setByPath("white.variance", 0.01);
+  }
+  else
+  {
+    cerr << "benchGPc: unknown --kern " << kernName << " (want rbf|mlp)" << endl;
+    return 2;
+  }
 
 #if defined(NDEBUG)
   const char* flags = "O2-DNDEBUG";
@@ -223,6 +246,7 @@ int main(int argc, char** argv)
     }
     const double med = median(times);
     cout << "kind=svgp"
+         << " kern=" << kernName
          << " N=" << N
          << " q=" << q
          << " M=" << M
@@ -280,6 +304,7 @@ int main(int argc, char** argv)
   double med = median(times);
 
   cout << "kind=" << kind
+       << " kern=" << kernName
        << " N=" << N
        << " q=" << q
        << " M=" << (kind == "ftc" ? 0 : M)

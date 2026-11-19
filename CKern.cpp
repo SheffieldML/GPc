@@ -11366,16 +11366,53 @@ void CCmpndKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, do
   }
 }
 
+namespace {
+
+// CIP-0028 Phase 3: weight-space compounds allow exactly one signal kernel
+// (mlp / mlpard / arccos) plus optional white (contributes 0 to K_fu; put
+// observation noise in β / Gaussian_noise.variance — CIP-0027).
+inline bool wsIsSignalType(const string& t)
+{
+  return t == "mlp" || t == "mlpard" || t == "arccos" || t == "arccosine";
+}
+inline bool wsIsSilentType(const string& t)
+{
+  return t == "white";
+}
+inline CKern* wsSelectCompoundSignal(const vector<CKern*>& components)
+{
+  CKern* signal = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    const string t = components[i]->getType();
+    if(wsIsSilentType(t))
+      continue;
+    if(wsIsSignalType(t))
+    {
+      if(signal != 0)
+        throw ndlexceptions::Error(
+            "weight-space compound: at most one of mlp / mlpard / arccos "
+            "(got a second '" + t + "')");
+      signal = components[i];
+      continue;
+    }
+    throw ndlexceptions::Error(
+        "weight-space compound: unsupported component '" + t
+        + "' (allowed: one mlp|mlpard|arccos plus optional white; "
+          "put observation noise in beta / Gaussian_noise.variance)");
+  }
+  if(signal == 0)
+    throw ndlexceptions::Error(
+        "weight-space compound: need one mlp|mlpard|arccos component");
+  return signal;
+}
+
+} // namespace
+
 void CCmpndKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
 {
   DIMENSIONMATCH(components.size() > 0);
-  components[0]->wsCrossCompute(Kfu, X, W, s);
-  CMatrix tmp;
-  for(size_t i = 1; i < components.size(); i++)
-  {
-    components[i]->wsCrossCompute(tmp, X, W, s);
-    Kfu.axpy(tmp, 1.0);
-  }
+  wsSelectCompoundSignal(components)->wsCrossCompute(Kfu, X, W, s);
 }
 
 void CCmpndKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
@@ -11383,6 +11420,7 @@ void CCmpndKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, do
 {
   DIMENSIONMATCH(g.getCols() == getNumParams());
   g.zeros();
+  wsSelectCompoundSignal(components); // validate before filling
   unsigned int start = 0;
   for(size_t i = 0; i < components.size(); i++)
   {
@@ -11396,53 +11434,29 @@ void CCmpndKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, do
 void CCmpndKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
                          const CMatrix& gKfu) const
 {
-  gW.resize(W.getRows(), W.getCols());
-  gW.zeros();
-  CMatrix tmp;
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsGradW(tmp, X, W, s, gKfu);
-    gW.axpy(tmp, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradW(gW, X, W, s, gKfu);
 }
 
 void CCmpndKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
                          const CMatrix& gKfu) const
 {
-  gX.resize(X.getRows(), X.getCols());
-  gX.zeros();
-  CMatrix tmp;
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsGradX(tmp, X, W, s, gKfu);
-    gX.axpy(tmp, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradX(gX, X, W, s, gKfu);
 }
 
 void CCmpndKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
                          const CMatrix& gKfu) const
 {
-  gS.resize(1, 1);
-  gS.zeros();
-  CMatrix tmp(1, 1);
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsGradS(tmp, X, W, s, gKfu);
-    gS.axpy(tmp, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradS(gS, X, W, s, gKfu);
 }
 
 void CCmpndKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                                      const CMatrix& a, double s) const
 {
   DIMENSIONMATCH(components.size() > 0);
-  components[0]->wsRidgeCrossCompute(Kfu, X, V, a, s);
-  CMatrix tmp;
-  for(size_t i = 1; i < components.size(); i++)
-  {
-    components[i]->wsRidgeCrossCompute(tmp, X, V, a, s);
-    Kfu.axpy(tmp, 1.0);
-  }
+  wsSelectCompoundSignal(components)->wsRidgeCrossCompute(Kfu, X, V, a, s);
 }
 
 void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
@@ -11450,6 +11464,7 @@ void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& 
 {
   DIMENSIONMATCH(g.getCols() == getNumParams());
   g.zeros();
+  wsSelectCompoundSignal(components);
   unsigned int start = 0;
   for(size_t i = 0; i < components.size(); i++)
   {
@@ -11463,43 +11478,21 @@ void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& 
 void CCmpndKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
                               const CMatrix& a, double s, const CMatrix& gKfu) const
 {
-  gX.resize(X.getRows(), X.getCols());
-  gX.zeros();
-  CMatrix tmp;
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsRidgeGradX(tmp, X, V, a, s, gKfu);
-    gX.axpy(tmp, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradX(gX, X, V, a, s, gKfu);
 }
 
 void CCmpndKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                               const CMatrix& a, double s, const CMatrix& gKfu) const
 {
-  gS.resize(1, 1);
-  gS.zeros();
-  CMatrix tmp(1, 1);
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsRidgeGradS(tmp, X, V, a, s, gKfu);
-    gS.axpy(tmp, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradS(gS, X, V, a, s, gKfu);
 }
 
 void CCmpndKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X,
                                const CMatrix& V, const CMatrix& a, double s,
                                const CMatrix& gKfu) const
 {
-  gV.resize(V.getRows(), V.getCols());
-  gV.zeros();
-  ga.resize(a.getRows(), 1);
-  ga.zeros();
-  CMatrix tmpV;
-  CMatrix tmpA;
-  for(size_t i = 0; i < components.size(); i++)
-  {
-    components[i]->wsRidgeGradVA(tmpV, tmpA, X, V, a, s, gKfu);
-    gV.axpy(tmpV, 1.0);
-    ga.axpy(tmpA, 1.0);
-  }
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradVA(gV, ga, X, V, a, s, gKfu);
 }

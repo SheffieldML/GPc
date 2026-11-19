@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "CGp.h"
+#include "CInducing.h"
 #include "CKern.h"
 #include "CMatrix.h"
 #include "CNoise.h"
@@ -1678,6 +1679,156 @@ int testModels()
     check("greens_ls_sweep_point_kappa_exceeds_greens",
           maxKappaPtMatern > 10.0 * maxKappaGreensLs,
           "point max κ should dominate greens on short lengthscales");
+  }
+
+  // -------------------------------------------------------------------------
+  // CIP-0028 Phase 3: ridge weight-space — weightVariance sweep under κ≤10⁴.
+  // K_uu is kernel-free ⇒ κ flat in wv (sanity). Primary: variance captured
+  // and DTCVAR finite under StableFactor / LQ.
+  // -------------------------------------------------------------------------
+  {
+    const unsigned int d = 8;
+    const unsigned int M = 32;
+    const unsigned int n = 40;
+    const double beta = 20.0;
+    const double wvs[] = {0.25, 1.0, 4.0};
+    auto kappaSym = [](CMatrix spd) {
+      CMatrix evals(1, spd.getRows());
+      spd.setSymmetric(true);
+      spd.syev(evals, "n", "u");
+      double mx = 0.0, mn = numeric_limits<double>::infinity();
+      for(unsigned int i = 0; i < evals.getCols(); i++)
+      {
+        const double e = fabs(evals.getVal(i));
+        if(e > mx) mx = e;
+        if(e < mn) mn = e;
+      }
+      return mx / max(mn, 1e-18);
+    };
+
+    CMatrix W;
+    const double sWin = CInducingWeightSpace::makeRidgeInit(W, M, d, 19u);
+    CInducingWeightSpace indProbe(W, sWin, false, true);
+    CMatrix Kuu(M, M);
+    {
+      CMatrix Xd(1, d);
+      Xd.zeros();
+      CMlpKern dummy(Xd);
+      indProbe.computeKuu(Kuu, dummy);
+    }
+    const double kappa0 = kappaSym(Kuu);
+    emitMetric("ws_ridge_wv_sweep_kappa0", "B_linalg", kappa0, 1e4, "abs");
+    check("ws_ridge_wv_sweep_kappa_le_1e4", kappa0 <= 1e4);
+
+    CMatrix X(n, d), Y(n, 1), Xu(M, d);
+    ndlutil::init_genrand(21u);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < d; j++)
+        X.setVal((j == 0) ? (-1.2 + 2.4 * (double)i / (double)(n - 1))
+                          : 0.2 * ndlutil::randn(),
+                 i, j);
+      Y.setVal(sin(2.0 * X.getVal(i, 0)) + 0.05 * ndlutil::randn(), i, 0);
+    }
+    Xu.zeros();
+
+    bool allFiniteStable = true;
+    bool allFiniteLq = true;
+    double maxKappaSpread = 0.0;
+    double minCapture = numeric_limits<double>::infinity();
+
+    CMatrix Vr(M, d + 1), ar(M, 1);
+    indProbe.ridgeFactors(Vr, ar);
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol();
+
+    for(unsigned int wi = 0; wi < 3; wi++)
+    {
+      const double wv = wvs[wi];
+      CMlpKern kernCap(X);
+      kernCap.setParam(wv, 0);
+      kernCap.setParam(0.05, 1);
+      kernCap.setParam(1.0, 2);
+      // κ(K_uu) independent of wv — rebuild probe Kuu is identical; record spread.
+      CMatrix KuuW(M, M);
+      indProbe.computeKuu(KuuW, kernCap);
+      const double kW = kappaSym(KuuW);
+      maxKappaSpread = max(maxKappaSpread, fabs(kW - kappa0) / max(kappa0, 1.0));
+      ostringstream mk;
+      mk << "ws_ridge_wv_sweep_kappa_wv" << wv;
+      emitMetric(mk.str(), "B_linalg", kW, 1e4, "abs");
+
+      CMatrix Kfu(n, M);
+      kernCap.wsRidgeCrossCompute(Kfu, X, Vr, ar, sWin);
+      double capture = 0.0;
+      for(unsigned int ni = 0; ni < n; ni++)
+      {
+        vector<double> yv(M);
+        for(unsigned int i = 0; i < M; i++)
+        {
+          double sum = Kfu.getVal(ni, i);
+          for(unsigned int k = 0; k < i; k++)
+            sum -= Uchol.getVal(k, i) * yv[k];
+          yv[i] = sum / Uchol.getVal(i, i);
+        }
+        double q = 0.0;
+        for(unsigned int i = 0; i < M; i++)
+          q += yv[i] * yv[i];
+        capture += q / max(kernCap.diagComputeElement(X, ni), 1e-18);
+      }
+      capture /= (double)n;
+      minCapture = min(minCapture, capture);
+      ostringstream mc;
+      mc << "ws_ridge_wv_sweep_capture_wv" << wv;
+      emitMetric(mc.str(), "F_model", capture, 0.25, "abs");
+
+      for(int mode = 0; mode < 2; mode++)
+      {
+        const bool useLq = (mode == 1);
+        CCmpndKern kern(X);
+        kern.addKern(new CMlpKern(X));
+        kern.setParam(wv, 0);
+        kern.setParam(0.05, 1);
+        kern.setParam(1.0, 2);
+        CGaussianNoise noise(&Y);
+        noise.setBiasVal(0.0, 0);
+        CGp gp(&kern, &noise, &X, CGp::DTCVAR, M, 0);
+        gp.setInducingVals(Xu);
+        gp.setInducingFixed(true);
+        gp.setBetaVal(beta);
+        gp.setVerbosity(0);
+        gp.setInducingType("weightspace");
+        gp.getInducing()->setCentres(W);
+        gp.getInducing()->setWindowWidth(sWin);
+        gp.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                     : CGp::SparseLinalgStableFactor);
+        const bool ok = gpAllFinite(gp);
+        if(!ok)
+        {
+          if(useLq)
+            allFiniteLq = false;
+          else
+            allFiniteStable = false;
+        }
+        if(ok)
+        {
+          ostringstream mll;
+          mll << "ws_ridge_wv_sweep_ll_wv" << wv << (useLq ? "_lq" : "_stable");
+          emitMetric(mll.str(), "F_model", gp.logLikelihood(), 1e6, "abs");
+        }
+      }
+    }
+
+    emitMetric("ws_ridge_wv_sweep_kappa_spread", "B_linalg", maxKappaSpread, 1e-10, "abs");
+    emitMetric("ws_ridge_wv_sweep_min_capture", "F_model", minCapture, 0.25, "abs");
+    check("ws_ridge_wv_sweep_kappa_flat_in_wv", maxKappaSpread < 1e-10,
+          "ridge K_uu is kernel-free so κ must be flat in weightVariance");
+    check("ws_ridge_wv_sweep_capture_ge_0.25", minCapture >= 0.25);
+    check("ws_ridge_wv_sweep_finite_stable", allFiniteStable);
+    check("ws_ridge_wv_sweep_finite_lq", allFiniteLq);
   }
 
   {

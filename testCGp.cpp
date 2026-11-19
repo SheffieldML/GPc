@@ -1431,16 +1431,18 @@ int testWeightSpaceInducingPhase0()
     toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
     fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
                      "weightspace Kuu diagonal finite positive");
-    // RBF+White: RBF has no wsCross ⇒ NotImplemented.
+    // RBF+White compound: RBF is not a weight-space signal ⇒ clear Error (CIP-0028 Phase 3).
     try
     {
       (void)toy.model->logLikelihood();
       fail += 1;
-      cout << "FAILURE: weightspace+RBF LL should throw NotImplementedError." << endl;
+      cout << "FAILURE: weightspace+RBF LL should throw Error." << endl;
     }
-    catch(ndlexceptions::NotImplementedError&)
+    catch(ndlexceptions::Error& e)
     {
-      cout << "weightspace+RBF logLikelihood throws NotImplementedError." << endl;
+      fail += failTrue(e.getMessage().find("unsupported component") != string::npos
+                       || e.getMessage().find("weight-space compound") != string::npos,
+                       "weightspace+RBF throws clear compound Error");
     }
   }
 
@@ -2089,6 +2091,92 @@ int testWeightSpaceInducingPhase2()
       model.optimise(4);
       fail += failTrue(std::isfinite(model.logLikelihood()),
                        tag + " weightspace DTCVAR after SCG LL finite");
+    }
+  }
+
+  return fail;
+}
+
+int testWeightSpaceCompoundRules()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace compound rules Phase 3 (CIP-0028) ====" << endl;
+
+  CMatrix X(N, Q);
+  CMatrix y(N, 1);
+  CMatrix Xu(M_ACTIVE, Q);
+  fillXy(X, y);
+  fillXu(Xu, X);
+
+  // MLP + White OK (White is silent in K_fu; noise via β).
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "mlp+white weightspace LL finite");
+  }
+
+  // MLP + RBF rejected with a clear Error (not NotImplemented).
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CRbfKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    try
+    {
+      (void)model.logLikelihood();
+      cout << "FAILURE: mlp+rbf weightspace should throw Error." << endl;
+      fail += 1;
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      fail += failTrue(e.getMessage().find("unsupported component") != string::npos
+                       || e.getMessage().find("weight-space compound") != string::npos,
+                       "mlp+rbf weightspace throws clear compound Error");
+    }
+  }
+
+  // Two signal kernels rejected.
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    CArcCosineKern* ak = new CArcCosineKern(X);
+    ak->setOrder(0);
+    kern.addKern(ak);
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    try
+    {
+      (void)model.logLikelihood();
+      cout << "FAILURE: mlp+arccos weightspace should throw Error." << endl;
+      fail += 1;
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      fail += failTrue(e.getMessage().find("at most one") != string::npos,
+                       "mlp+arccos weightspace throws at-most-one Error");
     }
   }
 
@@ -2843,6 +2931,7 @@ int main()
     fail += testWeightSpaceInducingPhase1b();
     fail += testWeightSpaceInducingPhase2();
     fail += testWeightSpaceInducingPhase2Ridge();
+    fail += testWeightSpaceCompoundRules();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

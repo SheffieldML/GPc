@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002C"
 last_updated: "2026-11-19"
-status: "In Progress"
+status: "In Progress"  # Phase A workflow landed; soft gate until green on Actions
 compressed: false
 related_requirements: ["000E", "0007"]
 related_cips: ["001D", "0020", "0021", "002B"]
@@ -142,7 +142,7 @@ Specifically, this CIP implements:
 
 ## Implementation Status
 
-- [ ] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts
+- [x] Phase A: cibuildwheel Linux + macOS soft gate + import smoke + artifacts (`.github/workflows/wheels.yml`; `continue-on-error: true` until green)
 - [ ] Phase B: auditwheel/delocate (or equivalent) self-contained OpenBLAS + gfortran; pytest on wheel
 - [ ] Phase C: docs + TestPyPI/Release; PyPI after sign-off; distribution name locked
 - [ ] Phase D: Windows wheels after CIP-002B

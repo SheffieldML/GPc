@@ -1404,6 +1404,88 @@ int testWhiteNoiseInducing()
   return fail;
 }
 
+int testWeightSpaceInducingPhase0()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 0 (CIP-0028) ====" << endl;
+
+  // Type + window width + kernel-free Kuu; Kuf still NotImplemented.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("weightspace");
+    fail += failTrue(toy.model->getInducingType() == "weightspace",
+                     "inducing type weightspace");
+    fail += failTrue(toy.model->getInducing()->domainDim() == Q + 1,
+                     "weightspace domainDim == inputDim+1");
+    fail += failTrue(toy.model->getInducing()->centres().getCols() == Q + 1,
+                     "weightspace centres cols == d+1");
+    toy.model->getInducing()->setWindowWidth(0.42);
+    fail += failTrue(fabs(toy.model->getInducing()->getWindowWidth() - 0.42) < 1e-12,
+                     "weightspace windowWidth set");
+    CMatrix Kuu(M_ACTIVE, M_ACTIVE);
+    toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
+    fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
+                     "weightspace Kuu diagonal finite positive");
+    // RBF+White has no wsCross ⇒ NotImplemented until Phase 1 MLP.
+    try
+    {
+      (void)toy.model->logLikelihood();
+      fail += 1;
+      cout << "FAILURE: weightspace+RBF LL should throw NotImplementedError." << endl;
+    }
+    catch(ndlexceptions::NotImplementedError&)
+    {
+      cout << "weightspace+RBF logLikelihood throws NotImplementedError." << endl;
+    }
+  }
+
+  // Stream round-trip.
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("weightspace");
+    toy.model->getInducing()->setWindowWidth(0.27);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    const string blob = out.str();
+    fail += failTrue(blob.find("inducingType=weightspace") != string::npos,
+                     "stream writes inducingType=weightspace");
+    fail += failTrue(blob.find("windowWidth=") != string::npos,
+                     "stream writes weightspace windowWidth");
+    fail += failTrue(blob.find("weightCentres=") != string::npos,
+                     "stream writes weightCentres");
+    istringstream in(blob);
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                     "stream restore inducingType weightspace");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && fabs(round->getInducing()->getWindowWidth() - 0.27) < 1e-12,
+                     "stream restore weightspace windowWidth");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && round->getInducing()->centres().getCols() == Q + 1
+                     && round->getInducing()->centres().getRows() == M_ACTIVE,
+                     "stream restore weightCentres shape");
+    delete round;
+  }
+
+  // Points / WN still selectable after weightspace (regression smoke).
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("weightspace");
+    toy.model->setInducingType("points");
+    fail += failTrue(toy.model->getInducingType() == "points",
+                     "switch weightspace → points");
+    fail += failTrue(std::isfinite(toy.model->logLikelihood()),
+                     "points LL finite after weightspace");
+    toy.model->setInducingType("whitenoise");
+    fail += failTrue(toy.model->getInducingType() == "whitenoise",
+                     "switch → whitenoise");
+    fail += failTrue(std::isfinite(toy.model->logLikelihood()),
+                     "WN LL finite after weightspace");
+  }
+
+  return fail;
+}
+
 int testGreensInducingPhase0()
 {
   int fail = 0;
@@ -1906,6 +1988,7 @@ int main()
     fail += testFixMask();
     fail += testModelPaths();
     fail += testWhiteNoiseInducing();
+    fail += testWeightSpaceInducingPhase0();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

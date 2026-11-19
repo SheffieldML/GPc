@@ -606,3 +606,219 @@ void CInducingGreens::setCentres(const CMatrix& Z)
     throw ndlexceptions::Error("CInducingGreens::setCentres requires 1-D centres.");
   pZ->deepCopy(Z);
 }
+
+// ---- CInducingWeightSpace (CIP-0028 Phase 0, Design A) ----
+
+CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn)
+  : W(WIn), s(sIn), learnS(learnSIn)
+{
+  if(W.getRows() == 0 || W.getCols() == 0)
+    throw ndlexceptions::Error("CInducingWeightSpace requires non-empty W (M x (d+1)).");
+  if(!(s > 0.0))
+    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+}
+
+unsigned int CInducingWeightSpace::numInducing() const
+{
+  return W.getRows();
+}
+
+unsigned int CInducingWeightSpace::domainDim() const
+{
+  return W.getCols();
+}
+
+void CInducingWeightSpace::setWindowWidth(double sIn)
+{
+  if(!(sIn > 0.0))
+    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  s = sIn;
+}
+
+void CInducingWeightSpace::fillKuu(CMatrix& Kuu) const
+{
+  // Same Gaussian-window Gram as CInducingWhiteNoise, now in weight dim d+1.
+  const unsigned int M = numInducing();
+  const unsigned int d = domainDim();
+  const double s2 = s * s;
+  Kuu.resize(M, M);
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = 0; j < M; j++)
+    {
+      double r2 = 0.0;
+      for(unsigned int k = 0; k < d; k++)
+      {
+        const double dz = W.getVal(i, k) - W.getVal(j, k);
+        r2 += dz * dz;
+      }
+      Kuu.setVal(exp(-r2 / (4.0 * s2)), i, j);
+    }
+  }
+  Kuu.setSymmetric(true);
+}
+
+void CInducingWeightSpace::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
+{
+  fillKuu(Kuu);
+}
+
+void CInducingWeightSpace::kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const
+{
+  const unsigned int N = Kfu.getRows();
+  const unsigned int M = Kfu.getCols();
+  DIMENSIONMATCH(Kuf.getRows() == M && Kuf.getCols() == N);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < N; n++)
+      Kuf.setVal(Kfu.getVal(n, m), m, n);
+}
+
+void CInducingWeightSpace::gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int d = domainDim();
+  const double inv2s2 = 1.0 / (2.0 * s * s);
+  gW.resize(M, d);
+  gW.zeros();
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = 0; j < M; j++)
+    {
+      if(i == j)
+        continue;
+      const double g = 2.0 * gKuu.getVal(i, j);
+      const double k = Kuu.getVal(i, j);
+      const double coeff = -g * k * inv2s2;
+      for(unsigned int c = 0; c < d; c++)
+      {
+        const double dz = W.getVal(i, c) - W.getVal(j, c);
+        gW.addVal(coeff * dz, i, c);
+      }
+    }
+  }
+}
+
+void CInducingWeightSpace::computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  Kfu.resize(N, M);
+  kern.wsCrossCompute(Kfu, X, W, s);
+  kufFromKfu(Kuf, Kfu);
+}
+
+void CInducingWeightSpace::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int Ns = Xstar.getRows();
+  Kfu.resize(Ns, M);
+  kern.wsCrossCompute(Kfu, Xstar, W, s);
+  kufFromKfu(Kux, Kfu);
+}
+
+void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                                         const CKern& kern, const CMatrix& X,
+                                         const CMatrix& gKuu, const CMatrix& gKuf,
+                                         bool wantX, bool regulariseKern) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int d = domainDim();
+  const unsigned int N = X.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(gKernParams.getCols() == nParams);
+  DIMENSIONMATCH(gKuu.getRows() == M && gKuu.getCols() == M);
+  DIMENSIONMATCH(gKuf.getRows() == M && gKuf.getCols() == N);
+
+  CMatrix Kuu(M, M);
+  fillKuu(Kuu);
+  gradWFromKuu(gZ, gKuu, Kuu);
+
+  Kfu.resize(N, M);
+  kern.wsCrossCompute(Kfu, X, W, s);
+  gKfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gKfu.setVal(gKuf.getVal(m, n), n, m);
+
+  tempG.resize(1, nParams);
+  tempG.zeros();
+  kern.wsGradParams(tempG, X, W, s, gKfu);
+  for(unsigned int i = 0; i < kern.getNumTransforms(); i++)
+  {
+    const unsigned int idx = kern.getTransformIndex(i);
+    const double val = tempG.getVal(idx);
+    const double param = kern.getParam(idx);
+    tempG.setVal(val * kern.getTransformGradFact(param, i), idx);
+  }
+  if(regulariseKern)
+    kern.addPriorGrad(tempG);
+  for(unsigned int i = 0; i < nParams; i++)
+    gKernParams.addVal(tempG.getVal(i), i);
+
+  CMatrix gWfromKuf(M, d);
+  gWfromKuf.zeros();
+  kern.wsGradW(gWfromKuf, X, W, s, gKfu);
+  for(unsigned int i = 0; i < M; i++)
+    for(unsigned int j = 0; j < d; j++)
+      gZ.addVal(gWfromKuf.getVal(i, j), i, j);
+
+  if(wantX && gXOrNull != 0)
+  {
+    gXOrNull->resize(N, X.getCols());
+    gXOrNull->zeros();
+    kern.wsGradX(*gXOrNull, X, W, s, gKfu);
+  }
+
+  (void)learnS;
+}
+
+unsigned int CInducingWeightSpace::getNumParams() const
+{
+  unsigned int n = numInducing() * domainDim();
+  if(learnS)
+    n += 1;
+  return n;
+}
+
+void CInducingWeightSpace::getParams(CMatrix& param, unsigned int offset) const
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < domainDim(); j++)
+  {
+    for(unsigned int i = 0; i < numInducing(); i++)
+    {
+      param.setVal(W.getVal(i, j), counter);
+      counter++;
+    }
+  }
+  if(learnS)
+  {
+    param.setVal(s, counter);
+    counter++;
+  }
+}
+
+void CInducingWeightSpace::setParams(const CMatrix& param, unsigned int offset)
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < domainDim(); j++)
+  {
+    for(unsigned int i = 0; i < numInducing(); i++)
+    {
+      W.setVal(param.getVal(counter), i, j);
+      counter++;
+    }
+  }
+  if(learnS)
+  {
+    setWindowWidth(param.getVal(counter));
+    counter++;
+  }
+}
+
+void CInducingWeightSpace::setCentres(const CMatrix& Z)
+{
+  DIMENSIONMATCH(Z.getRows() == W.getRows());
+  DIMENSIONMATCH(Z.getCols() == W.getCols());
+  W.deepCopy(Z);
+}

@@ -149,3 +149,4 @@ numerical_stability/last-compare.md
 numerical_stability/baseline/
 numerical_stability/mode_compare/
 numerical_stability/__pycache__/
+diagWeightSpaceRidge

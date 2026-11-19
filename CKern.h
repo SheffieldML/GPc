@@ -263,6 +263,30 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   virtual void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                            const CMatrix& gKfu) const;
 
+  // Weight-space inducing cross-covariance (CIP-0028). Kfu is N×M; W is M×(d+1).
+  // Isotropic windows (low-d oracle). Ridge (shipping): V is M×(d+1) unit directions, a is M×1.
+  virtual void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  virtual void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                            const CMatrix& gKfu) const;
+  virtual void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+
+  virtual void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s) const;
+  virtual void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                 const CMatrix& a, double s, const CMatrix& gKfu) const;
+  virtual void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const;
+  virtual void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const;
+  // Analytic grads w.r.t. unit directions V (M×(d+1)) and offsets a (M×1).
+  virtual void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                             const CMatrix& a, double s, const CMatrix& gKfu) const;
+
   virtual bool isUpdateXused() const
   {
     return updateXused;
@@ -696,6 +720,25 @@ class CCmpndKern: public CComponentKern {
                    const CMatrix& gKfu) const;
   void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                    const CMatrix& gKfu) const;
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 private:
   void _init();
 };
@@ -802,6 +845,25 @@ class CWhiteKern: public CKern {
                    const CMatrix& gKfu) const;
   void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                    const CMatrix& gKfu) const;
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1281,7 +1343,28 @@ class CMlpKern: public CKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  
+
+  // CIP-0028: isotropic (oracle) and ridge erf weight-space features.
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+
  private:
   void _init();
   double weightVariance;
@@ -1289,6 +1372,68 @@ class CMlpKern: public CKern {
   double variance;
   mutable CMatrix innerProdi;
   mutable CMatrix innerProdj;
+};
+
+// Arc-cosine kernel (Cho & Saul). Order 0 ≈ Williams MLP at infinite weight/bias variance
+// (CIP-0028); order 1 is the ReLU / ridge form. Inputs are augmented as x̃=(x,1).
+class CArcCosineKern: public CKern {
+ public:
+  CArcCosineKern();
+  CArcCosineKern(unsigned int inDim);
+  CArcCosineKern(const CMatrix& X);
+  ~CArcCosineKern();
+  CArcCosineKern(const CArcCosineKern&);
+  CArcCosineKern* clone() const
+  {
+    return new CArcCosineKern(*this);
+  }
+  double getVariance() const;
+  void setVariance(double val) { variance = val; }
+  void setOrder(unsigned int ord);
+  unsigned int getOrder() const { return order; }
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const;
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+  // CIP-0028 Phase 2: weight-space (order 0 = no √p; order 1 = smoothed ReLU).
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+
+  // CIP-0028 Phase 2 revised: ridge windows (order 0 erf; order 1 soft-ReLU).
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+
+ private:
+  void _init();
+  double variance;
+  unsigned int order; // 0 or 1
 };
 
 // Polynomial Kernel, not generally recommended as it `extreme behaviour' outside the region where the argument's absolute value is less than 1.
@@ -1465,8 +1610,28 @@ class CMlpardKern: public CArdKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
-  
-  
+
+  // CIP-0028 Phase 1b: isotropic oracle + ridge via whitened x̂ (diagonal Σ).
+  void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu) const;
+  void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+               const CMatrix& gKfu) const;
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+
  private:
   void _init();
   double weightVariance;

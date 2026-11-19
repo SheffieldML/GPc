@@ -67,8 +67,19 @@ test-command = [
 environment = { PIP_ONLY_BINARY = "numpy", OPENBLAS_NUM_THREADS = "1" }
 
 [tool.cibuildwheel.linux]
+# AlmaLinux PowerTools metadata is occasionally empty on the mirror; retry.
 before-all = [
-  "dnf install -y openblas-devel gcc-gfortran cmake || yum install -y openblas-devel gcc-gfortran cmake",
+  """sh -c 'for i in 1 2 3 4 5; do
+  dnf clean all || true
+  yum clean all || true
+  if dnf install -y openblas-devel gcc-gfortran cmake \
+    || yum install -y openblas-devel gcc-gfortran cmake; then
+    exit 0
+  fi
+  echo "dnf/yum attempt $i failed; sleeping..."
+  sleep $((i * 20))
+done
+exit 1'""",
 ]
 manylinux-x86_64-image = "manylinux_2_28"
 # Default repair-wheel-command = auditwheel (bundles OpenBLAS + libgfortran).

@@ -1,0 +1,12 @@
+GP prior, erf, Gaussian W (critical)         L= 8: mean  -4.37 sd  5.00  L=32: mean -17.38 sd 17.29  L=64: mean -34.67 sd 33.73   [max |Lyapunov-QR - exact| over depths: 5.6]
+GP prior, erf, Gaussian W (ordered 0.8)      L= 8: mean  -5.21 sd  5.16  L=32: mean -20.65 sd 17.93  L=64: mean -41.26 sd 34.88
+GP prior, erf, Gaussian W (chaotic 1.25)     L= 8: mean  -3.78 sd  5.12  L=32: mean -15.32 sd 17.79  L=64: mean -30.48 sd 35.42
+GP prior, erf, orthogonal W (critical)       L= 8: mean  -4.27 sd  5.03  L=32: mean -17.23 sd 17.78  L=64: mean -34.02 sd 34.09
+GP prior, ReLU, Gaussian W (critical)        L= 8: mean  -4.50 sd  5.14  L=32: mean -18.00 sd 18.20  L=64: mean -35.88 sd 35.30
+GP prior, erf, det-normalised |det J_l|=1    L= 8: mean  +0.00 sd  5.00  L=32: mean  +0.00 sd 17.29  L=64: mean  -0.00 sd 33.73
+Mean path, tied orthogonal, erf (critical)   L= 8: mean  -1.59 sd  5.34  L=32: mean  -6.57 sd 21.23  L=64: mean -13.22 sd 42.42
+Mean path, tied orthogonal, ReLU (critical)  L= 8: mean  -0.30 sd  0.54  L=32: mean  -1.37 sd  1.23  L=64: mean  -2.69 sd  1.91
+Mean path, tied orthogonal, erf, sb2=0.0001 (q*=6.87) L= 8: mean  -1.57 sd  5.27  L=32: mean  -6.42 sd 20.95  L=64: mean -13.01 sd 41.84
+Mean path, tied orthogonal, erf, sb2=1e-06 (q*=6.81) L= 8: mean  -1.56 sd  5.25  L=32: mean  -6.39 sd 20.90  L=64: mean -12.97 sd 41.73
+Residual GP, chi_f = 1/L_max                 L= 8: mean  -0.00 sd  0.17  L=32: mean  -0.01 sd  0.35  L=64: mean  -0.01 sd  0.48
+Residual GP, chi_f = 1                       L= 8: mean  -0.02 sd  0.97  L=32: mean  -0.12 sd  2.07  L=64: mean  -0.25 sd  2.99

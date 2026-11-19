@@ -58,6 +58,7 @@ jobs:
           ./ppa -h
 
   # CIP-002B: Windows MSVC + Intel ifx + OpenBLAS via thin CMake (soft gate).
+  # Binary cache: vcpkg files provider + actions/cache (x-gha was removed from vcpkg).
   windows-msvc-cmake:
     name: Windows MSVC CMake (soft)
     runs-on: windows-2022
@@ -66,7 +67,11 @@ jobs:
       # Do not use VCPKG_ROOT: ilammy/msvc-dev-cmd overwrites it with the
       # VS-bundled vcpkg under Program Files (clone then fails on non-empty dir).
       GPC_VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      GPC_VCPKG_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
       VCPKG_DEFAULT_TRIPLET: x64-windows
+      # Pin for stable ABI hashes in the binary cache (bump when upgrading ports).
+      GPC_VCPKG_COMMIT: "2025.10.17"
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,18 +91,33 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      - name: Install OpenBLAS + LAPACK (vcpkg)
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GPC_VCPKG_BINARY_CACHE }}
+          key: vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-openblas-lapack-ref-ifx2025
+          restore-keys: |
+            vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-
+            vcpkg-bin-win-x64-
+
+      - name: Bootstrap vcpkg
+        shell: cmd
         run: |
           if exist "%GPC_VCPKG_ROOT%" rmdir /s /q "%GPC_VCPKG_ROOT%"
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%GPC_VCPKG_ROOT%"
+          git clone --depth 1 --branch %GPC_VCPKG_COMMIT% https://github.com/microsoft/vcpkg.git "%GPC_VCPKG_ROOT%"
           call "%GPC_VCPKG_ROOT%\bootstrap-vcpkg.bat"
+          if not exist "%GPC_VCPKG_BINARY_CACHE%" mkdir "%GPC_VCPKG_BINARY_CACHE%"
+
+      - name: Install OpenBLAS + LAPACK (vcpkg)
+        shell: cmd
+        run: |
           rem vcpkg openblas is NOFORTRAN/no-LAPACK; lapack-reference supplies dpotrf_/dsyev_.
           rem Prefer ifx for the Fortran LAPACK build (on PATH from setup-fortran).
+          rem First run populates GPC_VCPKG_BINARY_CACHE; later runs restore via actions/cache.
           set "FC=ifx"
           set "F77=ifx"
           "%GPC_VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows lapack-reference:x64-windows
           dir "%GPC_VCPKG_ROOT%\installed\x64-windows\lib"
-        shell: cmd
 
       - name: Configure CMake (MSVC cl + ifx + OpenBLAS)
         run: |

@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002B"
 last_updated: "2026-11-19"
-status: "In Progress"
+status: "Implemented"
 compressed: false
 related_requirements: ["0001", "0007"]
 related_cips: ["0006", "0020", "0021"]
@@ -27,7 +27,7 @@ title: "Windows MSVC CMake compile smoke on GitHub Actions"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -101,6 +101,7 @@ MSVC is the Windows ABI users and wheel builders expect. SciPy already runs MSVC
 - [x] CMake: `_WIN32` plat; gate GNU Fortran flags; clapack opt-in
 - [x] Soft Windows MSVC+ifx CMake job (compile + help smoke)
 - [x] Document Windows MSVC + CMake recipe
+- [x] Follow-up: MSVC link — `gp_fortran` STATIC + ifx `/names:lowercase /assume:underscore`; `ppa` gets `CSparsePpa` + `CMltools`
 - [ ] Soft → hard after soak (Phase B)
 
 ## References

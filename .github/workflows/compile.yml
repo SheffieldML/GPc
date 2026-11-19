@@ -91,8 +91,12 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
+      # Split restore/save: actions/cache@v4's implicit post-save only runs when
+      # the whole job succeeds, so any Build failure threw away the ~8-12 min
+      # OpenBLAS/LAPACK build and every run started cold.
       - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.GPC_VCPKG_BINARY_CACHE }}
           key: vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-openblas-lapack-ref-ifx2025
@@ -118,6 +122,13 @@ jobs:
           set "F77=ifx"
           "%GPC_VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows lapack-reference:x64-windows
           dir "%GPC_VCPKG_ROOT%\installed\x64-windows\lib"
+
+      - name: Save vcpkg binary cache
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.GPC_VCPKG_BINARY_CACHE }}
+          key: vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-openblas-lapack-ref-ifx2025
 
       - name: Configure CMake (MSVC cl + ifx + OpenBLAS)
         run: |

@@ -48,7 +48,8 @@ jobs:
       - name: Build matio reference tests
         run: |
           make clean || true
-          make USE_MATIO=1 matio-tests
+          # CIP-002D: exhaustive checks (not the cheap default GPC_CHECKS=1).
+          make USE_MATIO=1 CHECKS=full matio-tests
 
       - name: Run matio reference tests
         run: make run-matio-tests

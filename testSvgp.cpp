@@ -266,6 +266,17 @@ static void runCase(bool withWhite)
     s3.setQ(mU, SU);
     expect(fabs(s3.elbo() - before) < 1e-8 * max(1.0, fabs(before)),
            "setQ(getQMean, getQCov) round trip preserves the ELBO" + tag);
+
+    // CIP-002D QW6: B*4 >= N uses gather-from-A (not K_uB); still not full batch.
+    vector<unsigned int> large(20);
+    for(unsigned int i = 0; i < 20; i++)
+      large[i] = i;
+    const double elboLarge = s3.elbo(large);
+    expect(std::isfinite(elboLarge),
+           "large minibatch ELBO finite (gather path)" + tag);
+    s3.naturalGradientStep(0.2, large);
+    expect(std::isfinite(s3.elbo()),
+           "large minibatch natgrad keeps ELBO finite" + tag);
   }
 }
 

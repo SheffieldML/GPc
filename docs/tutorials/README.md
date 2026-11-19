@@ -31,7 +31,7 @@ Owned outside CIP-0015 Stage 1, but linked here so the tutorial index stays the 
 | `basic_gp` / `toy_rbf_1d` | Stage 1 — [regression_1d](./regression_1d.md) |
 | `basic_kernels` | Planned (compound + CIP-000C types) |
 | `models_basic` (constrain/fix) | Partial — CIP-0014 paths; demos use `setByPath` |
-| `sparse_gp_regression` | Stage 1 — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR; not FITC) |
+| `sparse_gp_regression` | Stage 1 — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR default; FITC/DTC available) |
 | `basic_classification` (EP) | IVM substitute — [ivm_unitsquare](./ivm_unitsquare.md) |
 | Coregionalization tutorials | Phase A helpers + later demo |
 | `gplvm_oil_100` | Stage 1 — [gplvm_oil100](./gplvm_oil100.md) |

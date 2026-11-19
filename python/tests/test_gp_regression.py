@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 import gpc
+
+_PYTHON_DIR = Path(__file__).resolve().parents[1]
+_REF_FTC = _PYTHON_DIR / "ref_ftc_objective"
 
 
 def _toy():
@@ -15,12 +21,20 @@ def _toy():
     return X, Y
 
 
+def _fixed_toy():
+    """Deterministic N=8 toy matching python/ref_ftc_objective.cpp."""
+    X = np.linspace(0.0, 1.0, 8)[:, None]
+    Y = np.sin(2 * np.pi * X) + 0.1
+    return X, Y
+
+
 def test_construct_and_paths():
     X, Y = _toy()
     m = gpc.GPRegression(X, Y)
     assert m.n == 12
     assert m.input_dim == 1
     assert m.kernel_type == "rbf"
+    assert m.approx == "ftc"
     paths = m.param_paths()
     assert any("rbf" in p for p in paths)
     m.set_by_path("rbf.lengthscale", 0.5)
@@ -65,6 +79,20 @@ def test_optimize_and_predict():
     assert mu.shape == Y.shape
     assert var.shape == Y.shape
     assert np.all(var >= 0.0)
+
+
+def test_objective_matches_native_ref():
+    """Façade objective equals independent C++ construction (CIP-001D Phase B)."""
+    if not _REF_FTC.is_file():
+        pytest.skip("ref_ftc_objective not built (run: make -C python ref_ftc_objective)")
+    native = float(subprocess.check_output([str(_REF_FTC)], text=True).strip())
+    X, Y = _fixed_toy()
+    m = gpc.GPRegression(X, Y)
+    m.set_by_path("rbf.lengthscale", 0.5)
+    m.set_by_path("rbf.variance", 1.0)
+    m.set_by_path("bias.variance", 0.1)
+    m.set_by_path("white.variance", 0.05)
+    assert m.objective() == pytest.approx(native, rel=0.0, abs=1e-12)
 
 
 def test_shape_mismatch():

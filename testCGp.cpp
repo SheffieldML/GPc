@@ -1404,6 +1404,1132 @@ int testWhiteNoiseInducing()
   return fail;
 }
 
+int testWeightSpaceInducingPhase0()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 0 (CIP-0028) ====" << endl;
+
+  // Type + window width + kernel-free Kuu; RBF still lacks wsCross.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("weightspace");
+    fail += failTrue(toy.model->getInducingType() == "weightspace",
+                     "inducing type weightspace");
+    fail += failTrue(toy.model->getInducing()->domainDim() == Q + 2,
+                     "weightspace ridge domainDim == inputDim+2");
+    fail += failTrue(toy.model->getInducing()->centres().getCols() == Q + 2,
+                     "weightspace centres cols == d+2");
+    {
+      CInducingWeightSpace* pws =
+          dynamic_cast<CInducingWeightSpace*>(toy.model->getInducing());
+      fail += failTrue(pws != 0 && pws->isRidge(), "weightspace default is ridge");
+    }
+    toy.model->getInducing()->setWindowWidth(0.42);
+    fail += failTrue(fabs(toy.model->getInducing()->getWindowWidth() - 0.42) < 1e-12,
+                     "weightspace windowWidth set");
+    CMatrix Kuu(M_ACTIVE, M_ACTIVE);
+    toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
+    fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
+                     "weightspace Kuu diagonal finite positive");
+    // RBF+White compound: RBF is not a weight-space signal ⇒ clear Error (CIP-0028 Phase 3).
+    try
+    {
+      (void)toy.model->logLikelihood();
+      fail += 1;
+      cout << "FAILURE: weightspace+RBF LL should throw Error." << endl;
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      fail += failTrue(e.getMessage().find("unsupported component") != string::npos
+                       || e.getMessage().find("weight-space compound") != string::npos,
+                       "weightspace+RBF throws clear compound Error");
+    }
+  }
+
+  // Stream round-trip (ridge).
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("weightspace");
+    toy.model->getInducing()->setWindowWidth(0.27);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    const string blob = out.str();
+    fail += failTrue(blob.find("inducingType=weightspace") != string::npos,
+                     "stream writes inducingType=weightspace");
+    fail += failTrue(blob.find("windowWidth=") != string::npos,
+                     "stream writes weightspace windowWidth");
+    fail += failTrue(blob.find("weightCentres=") != string::npos,
+                     "stream writes weightCentres");
+    istringstream in(blob);
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                     "stream restore inducingType weightspace");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && fabs(round->getInducing()->getWindowWidth() - 0.27) < 1e-12,
+                     "stream restore weightspace windowWidth");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && round->getInducing()->centres().getCols() == Q + 2
+                     && round->getInducing()->centres().getRows() == M_ACTIVE,
+                     "stream restore weightCentres shape (ridge)");
+    delete round;
+  }
+
+  // Stream branches for CIP-0011 CGp.cpp coverage: isotropic restore, missing
+  // centres / windowWidth seek-back, and StreamFormatError on bad shapes.
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("weightspace");
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    string blob = out.str();
+
+    // weightspace without windowWidth line (seek) still loads centres.
+    {
+      const string needle = "windowWidth=";
+      const size_t wpos = blob.find(needle);
+      fail += failTrue(wpos != string::npos, "weightspace blob has windowWidth");
+      if(wpos != string::npos)
+      {
+        const size_t eol = blob.find('\n', wpos);
+        string noWin = blob;
+        noWin.replace(wpos, (eol == string::npos ? needle.size() : eol - wpos + 1),
+                      "notWindow=1\n");
+        istringstream in(noWin);
+        CGp* round = readGpFromStream(in);
+        fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                         "stream weightspace without windowWidth still loads");
+        delete round;
+      }
+    }
+
+    // weightspace without weightCentres → fallback W from X_u (ridge layout).
+    {
+      const string needle = "weightCentres=";
+      const size_t cpos = blob.find(needle);
+      fail += failTrue(cpos != string::npos, "weightspace blob has weightCentres");
+      if(cpos != string::npos)
+      {
+        string noCentres = blob.substr(0, cpos) + "otherTail=1\n";
+        istringstream in(noCentres);
+        CGp* round = readGpFromStream(in);
+        fail += failTrue(round != 0 && round->getInducingType() == "weightspace"
+                         && round->getInducing() != 0
+                         && round->getInducing()->centres().getCols() == Q + 2,
+                         "stream weightspace without centres uses X_u fallback");
+        delete round;
+      }
+    }
+
+    // Legacy isotropic stream: M × (d+1) centres.
+    {
+      CMatrix Wiso(M_ACTIVE, Q + 1);
+      Wiso.zeros();
+      for(unsigned int i = 0; i < M_ACTIVE; i++)
+      {
+        for(unsigned int j = 0; j < Q; j++)
+          Wiso.setVal(0.1 * (double)(i + j), i, j);
+        Wiso.setVal(1.0, i, Q);
+      }
+      toy.model->setInducing(new CInducingWeightSpace(Wiso, 0.35, false, false));
+      ostringstream outIso;
+      writeGpToStream(*toy.model, outIso);
+      istringstream inIso(outIso.str());
+      CGp* round = readGpFromStream(inIso);
+      fail += failTrue(round != 0 && round->getInducingType() == "weightspace",
+                       "stream restore isotropic weightspace type");
+      CInducingWeightSpace* pws =
+          dynamic_cast<CInducingWeightSpace*>(round ? round->getInducing() : 0);
+      fail += failTrue(pws != 0 && !pws->isRidge()
+                       && pws->centres().getCols() == Q + 1,
+                       "stream restore isotropic weightCentres shape");
+      delete round;
+    }
+
+    // Bad weightCentres column count ⇒ StreamFormatError.
+    {
+      string bad = blob;
+      const string needle = "weightCentres=";
+      const size_t cpos = bad.find(needle);
+      if(cpos != string::npos)
+      {
+        // Truncate after the key and inject a 1×1 matrix stream (wrong shape).
+        bad = bad.substr(0, cpos + needle.size()) + "\n";
+        {
+          ostringstream mat;
+          CMatrix tiny(1, 1);
+          tiny.setVal(0.0, 0, 0);
+          tiny.toStream(mat);
+          bad += mat.str();
+        }
+        try
+        {
+          istringstream in(bad);
+          CGp* round = readGpFromStream(in);
+          delete round;
+          cout << "FAILURE: bad weightCentres shape should throw." << endl;
+          fail += 1;
+        }
+        catch(ndlexceptions::StreamFormatError&)
+        {
+          cout << "bad weightCentres shape throws StreamFormatError." << endl;
+        }
+        catch(ndlexceptions::Error&)
+        {
+          cout << "bad weightCentres shape throws Error." << endl;
+        }
+      }
+    }
+  }
+
+  // Points / WN still selectable after weightspace (regression smoke).
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("weightspace");
+    toy.model->setInducingType("points");
+    fail += failTrue(toy.model->getInducingType() == "points",
+                     "switch weightspace → points");
+    fail += failTrue(std::isfinite(toy.model->logLikelihood()),
+                     "points LL finite after weightspace");
+    toy.model->setInducingType("whitenoise");
+    fail += failTrue(toy.model->getInducingType() == "whitenoise",
+                     "switch → whitenoise");
+    fail += failTrue(std::isfinite(toy.model->logLikelihood()),
+                     "WN LL finite after weightspace");
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase1()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 1 MLP (CIP-0028) ====" << endl;
+
+  // DTCVAR smoke: MLP + White + weightspace finite LL / grads.
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(10.0);
+    model.setInducingType("weightspace");
+    model.getInducing()->setWindowWidth(0.35);
+    fail += failTrue(model.getInducingType() == "weightspace", "Phase1 inducing type");
+    const double ll0 = model.logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "MLP weightspace DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "MLP weightspace DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP weightspace DTCVAR after SCG LL finite");
+  }
+
+  // Closed-form vs MC of ∫ φ √p ψ (1-D); control without √p must disagree.
+  {
+    CMatrix X(4, 1);
+    for(unsigned int i = 0; i < 4; i++)
+      X.setVal(-0.75 + 0.5 * (double)i, i, 0);
+    CMlpKern kern(X);
+    kern.setParam(2.0, 0); // weightVariance
+    kern.setParam(1.5, 1); // biasVariance
+    kern.setParam(1.1, 2); // variance
+    CMatrix W(2, 2);
+    W.setVal(0.3, 0, 0); W.setVal(0.8, 0, 1);
+    W.setVal(-0.4, 1, 0); W.setVal(1.1, 1, 1);
+    const double s = 0.45;
+    CMatrix Kfu(4, 2);
+    kern.wsCrossCompute(Kfu, X, W, s);
+
+    // MC: sample w ~ N(ŵ, s² I), estimate E[φ √p] * (4π s²)^{D/4}
+    const unsigned int D = 2;
+    const unsigned int nMc = 8000;
+    ndlutil::init_genrand(42u);
+    double maxRel = 0.0;
+    double maxRelNoSqrtP = 0.0;
+    const double alpha = kern.getParam(0);
+    const double beta = kern.getParam(1);
+    const double var = kern.getParam(2);
+    const double B = sqrt(var * M_PI / 2.0);
+    const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+    for(unsigned int m = 0; m < 2; m++)
+    {
+      for(unsigned int n = 0; n < 4; n++)
+      {
+        double acc = 0.0;
+        double accNo = 0.0;
+        for(unsigned int t = 0; t < nMc; t++)
+        {
+          double w0 = W.getVal(m, 0) + s * ndlutil::randn();
+          double w1 = W.getVal(m, 1) + s * ndlutil::randn();
+          const double logAbsSigma = log(alpha) + log(beta);
+          const double logSqrtP = -0.25 * (double)D * log(2.0 * M_PI) - 0.25 * logAbsSigma
+                                 - 0.25 * (w0 * w0 / alpha + w1 * w1 / beta);
+          const double sqrtP = exp(logSqrtP);
+          const double xt = X.getVal(n, 0);
+          const double lin = (w0 * xt + w1) / sqrt(2.0);
+          const double phi = B * erf(lin);
+          acc += phi * sqrtP;
+          accNo += phi; // missing √p — false oracle
+        }
+        const double mc = psiScale * acc / (double)nMc;
+        const double mcNo = psiScale * accNo / (double)nMc;
+        const double cf = Kfu.getVal(n, m);
+        const double rel = fabs(mc - cf) / max(1.0, fabs(cf));
+        const double relNo = fabs(mcNo - cf) / max(1.0, fabs(cf));
+        if(rel > maxRel) maxRel = rel;
+        if(relNo > maxRelNoSqrtP) maxRelNoSqrtP = relNo;
+      }
+    }
+    fail += failTrue(maxRel < 0.08, "wsCross MC vs closed form (√p)");
+    fail += failTrue(maxRelNoSqrtP > 0.15,
+                     "control without √p disagrees with closed form");
+    cout << "  MC max rel err (√p)=" << maxRel
+         << "  (no √p)=" << maxRelNoSqrtP << endl;
+  }
+
+  // Analytic wsGrad* vs central FD through wsCrossCompute.
+  {
+    CMatrix X(3, 1);
+    X.setVal(-0.5, 0, 0); X.setVal(0.0, 1, 0); X.setVal(0.7, 2, 0);
+    CMlpKern kern(X);
+    CMatrix W(2, 2);
+    W.setVal(0.2, 0, 0); W.setVal(0.9, 0, 1);
+    W.setVal(-0.3, 1, 0); W.setVal(1.2, 1, 1);
+    const double s = 0.5;
+    CMatrix Kfu(3, 2);
+    kern.wsCrossCompute(Kfu, X, W, s);
+    CMatrix gKfu(3, 2);
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        gKfu.setVal(1.0, n, m);
+
+    CMatrix gParams(1, 3);
+    kern.wsGradParams(gParams, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gParams.getVal(0))
+                     && std::isfinite(gParams.getVal(1))
+                     && std::isfinite(gParams.getVal(2)),
+                     "wsGradParams finite");
+
+    CMatrix gW(2, 2);
+    kern.wsGradW(gW, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gW.getVal(0, 0)), "wsGradW finite");
+
+    CMatrix gX(3, 1);
+    kern.wsGradX(gX, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gX.getVal(0, 0)), "wsGradX finite");
+
+    CMatrix gS(1, 1);
+    kern.wsGradS(gS, X, W, s, gKfu);
+    fail += failTrue(std::isfinite(gS.getVal(0)), "wsGradS finite");
+
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    auto fdDot = [&](const CMatrix& A, const CMatrix& B, double h) {
+      double acc = 0.0;
+      for(unsigned int n = 0; n < 3; n++)
+        for(unsigned int m = 0; m < 2; m++)
+          acc += gKfu.getVal(n, m) * (A.getVal(n, m) - B.getVal(n, m)) / (2.0 * h);
+      return acc;
+    };
+
+    // weightVariance
+    {
+      const double p0 = kern.getParam(0);
+      const double h = 1e-6 * max(1.0, fabs(p0));
+      kern.setParam(p0 + h, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      kern.setParam(p0 - h, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      kern.setParam(p0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradParams vs FD weightVariance");
+    }
+    // W[0,0]
+    {
+      const double w0 = W.getVal(0, 0);
+      const double h = 1e-6 * max(1.0, fabs(w0));
+      W.setVal(w0 + h, 0, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      W.setVal(w0 - h, 0, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      W.setVal(w0, 0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gW.getVal(0, 0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradW vs FD W00");
+    }
+    // X[0,0]
+    {
+      const double x0 = X.getVal(0, 0);
+      const double h = 1e-6 * max(1.0, fabs(x0));
+      X.setVal(x0 + h, 0, 0);
+      kern.wsCrossCompute(Kp, X, W, s);
+      X.setVal(x0 - h, 0, 0);
+      kern.wsCrossCompute(Km, X, W, s);
+      X.setVal(x0, 0, 0);
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gX.getVal(0, 0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradX vs FD X00");
+    }
+    // s
+    {
+      const double h = 1e-6 * max(1.0, fabs(s));
+      kern.wsCrossCompute(Kp, X, W, s + h);
+      kern.wsCrossCompute(Km, X, W, max(s - h, 1e-12));
+      const double fd = fdDot(Kp, Km, h);
+      const double rel = fabs(fd - gS.getVal(0)) / max(1.0, fabs(fd));
+      fail += failTrue(rel < 1e-4, "wsGradS vs FD s");
+    }
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase1Ridge()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace ridge Phase 1 revised (CIP-0028) ====" << endl;
+
+  // K_uu closed form vs 2-D quadrature (D'=2).
+  {
+    CMatrix W(2, 3); // [v0 v1 | a]
+    W.setVal(1.0, 0, 0); W.setVal(0.0, 0, 1); W.setVal(0.5, 0, 2);
+    W.setVal(0.6, 1, 0); W.setVal(0.8, 1, 1); W.setVal(-0.3, 1, 2);
+    const double s = 0.7;
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix Kuu(2, 2);
+    CMlpKern dummy(1);
+    ind.computeKuu(Kuu, dummy);
+
+    const unsigned int nq = 401;
+    const double span = 9.0;
+    const double dg = 2.0 * span / (double)(nq - 1);
+    const double dA = dg * dg;
+    auto psi = [&](double w0, double w1, double vx, double vy, double a) {
+      const double t = w0 * vx + w1 * vy;
+      const double perp = -w0 * vy + w1 * vx;
+      return pow(M_PI * s * s, -0.25) * exp(-(t - a) * (t - a) / (2.0 * s * s))
+             * pow(2.0 * M_PI, -0.25) * exp(-perp * perp / 4.0);
+    };
+    double quad = 0.0;
+    for(unsigned int i = 0; i < nq; i++)
+    {
+      const double w0 = -span + dg * (double)i;
+      for(unsigned int j = 0; j < nq; j++)
+      {
+        const double w1 = -span + dg * (double)j;
+        quad += psi(w0, w1, 1.0, 0.0, 0.5) * psi(w0, w1, 0.6, 0.8, -0.3);
+      }
+    }
+    quad *= dA;
+    const double rel = fabs(Kuu.getVal(0, 1) - quad) / max(1.0, fabs(quad));
+    fail += failTrue(rel < 1e-6, "ridge Kuu vs 2-D quadrature");
+    fail += failTrue(fabs(Kuu.getVal(0, 0) - 1.0) < 1e-10, "ridge Kuu diagonal 1");
+    cout << "  Kuu[0,1] closed=" << Kuu.getVal(0, 1) << " quad=" << quad
+         << " rel=" << rel << endl;
+  }
+
+  // K_fu FD grads (params through x̂, s) and DTCVAR smoke already covered in Phase1.
+  {
+    CMatrix X(3, 1);
+    X.setVal(-0.5, 0, 0); X.setVal(0.0, 1, 0); X.setVal(0.7, 2, 0);
+    CMlpKern kern(X);
+    CMatrix V(2, 2);
+    V.setVal(0.6, 0, 0); V.setVal(0.8, 0, 1);
+    V.setVal(-0.8, 1, 0); V.setVal(0.6, 1, 1);
+    CMatrix a(2, 1);
+    a.setVal(0.4, 0, 0); a.setVal(-0.2, 1, 0);
+    const double s = 0.55;
+    CMatrix Kfu(3, 2);
+    kern.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    fail += failTrue(std::isfinite(Kfu.getVal(0, 0)), "ridge Kfu finite");
+
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix gParams(1, 3);
+    kern.wsRidgeGradParams(gParams, X, V, a, s, gKfu);
+    const double p0 = kern.getParam(0);
+    const double h = 1e-6 * max(1.0, fabs(p0));
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    kern.setParam(p0 + h, 0);
+    kern.wsRidgeCrossCompute(Kp, X, V, a, s);
+    kern.setParam(p0 - h, 0);
+    kern.wsRidgeCrossCompute(Km, X, V, a, s);
+    kern.setParam(p0, 0);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    const double rel = fabs(fd - gParams.getVal(0)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-4, "ridge wsRidgeGradParams vs FD weightVariance");
+  }
+
+  // Variance-captured gate: d=16, M=64, κ≤1e4 ⇒ capture ≥ 0.80.
+  {
+    const unsigned int d = 16;
+    const unsigned int M = 64;
+    const unsigned int nOff = 4;
+    const double s = 0.8; // budget_sweep best at d=16,M=64
+    CMatrix W(M, d + 2);
+    ndlutil::init_genrand(11u);
+    const unsigned int nDir = M / nOff;
+    for(unsigned int di = 0; di < nDir; di++)
+    {
+      double nrm = 0.0;
+      vector<double> v(d + 1);
+      for(unsigned int j = 0; j < d + 1; j++)
+      {
+        v[j] = ndlutil::randn();
+        nrm += v[j] * v[j];
+      }
+      nrm = sqrt(nrm);
+      for(unsigned int o = 0; o < nOff; o++)
+      {
+        const unsigned int m = di * nOff + o;
+        for(unsigned int j = 0; j < d + 1; j++)
+          W.setVal(v[j] / nrm, m, j);
+        W.setVal(-2.5 + 5.0 * (double)o / (double)(nOff - 1), m, d + 1);
+      }
+    }
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix X(1, d); // dummy for kernel input dim
+    X.zeros();
+    CMlpKern kern(X);
+    kern.setParam(1.0 / (double)d, 0); // weightVariance
+    kern.setParam(0.01, 1);            // biasVariance
+    kern.setParam(1.0, 2);             // variance
+    CMatrix Kuu(M, M);
+    ind.computeKuu(Kuu, kern);
+    CMatrix KuuEig(Kuu);
+    KuuEig.setSymmetric(true);
+    CMatrix lam(1, M);
+    KuuEig.syev(lam, "n", "l");
+    double lmin = lam.getVal(0);
+    double lmax = lam.getVal(0);
+    for(unsigned int i = 1; i < M; i++)
+    {
+      const double li = lam.getVal(i);
+      if(li < lmin) lmin = li;
+      if(li > lmax) lmax = li;
+    }
+    const double kappa = lmax / max(lmin, 1e-18);
+    fail += failTrue(kappa <= 1e4, "ridge Kuu cond <= 1e4 at d=16 M=64");
+
+    const unsigned int nProbe = 20;
+    CMatrix Xp(nProbe, d);
+    ndlutil::init_genrand(12u);
+    for(unsigned int n = 0; n < nProbe; n++)
+      for(unsigned int j = 0; j < d; j++)
+        Xp.setVal(0.5 * ndlutil::randn(), n, j);
+
+    CMatrix V(M, d + 1);
+    CMatrix a(M, 1);
+    ind.ridgeFactors(V, a);
+    CMatrix Kfu(nProbe, M);
+    kern.wsRidgeCrossCompute(Kfu, Xp, V, a, s);
+
+    // Q_ii = ||L^{-1} kfu_i||^2 with L = chol(Kuu) (upper by default).
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol(); // upper triangular
+    double capture = 0.0;
+    for(unsigned int n = 0; n < nProbe; n++)
+    {
+      vector<double> y(M);
+      // Solve U^T y = kfu^T, then q = ||y||^2.
+      for(unsigned int i = 0; i < M; i++)
+      {
+        double sum = Kfu.getVal(n, i);
+        for(unsigned int k = 0; k < i; k++)
+          sum -= Uchol.getVal(k, i) * y[k];
+        y[i] = sum / Uchol.getVal(i, i);
+      }
+      double q = 0.0;
+      for(unsigned int i = 0; i < M; i++)
+        q += y[i] * y[i];
+      const double kii = kern.diagComputeElement(Xp, n);
+      capture += q / max(kii, 1e-18);
+    }
+    capture /= (double)nProbe;
+    fail += failTrue(capture >= 0.80, "ridge variance captured >= 0.80 at d=16 M=64");
+    cout << "  variance captured=" << capture << " kappa=" << kappa << endl;
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase1b()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 1b MLP-ARD (CIP-0028) ====" << endl;
+
+  // DTCVAR smoke with 2-D MLP-ARD + weightspace.
+  {
+    const unsigned int Q2 = 2;
+    CMatrix X(N, Q2);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q2);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      const double xv = -1.0 + 2.0 * (double)i / (double)(N - 1);
+      X.setVal(xv, i, 0);
+      X.setVal(0.5 * xv, i, 1);
+      y.setVal(sin(xv) + 0.1 * xv, i, 0);
+    }
+    for(unsigned int i = 0; i < M_ACTIVE; i++)
+      Xu.copyRowRow(i, X, i);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpardKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(8.0);
+    model.setInducingType("weightspace");
+    model.getInducing()->setWindowWidth(0.4);
+    fail += failTrue(model.getInducing()->domainDim() == Q2 + 2,
+                     "ARD weightspace ridge domainDim == d+2");
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP-ARD weightspace DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "MLP-ARD weightspace DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "MLP-ARD weightspace DTCVAR after SCG LL finite");
+  }
+
+  // ARD reduces to isotropic when all scales equal 1 (after matching Σ).
+  // With scales=0.5 default, match isotropic by α_iso = α_ard * scale.
+  {
+    CMatrix X(3, 2);
+    X.setVal(-0.4, 0, 0); X.setVal(0.2, 0, 1);
+    X.setVal(0.0, 1, 0); X.setVal(-0.3, 1, 1);
+    X.setVal(0.6, 2, 0); X.setVal(0.5, 2, 1);
+    CMlpardKern kard(X);
+    kard.setParam(4.0, 0);
+    kard.setParam(2.0, 1);
+    kard.setParam(1.0, 2);
+    kard.setParam(1.0, 3); // scale0
+    kard.setParam(1.0, 4); // scale1
+    CMlpKern kiso(X);
+    kiso.setParam(4.0, 0);
+    kiso.setParam(2.0, 1);
+    kiso.setParam(1.0, 2);
+    CMatrix W(2, 3);
+    W.setVal(0.2, 0, 0); W.setVal(-0.1, 0, 1); W.setVal(0.9, 0, 2);
+    W.setVal(-0.3, 1, 0); W.setVal(0.4, 1, 1); W.setVal(1.1, 1, 2);
+    const double s = 0.55;
+    CMatrix KfuArd(3, 2);
+    CMatrix KfuIso(3, 2);
+    kard.wsCrossCompute(KfuArd, X, W, s);
+    kiso.wsCrossCompute(KfuIso, X, W, s);
+    double maxAbs = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        maxAbs = max(maxAbs, fabs(KfuArd.getVal(n, m) - KfuIso.getVal(n, m)));
+    fail += failTrue(maxAbs < 1e-10, "ARD scales=1 matches isotropic wsCross");
+  }
+
+  // FD spot-check on an ARD inputScale param.
+  {
+    CMatrix X(3, 2);
+    X.setVal(-0.5, 0, 0); X.setVal(0.1, 0, 1);
+    X.setVal(0.0, 1, 0); X.setVal(-0.2, 1, 1);
+    X.setVal(0.4, 2, 0); X.setVal(0.3, 2, 1);
+    CMlpardKern kern(X);
+    CMatrix W(2, 3);
+    W.setVal(0.1, 0, 0); W.setVal(0.2, 0, 1); W.setVal(1.0, 0, 2);
+    W.setVal(-0.2, 1, 0); W.setVal(0.3, 1, 1); W.setVal(0.8, 1, 2);
+    const double s = 0.5;
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix gParams(1, kern.getNumParams());
+    kern.wsGradParams(gParams, X, W, s, gKfu);
+    const unsigned int scaleIdx = 3;
+    const double p0 = kern.getParam(scaleIdx);
+    const double h = 1e-6;
+    CMatrix Kp(3, 2);
+    CMatrix Km(3, 2);
+    kern.setParam(min(p0 + h, 0.999), scaleIdx);
+    kern.wsCrossCompute(Kp, X, W, s);
+    kern.setParam(max(p0 - h, 1e-6), scaleIdx);
+    kern.wsCrossCompute(Km, X, W, s);
+    kern.setParam(p0, scaleIdx);
+    double fd = 0.0;
+    const double denom = min(p0 + h, 0.999) - max(p0 - h, 1e-6);
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / denom;
+    const double rel = fabs(fd - gParams.getVal(scaleIdx)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-3, "wsGradParams vs FD ARD inputScale");
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase2()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace inducing Phase 2 arccos (CIP-0028) ====" << endl;
+
+  // Kernel basics: order 0/1 PSD-ish diag, stream round-trip.
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    fillXy(X, y);
+    CArcCosineKern k0(X);
+    k0.setOrder(0);
+    k0.setVariance(1.3);
+    fail += failTrue(fabs(k0.diagComputeElement(X, 0) - 1.3 * (M_PI / 2.0)) < 1e-12,
+                     "arccos0 diag = variance * pi/2");
+    CArcCosineKern k1(X);
+    k1.setOrder(1);
+    k1.setVariance(0.8);
+    fail += failTrue(k1.diagComputeElement(X, 0) > 0.0, "arccos1 diag positive");
+
+    ostringstream out;
+    k0.toStream(out);
+    istringstream in(out.str());
+    CKern* round = readKernFromStream(in);
+    CArcCosineKern* ak = dynamic_cast<CArcCosineKern*>(round);
+    fail += failTrue(ak != 0 && ak->getOrder() == 0, "stream restore arccos order 0");
+    fail += failTrue(ak != 0 && fabs(ak->getVariance() - 1.3) < 1e-12,
+                     "stream restore arccos variance");
+    delete round;
+  }
+
+  // Large-(w,b) MLP wsCross shape correlates with arccos order-0 formula.
+  {
+    CMatrix X(4, 1);
+    for(unsigned int i = 0; i < 4; i++)
+      X.setVal(-0.8 + 0.5 * (double)i, i, 0);
+    CMlpKern mlp(X);
+    const double big = 1.0e6;
+    mlp.setParam(big, 0);
+    mlp.setParam(big, 1);
+    mlp.setParam(1.0, 2);
+    CArcCosineKern arc(X);
+    arc.setOrder(0);
+    arc.setVariance(1.0);
+    CMatrix W(3, 2);
+    W.setVal(0.2, 0, 0); W.setVal(0.9, 0, 1);
+    W.setVal(-0.4, 1, 0); W.setVal(1.1, 1, 1);
+    W.setVal(0.0, 2, 0); W.setVal(0.7, 2, 1);
+    const double s = 0.5;
+    CMatrix Km(4, 3);
+    CMatrix Ka(4, 3);
+    mlp.wsCrossCompute(Km, X, W, s);
+    arc.wsCrossCompute(Ka, X, W, s);
+    double dot = 0.0, nm = 0.0, na = 0.0;
+    for(unsigned int n = 0; n < 4; n++)
+      for(unsigned int m = 0; m < 3; m++)
+      {
+        const double a = Km.getVal(n, m);
+        const double b = Ka.getVal(n, m);
+        dot += a * b;
+        nm += a * a;
+        na += b * b;
+      }
+    const double corr = dot / (sqrt(nm) * sqrt(na) + 1e-30);
+    fail += failTrue(corr > 0.999, "large-(w,b) MLP ws shape vs arccos0");
+    cout << "  MLP vs arccos0 shape corr=" << corr << endl;
+  }
+
+  // DTCVAR smoke order 0 and order 1 with isotropic weightspace (oracle retained).
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    for(unsigned int ord = 0; ord <= 1; ord++)
+    {
+      CCmpndKern kern(X);
+      CArcCosineKern* ak = new CArcCosineKern(X);
+      ak->setOrder(ord);
+      kern.addKern(ak);
+      kern.addKern(new CWhiteKern(X));
+      CGaussianNoise noise(&y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(true);
+      model.setBetaVal(6.0);
+      CMatrix Wiso(M_ACTIVE, Q + 1);
+      Wiso.zeros();
+      for(unsigned int i = 0; i < M_ACTIVE; i++)
+      {
+        for(unsigned int j = 0; j < Q; j++)
+          Wiso.setVal(Xu.getVal(i, j), i, j);
+        Wiso.setVal(1.0, i, Q);
+      }
+      model.setInducing(new CInducingWeightSpace(Wiso, 0.4, false, false));
+      const string tag = (ord == 0) ? "arccos0" : "arccos1";
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " weightspace DTCVAR LL finite");
+      CMatrix g(1, model.getOptNumParams());
+      fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                       tag + " weightspace DTCVAR grads finite");
+      model.setDefaultOptimiser(CGp::SCG);
+      model.setVerbosity(0);
+      model.optimise(4);
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " weightspace DTCVAR after SCG LL finite");
+    }
+  }
+
+  return fail;
+}
+
+int testWeightSpaceCompoundRules()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace compound rules Phase 3 (CIP-0028) ====" << endl;
+
+  CMatrix X(N, Q);
+  CMatrix y(N, 1);
+  CMatrix Xu(M_ACTIVE, Q);
+  fillXy(X, y);
+  fillXu(Xu, X);
+
+  // MLP + White OK (White is silent in K_fu; noise via β).
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "mlp+white weightspace LL finite");
+  }
+
+  // MLP + RBF rejected with a clear Error (not NotImplemented).
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CRbfKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    try
+    {
+      (void)model.logLikelihood();
+      cout << "FAILURE: mlp+rbf weightspace should throw Error." << endl;
+      fail += 1;
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      fail += failTrue(e.getMessage().find("unsupported component") != string::npos
+                       || e.getMessage().find("weight-space compound") != string::npos,
+                       "mlp+rbf weightspace throws clear compound Error");
+    }
+  }
+
+  // Two signal kernels rejected.
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    CArcCosineKern* ak = new CArcCosineKern(X);
+    ak->setOrder(0);
+    kern.addKern(ak);
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(6.0);
+    model.setInducingType("weightspace");
+    try
+    {
+      (void)model.logLikelihood();
+      cout << "FAILURE: mlp+arccos weightspace should throw Error." << endl;
+      fail += 1;
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      fail += failTrue(e.getMessage().find("at most one") != string::npos,
+                       "mlp+arccos weightspace throws at-most-one Error");
+    }
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase2Ridge()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace arccos ridge Phase 2 revised (CIP-0028) ====" << endl;
+
+  // Order-0 ridge matches MLP ridge at Σ = I.
+  {
+    CMatrix X(5, 1);
+    for(unsigned int i = 0; i < 5; i++)
+      X.setVal(-1.0 + 0.5 * (double)i, i, 0);
+    CMlpKern mlp(X);
+    mlp.setParam(1.0, 0);
+    mlp.setParam(1.0, 1);
+    mlp.setParam(1.2, 2);
+    CArcCosineKern arc(X);
+    arc.setOrder(0);
+    arc.setVariance(1.2);
+    CMatrix V(3, 2);
+    CMatrix a(3, 1);
+    V.setVal(0.6, 0, 0); V.setVal(0.8, 0, 1); a.setVal(-0.5, 0, 0);
+    V.setVal(-0.8, 1, 0); V.setVal(0.6, 1, 1); a.setVal(0.2, 1, 0);
+    V.setVal(0.0, 2, 0); V.setVal(1.0, 2, 1); a.setVal(1.1, 2, 0);
+    for(unsigned int m = 0; m < 3; m++)
+    {
+      double nrm = 0.0;
+      for(unsigned int j = 0; j < 2; j++)
+        nrm += V.getVal(m, j) * V.getVal(m, j);
+      nrm = sqrt(nrm);
+      for(unsigned int j = 0; j < 2; j++)
+        V.setVal(V.getVal(m, j) / nrm, m, j);
+    }
+    const double s = 0.55;
+    CMatrix Km(5, 3), Ka(5, 3);
+    mlp.wsRidgeCrossCompute(Km, X, V, a, s);
+    arc.wsRidgeCrossCompute(Ka, X, V, a, s);
+    double maxRel = 0.0;
+    for(unsigned int n = 0; n < 5; n++)
+      for(unsigned int m = 0; m < 3; m++)
+      {
+        const double diff = fabs(Km.getVal(n, m) - Ka.getVal(n, m));
+        const double rel = diff / max(1.0, fabs(Km.getVal(n, m)));
+        if(rel > maxRel) maxRel = rel;
+      }
+    fail += failTrue(maxRel < 1e-12, "arccos0 ridge matches MLP ridge at Sigma=I");
+  }
+
+  // Order-1 soft-ReLU ridge vs 1-D quadrature along the ridge measure.
+  {
+    const unsigned int d = 1;
+    CMatrix X(1, d);
+    X.setVal(0.35, 0, 0);
+    CMatrix V(1, d + 1);
+    CMatrix a(1, 1);
+    V.setVal(0.0, 0, 0); V.setVal(1.0, 0, 1); // direction e_bias
+    a.setVal(0.7, 0, 0);
+    const double s = 0.5;
+    CArcCosineKern arc(X);
+    arc.setOrder(1);
+    arc.setVariance(1.0);
+    CMatrix Kfu(1, 1);
+    arc.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    const double closed = Kfu.getVal(0, 0);
+
+    // Quadrature: t ~ N(μ, c_s); ω_⊥ ~ N(0,I); E[max(0, ω·x̂)] * A_m.
+    const double s2 = s * s;
+    const double cs = 2.0 * s2 / (2.0 + s2);
+    const double mu = a.getVal(0, 0) * cs / s2;
+    const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                      * sqrt(2.0 * M_PI * cs)
+                      * exp(mu * mu / (2.0 * cs) - a.getVal(0, 0) * a.getVal(0, 0) / (2.0 * s2));
+    // x̂ = (0.35, 1); v = (0, 1) ⇒ ω·x̂ = 0.35 ω_0 + t, ω_0 ~ N(0,1), t ~ N(μ,cs)
+    const double x0 = 0.35;
+    double acc = 0.0, mass = 0.0;
+    const int nT = 401, nP = 401;
+    const double tSpan = 8.0 * sqrt(cs);
+    const double pSpan = 8.0;
+    for(int it = 0; it < nT; it++)
+    {
+      const double t = mu - tSpan + 2.0 * tSpan * (double)it / (double)(nT - 1);
+      const double wtT = exp(-0.5 * (t - mu) * (t - mu) / cs) / sqrt(2.0 * M_PI * cs);
+      for(int ip = 0; ip < nP; ip++)
+      {
+        const double p = -pSpan + 2.0 * pSpan * (double)ip / (double)(nP - 1);
+        const double wtP = exp(-0.5 * p * p) / sqrt(2.0 * M_PI);
+        const double lin = x0 * p + t;
+        const double relu = (lin > 0.0) ? lin : 0.0;
+        const double w = wtT * wtP;
+        acc += w * relu;
+        mass += w;
+      }
+    }
+    const double dt = (2.0 * tSpan) / (double)(nT - 1);
+    const double dp = (2.0 * pSpan) / (double)(nP - 1);
+    const double quad = Am * (acc * dt * dp);
+    const double rel = fabs(closed - quad) / max(1.0, fabs(quad));
+    fail += failTrue(rel < 5e-3, "arccos1 ridge vs 2-D quadrature");
+    cout << "  arccos1 closed=" << closed << " quad=" << quad << " rel=" << rel << endl;
+  }
+
+  // Analytic ∂/∂variance vs FD for order 1.
+  {
+    CMatrix X(3, 1);
+    for(unsigned int i = 0; i < 3; i++)
+      X.setVal(-0.5 + 0.5 * (double)i, i, 0);
+    CMatrix V(2, 2), a(2, 1);
+    V.setVal(1.0, 0, 0); V.setVal(0.0, 0, 1); a.setVal(-0.4, 0, 0);
+    V.setVal(0.0, 1, 0); V.setVal(1.0, 1, 1); a.setVal(0.8, 1, 0);
+    const double s = 0.6;
+    CArcCosineKern arc(X);
+    arc.setOrder(1);
+    arc.setVariance(0.9);
+    CMatrix Kfu(3, 2);
+    arc.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix g(1, 1);
+    arc.wsRidgeGradParams(g, X, V, a, s, gKfu);
+    const double h = 1e-6;
+    arc.setVariance(0.9 + h);
+    CMatrix Kp(3, 2);
+    arc.wsRidgeCrossCompute(Kp, X, V, a, s);
+    arc.setVariance(0.9 - h);
+    CMatrix Km(3, 2);
+    arc.wsRidgeCrossCompute(Km, X, V, a, s);
+    arc.setVariance(0.9);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    const double rel = fabs(fd - g.getVal(0)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-4, "arccos1 ridge wsRidgeGradParams vs FD variance");
+  }
+
+  // DTCVAR smoke with production ridge init (both orders).
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    for(unsigned int ord = 0; ord <= 1; ord++)
+    {
+      CCmpndKern kern(X);
+      CArcCosineKern* ak = new CArcCosineKern(X);
+      ak->setOrder(ord);
+      kern.addKern(ak);
+      kern.addKern(new CWhiteKern(X));
+      CGaussianNoise noise(&y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(false);
+      model.setBetaVal(6.0);
+      model.setInducingType("weightspace");
+      const string tag = (ord == 0) ? "arccos0-ridge" : "arccos1-ridge";
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " DTCVAR LL finite");
+      CMatrix g(1, model.getOptNumParams());
+      fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                       tag + " DTCVAR grads finite");
+      model.setDefaultOptimiser(CGp::SCG);
+      model.setVerbosity(0);
+      model.optimise(6);
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " DTCVAR after SCG LL finite");
+    }
+  }
+
+  // Variance-captured sanity: soft-ReLU ridges capture less than erf at the same
+  // κ budget (~0.4 vs ~0.9); gate is κ≤1e4 and capture ≥ 0.35 at d=8, M=32.
+  {
+    const unsigned int d = 8;
+    const unsigned int M = 32;
+    CMatrix W;
+    const double s = CInducingWeightSpace::makeRidgeInit(W, M, d, 13u);
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix Xdummy(1, d);
+    Xdummy.zeros();
+    CArcCosineKern kern(Xdummy);
+    kern.setOrder(1);
+    kern.setVariance(1.0);
+    CMatrix Kuu(M, M);
+    ind.computeKuu(Kuu, kern);
+    CMatrix KuuEig(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      KuuEig.addVal(1e-10, i, i);
+    KuuEig.setSymmetric(true);
+    CMatrix lam(1, M);
+    KuuEig.syev(lam, "n", "l");
+    double lmin = fabs(lam.getVal(0)), lmax = lmin;
+    for(unsigned int i = 1; i < M; i++)
+    {
+      const double li = fabs(lam.getVal(i));
+      if(li < lmin) lmin = li;
+      if(li > lmax) lmax = li;
+    }
+    const double kappa = lmax / max(lmin, 1e-18);
+    fail += failTrue(kappa <= 1e4, "arccos1 ridge Kuu cond <= 1e4 at d=8 M=32");
+
+    const unsigned int nProbe = 16;
+    CMatrix Xp(nProbe, d);
+    ndlutil::init_genrand(17u);
+    for(unsigned int n = 0; n < nProbe; n++)
+      for(unsigned int j = 0; j < d; j++)
+        Xp.setVal(0.4 * ndlutil::randn(), n, j);
+    CMatrix Vr(M, d + 1), ar(M, 1);
+    ind.ridgeFactors(Vr, ar);
+    CMatrix Kfu(nProbe, M);
+    kern.wsRidgeCrossCompute(Kfu, Xp, Vr, ar, s);
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol();
+    double capture = 0.0;
+    for(unsigned int n = 0; n < nProbe; n++)
+    {
+      vector<double> y(M);
+      for(unsigned int i = 0; i < M; i++)
+      {
+        double sum = Kfu.getVal(n, i);
+        for(unsigned int k = 0; k < i; k++)
+          sum -= Uchol.getVal(k, i) * y[k];
+        y[i] = sum / Uchol.getVal(i, i);
+      }
+      double q = 0.0;
+      for(unsigned int i = 0; i < M; i++)
+        q += y[i] * y[i];
+      const double kii = kern.diagComputeElement(Xp, n);
+      capture += q / max(kii, 1e-18);
+    }
+    capture /= (double)nProbe;
+    fail += failTrue(capture >= 0.35, "arccos1 ridge variance captured >= 0.35 at d=8 M=32");
+    cout << "  arccos1 capture=" << capture << " kappa=" << kappa << " s=" << s << endl;
+  }
+
+  return fail;
+}
+
 int testGreensInducingPhase0()
 {
   int fail = 0;
@@ -1906,6 +3032,13 @@ int main()
     fail += testFixMask();
     fail += testModelPaths();
     fail += testWhiteNoiseInducing();
+    fail += testWeightSpaceInducingPhase0();
+    fail += testWeightSpaceInducingPhase1();
+    fail += testWeightSpaceInducingPhase1Ridge();
+    fail += testWeightSpaceInducingPhase1b();
+    fail += testWeightSpaceInducingPhase2();
+    fail += testWeightSpaceInducingPhase2Ridge();
+    fail += testWeightSpaceCompoundRules();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

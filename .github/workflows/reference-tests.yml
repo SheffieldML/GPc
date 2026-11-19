@@ -24,8 +24,8 @@ jobs:
       - name: Install toolchain (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          chmod +x scripts/ci_apt_install.sh
+          ./scripts/ci_apt_install.sh \
             g++ \
             gfortran \
             libopenblas-dev \

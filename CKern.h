@@ -1413,6 +1413,18 @@ class CArcCosineKern: public CKern {
   void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
                const CMatrix& gKfu) const;
 
+  // CIP-0028 Phase 2 revised: ridge windows (order 0 erf; order 1 soft-ReLU).
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+
  private:
   void _init();
   double variance;

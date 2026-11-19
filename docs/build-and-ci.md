@@ -2,13 +2,26 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md) · [CIP-002B](../cip/cip002B.md)  
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
 
 - **Blessed path is still make.** Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored. Compile / Reference / Coverage CI use this path.
-- **Optional thin CMake** ([CIP-0020](../cip/cip0020.md)): `cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` builds `libgp` and CLI smoke targets (`gp`, and optionally `ivm` / `gplvm` / `bgplvm`). On macOS, pass Homebrew `g++-N` / `gfortran-N` (or rely on `GPC_PREFER_HOMEBREW_GCC`) so C++ and Fortran ABIs match `make.osx`. `CMAKE_BUILD_TYPE=Release` maps to `make RELEASE=1` checks-off semantics; `-DGPC_USE_MATIO=ON` maps to `_NDLMATIO`. Sources are listed in [`cmake/GpcSources.cmake`](../cmake/GpcSources.cmake). CMake is **not** the CI gate until Phase C parity.
+- **Optional thin CMake** ([CIP-0020](../cip/cip0020.md)): `cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` builds `libgp` and CLI smoke targets (`gp`, and optionally `ivm` / `gplvm` / `bgplvm`). On macOS, pass Homebrew `g++-N` / `gfortran-N` (or rely on `GPC_PREFER_HOMEBREW_GCC`) so C++ and Fortran ABIs match `make.osx`. `CMAKE_BUILD_TYPE=Release` maps to `make RELEASE=1` checks-off semantics; `-DGPC_USE_MATIO=ON` maps to `_NDLMATIO`. Sources are listed in [`cmake/GpcSources.cmake`](../cmake/GpcSources.cmake). CMake is **not** the Ubuntu/macOS CI gate until [CIP-0021](../cip/cip0021.md) cutover.
+- **Windows (experimental, [CIP-002B](../cip/cip002B.md)):** CMake only — MSVC `cl` + Intel Fortran `ifx` + OpenBLAS (vcpkg). No blessed `make.win`. Actions job `windows-msvc-cmake` in `compile.yml` is a **soft gate** (`continue-on-error`) until Phase B soak. CI uses vcpkg’s **files** binary cache under `vcpkg-binary-cache/`, persisted with `actions/cache` (`x-gha` was removed from vcpkg). First Windows run still compiles ports; later runs restore binaries. Local sketch (Developer Command Prompt + oneAPI `ifx` on `PATH`):
+
+```bat
+vcpkg install openblas:x64-windows lapack-reference:x64-windows
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_CXX_COMPILER=cl -DCMAKE_Fortran_COMPILER=ifx ^
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build build
+build\gp.exe -h
+```
+
+  Platform define is `_WIN32`. vcpkg’s `openblas` port is BLAS-only (`NOFORTRAN`); install `lapack-reference` for Fortran-ABI LAPACK (`dpotrf_` / `dsyev_`). Historical CLAPACK/`blaswrap.h` is opt-in via `-DGPC_USE_CLAPACK` (off by default; header not in tree).
 - **Python packaging (Phase B):** from `python/`, `pip install -e ".[test]"` uses scikit-build-core against the repo-root CMake (`GPC_BUILD_PYTHON`). Day-to-day façade work can still use `python/Makefile` + root `libgp`. See [`python/README.md`](../python/README.md).
 - **Optional CTest (Phase C):** `cmake -B build -DGPC_BUILD_TESTS=ON -DGPC_USE_MATIO=ON -DCMAKE_PREFIX_PATH="…openblas;…libmatio" && cmake --build build && ctest --test-dir build` mirrors the makefile matio-gate binaries. **Actions still hard-gates on make**; CMake ctest is maintainer/packaging confidence only ([CIP-0020](../cip/cip0020.md) cutover decision).
 - Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) and the archived 2020 stub `CMakeLists.txt.archive-2020` live under [`make/legacy/`](../make/legacy/); they are not CI targets.
@@ -44,7 +57,6 @@ export OMP_NUM_THREADS=$(nproc)   # or a measured value
 ```
 
 The REQ-0007 documented one-thread bench protocol (`OPENBLAS_NUM_THREADS=1`, OpenMP off) remains the acceptance bar. Multi-thread measurements (P7) are recorded in [CIP-0025](../cip/cip0025.md) (2026-11-18 table): BLAS threads help most on GEMM-distance workloads (\(q \ge 8\)); OpenMP alone is a small VarDTC win; nesting is not clearly better — prefer `OPENBLAS_NUM_THREADS=1` with OpenMP unless re-measured. Raw TSV: [`bench/p7_results/p7_large.tsv`](../bench/p7_results/p7_large.tsv).
-- Windows CI waits on a maintained Windows make path; it is out of scope until that fragment exists.
 
 ## Reference verification without MATLAB
 
@@ -60,7 +72,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 
 | Workflow | Role |
 | --- | --- |
-| **Compile** | Ubuntu + macOS hard gate: build `gp` / `ivm` / `gplvm` / `bgplvm`, help smoke |
+| **Compile** | Ubuntu + macOS hard gate (make): build `gp` / `ivm` / `gplvm` / `bgplvm` / `ppa`, help smoke. Soft: Windows MSVC CMake ([CIP-002B](../cip/cip002B.md)) |
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
 

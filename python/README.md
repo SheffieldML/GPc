@@ -32,6 +32,10 @@ pytest -q python/tests
 
 `python/Makefile` stays supported for editable development without scikit-build.
 
+### Binary wheels (CIP-002C)
+
+GitHub Actions workflow [`.github/workflows/wheels.yml`](../.github/workflows/wheels.yml) builds manylinux and macOS wheels with **cibuildwheel** (soft gate until green). Config lives in this `pyproject.toml` under `[tool.cibuildwheel]`. Ordinary users will eventually `pip install` a published wheel (Phase C); until then, use the editable path above. Windows wheels are Phase D (after CIP-002B).
+
 Optional extras (not required for `import gpc` or core tests):
 
 ```bash

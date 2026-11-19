@@ -34,3 +34,22 @@ build-dir = "build/{wheel_tag}"
 GPC_BUILD_PYTHON = "ON"
 GPC_BUILD_GP_CLI = "OFF"
 GPC_BUILD_EXTRA_CLIS = "OFF"
+CMAKE_BUILD_TYPE = "Release"
+
+# CIP-002C Phase A: cibuildwheel (run from repo root with --package-dir python).
+# Phase B hardens auditwheel/delocate self-containment checks; Linux repair is on by default.
+[tool.cibuildwheel]
+build = "cp31{0,1,2,3}-*"
+skip = "pp* *-win* *-musllinux*"
+archs = ["auto64"]
+test-command = "python -c \"import gpc; print('gpc OK', gpc.__file__)\""
+# Soft matrix: no Windows until Phase D (CIP-002B).
+
+[tool.cibuildwheel.linux]
+before-all = [
+  "dnf install -y openblas-devel gcc-gfortran cmake || yum install -y openblas-devel gcc-gfortran cmake",
+]
+environment = { CMAKE_BUILD_TYPE = "Release" }
+
+[tool.cibuildwheel.macos]
+environment = { CMAKE_BUILD_TYPE = "Release", MACOSX_DEPLOYMENT_TARGET = "12.0" }

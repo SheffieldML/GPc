@@ -1,10 +1,10 @@
 ---
 id: "2026-11-18_cip001D-phase-b-gp"
 title: "CIP-001D Phase B: FTC GPRegression + path get/set"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-19"
 category: "features"
 related_cips: ["001D"]
 owner: "Neil Lawrence"
@@ -31,8 +31,8 @@ Expose FTC Gaussian `GPRegression` with default RBF+bias+white compound kernel, 
 - [x] `optimize` and `predict` return finite NumPy results
 - [x] Shape mismatches raise `GpcError`
 - [x] Pytest coverage for the above
-- [ ] Side-by-side GPy doc fragment (remaining)
-- [ ] Optional: pytest vs native C++ objective on fixed seed (remaining)
+- [x] Side-by-side GPy doc fragment (`python/docs/gpy_side_by_side.md`)
+- [x] Pytest vs native C++ objective on fixed toy (`ref_ftc_objective`)
 
 ## Implementation Notes
 
@@ -47,3 +47,7 @@ Holder owns `CMatrix` X/Y, `CCmpndKern`, `CGaussianNoise`, and `CGp`; no Python 
 ### 2026-11-18
 
 Task created; initial `GPRegression` wrapper and tests landing on `cip001D-python-facade`.
+
+### 2026-11-19
+
+Completed remaining Phase B gates: GPy side-by-side doc and native `ref_ftc_objective` compare in pytest.

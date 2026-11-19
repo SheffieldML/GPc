@@ -47,9 +47,11 @@ build = "cp31{0,1,2,3}-*"
 skip = "pp* *-win* *-musllinux*"
 archs = ["auto64"]
 test-extras = ["test"]
+# Clear pythonpath from pyproject (local editable uses pythonpath=["."]); otherwise
+# pytest imports the source tree gpc/ without _gpc instead of the installed wheel.
 test-command = [
   "python {package}/scripts/check_native_deps.py",
-  "pytest {package}/tests -q",
+  "pytest {package}/tests -q -o pythonpath=",
 ]
 # Soft matrix: no Windows until Phase D (CIP-002B).
 environment = { PIP_ONLY_BINARY = "numpy", OPENBLAS_NUM_THREADS = "1" }

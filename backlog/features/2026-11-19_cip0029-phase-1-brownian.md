@@ -29,7 +29,7 @@ Implement closed-form \(K_{fu}=(g*\psi_m)\) for `CBrownianKern` with Gaussian wi
 - [x] Numeric/MC convolution matches closed form on a fine 1-D grid
 - [x] FD agreement on kernel params, \(Z\) (X/s covered by analytic forms; variance+Z FD in `testGreensBrownianPhase1`)
 - [x] `testCGp` DTCVAR smoke with greens + Brownian
-- [ ] \(\kappa(K_{uu})\) independent of Brownian variance on a small sweep cell (deferred to Phase 4)
+- [x] \(\kappa(K_{uu})\) independent of Brownian variance on a small sweep cell (Phase 4 `greens_var_sweep_*`)
 
 ## Implementation Notes
 

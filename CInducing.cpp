@@ -198,7 +198,7 @@ void CInducingWhiteNoise::fillKuu(CMatrix& Kuu) const
   const unsigned int M = numInducing();
   const unsigned int d = domainDim();
   const double s2 = s * s;
-  DIMENSIONMATCH(Kuu.getRows() == M && Kuu.getCols() == M);
+  Kuu.resize(M, M);
   for(unsigned int i = 0; i < M; i++)
   {
     for(unsigned int j = 0; j < M; j++)
@@ -430,7 +430,7 @@ void CInducingGreens::fillKuu(CMatrix& Kuu) const
   // Same Gaussian-window Gram as CInducingWhiteNoise (1-D special case).
   const unsigned int M = numInducing();
   const double s2 = s * s;
-  DIMENSIONMATCH(Kuu.getRows() == M && Kuu.getCols() == M);
+  Kuu.resize(M, M);
   for(unsigned int i = 0; i < M; i++)
   {
     for(unsigned int j = 0; j < M; j++)

@@ -63,7 +63,9 @@ jobs:
     runs-on: windows-2022
     continue-on-error: true
     env:
-      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      # Do not use VCPKG_ROOT: ilammy/msvc-dev-cmd overwrites it with the
+      # VS-bundled vcpkg under Program Files (clone then fails on non-empty dir).
+      GPC_VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
     steps:
       - name: Checkout
@@ -86,9 +88,10 @@ jobs:
 
       - name: Install OpenBLAS (vcpkg)
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%VCPKG_ROOT%"
-          call "%VCPKG_ROOT%\bootstrap-vcpkg.bat"
-          "%VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows
+          if exist "%GPC_VCPKG_ROOT%" rmdir /s /q "%GPC_VCPKG_ROOT%"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%GPC_VCPKG_ROOT%"
+          call "%GPC_VCPKG_ROOT%\bootstrap-vcpkg.bat"
+          "%GPC_VCPKG_ROOT%\vcpkg.exe" install openblas:x64-windows
         shell: cmd
 
       - name: Configure CMake (MSVC cl + ifx + OpenBLAS)
@@ -96,7 +99,7 @@ jobs:
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_CXX_COMPILER=cl ^
             -DCMAKE_Fortran_COMPILER=ifx ^
-            -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
+            -DCMAKE_TOOLCHAIN_FILE=%GPC_VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake ^
             -DVCPKG_TARGET_TRIPLET=x64-windows ^
             -DGPC_BUILD_EXTRA_CLIS=ON ^
             -DGPC_BUILD_GP_CLI=ON ^
@@ -111,7 +114,7 @@ jobs:
       - name: Smoke help
         shell: cmd
         run: |
-          set "PATH=%VCPKG_ROOT%\installed\x64-windows\bin;%PATH%"
+          set "PATH=%GPC_VCPKG_ROOT%\installed\x64-windows\bin;%PATH%"
           build\gp.exe -h
           build\ivm.exe -h
           build\gplvm.exe -h

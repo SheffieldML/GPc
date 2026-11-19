@@ -283,6 +283,9 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
                             const CMatrix& a, double s, const CMatrix& gKfu) const;
   virtual void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                             const CMatrix& a, double s, const CMatrix& gKfu) const;
+  // Analytic grads w.r.t. unit directions V (M×(d+1)) and offsets a (M×1).
+  virtual void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                             const CMatrix& a, double s, const CMatrix& gKfu) const;
 
   virtual bool isUpdateXused() const
   {
@@ -729,6 +732,8 @@ class CCmpndKern: public CComponentKern {
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 private:
   void _init();
 };
@@ -852,6 +857,8 @@ class CWhiteKern: public CKern {
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1350,6 +1357,8 @@ class CMlpKern: public CKern {
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 
  private:
   void _init();
@@ -1603,6 +1612,8 @@ class CMlpardKern: public CArdKern {
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
                     const CMatrix& a, double s, const CMatrix& gKfu) const;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const;
 
  private:
   void _init();

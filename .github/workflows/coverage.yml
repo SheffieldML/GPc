@@ -28,10 +28,14 @@ jobs:
         run: |
           rm -f make.inc
           make clean || true
-          make USE_MATIO=1 COVERAGE=1 matio-tests bgplvm
+          # testSparsePpa: CIP-0026 — exercises CGp::sparsePpaElboGpTerms (CIP-0011 gate).
+          make USE_MATIO=1 COVERAGE=1 matio-tests bgplvm testSparsePpa
 
       - name: Run matio reference tests
         run: make run-matio-tests
+
+      - name: Run sparse PPA gate (coverage for sparsePpaElboGpTerms)
+        run: ./testSparsePpa
 
       - name: Smoke bgplvm CLI (coverage for bgplvm.cpp)
         run: make run-bgplvm-smoke

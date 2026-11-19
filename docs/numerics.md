@@ -38,6 +38,8 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 - Evaluators call `ensureMUpToDate` / `ensureKUpToDate` / `ensureADUpToDate` / `ensureAlphaUpToDate` before reading cached factors.
 - One model instance is single-threaded; do not share a live `CGp` / `CGplvm` across threads.
 
+Intra-evaluation parallelism (GEMM distances via multi-threaded BLAS; optional OpenMP over disjoint workspace rows) is [CIP-0025](../cip/cip0025.md) / [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md) — L4 relative to the L2/L3 contract in [CIP-001F](../cip/cip001F.md). See [docs/build-and-ci.md](./build-and-ci.md) for `GPC_OPENMP` and BLAS nesting. Same-instance concurrent APIs remain out of scope.
+
 ## Spherical PITC ([CIP-000F](../cip/cip000F.md))
 
 `CGp::PITC` implements the GPmat spherical path: contiguous `blockEnd` partitions (default matching `gpCreate`), block \(D\) / \(A\) updates, log-likelihood, and `gpCovGrads`. Gate with `matfiles/testGppitc.mat` via `testGaussian("pitc")`. Regenerate with `make USE_MATIO=1 genTestGpPitc && python scripts/gen_testGppitc.py`. FD check: `make diagPitc && ./diagPitc`.

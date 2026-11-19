@@ -1,8 +1,17 @@
 #include "CKern.h"
 #include <cmath>
 #include <vector>
+#ifdef GPC_OPENMP
+#include <omp.h>
+#endif
 
 using namespace std;
+
+// CIP-0025: minimum input dimension to prefer the GEMM distance path over
+// the scalar dist2Active loop in fillSymWorkspace / fillRectWorkspace.
+// Measured knee: for q < 8 the dgemm overhead exceeds the per-element gain on
+// the standard bench (n=100, q=2 protocol from REQ-0007 / CIP-0013).
+static const unsigned int kGemmDistMinQ = 8;
 
 namespace {
 
@@ -70,6 +79,8 @@ bool typesCompatible(const string& type, const string& name)
     return true;
   if((type=="rbf" || type=="rbfard") && name=="rbf")
     return true;
+  if(type=="eq" && (name=="ExpQuad" || name=="eq" || name=="expquad"))
+    return true;
   if((type=="mlp" || type=="mlpard") && name=="mlp")
     return true;
   if(type=="poly" && name=="poly")
@@ -97,6 +108,7 @@ string CKern::gpyComponentName() const
   if(t=="cosine") return "Cosine";
   if(t=="brownian") return "Brownian";
   if(t=="rbfard") return "rbf";
+  if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
   return t;
 }
@@ -1525,18 +1537,76 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
   m_workR2Sym.resize(n, n);
   m_workKSym.resize(n, n);
   const double s = scaleFactor();
-  for(unsigned int i = 0; i < n; i++)
+  const unsigned int q = X.getCols();
+
+  if(isDefaultActiveDims() && q == getInputDim() && q >= kGemmDistMinQ)
   {
-    m_workR2Sym.setVal(0.0, i, i);
-    m_workKSym.setVal(diagComputeElement(X, i), i, i);
-    for(unsigned int j = 0; j < i; j++)
+    // CIP-0025 Track 1 — GEMM distance path.
+    // R^2_ij = ||xi||^2 + ||xj||^2 - 2 xi·xj
+    // Step 1: m_workR2Sym = -2 * X * X^T  (column-major dgemm, beta=0)
+    m_workR2Sym.gemm(X, X, -2.0, 0.0, "n", "t");
+    // Step 2: Row squared norms
+    std::vector<double> rowNorm2(n, 0.0);
+    for(unsigned int i = 0; i < n; i++)
     {
-      const double r2 = dist2Active(X, i, X, j);
-      const double k = K_of_r(s * sqrt(r2));
-      m_workR2Sym.setVal(r2, i, j);
-      m_workR2Sym.setVal(r2, j, i);
-      m_workKSym.setVal(k, i, j);
-      m_workKSym.setVal(k, j, i);
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++)
+      {
+        const double v = X.getVal(i, c);
+        nrm += v * v;
+      }
+      rowNorm2[i] = nrm;
+    }
+    // Step 3: Add row norms, clamp r2 >= 0, set diagonal exactly 0
+    for(unsigned int i = 0; i < n; i++)
+    {
+      m_workR2Sym.setVal(0.0, i, i);
+      for(unsigned int j = 0; j < i; j++)
+      {
+        double r2 = m_workR2Sym.getVal(i, j) + rowNorm2[i] + rowNorm2[j];
+        if(r2 < 0.0) r2 = 0.0;
+        m_workR2Sym.setVal(r2, i, j);
+        m_workR2Sym.setVal(r2, j, i);
+      }
+    }
+    // Step 4: Apply K_of_r — diagonal via diagComputeElement; off-diag rows
+    // in parallel (each thread i writes row i and symmetric col i — disjoint).
+    for(unsigned int i = 0; i < n; i++)
+      m_workKSym.setVal(diagComputeElement(X, i), i, i);
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < i; j++)
+      {
+        const double k = K_of_r(s * sqrt(m_workR2Sym.getVal(i, j)));
+        m_workKSym.setVal(k, i, j);
+        m_workKSym.setVal(k, j, i);
+      }
+    }
+  }
+  else
+  {
+    // Scalar path: small q (< kGemmDistMinQ) or non-default activeDims.
+    // OpenMP over disjoint-write symmetric rows: thread i writes
+    // row i (cols 0..i-1) and col i (rows 0..i-1) — no overlap between threads.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      m_workR2Sym.setVal(0.0, i, i);
+      m_workKSym.setVal(diagComputeElement(X, i), i, i);
+      for(unsigned int j = 0; j < i; j++)
+      {
+        const double r2 = dist2Active(X, i, X, j);
+        const double k = K_of_r(s * sqrt(r2));
+        m_workR2Sym.setVal(r2, i, j);
+        m_workR2Sym.setVal(r2, j, i);
+        m_workKSym.setVal(k, i, j);
+        m_workKSym.setVal(k, j, i);
+      }
     }
   }
   m_symX = &X;
@@ -1550,14 +1620,60 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
   m_workR2Rect.resize(n, m);
   m_workKRect.resize(n, m);
   const double s = scaleFactor();
-  for(unsigned int i = 0; i < n; i++)
+  const unsigned int q = X.getCols();
+
+  if(isDefaultActiveDims() && q == getInputDim()
+     && X2.getCols() == getInputDim() && q >= kGemmDistMinQ)
   {
+    // CIP-0025 Track 1 — GEMM distance path for rectangular blocks.
+    // R^2_ij = ||xi||^2 + ||x2j||^2 - 2 xi·x2j
+    m_workR2Rect.gemm(X, X2, -2.0, 0.0, "n", "t");
+    // Row squared norms for X and X2
+    std::vector<double> rowNorm2X(n, 0.0);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++) { const double v = X.getVal(i, c); nrm += v * v; }
+      rowNorm2X[i] = nrm;
+    }
+    std::vector<double> rowNorm2X2(m, 0.0);
     for(unsigned int j = 0; j < m; j++)
     {
-      const double r2 = dist2Active(X, i, X2, j);
-      const double k = K_of_r(s * sqrt(r2));
-      m_workR2Rect.setVal(r2, i, j);
-      m_workKRect.setVal(k, i, j);
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++) { const double v = X2.getVal(j, c); nrm += v * v; }
+      rowNorm2X2[j] = nrm;
+    }
+    // Add norms, clamp r2 >= 0, apply K_of_r.
+    // Rows are fully disjoint: OpenMP parallel over outer index i is safe.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < m; j++)
+      {
+        double r2 = m_workR2Rect.getVal(i, j) + rowNorm2X[i] + rowNorm2X2[j];
+        if(r2 < 0.0) r2 = 0.0;
+        m_workR2Rect.setVal(r2, i, j);
+        m_workKRect.setVal(K_of_r(s * sqrt(r2)), i, j);
+      }
+    }
+  }
+  else
+  {
+    // Scalar path: small q or non-default activeDims. Each row i is independent.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < m; j++)
+      {
+        const double r2 = dist2Active(X, i, X2, j);
+        const double k = K_of_r(s * sqrt(r2));
+        m_workR2Rect.setVal(r2, i, j);
+        m_workKRect.setVal(k, i, j);
+      }
     }
   }
   m_rectX = &X;
@@ -1658,6 +1774,36 @@ void CRbfKern::_init()
   setParamName("variance", 1);
   addTransform(CTransform::defaultPositive(), 1);
   setStationary(true);
+}
+
+// CIP-0024: GPy ExpQuad / EQ — thin RBF subclass, lengthscale-first surface.
+void CEqKern::_markEq()
+{
+  setType("eq");
+  setName("ExpQuad");
+}
+CEqKern::CEqKern() : CRbfKern()
+{
+  _markEq();
+}
+CEqKern::CEqKern(unsigned int inDim) : CRbfKern(inDim)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CMatrix& X) : CRbfKern(X)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CEqKern& kern) : CRbfKern(kern)
+{
+  _markEq();
+}
+CEqKern::~CEqKern()
+{
+}
+string CEqKern::gpyComponentName() const
+{
+  return "ExpQuad";
 }
 void CRbfKern::setInitParam()
 {
@@ -6584,6 +6730,8 @@ CKern* readKernFromStream(istream& in)
 
   else if(type=="rbf")
     pkern = new CRbfKern();
+  else if(type=="eq" || type=="ExpQuad" || type=="expquad")
+    pkern = new CEqKern();
   else if(type=="exp")
     pkern = new CExpKern();
   else if(type=="ratquad")
@@ -6770,6 +6918,8 @@ void CComponentKern::extractParamFromMxArray(const mxArray* matlabArray)
       kernNum = addKern(new CLinKern(getInputDim()));
     else if(kernType == "rbf")  
       kernNum = addKern(new CRbfKern(getInputDim()));
+    else if(kernType == "eq" || kernType == "ExpQuad" || kernType == "expquad")
+      kernNum = addKern(new CEqKern(getInputDim()));
     else if(kernType == "ratquad")  
       kernNum = addKern(new CRatQuadKern(getInputDim()));
     else if(kernType == "matern32")  

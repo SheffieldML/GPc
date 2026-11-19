@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001D"
-last_updated: "2026-11-18"
+last_updated: "2026-11-19"
 status: "In Progress"
 compressed: false
 related_requirements: ["000E", "0008", "0005", "0009", "000F"]
@@ -35,10 +35,10 @@ title: "Light Python façade over GPc for GPy users"
 ## Backlog
 
 - [Phase A — scaffold + NumPy/`CMatrix` bridge](../backlog/features/2026-11-18_cip001D-phase-a-scaffold.md) (High, Completed)
-- [Phase B — FTC GPRegression + paths](../backlog/features/2026-11-18_cip001D-phase-b-gp.md) (High, In Progress — smoke green; docs/native compare open)
-- [Phase C — sparse DTCVAR façade](../backlog/features/2026-11-18_cip001D-phase-c-sparse.md) (High, Ready)
-- [Phase D — subset checklist + polish](../backlog/features/2026-11-18_cip001D-phase-d-polish.md) (Medium, Ready)
-- [Phase E — notebooks / pods / thin plot extras](../backlog/features/2026-11-18_cip001D-phase-e-notebooks.md) (Medium, Ready)
+- [Phase B — FTC GPRegression + paths](../backlog/features/2026-11-18_cip001D-phase-b-gp.md) (High, Completed)
+- [Phase C — sparse DTCVAR façade](../backlog/features/2026-11-18_cip001D-phase-c-sparse.md) (High, Completed)
+- [Phase D — subset checklist + polish](../backlog/features/2026-11-18_cip001D-phase-d-polish.md) (Medium, Completed)
+- [Phase E — notebooks / pods / thin plot extras](../backlog/features/2026-11-18_cip001D-phase-e-notebooks.md) (Medium, Completed)
 
 ## Summary
 
@@ -228,11 +228,11 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 ## Implementation Status
 
 - [x] Phase A: package scaffold + NumPy/`CMatrix` bridge
-- [ ] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native (wrapper + smoke tests green; docs/compare open)
+- [x] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native
 - [ ] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML)
-- [ ] Phase C: sparse DTCVAR façade + pytest
-- [ ] Phase D: subset checklist, negative tests, README install notes
-- [ ] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
+- [x] Phase C: sparse DTCVAR façade + pytest (`fitc` / `dtc` also exposed; DTCVAR default)
+- [x] Phase D: subset checklist, negative tests, README install notes
+- [x] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
 - [ ] Close: REQ-000E acceptance criteria checked; compress usage into `docs/` / README
 
 ## References

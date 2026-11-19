@@ -58,6 +58,16 @@ ifeq ($(COVERAGE),1)
 COVERAGEFLAGS = --coverage -O0
 endif
 
+# Optional OpenMP for parallel stationary workspace fills (CIP-0025 Track 2).
+# Enable with: make GPC_OPENMP=1 testKern
+# Homebrew GCC ships libgomp; Apple Clang requires a separate libomp install.
+# When enabled, set OPENBLAS_NUM_THREADS=1 to avoid nested-thread oversubscription;
+# see docs/build-and-ci.md and CIP-0025 nesting policy.
+ifeq ($(GPC_OPENMP),1)
+OPENMPFLAG    = -fopenmp -DGPC_OPENMP=1
+OPENMPLDFLAGS = -fopenmp
+endif
+
 # Default to the project root so -I is never empty when MATLAB is disabled.
 ifeq ($(strip $(MATLABINCLUDE)),)
 INCLUDE = .
@@ -78,12 +88,12 @@ $(error no Homebrew gfortran-N under $(GCCPREFIX)/bin; brew install gcc)
 endif
 LD = $(CC)
 
-LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS)
+LDFLAGS = ${MATLABLIBS} ${MATIOLIBS} ${LAPACKLIBS} ${F2CLIB} -lc ${MATLABXLINKFLAG} $(COVERAGEFLAGS) $(OPENMPLDFLAGS)
 # CIP-0013: RELEASE=1 matches Linux timed path (-O2 -DNDEBUG, checks off).
 ifeq ($(RELEASE),1)
-CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+CCFLAGS = -std=c++17 -O2 -DNDEBUG -DGPC_CHECKS=0 -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 else
-CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS)
+CCFLAGS = -std=c++17 -ggdb -DDBG -DGPC_CHECKS=1 -fPIC -I$(INCLUDE) $(MATIOINC) -D$(PLAT) $(MATLABFLAG) $(MATIOFLAG) $(COVERAGEFLAGS) $(OPENMPFLAG)
 endif
 FCFLAGS = -funroll-all-loops -O3 -fPIC
 

@@ -2,7 +2,7 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md)  
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
@@ -19,6 +19,31 @@ Maintainer notes for how GPc builds and how verification is gated. Short command
 - Language floor is **C++17** (`-std=c++17`). Dynamic exception specifications were removed so the pin is no longer C++14 ([CIP-0002](../cip/cip0002.md)).
 - Timing harness: `make RELEASE=1 bench` then `./benchGPc --kind ftc|dtcvar|fitc …` (set `OPENBLAS_NUM_THREADS=1` for the q=2 protocol).
 - GPy compare + LL gate: `OPENBLAS_NUM_THREADS=1 python bench/run_bench.py` (writes `bench.csv`; withholds timings when likelihoods disagree).
+
+## Optional OpenMP (CIP-0025 Track 2)
+
+Stationary workspace fills (`fillSymWorkspace` / `fillRectWorkspace`) accept an optional `#pragma omp parallel for` over disjoint row writes. The default build **does not** require OpenMP; CI and the REQ-0007 bench protocol remain single-threaded.
+
+```bash
+# Linux (libgomp ships with GCC):
+make GPC_OPENMP=1 testKern && ./testKern
+
+# macOS Homebrew GCC (gcc formula includes libgomp):
+make GPC_OPENMP=1 testKern && ./testKern
+
+# CMake:
+cmake -B build -DGPC_OPENMP=ON && cmake --build build
+```
+
+**Nesting policy**: when `GPC_OPENMP=1`, set `OPENBLAS_NUM_THREADS=1` (or the vendor equivalent `MKL_NUM_THREADS`, `BLIS_NUM_THREADS`) to avoid oversubscribing CPU cores. The CIP-0025 Track 1 GEMM distances delegate to multi-threaded BLAS; running both simultaneously without pinning can hurt performance:
+
+```bash
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=$(nproc)   # or a measured value
+./testKern
+```
+
+The REQ-0007 documented one-thread bench protocol (`OPENBLAS_NUM_THREADS=1`, OpenMP off) remains the acceptance bar. Multi-thread measurements (P7) are recorded in [CIP-0025](../cip/cip0025.md) (2026-11-18 table): BLAS threads help most on GEMM-distance workloads (\(q \ge 8\)); OpenMP alone is a small VarDTC win; nesting is not clearly better — prefer `OPENBLAS_NUM_THREADS=1` with OpenMP unless re-measured. Raw TSV: [`bench/p7_results/p7_large.tsv`](../bench/p7_results/p7_large.tsv).
 - Windows CI waits on a maintained Windows make path; it is out of scope until that fragment exists.
 
 ## Reference verification without MATLAB
@@ -39,7 +64,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
 
-Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps. Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
+Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps; `testSparsePpa` hits `CGp::sparsePpaElboGpTerms` (CIP-0026). Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
 
 ### Regenerating the `CGp.cpp` miss list
 

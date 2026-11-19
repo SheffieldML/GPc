@@ -13,7 +13,7 @@ else
 include make.linux
 endif
 
-all: gplvm bgplvm ivm gp libgp$(LIBSEXT) libgp$(LIBDEXT)
+all: gplvm bgplvm ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).
 .PHONY: python-gpc python-gpc-test
@@ -74,6 +74,13 @@ ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil
 ivm.o: ivm.cpp CIvm.h CKern.h CMatrix.h ivm.h CClctrl.h
 	$(CC) -c ivm.cpp -o ivm.o $(CCFLAGS)
 
+# CIP-0023 dense PPA + CIP-0026 sparse (CSparsePpa / CGp) learn path.
+ppa: ppa.o CClctrl.o CPpa.o CSparsePpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o ppa ppa.o CClctrl.o CPpa.o CSparsePpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o $(LDFLAGS)
+
+ppa.o: ppa.cpp CPpa.h CSparsePpa.h CKern.h CMatrix.h ppa.h CClctrl.h
+	$(CC) -c ppa.cpp -o ppa.o $(CCFLAGS)
+
 gp: gp.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
@@ -92,7 +99,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -206,8 +213,25 @@ tools/genTestGpDtcvar.o: tools/genTestGpDtcvar.cpp CGp.h CKern.h CMatrix.h
 testIvm: testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testIvm  testIvm.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testIvm.o: testIvm.cpp CIvm.h CKern.h CMatrix.h CClctrl.h 
+testIvm.o: testIvm.cpp CIvm.h CKern.h CMatrix.h CClctrl.h
 	$(CC) -c testIvm.cpp -o testIvm.o $(CCFLAGS)
+
+# CIP-0023: PPA vs Octave Phase 0 fixtures (no matio required).
+testPpa: testPpa.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testPpa testPpa.o CPpa.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testPpa.o: testPpa.cpp CPpa.h CKern.h CMatrix.h
+	$(CC) -c testPpa.cpp -o testPpa.o $(CCFLAGS)
+
+# CIP-0026 prototype: CSparsePpa on CGp (DTC M=N vs dense). Not a release gate yet.
+testSparsePpa: testSparsePpa.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testSparsePpa testSparsePpa.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testSparsePpa.o: testSparsePpa.cpp CSparsePpa.h CPpa.h CGp.h CKern.h CMatrix.h
+	$(CC) -c testSparsePpa.cpp -o testSparsePpa.o $(CCFLAGS)
+
+CSparsePpa.o: CSparsePpa.cpp CSparsePpa.h CGp.h CKern.h CNoise.h
+	$(CC) -c CSparsePpa.cpp -o CSparsePpa.o $(CCFLAGS)
 
 testKern: testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testKern testKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 
@@ -392,6 +416,12 @@ CIvm.o: CIvm.cpp CIvm.h CMltools.h ndlassert.h ndlexceptions.h \
   ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
   CNoise.h
 	$(CC) -c CIvm.cpp -o CIvm.o $(CCFLAGS)
+
+CPpa.o: CPpa.cpp CPpa.h CMltools.h ndlassert.h ndlexceptions.h \
+  ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \
+  ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
+  CNoise.h
+	$(CC) -c CPpa.cpp -o CPpa.o $(CCFLAGS)
 
 ndlutil.o: ndlutil.cpp ndlutil.h ndlassert.h ndlexceptions.h ndlfortran.h
 	$(CC) -c ndlutil.cpp -o ndlutil.o $(CCFLAGS)

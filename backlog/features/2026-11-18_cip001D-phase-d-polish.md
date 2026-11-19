@@ -1,10 +1,10 @@
 ---
 id: "2026-11-18_cip001D-phase-d-polish"
 title: "CIP-001D Phase D: subset checklist and install polish"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-19"
 category: "features"
 related_cips: ["001D"]
 owner: "Neil Lawrence"
@@ -23,9 +23,9 @@ Map CIP-0015 tutorial checklist → `gpc` recipes (or “not in Python subset”
 
 ## Acceptance Criteria
 
-- [ ] Checklist table published under `python/` or `docs/`
-- [ ] Loud-error tests for bad shapes / missing paths
-- [ ] Root or `python/README` install blurb for venv + `make`
+- [x] Checklist table published under `python/` or `docs/` (`python/docs/subset_checklist.md`)
+- [x] Loud-error tests for bad shapes / missing paths (`python/tests/test_negative.py`)
+- [x] Root or `python/README` install blurb for venv + `make`
 
 ## Related
 
@@ -36,3 +36,7 @@ Map CIP-0015 tutorial checklist → `gpc` recipes (or “not in Python subset”
 ### 2026-11-18
 
 Task created (Ready).
+
+### 2026-11-19
+
+Checklist, negative tests, and README install blurb landed with FITC/DTC sparse exposure.

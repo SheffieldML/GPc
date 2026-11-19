@@ -14,10 +14,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(GPC_USE_MATIO "Enable libmatio numeric .mat I/O (_NDLMATIO)" OFF)
-option(GPC_BUILD_EXTRA_CLIS "Also build ivm, gplvm, bgplvm" ON)
+option(GPC_BUILD_EXTRA_CLIS "Also build ivm, gplvm, bgplvm, ppa" ON)
 option(GPC_BUILD_GP_CLI "Build the gp executable" ON)
 option(GPC_BUILD_PYTHON "Build the pybind11 gpc._gpc extension" OFF)
 option(GPC_BUILD_TESTS "Build CTest mirrors of makefile unit/matio-gate binaries" OFF)
+# CIP-0025: optional OpenMP over bulk K(r) workspace fills.
+# cmake -DGPC_OPENMP=ON ...  or  cmake -DGPC_OPENMP=1 ...
+# Requires libomp / libgomp; set OPENBLAS_NUM_THREADS=1 when enabled.
+option(GPC_OPENMP "Enable OpenMP for parallel stationary workspace fills" OFF)
 
 # scikit-build-core sets SKBUILD when configuring for a wheel / editable install.
 if(DEFINED SKBUILD)
@@ -57,6 +61,11 @@ if(GPC_USE_MATIO)
   endif()
 endif()
 
+if(GPC_OPENMP)
+  find_package(OpenMP REQUIRED)
+  add_compile_definitions(GPC_OPENMP=1)
+endif()
+
 set(BLA_VENDOR OpenBLAS)
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
@@ -80,6 +89,7 @@ if(GPC_BUILD_EXTRA_CLIS)
   gpc_add_cli(ivm ${GPC_ROOT}/ivm.cpp ${GPC_IVM_EXTRA_SOURCES})
   gpc_add_cli(gplvm ${GPC_ROOT}/gplvm.cpp ${GPC_GPLVM_EXTRA_SOURCES})
   gpc_add_cli(bgplvm ${GPC_ROOT}/bgplvm.cpp ${GPC_BGPLVM_EXTRA_SOURCES})
+  gpc_add_cli(ppa ${GPC_ROOT}/ppa.cpp ${GPC_PPA_EXTRA_SOURCES})
 endif()
 
 if(GPC_BUILD_PYTHON)

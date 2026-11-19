@@ -61,9 +61,9 @@ $ ./gp -h
 
 `make.osx` uses Homebrew `g++-16` / `gfortran-16` and OpenBLAS. For the matio reference suite on the Mac: `make clean && make USE_MATIO=1 matio-tests` then `make run-matio-tests` (rebuild without `USE_MATIO` if you need `gp`/`ivm`/`gplvm` again, or link with matio as well).
 
-### Linux (Ubuntu) and `RELEASE=1` (CIP-0013)
+### Linux (Ubuntu), default build, and `RELEASE=1` (CIP-0013 / CIP-002D)
 
-Default `make.linux` links **OpenBLAS** (`libopenblas-dev`). For a timed / documented run build:
+Default `make.linux` links **OpenBLAS** (`libopenblas-dev`) and builds with **`-O2 -g`** and cheap checks (`GPC_CHECKS=1`: dimensions / API invariants). For the timed / documented competitive path:
 
 ```sh
 $ sudo apt-get install -y g++ gfortran libopenblas-dev
@@ -74,7 +74,7 @@ $ OPENBLAS_NUM_THREADS=1 ./benchGPc --kind ftc --N 1000 --q 2
 $ OPENBLAS_NUM_THREADS=1 python bench/run_bench.py --kinds ftc,dtcvar,fitc --N 1000 --M 50
 ```
 
-A bare `make` keeps `-ggdb -DDBG` with bounds checks on (`GPC_CHECKS=1`). Reference tests stay on that checking build. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip0013.md`](cip/cip0013.md).
+`make RELEASE=1` is `-O2 -DNDEBUG` with checks off (`GPC_CHECKS=0`). Exhaustive per-element checks: `make CHECKS=full …` (`GPC_CHECKS=2`); reference CI uses that. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip002D.md`](cip/cip002D.md).
 
 ### Reference tests without MATLAB (libmatio)
 

@@ -2,13 +2,13 @@
 
 Maintainer notes for how GPc builds and how verification is gated. Short commands live in the [README](../README.md); this page holds the durable decisions behind them.
 
-**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md) · [CIP-002B](../cip/cip002B.md) · [CIP-002C](../cip/cip002C.md)  
+**Design**: [CIP-0001](../cip/cip0001.md) · [CIP-0002](../cip/cip0002.md) · [CIP-0004](../cip/cip0004.md) · [CIP-0006](../cip/cip0006.md) · [CIP-0010](../cip/cip0010.md) · [CIP-0011](../cip/cip0011.md) · [CIP-0013](../cip/cip0013.md) · [CIP-0020](../cip/cip0020.md) · [CIP-0025](../cip/cip0025.md) · [CIP-002B](../cip/cip002B.md) · [CIP-002C](../cip/cip002C.md) · [CIP-002D](../cip/cip002D.md)
 **Requirements**: [REQ-0001](../requirements/req0001_contemporary-build.md) · [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) · [REQ-0007](../requirements/req0007_competitive-default-build.md)
 
 ## Platforms and make fragments
 
 - **Blessed path is still make.** Default include is `make.linux` (Ubuntu / Actions). Copy `make.osx` to `make.inc` on Homebrew macOS. `make.inc` is gitignored. Compile / Reference / Coverage CI use this path.
-- **Optional thin CMake** ([CIP-0020](../cip/cip0020.md)): `cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` builds `libgp` and CLI smoke targets (`gp`, and optionally `ivm` / `gplvm` / `bgplvm`). On macOS, pass Homebrew `g++-N` / `gfortran-N` (or rely on `GPC_PREFER_HOMEBREW_GCC`) so C++ and Fortran ABIs match `make.osx`. `CMAKE_BUILD_TYPE=Release` maps to `make RELEASE=1` checks-off semantics; `-DGPC_USE_MATIO=ON` maps to `_NDLMATIO`. Sources are listed in [`cmake/GpcSources.cmake`](../cmake/GpcSources.cmake). CMake is **not** the Ubuntu/macOS CI gate until [CIP-0021](../cip/cip0021.md) cutover.
+- **Optional thin CMake** ([CIP-0020](../cip/cip0020.md) / [CIP-002D](../cip/cip002D.md)): `cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` builds `libgp` and CLI smoke targets (`gp`, and optionally `ivm` / `gplvm` / `bgplvm`). On macOS, pass Homebrew `g++-N` / `gfortran-N` (or rely on `GPC_PREFER_HOMEBREW_GCC`) so C++ and Fortran ABIs match `make.osx`. Default build type is **RelWithDebInfo** (`-O2 -g`, cheap `GPC_CHECKS=1`). `CMAKE_BUILD_TYPE=Release` maps to `make RELEASE=1` checks-off semantics; `-DGPC_CHECKS=2` maps to `make CHECKS=full`; `-DGPC_USE_MATIO=ON` maps to `_NDLMATIO`. Sources are listed in [`cmake/GpcSources.cmake`](../cmake/GpcSources.cmake). CMake is **not** the Ubuntu/macOS CI gate until [CIP-0021](../cip/cip0021.md) cutover.
 - **Windows (experimental, [CIP-002B](../cip/cip002B.md)):** CMake only — MSVC `cl` + Intel Fortran `ifx` + OpenBLAS (vcpkg). No blessed `make.win`. Actions job `windows-msvc-cmake` in `compile.yml` is a **soft gate** (`continue-on-error`) until Phase B soak. CI uses vcpkg’s **files** binary cache under `vcpkg-binary-cache/`, persisted with `actions/cache` (`x-gha` was removed from vcpkg). First Windows run still compiles ports; later runs restore binaries. Local sketch (Developer Command Prompt + oneAPI `ifx` on `PATH`):
 
 ```bat
@@ -27,8 +27,8 @@ build\gp.exe -h
 - Legacy fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) and the archived 2020 stub `CMakeLists.txt.archive-2020` live under [`make/legacy/`](../make/legacy/); they are not CI targets.
 - Maintainer diagnostics / fixture stampers (`diag*`, `genTest*`) live under [`tools/`](../tools/); binaries still build to the repo root.
 - Tutorial PNG plots used by the README live under [`docs/images/`](images/).
-- **Linux default links OpenBLAS** (`-lopenblas`; install `libopenblas-dev`). `make RELEASE=1` is `-O2 -DNDEBUG` with `GPC_CHECKS=0` (CIP-0013 P1/P2). Checking / reference builds keep `GPC_CHECKS=1`.
-- Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`. Same `RELEASE=1` switch.
+- **Linux default links OpenBLAS** (`-lopenblas`; install `libopenblas-dev`). Bare `make` is `-O2 -g` with cheap checks `GPC_CHECKS=1` ([CIP-002D](../cip/cip002D.md); revises CIP-0013 bare-`make`). `make RELEASE=1` is `-O2 -DNDEBUG` with `GPC_CHECKS=0`. Exhaustive checks: `make CHECKS=full` (`GPC_CHECKS=2`); reference / coverage CI use that.
+- Blessed macOS path: Homebrew `gcc` / `gfortran` (newest `g++-N` / `gfortran-N`), OpenBLAS, optional `libmatio`. Same `RELEASE=1` / `CHECKS=full` switches.
 - Language floor is **C++17** (`-std=c++17`). Dynamic exception specifications were removed so the pin is no longer C++14 ([CIP-0002](../cip/cip0002.md)).
 - Timing harness: `make RELEASE=1 bench` then `./benchGPc --kind ftc|dtcvar|fitc …` (set `OPENBLAS_NUM_THREADS=1` for the q=2 protocol).
 - GPy compare + LL gate: `OPENBLAS_NUM_THREADS=1 python bench/run_bench.py` (writes `bench.csv`; withholds timings when likelihoods disagree).
@@ -77,6 +77,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
 | **Wheels** | Soft: cibuildwheel manylinux + macos-15; auditwheel/delocate; pytest + native-dep check ([CIP-002C](../cip/cip002C.md)) |
 | **Publish wheels** | Manual / Release: build wheels; optional TestPyPI or PyPI (OIDC Trusted Publisher); Release attaches `.whl` assets ([CIP-002C](../cip/cip002C.md) Phase C) |
+| **Bench timing** | Soft: `RELEASE=1` fixed cases (E1/E2/E5); artifact + warn-only self-baseline vs main ([CIP-002D](../cip/cip002D.md) QW8) |
 
 Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps; `testSparsePpa` hits `CGp::sparsePpaElboGpTerms` (CIP-0026); `testSvgp` hits `CSvgp` / `CAdam` / `expectedLogLikelihood` / `gaussHermite` (CIP-002A). Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
 

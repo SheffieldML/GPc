@@ -13,8 +13,10 @@
 #include <string>
 #include <vector>
 #include "CGp.h"
+#include "CSvgp.h"
 #include "CKern.h"
 #include "CNoise.h"
+#include "CMatrix.h"
 #include "ndlexceptions.h"
 
 using namespace std;
@@ -121,6 +123,7 @@ double median(vector<double>& v)
 int main(int argc, char** argv)
 {
   string kind = "ftc";
+  string kernName = "rbf";  // CIP-002D QW8: rbf (default) or mlp
   string dataDir;
   unsigned int N = 1000;
   unsigned int q = 2;
@@ -132,6 +135,8 @@ int main(int argc, char** argv)
   {
     if(!strcmp(argv[i], "--kind") && i + 1 < argc)
       kind = argv[++i];
+    else if(!strcmp(argv[i], "--kern") && i + 1 < argc)
+      kernName = argv[++i];
     else if(!strcmp(argv[i], "--N") && i + 1 < argc)
       N = (unsigned)atoi(argv[++i]);
     else if(!strcmp(argv[i], "--q") && i + 1 < argc)
@@ -146,8 +151,11 @@ int main(int argc, char** argv)
       inducingFixed = true;
     else if(!strcmp(argv[i], "--help"))
     {
-      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc] [--N N] [--q q] [--M M]\n"
-           << "                [--reps R] [--data-dir DIR] [--inducing-fixed]\n";
+      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp] [--kern rbf|mlp]\n"
+           << "                [--N N] [--q q] [--M M] [--reps R]\n"
+           << "                [--data-dir DIR] [--inducing-fixed]\n"
+           << "Checked-build timings: make CHECKS=full bench && ./benchGPc ...\n"
+           << "  (gpc_checks=on|off is printed; RELEASE=1 is the competitive path)\n";
       return 0;
     }
   }
@@ -178,11 +186,82 @@ int main(int argc, char** argv)
   }
 
   CCmpndKern kern(X);
-  kern.addKern(new CRbfKern(X));
-  kern.addKern(new CWhiteKern(X));
-  kern.setByPath("rbf.lengthscale", 1.0);
-  kern.setByPath("rbf.variance", 1.0);
-  kern.setByPath("white.variance", 0.01);
+  if(kernName == "rbf")
+  {
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    kern.setByPath("rbf.lengthscale", 1.0);
+    kern.setByPath("rbf.variance", 1.0);
+    kern.setByPath("white.variance", 0.01);
+  }
+  else if(kernName == "mlp")
+  {
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    kern.setByPath("mlp.weightVariance", 1.0);
+    kern.setByPath("mlp.biasVariance", 1.0);
+    kern.setByPath("mlp.variance", 1.0);
+    kern.setByPath("white.variance", 0.01);
+  }
+  else
+  {
+    cerr << "benchGPc: unknown --kern " << kernName << " (want rbf|mlp)" << endl;
+    return 2;
+  }
+
+#if defined(NDEBUG)
+  const char* flags = "O2-DNDEBUG";
+#else
+  const char* flags = "ggdb-DDBG";
+#endif
+#if GPC_CHECKS
+  const char* checks = "on";
+#else
+  const char* checks = "off";
+#endif
+
+  // CIP-002D QW6/QW7: SVGP objective+grad path with allocation count.
+  if(kind == "svgp")
+  {
+    CSvgp sv(&kern, &X, &y, Xu, 100.0, 0);
+    sv.naturalGradientStep(1.0);
+    CMatrix gKern(1, kern.getNumParams());
+    CMatrix gZ(M, q);
+    double gBeta = 0.0;
+    for(unsigned int w = 0; w < warm; w++)
+      (void)sv.elboGrad(gKern, gZ, gBeta);
+
+    vector<double> times;
+    times.reserve(reps);
+    double ll = 0.0;
+    unsigned int allocs = 0;
+    for(unsigned int r = 0; r < reps; r++)
+    {
+      CMatrix::resetTotalAlloc();
+      auto t0 = chrono::steady_clock::now();
+      ll = sv.elboGrad(gKern, gZ, gBeta);
+      auto t1 = chrono::steady_clock::now();
+      times.push_back(chrono::duration<double, milli>(t1 - t0).count());
+      allocs += CMatrix::getTotalAlloc();
+    }
+    const double med = median(times);
+    cout << "kind=svgp"
+         << " kern=" << kernName
+         << " N=" << N
+         << " q=" << q
+         << " M=" << M
+         << " nparams=" << sv.getOptNumParams()
+         << " ll=" << ll
+         << " median_ms=" << med
+         << " allocs_per_eval=" << (allocs / reps)
+         << " reps=" << reps
+         << " flags=" << flags
+         << " gpc_checks=" << checks
+         << " blas=openblas_or_platform"
+         << " threads=see_OPENBLAS_NUM_THREADS"
+         << endl;
+    return 0;
+  }
 
   CGaussianNoise noise(&y);
   noise.setBias(0.0);
@@ -212,33 +291,27 @@ int main(int argc, char** argv)
   vector<double> times;
   times.reserve(reps);
   double ll = 0.0;
+  unsigned int allocs = 0;
   for(unsigned int r = 0; r < reps; r++)
   {
+    CMatrix::resetTotalAlloc();
     auto t0 = chrono::steady_clock::now();
     ll = -model->computeObjectiveGradParams(g);
     auto t1 = chrono::steady_clock::now();
     times.push_back(chrono::duration<double, milli>(t1 - t0).count());
+    allocs += CMatrix::getTotalAlloc();
   }
   double med = median(times);
 
-#if defined(NDEBUG)
-  const char* flags = "O2-DNDEBUG";
-#else
-  const char* flags = "ggdb-DDBG";
-#endif
-#if GPC_CHECKS
-  const char* checks = "on";
-#else
-  const char* checks = "off";
-#endif
-
   cout << "kind=" << kind
+       << " kern=" << kernName
        << " N=" << N
        << " q=" << q
        << " M=" << (kind == "ftc" ? 0 : M)
        << " nparams=" << model->getOptNumParams()
        << " ll=" << ll
        << " median_ms=" << med
+       << " allocs_per_eval=" << (allocs / reps)
        << " reps=" << reps
        << " flags=" << flags
        << " gpc_checks=" << checks

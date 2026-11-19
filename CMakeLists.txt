@@ -44,16 +44,25 @@ else()
 endif()
 
 add_compile_definitions(${GPC_PLAT})
+# CIP-002D QW1: default RelWithDebInfo (-O2 -g) with cheap checks; Release = RELEASE=1.
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
+# Optional override: -DGPC_CHECKS=0|1|2 (2 = makefile CHECKS=full). Empty = from build type.
+set(GPC_CHECKS "" CACHE STRING "Check level override: 0 (off), 1 (cheap), 2 (full); empty=from CONFIG")
 # Generator expressions cover Ninja (CMAKE_BUILD_TYPE) and multi-config VS (CIP-002B).
 add_compile_definitions(
   $<$<CONFIG:Release>:NDEBUG>
-  $<$<CONFIG:Release>:GPC_CHECKS=0>
   $<$<NOT:$<CONFIG:Release>>:DBG>
-  $<$<NOT:$<CONFIG:Release>>:GPC_CHECKS=1>
 )
+if(GPC_CHECKS STREQUAL "")
+  add_compile_definitions(
+    $<$<CONFIG:Release>:GPC_CHECKS=0>
+    $<$<NOT:$<CONFIG:Release>>:GPC_CHECKS=1>
+  )
+else()
+  add_compile_definitions(GPC_CHECKS=${GPC_CHECKS})
+endif()
 
 if(GPC_USE_MATIO)
   add_compile_definitions(_NDLMATIO)

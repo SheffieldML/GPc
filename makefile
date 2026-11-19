@@ -24,10 +24,10 @@ python-gpc-test: python-gpc
 
 # CIP-0013: objective+gradient timing harness (use RELEASE=1 for timed builds).
 bench: benchGPc
-benchGPc: bench/benchGPc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o benchGPc bench/benchGPc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+benchGPc: bench/benchGPc.o CGp.o CSvgp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o benchGPc bench/benchGPc.o CGp.o CSvgp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
 
-bench/benchGPc.o: bench/benchGPc.cpp CGp.h CKern.h CNoise.h
+bench/benchGPc.o: bench/benchGPc.cpp CGp.h CSvgp.h CKern.h CNoise.h
 	$(CC) -c bench/benchGPc.cpp -o bench/benchGPc.o $(CCFLAGS)
 
 # CIP-0015 Stage 1 API demos (docs/tutorials/)

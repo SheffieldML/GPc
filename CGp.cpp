@@ -5,6 +5,31 @@
 #include <cstdlib>
 #include <vector>
 #include "ndlstrutil.h"
+#include "lapack.h"
+
+namespace {
+/* CIP-002D QW4: Frobenius products over contiguous column-major storage. */
+inline double frobeniusDot(const CMatrix& A, const CMatrix& B)
+{
+  DIMENSIONMATCH(A.getRows() == B.getRows() && A.getCols() == B.getCols());
+  const int n = (int)(A.getRows() * A.getCols());
+  return ddot_(n, A.getVals(), 1, B.getVals(), 1);
+}
+inline double frobeniusNorm2(const CMatrix& A)
+{
+  const int n = (int)(A.getRows() * A.getCols());
+  return ddot_(n, A.getVals(), 1, A.getVals(), 1);
+}
+/* Add W(:, col0:col0+ncols-1) into dest (same row count); one daxpy when contiguous. */
+inline void axpyContiguousBlock(CMatrix& dest, const CMatrix& W,
+                                unsigned int col0, double alpha)
+{
+  DIMENSIONMATCH(dest.getRows() == W.getRows());
+  DIMENSIONMATCH(col0 + dest.getCols() <= W.getCols());
+  const int n = (int)(dest.getRows() * dest.getCols());
+  daxpy_(n, alpha, W.getVals() + (size_t)col0 * W.getRows(), 1, dest.getVals(), 1);
+}
+} // namespace
 CGp::CGp() 
   : CMapModel(), CProbabilisticOptimisable()
 {
@@ -2132,9 +2157,7 @@ void CGp::gpCovGrads() const
         Qbar.zeros();
         CMatrix Wbar;
         lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            Abar.setVal(Abar.getVal(i, j) + Wbar.getVal(i, Mact + j), i, j);
+        axpyContiguousBlock(Abar, Wbar, Mact, 1.0);
 
         // A = √β B ⇒ Bbar = √β Abar.
         CMatrix Bbar(Abar);
@@ -2144,10 +2167,7 @@ void CGp::gpCovGrads() const
         CMatrix CinvB(B);
         CinvB.trsm(LcholC, 1.0, "l", "u", "t", "n");
         CinvB.trsm(LcholC, 1.0, "l", "u", "n", "n");
-        double trCinvBB = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            trCinvBB += CinvB.getVal(i, j) * B.getVal(i, j);
+        const double trCinvBB = frobeniusDot(CinvB, B);
         double gbetaM2L = dOut * (trCinvBB - (double)Ndat / betaVal);
         CMatrix u(Mact, 1);
         CMatrix a(Mact, 1);
@@ -2166,13 +2186,7 @@ void CGp::gpCovGrads() const
             + betaVal * betaVal * BTaNorm2;
         }
         if(dtcvar)
-        {
-          double bFro2 = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-              bFro2 += B.getVal(i, j) * B.getVal(i, j);
-          gbetaM2L += dOut * (diagK.sum() - bFro2);
-        }
+          gbetaM2L += dOut * (diagK.sum() - frobeniusNorm2(B));
         gBeta.setVal(-0.5 * gbetaM2L, 0);
 
         CMatrix Ubar;
@@ -2215,10 +2229,7 @@ void CGp::gpCovGrads() const
         if(dtcvar)
           Bbar.axpy(B, -2.0 * betaVal * dOut);
 
-        double trCinvBB = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            trCinvBB += CinvB.getVal(i, j) * B.getVal(i, j);
+        const double trCinvBB = frobeniusDot(CinvB, B);
 
         double gbetaM2L = dOut * (trCinvBB - (double)Ndat / betaVal);
 
@@ -2243,14 +2254,7 @@ void CGp::gpCovGrads() const
 
         if(dtcvar)
         {
-          double bFro2 = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-            {
-              const double bij = B.getVal(i, j);
-              bFro2 += bij * bij;
-            }
-          gbetaM2L += dOut * (diagK.sum() - bFro2);
+          gbetaM2L += dOut * (diagK.sum() - frobeniusNorm2(B));
           gLambda.setVals(-0.5 * dOut * betaVal);
         }
 
@@ -2434,9 +2438,8 @@ void CGp::gpCovGrads() const
           Qbar.zeros();
           CMatrix Wbar;
           lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-              Vbar.setVal(sqrtBeta * Wbar.getVal(i, Mact + j), i, j);
+          Vbar.zeros();
+          axpyContiguousBlock(Vbar, Wbar, Mact, sqrtBeta);
         }
         else
           Vbar.symm(Cbar, Vfit, 2.0 * betaVal, 0.0, "u", "l");
@@ -2444,40 +2447,21 @@ void CGp::gpCovGrads() const
         for(unsigned int j = 0; j < Ndat; j++)
         {
           const double s = sqrt(diagD.getVal(j));
-          double vDot = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-          {
-            Bbar.setVal(Bbar.getVal(i, j) + Vbar.getVal(i, j) / s, i, j);
-            vDot += Vbar.getVal(i, j) * Vfit.getVal(i, j);
-          }
+          Bbar.axpyColCol(j, Vbar, j, 1.0 / s);
+          const double vDot = Vbar.dotColCol(j, Vfit, j);
           Dbar.setVal(Dbar.getVal(j) - vDot / (2.0 * diagD.getVal(j)), j);
         }
 
         // gBeta (-2L) before q→B: explicit β + Dbar·(k-q)
-        double vvT_Cbar = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            vvT_Cbar += Vbar.getVal(i, j) * Vfit.getVal(i, j) / (2.0 * betaVal);
         // <Cbar, V V^T> = (1/(2β)) <Vbar, V> since Vbar = 2β Cbar V
+        const double vvT_Cbar = frobeniusDot(Vbar, Vfit) / (2.0 * betaVal);
         gbetaM2L += vvT_Cbar + mwSum - 2.0 * betaVal * uaSum;
         for(unsigned int j = 0; j < Ndat; j++)
-        {
-          double q = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-          {
-            const double bij = B.getVal(i, j);
-            q += bij * bij;
-          }
-          gbetaM2L += Dbar.getVal(j) * (diagK.getVal(j) - q);
-        }
+          gbetaM2L += Dbar.getVal(j) * (diagK.getVal(j) - B.norm2Col(j));
 
         // q → B: Bbar -= 2β Dbar_j B_{:,j}
         for(unsigned int j = 0; j < Ndat; j++)
-        {
-          const double s = -2.0 * betaVal * Dbar.getVal(j);
-          for(unsigned int i = 0; i < Mact; i++)
-            Bbar.setVal(Bbar.getVal(i, j) + s * B.getVal(i, j), i, j);
-        }
+          Bbar.axpyColCol(j, B, j, -2.0 * betaVal * Dbar.getVal(j));
 
         // gLambda = ∂L/∂k = -0.5 * Dbar * β
         gLambda.resize(Ndat, 1);

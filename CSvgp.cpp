@@ -155,17 +155,96 @@ double CSvgp::expectedLogLikBetaDeriv(double yv, double mu, double var) const
   return 0.5 / beta - 0.5 * (r * r + var);
 }
 
-void CSvgp::marginal(unsigned int i, unsigned int j, double& mu, double& var) const
+bool CSvgp::isFullOrderedBatch(const vector<unsigned int>& batch) const
+{
+  if(batch.size() != nData)
+    return false;
+  for(unsigned int k = 0; k < nData; k++)
+    if(batch[k] != k)
+      return false;
+  return true;
+}
+
+void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
+                   CMatrix& dK, CMatrix& dQ) const
 {
   const unsigned int M = numInducing;
-  CMatrix a(M, 1);
-  a.copyColCol(0, A, i);
-  mu = a.dotColCol(0, qMean, j);
-  CMatrix Sa(M, 1);
-  Sa.gemv(qCov[j], a, 1.0, 0.0, "n");
-  var = diagK.getVal(i) - diagQ.getVal(i) + a.dotColCol(0, Sa, 0);
-  if(var < 0.0)
-    var = 0.0;  // round-off when k_ii ~ ||a_i||^2
+  const unsigned int B = batch.size();
+  AB.resize(M, B);
+  dK.resize(B, 1);
+  dQ.resize(B, 1);
+
+  // Small minibatch: form K_uB and trsm rather than gathering from full A (CIP-002D QW6).
+  if(B * 4 < nData)
+  {
+    const unsigned int q = getInputDim();
+    wsXB.resize(B, q);
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const unsigned int i = batch[k];
+      for(unsigned int d = 0; d < q; d++)
+        wsXB.setVal(pX->getVal(i, d), k, d);
+      dK.setVal(pkern->diagComputeElement(*pX, i), k);
+    }
+    pkern->compute(AB, Z, wsXB);
+    AB.trsm(cholKuu, 1.0, "L", "U", "T", "N");
+    for(unsigned int k = 0; k < B; k++)
+      dQ.setVal(AB.dotColCol(k, AB, k), k);
+    return;
+  }
+
+  for(unsigned int k = 0; k < B; k++)
+  {
+    const unsigned int i = batch[k];
+    AB.copyColCol(k, A, i);
+    dK.setVal(diagK.getVal(i), k);
+    dQ.setVal(diagQ.getVal(i), k);
+  }
+}
+
+void CSvgp::fillMarginals(const vector<unsigned int>& batch,
+                          CMatrix& muOut, CMatrix& varOut) const
+{
+  const unsigned int M = numInducing;
+  const unsigned int B = batch.size();
+  muOut.resize(B, outputDim);
+  varOut.resize(B, outputDim);
+
+  const CMatrix* pA = &A;
+  const CMatrix* pDK = &diagK;
+  const CMatrix* pDQ = &diagQ;
+  if(!isFullOrderedBatch(batch))
+  {
+    formAB(batch, wsAB, wsDK, wsDQ);
+    pA = &wsAB;
+    pDK = &wsDK;
+    pDQ = &wsDQ;
+  }
+
+  // mu = A_B^T m~   (B x d)
+  muOut.gemm(*pA, qMean, 1.0, 0.0, "t", "n");
+
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    // S~ A_B  then column dots with A_B
+    wsSAB.resize(M, B);
+    wsSAB.symm(qCov[j], *pA, 1.0, 0.0, "u", "l");
+    for(unsigned int k = 0; k < B; k++)
+    {
+      double v = pDK->getVal(k) - pDQ->getVal(k) + pA->dotColCol(k, wsSAB, k);
+      if(v < 0.0)
+        v = 0.0;
+      varOut.setVal(v, k, j);
+    }
+  }
+}
+
+void CSvgp::marginal(unsigned int i, unsigned int j, double& mu, double& var) const
+{
+  vector<unsigned int> one(1, i);
+  fillMarginals(one, wsMu, wsVar);
+  mu = wsMu.getVal(0, j);
+  var = wsVar.getVal(0, j);
 }
 
 vector<unsigned int> CSvgp::allIndices() const
@@ -193,14 +272,16 @@ double CSvgp::dataTerm(const vector<unsigned int>& batch) const
   if(batch.empty())
     throw ndlexceptions::Error("CSvgp: empty batch");
   const double c = (double)nData / (double)batch.size();
+  fillMarginals(batch, wsMu, wsVar);
   double L = 0.0;
-  double gMu = 0.0, gVar = 0.0, mu = 0.0, var = 0.0;
+  double gMu = 0.0, gVar = 0.0;
   for(unsigned int j = 0; j < outputDim; j++)
     for(unsigned int k = 0; k < batch.size(); k++)
     {
       const unsigned int i = batch[k];
-      marginal(i, j, mu, var);
-      L += c * expectedLogLik(py->getVal(i, j), mu, var, gMu, gVar, j);
+      L += c * expectedLogLik(py->getVal(i, j),
+                              wsMu.getVal(k, j), wsVar.getVal(k, j),
+                              gMu, gVar, j);
     }
   return L;
 }
@@ -240,8 +321,17 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
   if(batch.empty())
     throw ndlexceptions::Error("CSvgp: empty batch");
   const unsigned int M = numInducing;
-  const double c = (double)nData / (double)batch.size();
-  CMatrix a(M, 1);
+  const unsigned int B = batch.size();
+  const double c = (double)nData / (double)B;
+
+  fillMarginals(batch, wsMu, wsVar);
+  const CMatrix* pA = &A;
+  if(!isFullOrderedBatch(batch))
+  {
+    formAB(batch, wsAB, wsDK, wsDQ);
+    pA = &wsAB;
+  }
+
   for(unsigned int j = 0; j < outputDim; j++)
   {
     // Current natural parameters.
@@ -255,21 +345,51 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
     CMatrix theta1(M, 1);
     theta1.gemvColCol(0, P, qMean, j, 1.0, 0.0, "n");
 
-    // Target natural parameters: prior plus likelihood sites.
+    // Target: prior I + sum_k (-2 c gVar) a a^T; theta1 via gemv.
+    // Prefer scaled syrk when all site weights are non-negative (Gaussian);
+    // otherwise fall back to per-column ger (probit sites can flip sign).
     CMatrix Pstar(M, M, 0.0);
-    Pstar.addDiag(1.0);
-    CMatrix theta1star(M, 1);
-    theta1star.zeros();
-    double mu = 0.0, var = 0.0, gMu = 0.0, gVar = 0.0;
-    for(unsigned int k = 0; k < batch.size(); k++)
+    Pstar.setSymmetric(true);
+    wsCoeffs.resize(B, 1);
+    CMatrix alphas(B, 1);
+    double gMu = 0.0, gVar = 0.0;
+    bool allNonNeg = true;
+    for(unsigned int k = 0; k < B; k++)
     {
       const unsigned int i = batch[k];
-      marginal(i, j, mu, var);
-      expectedLogLik(py->getVal(i, j), mu, var, gMu, gVar, j);
-      a.copyColCol(0, A, i);
-      theta1star.axpy(a, c * (gMu - 2.0 * gVar * mu));
-      Pstar.ger(a, a, -2.0 * c * gVar);
+      const double mu = wsMu.getVal(k, j);
+      expectedLogLik(py->getVal(i, j), mu, wsVar.getVal(k, j), gMu, gVar, j);
+      wsCoeffs.setVal(c * (gMu - 2.0 * gVar * mu), k);
+      const double alpha = -2.0 * c * gVar;
+      alphas.setVal(alpha, k);
+      if(alpha < 0.0)
+        allNonNeg = false;
     }
+    if(allNonNeg)
+    {
+      wsABS.deepCopy(*pA);
+      for(unsigned int k = 0; k < B; k++)
+        wsABS.scaleCol(k, sqrt(alphas.getVal(k)));
+      // beta=0 so syrk may start from a non-flagged matrix; then add I.
+      Pstar.syrk(wsABS, 1.0, 0.0, "u", "n");
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s < r; s++)
+          Pstar.setVal(Pstar.getVal(s, r), r, s);
+      Pstar.setSymmetric(true);
+      Pstar.addDiag(1.0);
+    }
+    else
+    {
+      Pstar.addDiag(1.0);
+      CMatrix a(M, 1);
+      for(unsigned int k = 0; k < B; k++)
+      {
+        a.copyColCol(0, *pA, k);
+        Pstar.ger(a, a, alphas.getVal(k));
+      }
+    }
+    CMatrix theta1star(M, 1);
+    theta1star.gemv(*pA, wsCoeffs, 1.0, 0.0, "n");
 
     // Interpolate in natural-parameter space.
     P.scale(1.0 - gamma);
@@ -336,35 +456,46 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
     throw ndlexceptions::Error("CSvgp: empty batch");
   const unsigned int M = numInducing;
   const unsigned int N = nData;
+  const unsigned int B = batch.size();
   const unsigned int nKern = pkern->getNumParams();
-  const double c = (double)N / (double)batch.size();
+  const double c = (double)N / (double)B;
 
+  fillMarginals(batch, wsMu, wsVar);
+  const CMatrix* pA = &A;
+  if(!isFullOrderedBatch(batch))
+  {
+    formAB(batch, wsAB, wsDK, wsDQ);
+    pA = &wsAB;
+  }
+
+  // Scatter site adjoints into full M x N Abar (trsmAdjoint expects full A).
   CMatrix Abar(M, N);
   Abar.zeros();
   CMatrix gLambda(N, 1);
   gLambda.zeros();
   gBeta = 0.0;
 
-  CMatrix a(M, 1), Sa(M, 1), mj(M, 1);
-  double mu = 0.0, var = 0.0, gMu = 0.0, gVar = 0.0;
+  CMatrix mj(M, 1);
+  double gMu = 0.0, gVar = 0.0;
   for(unsigned int j = 0; j < outputDim; j++)
   {
     mj.copyColCol(0, qMean, j);
-    for(unsigned int k = 0; k < batch.size(); k++)
+    wsSAB.resize(M, B);
+    wsSAB.symm(qCov[j], *pA, 1.0, 0.0, "u", "l");
+    for(unsigned int k = 0; k < B; k++)
     {
       const unsigned int i = batch[k];
       const double yv = py->getVal(i, j);
-      marginal(i, j, mu, var);
+      const double mu = wsMu.getVal(k, j);
+      const double var = wsVar.getVal(k, j);
       expectedLogLik(yv, mu, var, gMu, gVar, j);
       gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
       gLambda.addVal(c * gVar, i);
-      a.copyColCol(0, A, i);
-      Sa.gemv(qCov[j], a, 1.0, 0.0, "n");
       // ∂L/∂a = c gMu m~ + 2 c gVar (S~ a - a)
       for(unsigned int r = 0; r < M; r++)
       {
         const double da = c * gMu * mj.getVal(r)
-          + 2.0 * c * gVar * (Sa.getVal(r) - a.getVal(r));
+          + 2.0 * c * gVar * (wsSAB.getVal(r, k) - pA->getVal(r, k));
         Abar.setVal(Abar.getVal(r, i) + da, r, i);
       }
     }

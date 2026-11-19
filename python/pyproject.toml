@@ -9,12 +9,22 @@ requires = [
 build-backend = "scikit_build_core.build"
 
 [project]
+# CIP-002C Phase C: distribution name locked to `gpc` (matches import).
+# Checked 2026-11-19: pypi.org/pypi/gpc and sheffieldml-gpc both 404 (available).
 name = "gpc"
 version = "0.1.0a1"
 description = "Light Python façade over SheffieldML GPc (CIP-001D)"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Neil Lawrence" }]
 dependencies = ["numpy"]
+
+[project.urls]
+Homepage = "https://github.com/SheffieldML/GPc"
+Repository = "https://github.com/SheffieldML/GPc"
+Issues = "https://github.com/SheffieldML/GPc/issues"
+Documentation = "https://github.com/SheffieldML/GPc/blob/main/python/README.md"
 
 [project.optional-dependencies]
 test = ["pytest"]

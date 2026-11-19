@@ -4683,6 +4683,283 @@ void CArcCosineKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, do
                    false, false, false, true);
 }
 
+namespace {
+
+// Soft-ReLU E[max(0,z)] for z~N(m,v).
+inline double arccosSoftReLU(double m, double v)
+{
+  if(!(v > 1e-28))
+    return (m > 0.0) ? m : 0.0;
+  const double sig = sqrt(v);
+  const double z = m / sig;
+  return m * arccosNormCdf(z) + sig * arccosNormPdf(z);
+}
+
+// Arc-cosine ridge K_fu (Σ = I in whitened coords). Order 0: erf; order 1: soft-ReLU.
+inline double arccosRidgeKfuElement(unsigned int ord, double variance,
+                                    const CMatrix& X, unsigned int n,
+                                    const CMatrix& V, unsigned int m,
+                                    double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  BOUNDCHECK(V.getCols() == Dp);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
+  const double s2 = s * s;
+  const double cs = 2.0 * s2 / (2.0 + s2);
+  const double mu = a * cs / s2;
+  const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                    * sqrt(2.0 * M_PI * cs)
+                    * exp(mu * mu / (2.0 * cs) - a * a / (2.0 * s2));
+
+  double n2 = 0.0;
+  double vtx = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xh = X.getVal(n, j);
+    n2 += xh * xh;
+    vtx += V.getVal(m, j) * xh;
+  }
+  {
+    const double xh = 1.0; // bias coord
+    n2 += xh * xh;
+    vtx += V.getVal(m, d) * xh;
+  }
+  const double varLin = n2 - (1.0 - cs) * vtx * vtx;
+
+  if(ord == 0)
+  {
+    const double B = sqrt(variance * M_PI / 2.0);
+    const double den = sqrt(1.0 + max(varLin, 0.0));
+    const double erfArg = (mu * vtx / sqrt(2.0)) / den;
+    return B * Am * erf(erfArg);
+  }
+  const double B = sqrt(variance);
+  return B * Am * arccosSoftReLU(mu * vtx, max(varLin, 0.0));
+}
+
+struct ArcRidge1State
+{
+  double B, Am, mu, cs, s2, t, n2, vlin, soft, z, sig;
+  vector<double> xhat;
+  vector<double> vdir;
+};
+
+inline void arcRidge1Fill(ArcRidge1State& st, double variance, const CMatrix& X,
+                          unsigned int n, const CMatrix& V, unsigned int m,
+                          double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  st.s2 = s * s;
+  st.cs = 2.0 * st.s2 / (2.0 + st.s2);
+  st.mu = a * st.cs / st.s2;
+  st.Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * st.s2, -0.25)
+          * sqrt(2.0 * M_PI * st.cs)
+          * exp(st.mu * st.mu / (2.0 * st.cs) - a * a / (2.0 * st.s2));
+  st.B = sqrt(variance);
+  st.xhat.resize(Dp);
+  st.vdir.resize(Dp);
+  st.n2 = 0.0;
+  st.t = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    st.xhat[j] = X.getVal(n, j);
+    st.vdir[j] = V.getVal(m, j);
+    st.n2 += st.xhat[j] * st.xhat[j];
+    st.t += st.vdir[j] * st.xhat[j];
+  }
+  st.xhat[d] = 1.0;
+  st.vdir[d] = V.getVal(m, d);
+  st.n2 += 1.0;
+  st.t += st.vdir[d];
+  st.vlin = st.n2 - (1.0 - st.cs) * st.t * st.t;
+  if(st.vlin < 0.0) st.vlin = 0.0;
+  const double mean = st.mu * st.t;
+  st.soft = arccosSoftReLU(mean, st.vlin);
+  if(st.vlin > 1e-28)
+  {
+    st.sig = sqrt(st.vlin);
+    st.z = mean / st.sig;
+  }
+  else
+  {
+    st.sig = 0.0;
+    st.z = (mean > 0.0) ? 1e6 : -1e6;
+  }
+}
+
+// ∂soft/∂mean = Φ(z); ∂soft/∂vlin = φ(z)/(2√v).
+inline void arcRidge1DSoft(const ArcRidge1State& st, double& dMean, double& dV)
+{
+  dMean = arccosNormCdf(st.z);
+  dV = (st.vlin > 1e-28) ? (0.5 * arccosNormPdf(st.z) / st.sig) : 0.0;
+}
+
+void arccos1RidgeGradAll(CMatrix& gParams, CMatrix& gV, CMatrix& ga, CMatrix& gX, CMatrix& gS,
+                         double variance, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu,
+                         bool doParams, bool doVA, bool doX, bool doS)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  if(doParams) { gParams.resize(1, 1); gParams.zeros(); }
+  if(doVA) { gV.resize(M, Dp); gV.zeros(); ga.resize(M, 1); ga.zeros(); }
+  if(doX) { gX.resize(N, d); gX.zeros(); }
+  if(doS) { gS.resize(1, 1); gS.zeros(); }
+  double accS = 0.0;
+  ArcRidge1State st;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      const double am = a.getVal(m, 0);
+      arcRidge1Fill(st, variance, X, n, V, m, am, s);
+      double dSoftMean = 0.0, dSoftV = 0.0;
+      arcRidge1DSoft(st, dSoftMean, dSoftV);
+      const double pref = w * st.B * st.Am;
+
+      if(doParams && variance > 0.0)
+        gParams.addVal(w * (0.5 / variance) * st.B * st.Am * st.soft, 0);
+
+      if(doX || doVA || doS)
+      {
+        // d soft / d t and helpers for chain rules.
+        const double dMean_dt = st.mu;
+        const double dV_dt = -2.0 * (1.0 - st.cs) * st.t;
+        const double dSoft_dt = dSoftMean * dMean_dt + dSoftV * dV_dt;
+
+        if(doX)
+        {
+          for(unsigned int j = 0; j < d; j++)
+          {
+            const double dt = st.vdir[j];
+            const double dv = 2.0 * st.xhat[j] - 2.0 * (1.0 - st.cs) * st.t * dt;
+            const double dmean = st.mu * dt;
+            const double dsoft = dSoftMean * dmean + dSoftV * dv;
+            gX.addVal(pref * dsoft, n, j);
+          }
+        }
+        if(doVA)
+        {
+          for(unsigned int k = 0; k < Dp; k++)
+            gV.addVal(pref * dSoft_dt * st.xhat[k], m, k);
+          const double dmu_da = st.cs / st.s2;
+          const double dAm_da = st.Am * (st.mu - am) / st.s2;
+          const double dsoft_da = dSoftMean * (dmu_da * st.t);
+          ga.addVal(w * st.B * (dAm_da * st.soft + st.Am * dsoft_da), m, 0);
+        }
+        if(doS)
+        {
+          const double dcs = 8.0 * s / ((2.0 + s * s) * (2.0 + s * s));
+          const double dmu = am * (s * dcs - 2.0 * st.cs) / (s * s * s);
+          const double dlogA = -0.5 / s + 0.5 * dcs / st.cs + st.mu * dmu / st.cs
+                               - st.mu * st.mu * dcs / (2.0 * st.cs * st.cs)
+                               + am * am / (s * s * s);
+          const double dAm = st.Am * dlogA;
+          const double dmean = dmu * st.t;
+          const double dv = st.t * st.t * dcs; // ∂vlin/∂cs * dcs
+          const double dsoft = dSoftMean * dmean + dSoftV * dv;
+          accS += w * st.B * (dAm * st.soft + st.Am * dsoft);
+        }
+      }
+    }
+  }
+  if(doS)
+    gS.setVal(accS, 0);
+}
+
+} // namespace
+
+void CArcCosineKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                         const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(arccosRidgeKfuElement(order, variance, X, n, V, m, a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CArcCosineKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                       const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    // Order-0 ridge ≡ MLP ridge with Σ = I.
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    CMatrix dummyScales(1, 1);
+    // Remap: MLP grads land on [wv, bv, var]; we only need variance.
+    CMatrix gMlp(1, 3);
+    mlpRidgeGradParamsDiag(gMlp, variance, sigmaDiag, false, dummyScales, 1.0,
+                           X, V, a, s, gKfu);
+    g.resize(1, 1);
+    g.setVal(gMlp.getVal(2), 0);
+    return;
+  }
+  CMatrix dummyV(1, 1), dummyA(1, 1), dummyX(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(g, dummyV, dummyA, dummyX, dummyS, variance, X, V, a, s, gKfu,
+                      true, false, false, false);
+}
+
+void CArcCosineKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                                  const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradXDiag(gX, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyV(1, 1), dummyA(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(dummyP, dummyV, dummyA, gX, dummyS, variance, X, V, a, s, gKfu,
+                      false, false, true, false);
+}
+
+void CArcCosineKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                                  const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradSDiag(gS, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyV(1, 1), dummyA(1, 1), dummyX(1, 1);
+  arccos1RidgeGradAll(dummyP, dummyV, dummyA, dummyX, gS, variance, X, V, a, s, gKfu,
+                      false, false, false, true);
+}
+
+void CArcCosineKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradVADiag(gV, ga, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyX(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(dummyP, gV, ga, dummyX, dummyS, variance, X, V, a, s, gKfu,
+                      false, true, false, false);
+}
+
 CPolyKern::CPolyKern() : CKern()
 {
   _init();

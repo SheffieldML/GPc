@@ -52,3 +52,6 @@ Phase 2 revised = smoothed-ReLU ridge features (derive \(\mathbb E[\mathrm{ReLU}
 
 ### 2026-11-19 (analytic grads)
 Arc-cosine analytic `wsGrad*` (order 0/1); production FD removed for the weight-space path.
+
+### 2026-11-19 (Phase 2 revised — ridge)
+Landed `CArcCosineKern::wsRidge*` — order 0 matches MLP ridge at Σ=I; order 1 soft-ReLU closed form \(A_m\mathbb E[\max(0,z)]\) with \(z\sim\mathcal N(\mu v^\top\hat x,\,\|\hat x\|^2-(1-c_s)(v^\top\hat x)^2)\). Gates: 2-D quad, FD variance, κ/capture, DTCVAR ridge smoke. Soft-ReLU captures ~0.4 at the κ≤10⁴ budget (erf ~0.9); isotropic oracle kept.

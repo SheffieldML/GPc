@@ -2048,7 +2048,7 @@ int testWeightSpaceInducingPhase2()
     cout << "  MLP vs arccos0 shape corr=" << corr << endl;
   }
 
-  // DTCVAR smoke order 0 and order 1 with weightspace.
+  // DTCVAR smoke order 0 and order 1 with isotropic weightspace (oracle retained).
   {
     CMatrix X(N, Q);
     CMatrix y(N, 1);
@@ -2069,7 +2069,6 @@ int testWeightSpaceInducingPhase2()
       model.setInducingVals(Xu);
       model.setInducingFixed(true);
       model.setBetaVal(6.0);
-      // Arc-cosine ridge closed forms are Phase 2 revised; use isotropic oracle here.
       CMatrix Wiso(M_ACTIVE, Q + 1);
       Wiso.zeros();
       for(unsigned int i = 0; i < M_ACTIVE; i++)
@@ -2091,6 +2090,246 @@ int testWeightSpaceInducingPhase2()
       fail += failTrue(std::isfinite(model.logLikelihood()),
                        tag + " weightspace DTCVAR after SCG LL finite");
     }
+  }
+
+  return fail;
+}
+
+int testWeightSpaceInducingPhase2Ridge()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace arccos ridge Phase 2 revised (CIP-0028) ====" << endl;
+
+  // Order-0 ridge matches MLP ridge at Σ = I.
+  {
+    CMatrix X(5, 1);
+    for(unsigned int i = 0; i < 5; i++)
+      X.setVal(-1.0 + 0.5 * (double)i, i, 0);
+    CMlpKern mlp(X);
+    mlp.setParam(1.0, 0);
+    mlp.setParam(1.0, 1);
+    mlp.setParam(1.2, 2);
+    CArcCosineKern arc(X);
+    arc.setOrder(0);
+    arc.setVariance(1.2);
+    CMatrix V(3, 2);
+    CMatrix a(3, 1);
+    V.setVal(0.6, 0, 0); V.setVal(0.8, 0, 1); a.setVal(-0.5, 0, 0);
+    V.setVal(-0.8, 1, 0); V.setVal(0.6, 1, 1); a.setVal(0.2, 1, 0);
+    V.setVal(0.0, 2, 0); V.setVal(1.0, 2, 1); a.setVal(1.1, 2, 0);
+    for(unsigned int m = 0; m < 3; m++)
+    {
+      double nrm = 0.0;
+      for(unsigned int j = 0; j < 2; j++)
+        nrm += V.getVal(m, j) * V.getVal(m, j);
+      nrm = sqrt(nrm);
+      for(unsigned int j = 0; j < 2; j++)
+        V.setVal(V.getVal(m, j) / nrm, m, j);
+    }
+    const double s = 0.55;
+    CMatrix Km(5, 3), Ka(5, 3);
+    mlp.wsRidgeCrossCompute(Km, X, V, a, s);
+    arc.wsRidgeCrossCompute(Ka, X, V, a, s);
+    double maxRel = 0.0;
+    for(unsigned int n = 0; n < 5; n++)
+      for(unsigned int m = 0; m < 3; m++)
+      {
+        const double diff = fabs(Km.getVal(n, m) - Ka.getVal(n, m));
+        const double rel = diff / max(1.0, fabs(Km.getVal(n, m)));
+        if(rel > maxRel) maxRel = rel;
+      }
+    fail += failTrue(maxRel < 1e-12, "arccos0 ridge matches MLP ridge at Sigma=I");
+  }
+
+  // Order-1 soft-ReLU ridge vs 1-D quadrature along the ridge measure.
+  {
+    const unsigned int d = 1;
+    CMatrix X(1, d);
+    X.setVal(0.35, 0, 0);
+    CMatrix V(1, d + 1);
+    CMatrix a(1, 1);
+    V.setVal(0.0, 0, 0); V.setVal(1.0, 0, 1); // direction e_bias
+    a.setVal(0.7, 0, 0);
+    const double s = 0.5;
+    CArcCosineKern arc(X);
+    arc.setOrder(1);
+    arc.setVariance(1.0);
+    CMatrix Kfu(1, 1);
+    arc.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    const double closed = Kfu.getVal(0, 0);
+
+    // Quadrature: t ~ N(μ, c_s); ω_⊥ ~ N(0,I); E[max(0, ω·x̂)] * A_m.
+    const double s2 = s * s;
+    const double cs = 2.0 * s2 / (2.0 + s2);
+    const double mu = a.getVal(0, 0) * cs / s2;
+    const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                      * sqrt(2.0 * M_PI * cs)
+                      * exp(mu * mu / (2.0 * cs) - a.getVal(0, 0) * a.getVal(0, 0) / (2.0 * s2));
+    // x̂ = (0.35, 1); v = (0, 1) ⇒ ω·x̂ = 0.35 ω_0 + t, ω_0 ~ N(0,1), t ~ N(μ,cs)
+    const double x0 = 0.35;
+    double acc = 0.0, mass = 0.0;
+    const int nT = 401, nP = 401;
+    const double tSpan = 8.0 * sqrt(cs);
+    const double pSpan = 8.0;
+    for(int it = 0; it < nT; it++)
+    {
+      const double t = mu - tSpan + 2.0 * tSpan * (double)it / (double)(nT - 1);
+      const double wtT = exp(-0.5 * (t - mu) * (t - mu) / cs) / sqrt(2.0 * M_PI * cs);
+      for(int ip = 0; ip < nP; ip++)
+      {
+        const double p = -pSpan + 2.0 * pSpan * (double)ip / (double)(nP - 1);
+        const double wtP = exp(-0.5 * p * p) / sqrt(2.0 * M_PI);
+        const double lin = x0 * p + t;
+        const double relu = (lin > 0.0) ? lin : 0.0;
+        const double w = wtT * wtP;
+        acc += w * relu;
+        mass += w;
+      }
+    }
+    const double dt = (2.0 * tSpan) / (double)(nT - 1);
+    const double dp = (2.0 * pSpan) / (double)(nP - 1);
+    const double quad = Am * (acc * dt * dp);
+    const double rel = fabs(closed - quad) / max(1.0, fabs(quad));
+    fail += failTrue(rel < 5e-3, "arccos1 ridge vs 2-D quadrature");
+    cout << "  arccos1 closed=" << closed << " quad=" << quad << " rel=" << rel << endl;
+  }
+
+  // Analytic ∂/∂variance vs FD for order 1.
+  {
+    CMatrix X(3, 1);
+    for(unsigned int i = 0; i < 3; i++)
+      X.setVal(-0.5 + 0.5 * (double)i, i, 0);
+    CMatrix V(2, 2), a(2, 1);
+    V.setVal(1.0, 0, 0); V.setVal(0.0, 0, 1); a.setVal(-0.4, 0, 0);
+    V.setVal(0.0, 1, 0); V.setVal(1.0, 1, 1); a.setVal(0.8, 1, 0);
+    const double s = 0.6;
+    CArcCosineKern arc(X);
+    arc.setOrder(1);
+    arc.setVariance(0.9);
+    CMatrix Kfu(3, 2);
+    arc.wsRidgeCrossCompute(Kfu, X, V, a, s);
+    CMatrix gKfu(3, 2);
+    gKfu.ones();
+    CMatrix g(1, 1);
+    arc.wsRidgeGradParams(g, X, V, a, s, gKfu);
+    const double h = 1e-6;
+    arc.setVariance(0.9 + h);
+    CMatrix Kp(3, 2);
+    arc.wsRidgeCrossCompute(Kp, X, V, a, s);
+    arc.setVariance(0.9 - h);
+    CMatrix Km(3, 2);
+    arc.wsRidgeCrossCompute(Km, X, V, a, s);
+    arc.setVariance(0.9);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < 3; n++)
+      for(unsigned int m = 0; m < 2; m++)
+        fd += (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    const double rel = fabs(fd - g.getVal(0)) / max(1.0, fabs(fd));
+    fail += failTrue(rel < 1e-4, "arccos1 ridge wsRidgeGradParams vs FD variance");
+  }
+
+  // DTCVAR smoke with production ridge init (both orders).
+  {
+    CMatrix X(N, Q);
+    CMatrix y(N, 1);
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXy(X, y);
+    fillXu(Xu, X);
+    for(unsigned int ord = 0; ord <= 1; ord++)
+    {
+      CCmpndKern kern(X);
+      CArcCosineKern* ak = new CArcCosineKern(X);
+      ak->setOrder(ord);
+      kern.addKern(ak);
+      kern.addKern(new CWhiteKern(X));
+      CGaussianNoise noise(&y);
+      for(int i = 0; i < noise.getOutputDim(); i++)
+        noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+      model.setInducingVals(Xu);
+      model.setInducingFixed(false);
+      model.setBetaVal(6.0);
+      model.setInducingType("weightspace");
+      const string tag = (ord == 0) ? "arccos0-ridge" : "arccos1-ridge";
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " DTCVAR LL finite");
+      CMatrix g(1, model.getOptNumParams());
+      fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                       tag + " DTCVAR grads finite");
+      model.setDefaultOptimiser(CGp::SCG);
+      model.setVerbosity(0);
+      model.optimise(6);
+      fail += failTrue(std::isfinite(model.logLikelihood()),
+                       tag + " DTCVAR after SCG LL finite");
+    }
+  }
+
+  // Variance-captured sanity: soft-ReLU ridges capture less than erf at the same
+  // κ budget (~0.4 vs ~0.9); gate is κ≤1e4 and capture ≥ 0.35 at d=8, M=32.
+  {
+    const unsigned int d = 8;
+    const unsigned int M = 32;
+    CMatrix W;
+    const double s = CInducingWeightSpace::makeRidgeInit(W, M, d, 13u);
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix Xdummy(1, d);
+    Xdummy.zeros();
+    CArcCosineKern kern(Xdummy);
+    kern.setOrder(1);
+    kern.setVariance(1.0);
+    CMatrix Kuu(M, M);
+    ind.computeKuu(Kuu, kern);
+    CMatrix KuuEig(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      KuuEig.addVal(1e-10, i, i);
+    KuuEig.setSymmetric(true);
+    CMatrix lam(1, M);
+    KuuEig.syev(lam, "n", "l");
+    double lmin = fabs(lam.getVal(0)), lmax = lmin;
+    for(unsigned int i = 1; i < M; i++)
+    {
+      const double li = fabs(lam.getVal(i));
+      if(li < lmin) lmin = li;
+      if(li > lmax) lmax = li;
+    }
+    const double kappa = lmax / max(lmin, 1e-18);
+    fail += failTrue(kappa <= 1e4, "arccos1 ridge Kuu cond <= 1e4 at d=8 M=32");
+
+    const unsigned int nProbe = 16;
+    CMatrix Xp(nProbe, d);
+    ndlutil::init_genrand(17u);
+    for(unsigned int n = 0; n < nProbe; n++)
+      for(unsigned int j = 0; j < d; j++)
+        Xp.setVal(0.4 * ndlutil::randn(), n, j);
+    CMatrix Vr(M, d + 1), ar(M, 1);
+    ind.ridgeFactors(Vr, ar);
+    CMatrix Kfu(nProbe, M);
+    kern.wsRidgeCrossCompute(Kfu, Xp, Vr, ar, s);
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol();
+    double capture = 0.0;
+    for(unsigned int n = 0; n < nProbe; n++)
+    {
+      vector<double> y(M);
+      for(unsigned int i = 0; i < M; i++)
+      {
+        double sum = Kfu.getVal(n, i);
+        for(unsigned int k = 0; k < i; k++)
+          sum -= Uchol.getVal(k, i) * y[k];
+        y[i] = sum / Uchol.getVal(i, i);
+      }
+      double q = 0.0;
+      for(unsigned int i = 0; i < M; i++)
+        q += y[i] * y[i];
+      const double kii = kern.diagComputeElement(Xp, n);
+      capture += q / max(kii, 1e-18);
+    }
+    capture /= (double)nProbe;
+    fail += failTrue(capture >= 0.35, "arccos1 ridge variance captured >= 0.35 at d=8 M=32");
+    cout << "  arccos1 capture=" << capture << " kappa=" << kappa << " s=" << s << endl;
   }
 
   return fail;
@@ -2603,6 +2842,7 @@ int main()
     fail += testWeightSpaceInducingPhase1Ridge();
     fail += testWeightSpaceInducingPhase1b();
     fail += testWeightSpaceInducingPhase2();
+    fail += testWeightSpaceInducingPhase2Ridge();
     fail += testGreensInducingPhase0();
     fail += testGreensBrownianPhase1();
     fail += testGreensMaternPhase2();

@@ -39,7 +39,9 @@ class CClctrl {
   void waitForSpace();
   // Read in a data file in Thorsten Joachim's SVM light format.
   int readSvmlDataFile(CMatrix& X, CMatrix& y, const string fileName);
-  // Read in a data file.
+  // Read dense CSV/TSV: last column is y, preceding columns are X (# comments; optional header).
+  int readCsvDataFile(CMatrix& X, CMatrix& y, const string fileName);
+  // Read in a data file (extension auto-detect; see readData).
   void readData(CMatrix& X, CMatrix& y, const string fileName);
   // exit normally.
   void exitNormal();

@@ -214,8 +214,8 @@ Add `virtual double spectralDensity(double rho) const` (default throws) to `CSta
 
 ## Future CIPs (pointers, not scope)
 
-- **Green's-function features (1-D):** choose the causal spectral factor instead of \(\sqrt S\); Brownian gives \(\Phi((x-z)/s)\) (erf) units, integrated Brownian gives Gaussian-smoothed ReLU units, causal Matérn-\(\nu\) gives their exponentially tempered versions. \(K_{uu}\) is still \(\langle\psi_m,\psi_n\rangle\).
-- **Weight-space features for dot-product kernels:** \(k(\mathbf{x},\mathbf{x}')=\int\sigma(\mathbf{w}^\top\mathbf{x})\sigma(\mathbf{w}^\top\mathbf{x}')\mathcal N(\mathbf{w};0,\Sigma)\mathrm d\mathbf{w}\) with windows over \(\mathbf{w}\); for `CMlpKern`, \(\phi_m(\mathbf{x}) = c_m\operatorname{erf}\big(\hat{\mathbf{w}}_m^\top\tilde{\mathbf{x}}/\sqrt{1+2\tilde{\mathbf{x}}^\top\tilde S\tilde{\mathbf{x}}}\big)\): a finite erf network whose infinite-width limit is the GP. Arc-cosine (order 1) gives smoothed ReLU ridge units.
+- **Green's-function features (1-D):** → **[CIP-0029](./cip0029.md)** (Proposed). Causal spectral factor instead of \(\sqrt S\); Brownian gives \(\Phi((x-z)/s)\) (erf) units, integrated Brownian gives Gaussian-smoothed ReLU units, causal Matérn-\(\nu\) gives their exponentially tempered versions. \(K_{uu}\) is still \(\langle\psi_m,\psi_n\rangle\).
+- **Weight-space features for dot-product kernels:** → **[CIP-0028](./cip0028.md)** (Proposed). \(k(\mathbf{x},\mathbf{x}')=\int\sigma(\mathbf{w}^\top\mathbf{x})\sigma(\mathbf{w}^\top\mathbf{x}')\mathcal N(\mathbf{w};0,\Sigma)\mathrm d\mathbf{w}\) with windows over \(\mathbf{w}\); for `CMlpKern`, \(\phi_m(\mathbf{x}) = c_m\operatorname{erf}\big(\hat{\mathbf{w}}_m^\top\tilde{\mathbf{x}}/\sqrt{1+2\tilde{\mathbf{x}}^\top\tilde S\tilde{\mathbf{x}}}\big)\): a finite erf network whose infinite-width limit is the GP. Arc-cosine (order 1) gives smoothed ReLU ridge units.
 
 ## References
 

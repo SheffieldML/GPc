@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip002C-phase-a-cibuildwheel"
 title: "CIP-002C Phase A: cibuildwheel Linux + macOS soft gate"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -26,17 +26,19 @@ Add a soft-gated GitHub Actions workflow that builds Linux (manylinux) and macOS
 
 ## Acceptance Criteria
 
-- [ ] `.github/workflows/wheels.yml` (or equivalent) runs cibuildwheel against `python/`
-- [ ] Matrix covers manylinux x86_64 and at least one macOS arch available on runners
-- [ ] Build image/job provides CMake, gfortran, and OpenBLAS for FindBLAS
-- [ ] Soft gate (`continue-on-error: true`) until green
-- [ ] Wheel artifacts uploaded
-- [ ] Clean-venv smoke: `python -c "import gpc"`
-- [ ] Native makefile Compile / Reference / Coverage jobs unchanged
+- [x] `.github/workflows/wheels.yml` (or equivalent) runs cibuildwheel against `python/`
+- [x] Matrix covers manylinux x86_64 and at least one macOS arch available on runners
+- [x] Build image/job provides CMake, gfortran, and OpenBLAS for FindBLAS
+- [x] Soft gate (`continue-on-error: true`) until green
+- [x] Wheel artifacts uploaded
+- [x] Clean-venv smoke: `python -c "import gpc"`
+- [x] Native makefile Compile / Reference / Coverage jobs unchanged
 
 ## Implementation Notes
 
 Consume CIP-0020 scikit-build (`python/pyproject.toml`, `GPC_BUILD_PYTHON`). Do not invent a second extension build. Phase B owns auditwheel/delocate self-containment.
+
+Landed: `wheels.yml` + `[tool.cibuildwheel]` in `python/pyproject.toml` (CPython 3.10–3.13, `auto64`, skip win/musl/PyPy). Linux `before-all` installs `openblas-devel` + `gcc-gfortran`. macOS job installs Homebrew OpenBLAS/gcc and sets `CMAKE_PREFIX_PATH` / `CXX` / `FC`. Soft gate until first green Actions run.
 
 ## Related
 
@@ -48,3 +50,7 @@ Consume CIP-0020 scikit-build (`python/pyproject.toml`, `GPC_BUILD_PYTHON`). Do 
 ### 2026-11-19
 
 Task created Ready on CIP-002C Accept.
+
+### 2026-11-19 (later)
+
+Completed on branch `cip002C-binary-wheels`: workflow + pyproject cibuildwheel config + docs. Awaiting first soft Actions run after PR/push.

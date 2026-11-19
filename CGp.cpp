@@ -586,6 +586,8 @@ void CGp::setInducingType(const string& typeName)
   {
     delete pInducing;
     pInducing = new CInducingPoints(&X_u);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, getInputDim());
   }
   else if(typeName == "whitenoise")
   {
@@ -594,6 +596,8 @@ void CGp::setInducingType(const string& typeName)
       s0 = 1.0;
     delete pInducing;
     pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, getInputDim());
   }
   else if(typeName == "greens")
   {
@@ -606,10 +610,35 @@ void CGp::setInducingType(const string& typeName)
       s0 = 1.0;
     delete pInducing;
     pInducing = new CInducingGreens(&X_u, s0, false);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, 1);
+  }
+  else if(typeName == "weightspace")
+  {
+    // CIP-0028 Design A: inducing owns W (M × (d+1)); X_u left unused.
+    const unsigned int d = getInputDim();
+    CMatrix W(numActive, d + 1);
+    W.zeros();
+    if(X_u.getRows() == numActive && X_u.getCols() == d)
+    {
+      for(unsigned int i = 0; i < numActive; i++)
+        for(unsigned int j = 0; j < d; j++)
+          W.setVal(X_u.getVal(i, j), i, j);
+    }
+    for(unsigned int i = 0; i < numActive; i++)
+      W.setVal(1.0, i, d);
+    double s0 = CInducingWhiteNoise::medianSpacing(W);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    delete pInducing;
+    pInducing = new CInducingWeightSpace(W, s0, false);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, d + 1);
   }
   else
     throw ndlexceptions::Error(
-        "Unknown inducing type (use points, whitenoise, or greens): " + typeName);
+        "Unknown inducing type (use points, whitenoise, greens, or weightspace): "
+        + typeName);
   setKupToDate(false);
 }
 
@@ -1833,9 +1862,14 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
     if(!isInducingFixed()) 
     {
       // Centre grads live in gX_u (inducing params; s fixed by default).
-      for(unsigned int j=0; j<getInputDim(); j++) 
+      // Weight-space uses domainDim=d+1 (CIP-0028 Design A).
+      const unsigned int dInd =
+          (pInducing != 0) ? pInducing->domainDim() : getInputDim();
+      const unsigned int mInd =
+          (pInducing != 0) ? pInducing->numInducing() : numActive;
+      for(unsigned int j=0; j<dInd; j++) 
       {
-        for(unsigned int i=0; i<numActive; i++) 
+        for(unsigned int i=0; i<mInd; i++) 
         {
           g.setVal(gX_u.getVal(i, j), 0, counter);
           counter++;
@@ -3088,9 +3122,11 @@ void CGp::readParamsFromStream(istream& in)
     X_u.fromStream(in);
     if(X_u.getCols()!=getInputDim())
       throw ndlexceptions::StreamFormatError("inputDim", "X_u columns doesn't match input dimension.");
-    // CIP-001C optional keys (absent ⇒ points). Peek without failing old files.
+    // CIP-001C / CIP-0028 / CIP-0029 optional keys (absent ⇒ points).
     string inducingType = "points";
     double windowWidth = -1.0;
+    CMatrix weightCentres;
+    bool haveWeightCentres = false;
     if(in.good() && !in.eof())
     {
       streampos pos = in.tellg();
@@ -3102,7 +3138,8 @@ void CGp::readParamsFromStream(istream& in)
         if(tokens.size() == 2 && tokens[0] == "inducingType")
         {
           inducingType = tokens[1];
-          if((inducingType == "whitenoise" || inducingType == "greens")
+          if((inducingType == "whitenoise" || inducingType == "greens"
+              || inducingType == "weightspace")
              && in.good() && !in.eof())
           {
             streampos pos2 = in.tellg();
@@ -3115,6 +3152,23 @@ void CGp::readParamsFromStream(istream& in)
                 windowWidth = atof(t2[1].c_str());
               else
                 in.seekg(pos2);
+            }
+          }
+          if(inducingType == "weightspace" && in.good() && !in.eof())
+          {
+            streampos pos3 = in.tellg();
+            string line3;
+            if(ndlstrutil::getline(in, line3) && line3.size() > 0)
+            {
+              vector<string> t3;
+              ndlstrutil::tokenise(t3, line3, "=");
+              if(t3.size() >= 1 && t3[0] == "weightCentres")
+              {
+                weightCentres.fromStream(in);
+                haveWeightCentres = true;
+              }
+              else
+                in.seekg(pos3);
             }
           }
         }
@@ -3147,6 +3201,41 @@ void CGp::readParamsFromStream(istream& in)
         s0 = 1.0;
       delete pInducing;
       pInducing = new CInducingGreens(&X_u, s0, false);
+    }
+    else if(inducingType == "weightspace")
+    {
+      const unsigned int d = getInputDim();
+      CMatrix W(numActive, d + 1);
+      if(haveWeightCentres)
+      {
+        if(weightCentres.getRows() != numActive
+           || weightCentres.getCols() != d + 1)
+          throw ndlexceptions::StreamFormatError(
+              "weightCentres",
+              "weightCentres must be numActive x (inputDim+1).");
+        W.deepCopy(weightCentres);
+      }
+      else
+      {
+        W.zeros();
+        if(X_u.getRows() == numActive && X_u.getCols() == d)
+        {
+          for(unsigned int i = 0; i < numActive; i++)
+            for(unsigned int j = 0; j < d; j++)
+              W.setVal(X_u.getVal(i, j), i, j);
+        }
+        for(unsigned int i = 0; i < numActive; i++)
+          W.setVal(1.0, i, d);
+      }
+      double s0 = windowWidth;
+      if(!(s0 > 0.0))
+        s0 = CInducingWhiteNoise::medianSpacing(W);
+      if(!(s0 > 0.0))
+        s0 = 1.0;
+      delete pInducing;
+      pInducing = new CInducingWeightSpace(W, s0, false);
+      if(!isInducingFixed())
+        gX_u.resize(numActive, d + 1);
     }
     else
     {
@@ -3182,11 +3271,17 @@ void CGp::writeParamsToStream(ostream& out) const
   {
     writeToStream(out, "fixInducing", isInducingFixed());
     X_u.toStream(out);
-    // CIP-001C / CIP-0029: additive keys (absent on load ⇒ points).
+    // CIP-001C / CIP-0028 / CIP-0029: additive keys (absent on load ⇒ points).
     const string indType = getInducingType();
     writeToStream(out, "inducingType", indType);
-    if((indType == "whitenoise" || indType == "greens") && pInducing != 0)
+    if((indType == "whitenoise" || indType == "greens" || indType == "weightspace")
+       && pInducing != 0)
       writeToStream(out, "windowWidth", pInducing->getWindowWidth());
+    if(indType == "weightspace" && pInducing != 0)
+    {
+      writeToStream(out, "weightCentres", "");
+      pInducing->centres().toStream(out);
+    }
   }
   //py->toStream(out);
   //pX->toStream(out);

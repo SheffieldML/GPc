@@ -170,4 +170,48 @@ class CInducingGreens : public CInducing
   mutable CMatrix tempG;
 };
 
+// CIP-0028 Design A: weight-space inducing owns W (M × (d+1)); X_u unused.
+// Phase 0: kernel-free Kuu + CLI/stream; Kuf/grads throw until Phase 1 MLP hooks.
+class CInducingWeightSpace : public CInducing
+{
+ public:
+  CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn = false);
+  virtual ~CInducingWeightSpace() {}
+
+  unsigned int numInducing() const;
+  unsigned int domainDim() const;
+  bool kuuDependsOnKernel() const { return false; }
+  std::string typeName() const { return "weightspace"; }
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern) const;
+
+  unsigned int getNumParams() const;
+  void getParams(CMatrix& param, unsigned int offset) const;
+  void setParams(const CMatrix& param, unsigned int offset);
+
+  const CMatrix& centres() const { return W; }
+  void setCentres(const CMatrix& Z);
+
+  double getWindowWidth() const { return s; }
+  void setWindowWidth(double sIn);
+
+ private:
+  void fillKuu(CMatrix& Kuu) const;
+  void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
+  void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
+
+  CMatrix W; // owned; M × (d+1) weight centres
+  double s;
+  bool learnS;
+  mutable CMatrix Kfu;
+  mutable CMatrix gKfu;
+  mutable CMatrix tempG;
+};
+
 #endif /* CINDUCING_H */

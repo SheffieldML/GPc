@@ -263,6 +263,18 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   virtual void greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
                            const CMatrix& gKfu) const;
 
+  // Weight-space inducing cross-covariance (CIP-0028). Kfu is N×M; W is M×(d+1).
+  // Defaults throw NotImplementedError until Phase 1 MLP / arc-cosine overrides.
+  virtual void wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const;
+  virtual void wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                            const CMatrix& gKfu) const;
+  virtual void wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+  virtual void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const;
+
   virtual bool isUpdateXused() const
   {
     return updateXused;

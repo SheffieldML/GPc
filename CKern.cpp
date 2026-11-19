@@ -7828,6 +7828,37 @@ void CKern::greensGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*
       "greensGradS not implemented for kernel type " + getType());
 }
 
+void CKern::wsCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*W*/,
+                           double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::wsGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradParams not implemented for kernel type " + getType());
+}
+void CKern::wsGradW(CMatrix& /*gW*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradW not implemented for kernel type " + getType());
+}
+void CKern::wsGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradX not implemented for kernel type " + getType());
+}
+void CKern::wsGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradS not implemented for kernel type " + getType());
+}
+
 // CIP-001C Phase 3: Bochner spectral density + Hankel / cosine K_fu path.
 namespace {
 

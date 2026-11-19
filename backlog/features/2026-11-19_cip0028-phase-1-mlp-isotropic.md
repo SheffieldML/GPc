@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip0028-phase-1-mlp-isotropic"
 title: "CIP-0028 Phase 1: MLP isotropic weight-space K_fu closed forms"
-status: "Proposed"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-19"
@@ -25,10 +25,10 @@ Implement closed-form \(K_{fu}\) for `CMlpKern` with Gaussian windows on **unit 
 
 ## Acceptance Criteria
 
-- [ ] Closed-form `wsCross*` + grads on `CMlpKern` using \(\boldsymbol{\mu}_m,S_m,a_m\) (not \(\hat{\mathbf{w}}_m,\tilde S\) alone)
-- [ ] MC of \(\int\phi\sqrt{p}\,\psi\) matches closed form on 1-D and small \(d\); control that \(\int\phi\psi\) alone does *not* match
-- [ ] FD agreement on kernel params (incl. weight/bias variances), \(W\), and \(s\) / \(X\) as scoped
-- [ ] `testCGp` DTCVAR smoke with weight-space + MLP
+- [x] Closed-form `wsCross*` + grads on `CMlpKern` using \(\boldsymbol{\mu}_m,S_m,a_m\) (not \(\hat{\mathbf{w}}_m,\tilde S\) alone)
+- [x] MC of \(\int\phi\sqrt{p}\,\psi\) matches closed form on 1-D and small \(d\); control that \(\int\phi\psi\) alone does *not* match
+- [x] FD agreement on kernel params (incl. weight/bias variances), \(W\), and \(s\) / \(X\) as scoped
+- [x] `testCGp` DTCVAR smoke with weight-space + MLP
 - [ ] Informative `ws_wv_sweep_*` seed: sparse bound vs exact/dense gap vs `weightVariance` with fixed windows (full cell can land in Phase 3)
 
 ## Implementation Notes
@@ -47,3 +47,6 @@ Task created (Proposed) after CIP-0028 Accepted; blocked on Phase 0.
 
 ### 2026-11-19 (math fix)
 CIP-0028 corrected: MC oracle is \(\int\phi\sqrt{p}\,\psi\); \(\kappa(K_{uu})\) demoted to sanity. Phase 0 complete — this task is unblocked.
+
+### 2026-11-19 (done)
+`CMlpKern` ws\* closed form with √p Gaussian product; FD grads; White zeros + Cmpnd sum; `testWeightSpaceInducingPhase1` green (MC √p max rel ~5e-3; no-√p control fails; DTCVAR SCG smoke). Informative `ws_wv_sweep_*` deferred to Phase 3.

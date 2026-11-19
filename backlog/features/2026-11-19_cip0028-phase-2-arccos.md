@@ -46,3 +46,6 @@ Order 0 designated as infinite-\((w,b)\) home vs finite-\(\Sigma\) `CMlpKern`; l
 
 ### 2026-11-19 (done)
 `CArcCosineKern` + stream/CLI; order-0 ws matches large-\((w,b)\) MLP shape (corr=1); order-1 smoothed ReLU; DTCVAR smoke both orders green.
+
+### 2026-11-19 (ridge revision)
+Phase 2 revised = smoothed-ReLU ridge features (derive \(\mathbb E[\mathrm{ReLU}]\) closed form; same variance-captured gates). Blocked on ridge erf Phase 1. Isotropic arccos ws is interim.

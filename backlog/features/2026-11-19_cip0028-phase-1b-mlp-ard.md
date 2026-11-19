@@ -42,3 +42,6 @@ Task created (Proposed) after CIP-0028 Accepted.
 
 ### 2026-11-19 (done)
 Diagonal \(\Sigma=\mathrm{diag}(\alpha s_j,\,\beta)\) with isotropic window \(s\); scales=1 matches isotropic; DTCVAR 2-D smoke + FD on inputScale green.
+
+### 2026-11-19 (ridge revision)
+ARD under ridge falls out of \(\hat{\mathbf x}=\Sigma^{1/2}\tilde{\mathbf x}\); re-gate after [`2026-11-19_cip0028-phase-1-ridge`](./2026-11-19_cip0028-phase-1-ridge.md). Isotropic ARD path is interim only.

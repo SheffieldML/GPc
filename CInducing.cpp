@@ -387,3 +387,141 @@ void CInducingWhiteNoise::setCentres(const CMatrix& Z)
   DIMENSIONMATCH(Z.getCols() == pZ->getCols());
   pZ->deepCopy(Z);
 }
+
+// ---- CInducingGreens (CIP-0029 Phase 0) ----
+
+CInducingGreens::CInducingGreens(CMatrix* pZIn, double sIn, bool learnSIn)
+  : pZ(pZIn), s(sIn), learnS(learnSIn)
+{
+  if(pZ == 0)
+    throw ndlexceptions::Error("CInducingGreens requires non-null centres.");
+  if(!(s > 0.0))
+    throw ndlexceptions::Error("CInducingGreens window width must be positive.");
+  assertOneD();
+}
+
+void CInducingGreens::assertOneD() const
+{
+  if(pZ->getCols() != 1)
+    throw ndlexceptions::Error(
+        "CInducingGreens requires 1-D centres (X_u columns == 1); "
+        "multi-D causal Green's features are out of scope for CIP-0029.");
+}
+
+unsigned int CInducingGreens::numInducing() const
+{
+  return pZ->getRows();
+}
+
+unsigned int CInducingGreens::domainDim() const
+{
+  return pZ->getCols();
+}
+
+void CInducingGreens::setWindowWidth(double sIn)
+{
+  if(!(sIn > 0.0))
+    throw ndlexceptions::Error("CInducingGreens window width must be positive.");
+  s = sIn;
+}
+
+void CInducingGreens::fillKuu(CMatrix& Kuu) const
+{
+  // Same Gaussian-window Gram as CInducingWhiteNoise (1-D special case).
+  const unsigned int M = numInducing();
+  const double s2 = s * s;
+  DIMENSIONMATCH(Kuu.getRows() == M && Kuu.getCols() == M);
+  for(unsigned int i = 0; i < M; i++)
+  {
+    for(unsigned int j = 0; j < M; j++)
+    {
+      const double dz = pZ->getVal(i, 0) - pZ->getVal(j, 0);
+      Kuu.setVal(exp(-(dz * dz) / (4.0 * s2)), i, j);
+    }
+  }
+  Kuu.setSymmetric(true);
+}
+
+void CInducingGreens::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
+{
+  assertOneD();
+  fillKuu(Kuu);
+}
+
+void CInducingGreens::computeKuf(CMatrix& /*Kuf*/, const CKern& /*kern*/,
+                                 const CMatrix& /*X*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingGreens::computeKuf: causal K_fu closed forms land in CIP-0029 Phase 1 "
+      "(Brownian) / Phase 2 (Exp/Matérn).");
+}
+
+void CInducingGreens::computeKux(CMatrix& /*Kux*/, const CKern& /*kern*/,
+                                 const CMatrix& /*Xstar*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingGreens::computeKux: awaits CIP-0029 Phase 1 greens cross-covariance.");
+}
+
+void CInducingGreens::gradFromKuuKuf(CMatrix& /*gKernParams*/, CMatrix& /*gZ*/,
+                                     CMatrix* /*gXOrNull*/,
+                                     const CKern& /*kern*/, const CMatrix& /*X*/,
+                                     const CMatrix& /*gKuu*/, const CMatrix& /*gKuf*/,
+                                     bool /*wantX*/, bool /*regulariseKern*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingGreens::gradFromKuuKuf: awaits CIP-0029 Phase 1 greens gradients.");
+}
+
+unsigned int CInducingGreens::getNumParams() const
+{
+  unsigned int n = numInducing() * domainDim();
+  if(learnS)
+    n += 1;
+  return n;
+}
+
+void CInducingGreens::getParams(CMatrix& param, unsigned int offset) const
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < domainDim(); j++)
+  {
+    for(unsigned int i = 0; i < numInducing(); i++)
+    {
+      param.setVal(pZ->getVal(i, j), counter);
+      counter++;
+    }
+  }
+  if(learnS)
+  {
+    param.setVal(s, counter);
+    counter++;
+  }
+}
+
+void CInducingGreens::setParams(const CMatrix& param, unsigned int offset)
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < domainDim(); j++)
+  {
+    for(unsigned int i = 0; i < numInducing(); i++)
+    {
+      pZ->setVal(param.getVal(counter), i, j);
+      counter++;
+    }
+  }
+  if(learnS)
+  {
+    setWindowWidth(param.getVal(counter));
+    counter++;
+  }
+}
+
+void CInducingGreens::setCentres(const CMatrix& Z)
+{
+  DIMENSIONMATCH(Z.getRows() == pZ->getRows());
+  DIMENSIONMATCH(Z.getCols() == pZ->getCols());
+  if(Z.getCols() != 1)
+    throw ndlexceptions::Error("CInducingGreens::setCentres requires 1-D centres.");
+  pZ->deepCopy(Z);
+}

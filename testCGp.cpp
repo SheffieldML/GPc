@@ -1404,6 +1404,94 @@ int testWhiteNoiseInducing()
   return fail;
 }
 
+int testGreensInducingPhase0()
+{
+  int fail = 0;
+  cout << "==== testCGp greens inducing Phase 0 (CIP-0029) ====" << endl;
+
+  // Type + window width + kernel-free Kuu; Kuf still NotImplemented.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("greens");
+    fail += failTrue(toy.model->getInducingType() == "greens", "inducing type greens");
+    toy.model->getInducing()->setWindowWidth(0.42);
+    fail += failTrue(fabs(toy.model->getInducing()->getWindowWidth() - 0.42) < 1e-12,
+                     "greens windowWidth set");
+    CMatrix Kuu(M_ACTIVE, M_ACTIVE);
+    toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
+    fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
+                     "greens Kuu diagonal finite positive");
+    try
+    {
+      (void)toy.model->logLikelihood();
+      fail += 1;
+      cout << "FAILURE: greens Phase 0 LL should throw NotImplementedError." << endl;
+    }
+    catch(ndlexceptions::NotImplementedError&)
+    {
+      cout << "greens Phase 0 logLikelihood throws NotImplementedError." << endl;
+    }
+  }
+
+  // Stream round-trip.
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("greens");
+    toy.model->getInducing()->setWindowWidth(0.27);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    const string blob = out.str();
+    fail += failTrue(blob.find("inducingType=greens") != string::npos,
+                     "stream writes inducingType=greens");
+    fail += failTrue(blob.find("windowWidth=") != string::npos,
+                     "stream writes greens windowWidth");
+    istringstream in(blob);
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "greens",
+                     "stream restore inducingType greens");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && fabs(round->getInducing()->getWindowWidth() - 0.27) < 1e-12,
+                     "stream restore greens windowWidth");
+    delete round;
+  }
+
+  // Multi-D inputs rejected.
+  {
+    const unsigned int Q2 = 2;
+    CMatrix X(N, Q2), y(N, 1), Xu(M_ACTIVE, Q2);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      X.setVal(-1.0 + 2.0 * (double)i / (double)(N - 1), i, 0);
+      X.setVal(0.1 * (double)i, i, 1);
+      y.setVal(sin(X.getVal(i, 0)), i, 0);
+    }
+    for(unsigned int i = 0; i < M_ACTIVE; i++)
+      Xu.copyRowRow(i, X, i);
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTC, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(10.0);
+    try
+    {
+      model.setInducingType("greens");
+      fail += 1;
+      cout << "FAILURE: greens should reject 2-D inputs." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "greens rejects 2-D inputs." << endl;
+    }
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -1422,6 +1510,7 @@ int main()
     fail += testFixMask();
     fail += testModelPaths();
     fail += testWhiteNoiseInducing();
+    fail += testGreensInducingPhase0();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

@@ -159,10 +159,15 @@ class CInducingGreens : public CInducing
  private:
   void fillKuu(CMatrix& Kuu) const;
   void assertOneD() const;
+  void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
+  void gradZFromKuu(CMatrix& gZ, const CMatrix& gKuu, const CMatrix& Kuu) const;
 
   CMatrix* pZ; // not owned; points at CGp::X_u (1-D)
   double s;
   bool learnS;
+  mutable CMatrix Kfu;
+  mutable CMatrix gKfu;
+  mutable CMatrix tempG;
 };
 
 #endif /* CINDUCING_H */

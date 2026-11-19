@@ -1,4 +1,6 @@
 #include "CClctrl.h"
+#include <cstdlib>
+#include <vector>
 
 CClctrl::CClctrl(int arc, char** arv) : argc(arc), argv(arv)
 {
@@ -170,13 +172,187 @@ int CClctrl::readSvmlDataFile(CMatrix& X, CMatrix& y, const string fileName)
   return -1;
 }
 
+namespace {
+
+string dataFileExtension(const string& fileName)
+{
+  string::size_type slash = fileName.find_last_of("/\\");
+  string::size_type base = (slash == string::npos) ? 0 : slash + 1;
+  string::size_type dot = fileName.find_last_of('.');
+  if(dot == string::npos || dot < base)
+    return "";
+  string ext = fileName.substr(dot + 1);
+  for(string::size_type i = 0; i < ext.size(); ++i)
+  {
+    if(ext[i] >= 'A' && ext[i] <= 'Z')
+      ext[i] = static_cast<char>(ext[i] - 'A' + 'a');
+  }
+  return ext;
+}
+
+// -1 = unknown (fall back to fileFormat); 0 svml; 1 mat; 2 csv
+int dataFormatFromExtension(const string& fileName)
+{
+  const string ext = dataFileExtension(fileName);
+  if(ext == "svml")
+    return 0;
+  if(ext == "mat")
+    return 1;
+  if(ext == "csv" || ext == "tsv" || ext == "txt")
+    return 2;
+  return -1;
+}
+
+bool csvTokenIsNumeric(const string& tok)
+{
+  if(tok.empty())
+    return false;
+  char* end = 0;
+  strtod(tok.c_str(), &end);
+  return end != tok.c_str() && *end == '\0';
+}
+
+void splitCsvFields(const string& line, vector<string>& fields)
+{
+  fields.clear();
+  const bool useComma = (line.find(',') != string::npos);
+  string cur;
+  for(string::size_type i = 0; i < line.size(); ++i)
+  {
+    const char c = line[i];
+    const bool sep = useComma ? (c == ',')
+                              : (c == ' ' || c == '\t');
+    if(sep)
+    {
+      if(!cur.empty())
+      {
+        fields.push_back(cur);
+        cur.clear();
+      }
+      else if(useComma)
+        fields.push_back("");
+    }
+    else if(c != '\r')
+      cur += c;
+  }
+  if(!cur.empty())
+    fields.push_back(cur);
+  else if(useComma && !line.empty() && line[line.size() - 1] == ',')
+    fields.push_back("");
+}
+
+}  // namespace
+
+int CClctrl::readCsvDataFile(CMatrix& X, CMatrix& y, const string fileName)
+{
+  ifstream in(fileName.c_str());
+  if(!in.is_open())
+    throw ndlexceptions::FileReadError(fileName);
+
+  vector<vector<double> > rows;
+  int nCols = -1;
+  string line;
+  vector<string> fields;
+  bool sawHeader = false;
+
+  while(getline(in, line))
+  {
+    if(!line.empty() && line[line.size() - 1] == '\r')
+      line.erase(line.size() - 1);
+    if(line.empty())
+      continue;
+    if(line[0] == '#')
+      continue;
+
+    splitCsvFields(line, fields);
+    if(fields.empty())
+      continue;
+
+    if(!sawHeader)
+    {
+      bool allNumeric = true;
+      for(size_t i = 0; i < fields.size(); ++i)
+      {
+        if(!csvTokenIsNumeric(fields[i]))
+        {
+          allNumeric = false;
+          break;
+        }
+      }
+      if(!allNumeric)
+      {
+        sawHeader = true;
+        continue;
+      }
+      sawHeader = true;
+    }
+
+    if(static_cast<int>(fields.size()) < 2)
+    {
+      ndlexceptions::StreamFormatError err("CSV needs at least two columns (X ..., y)");
+      throw ndlexceptions::FileFormatError(fileName, err);
+    }
+    if(nCols < 0)
+      nCols = static_cast<int>(fields.size());
+    else if(static_cast<int>(fields.size()) != nCols)
+    {
+      ndlexceptions::StreamFormatError err("inconsistent CSV column count");
+      throw ndlexceptions::FileFormatError(fileName, err);
+    }
+
+    vector<double> row(static_cast<size_t>(nCols));
+    for(int j = 0; j < nCols; ++j)
+    {
+      if(!csvTokenIsNumeric(fields[static_cast<size_t>(j)]))
+      {
+        ndlexceptions::StreamFormatError err("non-numeric CSV token");
+        throw ndlexceptions::FileFormatError(fileName, err);
+      }
+      row[static_cast<size_t>(j)] = atof(fields[static_cast<size_t>(j)].c_str());
+    }
+    rows.push_back(row);
+  }
+  in.close();
+
+  if(rows.empty() || nCols < 2)
+  {
+    ndlexceptions::StreamFormatError err("empty or incomplete CSV");
+    throw ndlexceptions::FileFormatError(fileName, err);
+  }
+
+  const int numData = static_cast<int>(rows.size());
+  const int inputDim = nCols - 1;
+  if(verbosity > 1)
+  {
+    cout << "Data number of features: " << inputDim << endl;
+    cout << "Number of data: " << numData << endl;
+  }
+
+  X.resize(numData, inputDim);
+  y.resize(numData, 1);
+  for(int i = 0; i < numData; ++i)
+  {
+    for(int j = 0; j < inputDim; ++j)
+      X.setVal(rows[static_cast<size_t>(i)][static_cast<size_t>(j)], i, j);
+    y.setVal(rows[static_cast<size_t>(i)][static_cast<size_t>(inputDim)], i, 0);
+  }
+  DIMENSIONMATCH(X.getRows() == y.getRows());
+  return 0;
+}
+
 void CClctrl::readData(CMatrix& X, CMatrix& y, const string fileName)
 {
   string m = getMode();
   setMode("file");
   if(verbosity>1)
     cout << "Loading data." << endl;
-  switch(fileFormat)
+
+  // Prefer extension so CLI -f (model format) does not force SVML for .csv paths.
+  int dataFmt = dataFormatFromExtension(fileName);
+  if(dataFmt < 0)
+    dataFmt = fileFormat;
+
+  switch(dataFmt)
   {
   case 0: /// svmlight file format.
     readSvmlDataFile(X, y, fileName);
@@ -188,6 +364,9 @@ void CClctrl::readData(CMatrix& X, CMatrix& y, const string fileName)
 #else
     throw ndlexceptions::MatlabInterfaceError("MATLAB not incorporated at compile time");
 #endif
+    break;
+  case 2: /// dense CSV / TSV (last column = y).
+    readCsvDataFile(X, y, fileName);
     break;
   default:
     exitError("Unrecognised file format number.");

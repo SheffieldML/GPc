@@ -8,8 +8,8 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 
 | Tutorial | Executable | Data | GPy counterpart |
 |---|---|---|---|
-| [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.svml` | `basic_gp` / `toy_rbf_1d` |
-| [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.svml` | `sparse_gp_regression` |
+| [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.csv` (`.svml` legacy) | `basic_gp` / `toy_rbf_1d` |
+| [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.csv` (`.svml` legacy) | `sparse_gp_regression` |
 | [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | EP classification → **IVM substitute** |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |

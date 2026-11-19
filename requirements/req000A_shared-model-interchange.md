@@ -18,7 +18,7 @@ A **shared SheffieldML schema home** publishes a versioned, inspectable **model 
 
 Wire types use **portable tags inspired by GPy class strings** (e.g. `kern.rbf` from `GPy.kern.RBF`); full `GPy.*` strings may be accepted as read aliases. Parameters on the wire use GPy-natural units.
 
-Native GPc `.model` streams and SVM-light data remain valid. The shared format lives at the I/O boundary; it is not used in the optimiser inner loop.
+Native GPc `.model` streams remain valid. Training-data formats are out of scope here (see [REQ-0011](./req0011_csv-pods-data-access.md) for CSV/`pods` with SVM-light as legacy). The shared **model** format lives at the I/O boundary; it is not used in the optimiser inner loop.
 
 **Why this matters**: Interoperate With the GP Ecosystem currently commits to `.model` and SVM-light, while GPy persists via `to_dict` JSON and GPmat via `.mat` deconstruct/reconstruct. Semantic alignment (kernel catalogue, CIP-0014 paths/units) is advancing, but file-level interchange is missing. Assert Invariants requires round-trip fixtures, not narrative parity alone. Flexibility Without a Performance Tax keeps parsing off the SCG path.
 

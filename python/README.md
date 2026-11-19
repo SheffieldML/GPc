@@ -4,6 +4,25 @@ Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay
 
 ## Install / build
 
+### Users — pip wheel (CIP-002C)
+
+**Distribution name:** `gpc` (import `import gpc`). No CMake / gfortran / system OpenBLAS required for a published wheel.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install gpc                  # from PyPI once published
+# or, until the first PyPI release:
+#   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ gpc
+export OPENBLAS_NUM_THREADS=1
+python -c "import gpc; print(gpc.__file__)"
+# optional clean-venv checklist (from a repo checkout):
+#   python python/scripts/smoke_installed_gpc.py
+```
+
+macOS wheels from CI currently require a recent macOS (deployment target follows Homebrew bottle `minOS` on `macos-15`). Linux wheels are manylinux.
+
+### Contributors — editable / source (toolchain required)
+
 ### Makefile path (day-to-day, CIP-001D)
 
 From the repository root (with `make.inc` configured — copy `make.osx` or `make.linux`):
@@ -31,6 +50,36 @@ pytest -q python/tests
 ```
 
 `python/Makefile` stays supported for editable development without scikit-build.
+
+### Binary wheels (CIP-002C)
+
+GitHub Actions workflow [`.github/workflows/wheels.yml`](../.github/workflows/wheels.yml) builds manylinux and macOS wheels with **cibuildwheel** (soft gate until soak). Config lives in this `pyproject.toml` under `[tool.cibuildwheel]`.
+
+- **Linux:** `auditwheel` vendors OpenBLAS + libgfortran into the wheel.
+- **macOS:** `delocate` vendors the same; `MACOSX_DEPLOYMENT_TARGET` is aligned to Homebrew bottle `minOS` on the runner (currently `macos-15` → typically 15.x). Wheels are self-contained (no Homebrew at import). Lowering the macOS floor further needs rebuilding OpenBLAS/gfortran from source, not stock brew bottles.
+- **CI checks:** `python/scripts/check_native_deps.py` plus `pytest` on the repaired wheel.
+
+Windows wheels are Phase D (after CIP-002B).
+
+**Threading:** for wheel installs set `OPENBLAS_NUM_THREADS=1` (and avoid nesting with OpenMP; see [CIP-001F](../cip/cip001F.md) / [docs/build-and-ci.md](../docs/build-and-ci.md)) unless you have measured otherwise. CI wheel tests set this already.
+
+### Publishing (maintainers)
+
+Workflow [`.github/workflows/publish-wheels.yml`](../.github/workflows/publish-wheels.yml):
+
+| Trigger | Behaviour |
+| --- | --- |
+| `workflow_dispatch` → **artifacts-only** | Build + upload `gpc-wheels` artifact (no PyPI) |
+| `workflow_dispatch` → **testpypi** | Build + OIDC publish to TestPyPI (`environment: testpypi`) |
+| `workflow_dispatch` → **pypi** or GitHub **Release** | Build + OIDC publish to PyPI (`environment: pypi`); Release also attaches `.whl` assets |
+
+**One-time Trusted Publisher setup** (preferred over API tokens):
+
+1. Create GitHub Environments `testpypi` and `pypi` (optional reviewers / wait timer on `pypi`).
+2. On [TestPyPI](https://test.pypi.org/) / [PyPI](https://pypi.org/): Publishing → Trusted Publishers → add pending publisher for `SheffieldML/GPc`, workflow `publish-wheels.yml`, environment `testpypi` or `pypi`.
+3. First successful publish creates the `gpc` project; re-run if the pending publisher was added after a failed attempt.
+
+Dry-run without PyPI: Actions → **Publish wheels** → `artifacts-only`, then download `gpc-wheels` and `pip install` a `.whl` into a clean venv + `smoke_installed_gpc.py`.
 
 Optional extras (not required for `import gpc` or core tests):
 

@@ -24,7 +24,7 @@ int main(int argc, char** argv)
 
   CMatrix X(1, 1);
   CMatrix y(1, 1);
-  ctrl.readSvmlDataFile(X, y, "examples/sinc.svml");
+  ctrl.readData(X, y, "examples/sinc.csv");
 
   CCmpndKern kern(X);
   kern.addKern(new CRbfKern(X));

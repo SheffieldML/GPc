@@ -441,7 +441,8 @@ void CClgp::learn()
     {
       exitError(err.getMessage());
     }
-    if(inducingTypeStr == "whitenoise" && windowWidth > 0.0)
+    if((inducingTypeStr == "whitenoise" || inducingTypeStr == "greens")
+       && windowWidth > 0.0)
       pmodel->getInducing()->setWindowWidth(windowWidth);
   }
   if(optimiser=="scg")
@@ -1030,8 +1031,8 @@ void CClgp::helpInfo()
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
     helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: lq (LQ of [I,A], CIP-001B, default), stable (whitened C + Murray adjoints), or legacy (explicit invK_uu). Prefer --sparse-linalg over -L (short -L collides with Learn-scales).");
-    helpArgument("--inducing points|whitenoise", "Inducing-variable family (CIP-001C). Default points. whitenoise uses kernel-free K_uu with Gaussian windows.");
-    helpArgument("--window-width float", "Fixed white-noise window width s (only with --inducing whitenoise). Default: median nearest-neighbour spacing of inducing centres.");
+    helpArgument("--inducing points|whitenoise|greens", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features (Phase 0 skeleton; K_fu in later phases).");
+    helpArgument("--window-width float", "Fixed window width s (with --inducing whitenoise or greens). Default: median nearest-neighbour spacing of inducing centres.");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();

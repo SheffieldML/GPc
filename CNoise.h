@@ -79,6 +79,10 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
   virtual void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const=0;
   virtual double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const=0;
   virtual double logLikelihood() const=0;
+  // CIP-002A: E_q[log p(y|f)] and grads w.r.t. marginal mean/variance of q(f).
+  // Distinct from ADF logLikelihood(mu, var, y) = log E_q[p(y|f)].
+  virtual double expectedLogLikelihood(double y, double mu, double var,
+                                       double& gMu, double& gVar) const;
   virtual void writeParamsToStream(ostream& out) const;
   virtual void readParamsFromStream(istream& in);
 #ifdef _NDLMATLAB
@@ -341,6 +345,8 @@ class CGaussianNoise : public CNoise {
   {
     return logLikelihood(mu, varSigma, *py);
   }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
   inline double getMu(unsigned int i, unsigned int j) const 
@@ -383,6 +389,7 @@ class CGaussianNoise : public CNoise {
     DIMENSIONMATCH(bia.getCols()==getOutputDim());
     bias.deepCopy(bia);
   }
+  double getSigma2() const { return sigma2; }
   
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.
@@ -535,6 +542,10 @@ class CProbitNoise : public CNoise
   {
     return logLikelihood(mu, varSigma, *py);
   }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+  // Select which output's bias enters expectedLogLikelihood (CIP-002A).
+  void setExpectedLogLikBias(double b) const { ellBias = b; }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
   inline double getMu(unsigned int i, unsigned int j) const
@@ -559,6 +570,10 @@ class CProbitNoise : public CNoise
   {
     return py->getVal(i, j);
   }
+  double getBiasVal(unsigned int index) const
+  {
+    return bias.getVal(0, index);
+  }
   
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.
@@ -571,6 +586,7 @@ class CProbitNoise : public CNoise
   void _init();
   double sigma2;
   CMatrix bias;
+  mutable double ellBias;
 };
 
 // The null category noise model for semi-supervised learning (see Lawrence and Jordan in NIPS 2004).

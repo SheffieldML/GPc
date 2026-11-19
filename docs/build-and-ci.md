@@ -76,7 +76,7 @@ Full MATLAB/`mex` is not assumed in CI. Numeric `.mat` fixtures under `matfiles/
 | **Reference tests** | Ubuntu + macOS hard gate: matio suite |
 | **Coverage** | Ubuntu only: `COVERAGE=1`, lcov, Codecov upload, **`CGp.cpp` ≥ 95% line gate** |
 
-Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps; `testSparsePpa` hits `CGp::sparsePpaElboGpTerms` (CIP-0026). Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
+Coverage stays on Ubuntu (gcov/lcov path). `codecov.yml` ignores `test*.cpp` (and local fixture helpers) so patch coverage tracks library code. `testGp` exercises `CGp` approximation arms (FTC–PITC) under matio; `testCGp` fills prediction / throw / inducing gaps; `testSparsePpa` hits `CGp::sparsePpaElboGpTerms` (CIP-0026); `testSvgp` hits `CSvgp` / `CAdam` / `expectedLogLikelihood` / `gaussHermite` (CIP-002A). Configure repository secret `CODECOV_TOKEN` for authenticated uploads.
 
 ### Regenerating the `CGp.cpp` miss list
 

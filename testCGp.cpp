@@ -1404,6 +1404,490 @@ int testWhiteNoiseInducing()
   return fail;
 }
 
+int testGreensInducingPhase0()
+{
+  int fail = 0;
+  cout << "==== testCGp greens inducing Phase 0 (CIP-0029) ====" << endl;
+
+  // Type + window width + kernel-free Kuu; Kuf still NotImplemented.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingType("greens");
+    fail += failTrue(toy.model->getInducingType() == "greens", "inducing type greens");
+    toy.model->getInducing()->setWindowWidth(0.42);
+    fail += failTrue(fabs(toy.model->getInducing()->getWindowWidth() - 0.42) < 1e-12,
+                     "greens windowWidth set");
+    CMatrix Kuu(M_ACTIVE, M_ACTIVE);
+    toy.model->getInducing()->computeKuu(Kuu, *toy.model->getKernel());
+    fail += failTrue(std::isfinite(Kuu.getVal(0, 0)) && Kuu.getVal(0, 0) > 0.0,
+                     "greens Kuu diagonal finite positive");
+    // RBF+White compound has no greensCross on RBF ⇒ NotImplemented until Phase 2/Matérn.
+    try
+    {
+      (void)toy.model->logLikelihood();
+      fail += 1;
+      cout << "FAILURE: greens+RBF LL should throw NotImplementedError." << endl;
+    }
+    catch(ndlexceptions::NotImplementedError&)
+    {
+      cout << "greens+RBF logLikelihood throws NotImplementedError." << endl;
+    }
+  }
+
+  // Stream round-trip.
+  {
+    ToyGp toy(CGp::DTC);
+    toy.model->setInducingType("greens");
+    toy.model->getInducing()->setWindowWidth(0.27);
+    ostringstream out;
+    writeGpToStream(*toy.model, out);
+    const string blob = out.str();
+    fail += failTrue(blob.find("inducingType=greens") != string::npos,
+                     "stream writes inducingType=greens");
+    fail += failTrue(blob.find("windowWidth=") != string::npos,
+                     "stream writes greens windowWidth");
+    istringstream in(blob);
+    CGp* round = readGpFromStream(in);
+    fail += failTrue(round != 0 && round->getInducingType() == "greens",
+                     "stream restore inducingType greens");
+    fail += failTrue(round != 0 && round->getInducing() != 0
+                     && fabs(round->getInducing()->getWindowWidth() - 0.27) < 1e-12,
+                     "stream restore greens windowWidth");
+    delete round;
+  }
+
+  // Multi-D inputs rejected.
+  {
+    const unsigned int Q2 = 2;
+    CMatrix X(N, Q2), y(N, 1), Xu(M_ACTIVE, Q2);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      X.setVal(-1.0 + 2.0 * (double)i / (double)(N - 1), i, 0);
+      X.setVal(0.1 * (double)i, i, 1);
+      y.setVal(sin(X.getVal(i, 0)), i, 0);
+    }
+    for(unsigned int i = 0; i < M_ACTIVE; i++)
+      Xu.copyRowRow(i, X, i);
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTC, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(10.0);
+    try
+    {
+      model.setInducingType("greens");
+      fail += 1;
+      cout << "FAILURE: greens should reject 2-D inputs." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      cout << "greens rejects 2-D inputs." << endl;
+    }
+  }
+
+  return fail;
+}
+
+int testGreensBrownianPhase1()
+{
+  int fail = 0;
+  cout << "==== testCGp greens Brownian Phase 1 (CIP-0029) ====" << endl;
+
+  // Positive 1-D grid (Brownian same-sign convention).
+  CMatrix X(N, 1), y(N, 1), Xu(M_ACTIVE, 1);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    const double t = 0.2 + 1.5 * (double)i / (double)(N - 1);
+    X.setVal(t, i, 0);
+    y.setVal(sin(t), i, 0);
+  }
+  for(unsigned int i = 0; i < M_ACTIVE; i++)
+    Xu.copyRowRow(i, X, i);
+
+  CBrownianKern kern(X);
+  kern.setVariance(1.25);
+  const double s = 0.35;
+
+  // Closed form vs trapezoid ∫_0^t ψ(τ) dτ * σ
+  {
+    CMatrix Kfu;
+    kern.greensCrossCompute(Kfu, X, Xu, s);
+    const double sigma = sqrt(kern.getVariance());
+    const double c = pow(4.0 * M_PI * s * s, 0.25);
+    double maxRel = 0.0;
+    const int nQuad = 4000;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+      {
+        const double z = Xu.getVal(m, 0);
+        double integ = 0.0;
+        for(int k = 0; k <= nQuad; k++)
+        {
+          const double tau = t * (double)k / (double)nQuad;
+          const double w = (k == 0 || k == nQuad) ? 0.5 : 1.0;
+          const double dens = exp(-0.5 * (tau - z) * (tau - z) / (s * s))
+                              / sqrt(2.0 * M_PI * s * s);
+          integ += w * dens;
+        }
+        integ *= (t / (double)nQuad) * c;
+        const double closed = Kfu.getVal(n, m);
+        const double quad = sigma * integ;
+        const double denom = max(1.0, fabs(closed));
+        maxRel = max(maxRel, fabs(closed - quad) / denom);
+      }
+    }
+    cout << "Brownian greens vs quad maxRel=" << maxRel << endl;
+    fail += failTrue(maxRel < 5e-3, "Brownian greensCross vs trapezoid");
+  }
+
+  // FD grads on variance / Z / X (central).
+  {
+    CMatrix gKfu(N, M_ACTIVE);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        gKfu.setVal(0.1 + 0.01 * (double)(n + m), n, m);
+
+    CMatrix g(1, 1);
+    kern.greensGradParams(g, X, Xu, s, gKfu);
+    const double eps = 1e-6;
+    kern.setVariance(1.25 + eps);
+    CMatrix Kp;
+    kern.greensCrossCompute(Kp, X, Xu, s);
+    kern.setVariance(1.25 - eps);
+    CMatrix Km;
+    kern.greensCrossCompute(Km, X, Xu, s);
+    kern.setVariance(1.25);
+    double fdVar = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        fdVar += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * eps);
+    fail += failTrue(fabs(g.getVal(0) - fdVar) < 1e-5 * max(1.0, fabs(fdVar)),
+                     "Brownian greensGradParams vs FD");
+
+    CMatrix gZ;
+    kern.greensGradZ(gZ, X, Xu, s, gKfu);
+    for(unsigned int m = 0; m < M_ACTIVE; m++)
+    {
+      Xu.addVal(eps, m, 0);
+      kern.greensCrossCompute(Kp, X, Xu, s);
+      Xu.addVal(-2.0 * eps, m, 0);
+      kern.greensCrossCompute(Km, X, Xu, s);
+      Xu.addVal(eps, m, 0);
+      double fd = 0.0;
+      for(unsigned int n = 0; n < N; n++)
+        fd += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * eps);
+      fail += failTrue(fabs(gZ.getVal(m, 0) - fd) < 1e-5 * max(1.0, fabs(fd)),
+                       "Brownian greensGradZ vs FD");
+    }
+  }
+
+  // DTCVAR smoke with greens inducing.
+  {
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(5.0);
+    model.setInducingType("greens");
+    model.getInducing()->setWindowWidth(s);
+    const double ll0 = model.logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "Brownian greens DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "Brownian greens DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "Brownian greens DTCVAR after SCG LL finite");
+  }
+
+  return fail;
+}
+
+int testGreensMaternPhase2()
+{
+  int fail = 0;
+  cout << "==== testCGp greens Exp/Matérn Phase 2 (CIP-0029) ====" << endl;
+
+  CMatrix X(N, 1), y(N, 1), Xu(M_ACTIVE, 1);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    const double t = -1.0 + 2.0 * (double)i / (double)(N - 1);
+    X.setVal(t, i, 0);
+    y.setVal(sin(t), i, 0);
+  }
+  for(unsigned int i = 0; i < M_ACTIVE; i++)
+    Xu.copyRowRow(i, X, i + 1);
+  const double s = 0.4;
+  const double var = 1.3;
+
+  auto quadVsClosed = [&](CKern& kern, double lambda, int degree, const string& name) -> int
+  {
+    int f = 0;
+    CMatrix Kfu;
+    kern.greensCrossCompute(Kfu, X, Xu, s);
+    const double sigma = sqrt(var);
+    const double c = pow(4.0 * M_PI * s * s, 0.25);
+    double amp = 0.0;
+    if(degree == 0)
+      amp = sigma * sqrt(2.0 * lambda) * c;
+    else if(degree == 1)
+      amp = sigma * 2.0 * pow(lambda, 1.5) * c;
+    else
+      amp = sigma * sqrt(4.0 / 3.0) * pow(lambda, 2.5) * c;
+
+    double maxRel = 0.0;
+    const int nQuad = 5000;
+    const double uMax = 12.0 / lambda + 8.0 * s;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double x = X.getVal(n, 0);
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+      {
+        const double z = Xu.getVal(m, 0);
+        double integ = 0.0;
+        for(int k = 0; k <= nQuad; k++)
+        {
+          const double u = uMax * (double)k / (double)nQuad;
+          const double w = (k == 0 || k == nQuad) ? 0.5 : 1.0;
+          double poly = 1.0;
+          if(degree == 1)
+            poly = u;
+          else if(degree == 2)
+            poly = u * u;
+          const double g = amp / c * poly * exp(-lambda * u); // amp includes c; strip for ψ
+          const double tau = x - u;
+          const double dens = exp(-0.5 * (tau - z) * (tau - z) / (s * s))
+                              / sqrt(2.0 * M_PI * s * s);
+          integ += w * g * dens;
+        }
+        integ *= (uMax / (double)nQuad) * c;
+        const double closed = Kfu.getVal(n, m);
+        const double denom = max(1.0, fabs(closed));
+        maxRel = max(maxRel, fabs(closed - integ) / denom);
+      }
+    }
+    cout << name << " greens vs quad maxRel=" << maxRel << endl;
+    f += failTrue(maxRel < 5e-3, name + " greensCross vs trapezoid");
+
+    // FD variance param
+    CMatrix gKfu(N, M_ACTIVE);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        gKfu.setVal(0.07 + 0.01 * (double)(n * M_ACTIVE + m), n, m);
+    CMatrix g(1, kern.getNumParams());
+    kern.greensGradParams(g, X, Xu, s, gKfu);
+    const double eps = 1e-6;
+    const double v0 = kern.getParam(1); // variance is param 1 for Exp/Matérn
+    kern.setParam(v0 + eps, 1);
+    CMatrix Kp;
+    kern.greensCrossCompute(Kp, X, Xu, s);
+    kern.setParam(v0 - eps, 1);
+    CMatrix Km;
+    kern.greensCrossCompute(Km, X, Xu, s);
+    kern.setParam(v0, 1);
+    double fd = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        fd += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * eps);
+    f += failTrue(fabs(g.getVal(1) - fd) < 1e-4 * max(1.0, fabs(fd)),
+                  name + " greensGradParams variance vs FD");
+    return f;
+  };
+
+  {
+    CExpKern kern(X);
+    kern.setInverseWidth(1.2);
+    kern.setVariance(var);
+    fail += quadVsClosed(kern, 1.2, 0, "Exp");
+
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(4.0);
+    model.setInducingType("greens");
+    model.getInducing()->setWindowWidth(s);
+    fail += failTrue(std::isfinite(model.logLikelihood()), "Exp greens DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "Exp greens DTCVAR grads finite");
+  }
+
+  {
+    CMatern32Kern kern(X);
+    kern.setParam(0.9, 0); // lengthScale
+    kern.setParam(var, 1);
+    const double lam = sqrt(3.0) / 0.9;
+    fail += quadVsClosed(kern, lam, 1, "Matern32");
+  }
+
+  {
+    CMatern52Kern kern(X);
+    kern.setParam(0.9, 0);
+    kern.setParam(var, 1);
+    const double lam = sqrt(5.0) / 0.9;
+    fail += quadVsClosed(kern, lam, 2, "Matern52");
+
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(4.0);
+    model.setInducingType("greens");
+    model.getInducing()->setWindowWidth(s);
+    fail += failTrue(std::isfinite(model.logLikelihood()), "Matern52 greens DTCVAR LL finite");
+  }
+
+  return fail;
+}
+
+int testGreensIntegratedBrownianPhase3()
+{
+  int fail = 0;
+  cout << "==== testCGp greens Integrated Brownian Phase 3 (CIP-0029) ====" << endl;
+
+  CMatrix X(N, 1), y(N, 1), Xu(M_ACTIVE, 1);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    const double t = 0.2 + 1.5 * (double)i / (double)(N - 1);
+    X.setVal(t, i, 0);
+    y.setVal(0.3 * t * t, i, 0);
+  }
+  for(unsigned int i = 0; i < M_ACTIVE; i++)
+    Xu.copyRowRow(i, X, i);
+
+  CIntegratedBrownianKern kern(X);
+  kern.setVariance(1.25);
+  const double s = 0.35;
+
+  // Closed form vs trapezoid ∫_0^t (t−τ) ψ(τ) dτ * σ
+  {
+    CMatrix Kfu;
+    kern.greensCrossCompute(Kfu, X, Xu, s);
+    const double sigma = sqrt(kern.getVariance());
+    const double c = pow(4.0 * M_PI * s * s, 0.25);
+    double maxRel = 0.0;
+    const int nQuad = 4000;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+      {
+        const double z = Xu.getVal(m, 0);
+        double integ = 0.0;
+        for(int k = 0; k <= nQuad; k++)
+        {
+          const double tau = t * (double)k / (double)nQuad;
+          const double w = (k == 0 || k == nQuad) ? 0.5 : 1.0;
+          const double dens = exp(-0.5 * (tau - z) * (tau - z) / (s * s))
+                              / sqrt(2.0 * M_PI * s * s);
+          integ += w * (t - tau) * dens;
+        }
+        integ *= (t / (double)nQuad) * c;
+        const double closed = Kfu.getVal(n, m);
+        const double quad = sigma * integ;
+        const double denom = max(1.0, fabs(closed));
+        maxRel = max(maxRel, fabs(closed - quad) / denom);
+      }
+    }
+    cout << "IntegratedBrownian greens vs quad maxRel=" << maxRel << endl;
+    fail += failTrue(maxRel < 5e-3, "IntegratedBrownian greensCross vs trapezoid");
+  }
+
+  {
+    CMatrix gKfu(N, M_ACTIVE);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        gKfu.setVal(0.1 + 0.01 * (double)(n + m), n, m);
+
+    CMatrix g(1, 1);
+    kern.greensGradParams(g, X, Xu, s, gKfu);
+    const double eps = 1e-6;
+    kern.setVariance(1.25 + eps);
+    CMatrix Kp;
+    kern.greensCrossCompute(Kp, X, Xu, s);
+    kern.setVariance(1.25 - eps);
+    CMatrix Km;
+    kern.greensCrossCompute(Km, X, Xu, s);
+    kern.setVariance(1.25);
+    double fdVar = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M_ACTIVE; m++)
+        fdVar += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * eps);
+    fail += failTrue(fabs(g.getVal(0) - fdVar) < 1e-5 * max(1.0, fabs(fdVar)),
+                     "IntegratedBrownian greensGradParams vs FD");
+
+    CMatrix gZ;
+    kern.greensGradZ(gZ, X, Xu, s, gKfu);
+    for(unsigned int m = 0; m < M_ACTIVE; m++)
+    {
+      Xu.addVal(eps, m, 0);
+      kern.greensCrossCompute(Kp, X, Xu, s);
+      Xu.addVal(-2.0 * eps, m, 0);
+      kern.greensCrossCompute(Km, X, Xu, s);
+      Xu.addVal(eps, m, 0);
+      double fd = 0.0;
+      for(unsigned int n = 0; n < N; n++)
+        fd += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * eps);
+      fail += failTrue(fabs(gZ.getVal(m, 0) - fd) < 1e-5 * max(1.0, fabs(fd)),
+                       "IntegratedBrownian greensGradZ vs FD");
+    }
+
+    CMatrix gS;
+    kern.greensGradS(gS, X, Xu, s, gKfu);
+    {
+      CMatrix Ksp, Ksm;
+      kern.greensCrossCompute(Ksp, X, Xu, s + eps);
+      kern.greensCrossCompute(Ksm, X, Xu, s - eps);
+      double fdS = 0.0;
+      for(unsigned int n = 0; n < N; n++)
+        for(unsigned int m = 0; m < M_ACTIVE; m++)
+          fdS += gKfu.getVal(n, m) * (Ksp.getVal(n, m) - Ksm.getVal(n, m)) / (2.0 * eps);
+      fail += failTrue(fabs(gS.getVal(0, 0) - fdS) < 1e-5 * max(1.0, fabs(fdS)),
+                       "IntegratedBrownian greensGradS vs FD");
+    }
+  }
+
+  {
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setBetaVal(5.0);
+    model.setInducingType("greens");
+    model.getInducing()->setWindowWidth(s);
+    const double ll0 = model.logLikelihood();
+    fail += failTrue(std::isfinite(ll0), "IntegratedBrownian greens DTCVAR LL finite");
+    CMatrix g(1, model.getOptNumParams());
+    fail += failTrue(std::isfinite(model.logLikelihoodGradient(g)),
+                     "IntegratedBrownian greens DTCVAR grads finite");
+    model.setDefaultOptimiser(CGp::SCG);
+    model.setVerbosity(0);
+    model.optimise(5);
+    fail += failTrue(std::isfinite(model.logLikelihood()),
+                     "IntegratedBrownian greens DTCVAR after SCG LL finite");
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -1422,6 +1906,10 @@ int main()
     fail += testFixMask();
     fail += testModelPaths();
     fail += testWhiteNoiseInducing();
+    fail += testGreensInducingPhase0();
+    fail += testGreensBrownianPhase1();
+    fail += testGreensMaternPhase2();
+    fail += testGreensIntegratedBrownianPhase3();
     cout << "Total number of failures: " << fail << endl;
     return fail > 0 ? 1 : 0;
   }

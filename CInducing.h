@@ -125,4 +125,49 @@ class CInducingWhiteNoise : public CInducing
   mutable CMatrix tempG;
 };
 
+// CIP-0029: 1-D Green's / causal-root inducing (Gaussian windows on the line).
+// Phase 0: kernel-free Kuu + CLI/stream; Kuf/grads throw until Phase 1 kernels land.
+class CInducingGreens : public CInducing
+{
+ public:
+  CInducingGreens(CMatrix* pZIn, double sIn, bool learnSIn = false);
+  virtual ~CInducingGreens() {}
+
+  unsigned int numInducing() const;
+  unsigned int domainDim() const;
+  bool kuuDependsOnKernel() const { return false; }
+  std::string typeName() const { return "greens"; }
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern) const;
+
+  unsigned int getNumParams() const;
+  void getParams(CMatrix& param, unsigned int offset) const;
+  void setParams(const CMatrix& param, unsigned int offset);
+
+  const CMatrix& centres() const { return *pZ; }
+  void setCentres(const CMatrix& Z);
+
+  double getWindowWidth() const { return s; }
+  void setWindowWidth(double sIn);
+
+ private:
+  void fillKuu(CMatrix& Kuu) const;
+  void assertOneD() const;
+  void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
+  void gradZFromKuu(CMatrix& gZ, const CMatrix& gKuu, const CMatrix& Kuu) const;
+
+  CMatrix* pZ; // not owned; points at CGp::X_u (1-D)
+  double s;
+  bool learnS;
+  mutable CMatrix Kfu;
+  mutable CMatrix gKfu;
+  mutable CMatrix tempG;
+};
+
 #endif /* CINDUCING_H */

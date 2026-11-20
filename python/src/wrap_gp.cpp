@@ -2,6 +2,7 @@
 
 #include <sstream>
 
+#include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
 #include "matrix_numpy.h"
@@ -353,9 +354,33 @@ std::vector<std::string> PyGPRegression::param_paths() const
   return model->paramPaths();
 }
 
-void PyGPRegression::optimize(unsigned int iters)
+void PyGPRegression::optimize(unsigned int iters, bool messages, py::object callback)
 {
-  model->optimise(iters);
+  // Python façade owns messaging (paramz-style in-place table). Never enable
+  // C++ CLI Iteration lines, Initial model dumps, or checkGradients here.
+  (void)messages;
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(false);
+  model->setVerbosity(0);
+
+  const bool haveCallback = !(callback.is_none());
+  if(haveCallback)
+  {
+    // Hold a copy for the duration of optimise; clear afterwards.
+    py::object cb = callback;
+    model->addOptimiserObserver([cb](const OptimiserEvent& e) {
+      py::gil_scoped_acquire acquire;
+      cb(e);
+    });
+  }
+
+  {
+    py::gil_scoped_release release;
+    model->optimise(iters);
+  }
+
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(true);
 }
 
 double PyGPRegression::objective() const
@@ -499,9 +524,31 @@ std::vector<std::string> PySparseGPRegression::param_paths() const
   return model->paramPaths();
 }
 
-void PySparseGPRegression::optimize(unsigned int iters)
+void PySparseGPRegression::optimize(unsigned int iters, bool messages, py::object callback)
 {
-  model->optimise(iters);
+  // Python façade owns messaging; never enable C++ CLI progress here.
+  (void)messages;
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(false);
+  model->setVerbosity(0);
+
+  const bool haveCallback = !(callback.is_none());
+  if(haveCallback)
+  {
+    py::object cb = callback;
+    model->addOptimiserObserver([cb](const OptimiserEvent& e) {
+      py::gil_scoped_acquire acquire;
+      cb(e);
+    });
+  }
+
+  {
+    py::gil_scoped_release release;
+    model->optimise(iters);
+  }
+
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(true);
 }
 
 double PySparseGPRegression::objective() const
@@ -528,12 +575,63 @@ double PySparseGPRegression::window_width() const
   return pInd->getWindowWidth();
 }
 
+ModelDescription PyGPRegression::describe() const
+{
+  return model->describe();
+}
+
+std::string PyGPRegression::to_string() const
+{
+  return modelDescriptionToString(model->describe());
+}
+
+ModelDescription PySparseGPRegression::describe() const
+{
+  return model->describe();
+}
+
+std::string PySparseGPRegression::to_string() const
+{
+  return modelDescriptionToString(model->describe());
+}
+
 void bind_gp(py::module_& m)
 {
+  py::enum_<OptimiserPhase>(m, "OptimiserPhase")
+      .value("Start", OptimiserPhase::Start)
+      .value("Iter", OptimiserPhase::Iter)
+      .value("Converged", OptimiserPhase::Converged)
+      .value("MaxIters", OptimiserPhase::MaxIters)
+      .value("Failed", OptimiserPhase::Failed);
+
+  py::class_<OptimiserEvent>(m, "OptimiserEvent")
+      .def_readonly("phase", &OptimiserEvent::phase)
+      .def_readonly("optimiser", &OptimiserEvent::optimiser)
+      .def_readonly("iter", &OptimiserEvent::iter)
+      .def_readonly("func_eval", &OptimiserEvent::funcEval)
+      .def_readonly("objective", &OptimiserEvent::objective)
+      .def_readonly("grad_norm", &OptimiserEvent::gradNorm)
+      .def_readonly("step_or_scale", &OptimiserEvent::stepOrScale)
+      .def_readonly("message", &OptimiserEvent::message);
+
+  py::class_<ParamRow>(m, "ParamRow")
+      .def_readonly("path", &ParamRow::path)
+      .def_readonly("value", &ParamRow::value)
+      .def_readonly("transform", &ParamRow::transform)
+      .def_readonly("fixed", &ParamRow::fixed)
+      .def_readonly("role", &ParamRow::role);
+
+  py::class_<ModelDescription>(m, "ModelDescription")
+      .def_readonly("title", &ModelDescription::title)
+      .def_readonly("header_lines", &ModelDescription::headerLines)
+      .def_readonly("params", &ModelDescription::params)
+      .def_readonly("has_log_likelihood", &ModelDescription::hasLogLikelihood)
+      .def_readonly("log_likelihood", &ModelDescription::logLikelihood);
+
   py::class_<PyGPRegression>(
       m,
       "GPRegression",
-      "Full / FTC Gaussian process regression (CIP-001D).\n\n"
+      "Full / FTC Gaussian process regression (CIP-001D / CIP-001E).\n\n"
       "Prefer gpc.models.GPRegression(X, Y, kernel=...) for GPy-shaped construction.\n"
       "Parameters use CIP-0014 GPy-natural units via set_by_path / get_by_path.\n"
       "Does not claim API identity with GPy.")
@@ -549,7 +647,8 @@ void bind_gp(py::module_& m)
            py::arg("arccos_order") = 0,
            "Construct FTC Gaussian GP.\n\n"
            "kernel: string name ('rbf', 'eq'/'ExpQuad', 'mlp', 'arccos') builds the\n"
-           "default signal+bias+white compound, or a parts list from gpc.kern compounds.")
+           "CIP-0027 signal-only compound (noise is likelihood.variance), or a parts\n"
+           "list from gpc.kern compounds.")
       .def("set_by_path",
            &PyGPRegression::set_by_path,
            py::arg("path"),
@@ -565,7 +664,11 @@ void bind_gp(py::module_& m)
       .def("optimize",
            &PyGPRegression::optimize,
            py::arg("iters") = 100,
-           "Run SCG for iters iterations (minimises -log-likelihood).")
+           py::arg("messages") = false,
+           py::arg("callback") = py::none(),
+           "Run SCG for iters iterations (minimises -log-likelihood).\n"
+           "messages= is handled by gpc.models.GPRegression (in-place table);\n"
+           "this binding only installs callback=.")
       .def("objective",
            &PyGPRegression::objective,
            "Return the SCG objective (-log-likelihood).")
@@ -573,6 +676,9 @@ void bind_gp(py::module_& m)
            &PyGPRegression::predict,
            py::arg("Xtest"),
            "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+      .def("describe", &PyGPRegression::describe, "Structured ModelDescription (CIP-001E).")
+      .def("__str__", &PyGPRegression::to_string)
+      .def("__repr__", &PyGPRegression::to_string)
       .def_property_readonly("n", &PyGPRegression::n, "Number of training points.")
       .def_property_readonly("input_dim", &PyGPRegression::input_dim, "Input dimension q.")
       .def_property_readonly("output_dim", &PyGPRegression::output_dim, "Output dimension d.")
@@ -584,7 +690,7 @@ void bind_gp(py::module_& m)
   py::class_<PySparseGPRegression>(
       m,
       "SparseGPRegression",
-      "Sparse Gaussian process regression (DTCVAR / FITC / DTC; CIP-001D).\n\n"
+      "Sparse Gaussian process regression (DTCVAR / FITC / DTC; CIP-001D / CIP-001E).\n\n"
       "Prefer gpc.models.SparseGPRegression(X, Y, Z, kernel=...) for GPy-shaped construction.\n"
       "Does not claim API identity with GPy.")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
@@ -626,7 +732,11 @@ void bind_gp(py::module_& m)
       .def("optimize",
            &PySparseGPRegression::optimize,
            py::arg("iters") = 100,
-           "Run SCG for iters iterations (minimises -log-likelihood).")
+           py::arg("messages") = false,
+           py::arg("callback") = py::none(),
+           "Run SCG for iters iterations (minimises -log-likelihood).\n"
+           "messages= is handled by gpc.models.SparseGPRegression (in-place table);\n"
+           "this binding only installs callback=.")
       .def("objective",
            &PySparseGPRegression::objective,
            "Return the SCG objective (-log-likelihood).")
@@ -634,6 +744,11 @@ void bind_gp(py::module_& m)
            &PySparseGPRegression::predict,
            py::arg("Xtest"),
            "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+      .def("describe",
+           &PySparseGPRegression::describe,
+           "Structured ModelDescription (CIP-001E).")
+      .def("__str__", &PySparseGPRegression::to_string)
+      .def("__repr__", &PySparseGPRegression::to_string)
       .def("inducing_inputs",
            &PySparseGPRegression::inducing_inputs,
            "Return inducing input locations Z as a NumPy array.")

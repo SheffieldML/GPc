@@ -3,6 +3,7 @@
 #include "CLQAdjoint.h"
 #include <cmath>
 #include <cstdlib>
+#include <sstream>
 #include <vector>
 #include "ndlstrutil.h"
 #include "lapack.h"
@@ -3221,20 +3222,20 @@ void CGp::fromMxArray(const mxArray* matlabArray)
 void CGp::optimise(unsigned int iters)
 {
   enforceObservationNoisePolicy();
-  if(getVerbosity()>2)
-  {
-    cout << "Initial model:" << endl;
-    display(cout);
-  }
-  if(getVerbosity()>2 && getOptNumParams()<40)
+  // Live messaging is the in-place paramz table via OptimiserEvent (verbosity>0).
+  // Gradient checking is diagnostic only — keep it off the normal messages path.
+  if(getVerbosity() > 3 && getOptNumParams() < 40)
     checkGradients();
   setMaxIters(iters);
   runDefaultOptimiser();
-  
-  if(getVerbosity()>1)
-    cout << "... done. " << endl;
-  if(getVerbosity()>0)
-    display(cout);
+}
+
+std::string CGp::progressSnapshot(const OptimiserEvent& event) const
+{
+  ModelDescription desc = describe();
+  if(std::isfinite(event.objective))
+    return modelDescriptionToString(desc, &event.objective);
+  return modelDescriptionToString(desc);
 }
 
 bool CGp::equals(const CGp& model, const double tol) const 
@@ -3265,27 +3266,133 @@ bool CGp::equals(const CGp& model, const double tol) const
   return true;
 }
 
-void CGp::display(ostream& os) const 
+ModelDescription CGp::describe() const
 {
+  ModelDescription desc;
   if(isSparseApproximation())
-    cout << "Sparse Approximation GP Model:" << endl << "Approx type: " << getApproximationStr() <<endl;
-  else
-    cout << "Standard GP Model: " << endl;
-  cout << "Optimiser: " << getDefaultOptimiserStr() << endl;
-  cout << "Data Set Size: " << getNumData() << endl;
-  cout << "Kernel Type: " << endl;
-  cout << "Scales learnt: " << isOutputScaleLearnt() << endl;
-  cout << "X learnt: " << isOptimiseX() << endl;
-  cout << "Bias: " << bias << endl;
-  cout << "Scale: " << scale << endl;
-  pnoise->display(os);
-  pkern->display(os);
-  if(isSparseApproximation()) {
-    cout << "Inducing fixed: " << isInducingFixed() << endl;
-    cout << "Beta Value: " << getBetaVal() << endl;
+  {
+    desc.title = "GP regression";
+    desc.headerLines.push_back("Approx type: " + getApproximationStr());
   }
+  else
+    desc.title = "GP regression";
+  desc.headerLines.push_back("Optimiser: " + getDefaultOptimiserStr());
+  {
+    std::ostringstream line;
+    line << "Data Set Size: " << getNumData();
+    desc.headerLines.push_back(line.str());
+  }
+  if(isSparseApproximation())
+    desc.headerLines.push_back(string("Inducing fixed: ") + (isInducingFixed() ? "1" : "0"));
+
+  // Kernel / beta / scale paths with transforms and fix flags.
+  if(pkern)
+  {
+    ModelDescription kdesc = pkern->describe();
+    // Map flat kern index -> transform for path rows that use kern. prefix.
+    vector<string> transformByIndex(pkern->getNumParams());
+    for(unsigned int t = 0; t < pkern->getNumTransforms(); t++)
+    {
+      const unsigned int idx = pkern->getTransformIndex(t);
+      if(idx < transformByIndex.size())
+        transformByIndex[idx] = pkern->getTransformType(t);
+    }
+    const vector<string> kpaths = pkern->paramPaths();
+    for(size_t i = 0; i < kpaths.size(); ++i)
+    {
+      const string full = string("kern.") + kpaths[i];
+      ParamRow row(full, getByPath(full));
+      try
+      {
+        row.fixed = isFixed(full);
+      }
+      catch(...)
+      {
+        row.fixed = false;
+      }
+      try
+      {
+        const unsigned int idx = pkern->paramIndex(kpaths[i]);
+        if(idx < transformByIndex.size())
+          row.transform = transformByIndex[idx];
+      }
+      catch(...)
+      {
+      }
+      desc.params.push_back(row);
+    }
+  }
+  if(isSparseApproximation())
+  {
+    ParamRow beta("beta", getBetaVal());
+    try { beta.fixed = isFixed("beta"); } catch(...) { beta.fixed = false; }
+    if(betaTransform)
+      beta.transform = betaTransform->getType();
+    else
+      beta.transform = "exp";
+    desc.params.push_back(beta);
+  }
+  if(isOutputScaleLearnt())
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      const string full = string("scale.") + ndlstrutil::itoa(j);
+      ParamRow row(full, getByPath(full));
+      try { row.fixed = isFixed(full); } catch(...) { row.fixed = false; }
+      desc.params.push_back(row);
+    }
+  }
+
+  // Structured noise rows (paramz-ish names) instead of a display blob.
+  if(pnoise)
+  {
+    const string ntype = pnoise->getType();
+    if(ntype == "gaussian")
+    {
+      for(unsigned int j = 0; j < pnoise->getOutputDim(); j++)
+      {
+        ParamRow brow(string("Gaussian_noise.bias.") + ndlstrutil::itoa(j),
+                      pnoise->getParam(j));
+        desc.params.push_back(brow);
+      }
+      ParamRow var("Gaussian_noise.variance",
+                   pnoise->getParam(pnoise->getNumParams() - 1));
+      // Gaussian noise variance is positivity-constrained in the usual setup.
+      for(unsigned int t = 0; t < pnoise->getNumTransforms(); t++)
+      {
+        if(pnoise->getTransformIndex(t) == pnoise->getNumParams() - 1)
+          var.transform = pnoise->getTransformType(t);
+      }
+      if(var.transform.empty())
+        var.transform = "exp";
+      desc.params.push_back(var);
+    }
+    else
+    {
+      for(unsigned int i = 0; i < pnoise->getNumParams(); i++)
+      {
+        ParamRow row(string("noise.") + pnoise->getParamName(i), pnoise->getParam(i));
+        for(unsigned int t = 0; t < pnoise->getNumTransforms(); t++)
+        {
+          if(pnoise->getTransformIndex(t) == i)
+            row.transform = pnoise->getTransformType(t);
+        }
+        desc.params.push_back(row);
+      }
+    }
+  }
+
   if(py && pX)
-    cout << "Log likelihood: " << logLikelihood() << endl;
+  {
+    desc.hasLogLikelihood = true;
+    desc.logLikelihood = logLikelihood();
+  }
+  return desc;
+}
+
+void CGp::display(ostream& os) const
+{
+  formatModelDescription(describe(), os);
 }
 
 void CGp::readParamsFromStream(istream& in)

@@ -10,6 +10,47 @@
 #include "CMatrix.h"
 #include "ndlutil.h"
 #include "ndlfortran.h"
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <string>
+#include <vector>
+
+/// Outer-iteration / terminal progress (CIP-001E). Not fired from objective/gradient.
+enum class OptimiserPhase
+{
+  Start,
+  Iter,
+  Converged,
+  MaxIters,
+  Failed
+};
+
+struct OptimiserEvent
+{
+  OptimiserPhase phase;
+  int optimiser;       // COptimisable::CG / SCG / GD / BFGS / LBFGS
+  int iter;
+  int funcEval;        // -1 if not tracked
+  double objective;
+  double gradNorm;     // NaN if unused
+  double stepOrScale;  // e.g. SCG lambda; NaN if unused
+  std::string message;
+
+  OptimiserEvent()
+    : phase(OptimiserPhase::Iter),
+      optimiser(-1),
+      iter(0),
+      funcEval(-1),
+      objective(0.0),
+      gradNorm(std::numeric_limits<double>::quiet_NaN()),
+      stepOrScale(std::numeric_limits<double>::quiet_NaN()),
+      message()
+  {
+  }
+};
+
+typedef std::function<void(const OptimiserEvent&)> OptimiserObserver;
 
 // abstract base class for making a class optimisable.
 class COptimisable {
@@ -38,6 +79,11 @@ class COptimisable {
     setMomentum(0.9);
     iter = 0;
     funcEval = 0;
+    defaultTextProgress = true;
+    progressStream = &std::cout;
+    logStream = 0;
+    progressLinesPrinted = 0;
+    inPlaceProgressMode = -1; // -1 auto (TTY), 0 off, 1 on
   }
   virtual ~COptimisable() {}
   virtual inline void setVerbosity(int val) const 
@@ -48,6 +94,58 @@ class COptimisable {
   {
     return verbosity;
   }
+
+  /// Register an outer-iteration observer (CIP-001E). Cleared with clearOptimiserObservers().
+  void addOptimiserObserver(const OptimiserObserver& obs)
+  {
+    optimiserObservers.push_back(obs);
+  }
+  void clearOptimiserObservers()
+  {
+    optimiserObservers.clear();
+  }
+  /// When true (default), verbosity-gated text is written to the progress stream.
+  void setDefaultTextProgress(bool on)
+  {
+    defaultTextProgress = on;
+  }
+  bool isDefaultTextProgress() const
+  {
+    return defaultTextProgress;
+  }
+  void setOptimiserProgressStream(std::ostream* os)
+  {
+    progressStream = os;
+    progressLinesPrinted = 0;
+  }
+  std::ostream* getOptimiserProgressStream() const
+  {
+    return progressStream;
+  }
+  /// Optional append-only record of events (independent of live TTY redraw).
+  void setOptimiserLogStream(std::ostream* os)
+  {
+    logStream = os;
+  }
+  std::ostream* getOptimiserLogStream() const
+  {
+    return logStream;
+  }
+  /// Force in-place ANSI redraw: -1 auto (TTY), 0 off, 1 on.
+  void setInPlaceProgress(int mode) const
+  {
+    inPlaceProgressMode = mode;
+    progressLinesPrinted = 0;
+  }
+
+  /// Optional multi-line model snapshot for live progress (CGp overrides).
+  virtual std::string progressSnapshot(const OptimiserEvent& /*event*/) const
+  {
+    return std::string();
+  }
+
+  /// Fire default text (if enabled) then all registered observers.
+  void notifyOptimiserEvent(const OptimiserEvent& event) const;
   virtual unsigned int getOptNumParams() const=0;
   virtual void getOptParams(CMatrix& param) const=0;
   virtual void setOptParams(const CMatrix& param)=0;
@@ -242,10 +340,28 @@ class COptimisable {
 
   bool funcEvalTerminate;
   bool iterTerminate;
+
+  bool defaultTextProgress;
+  mutable std::ostream* progressStream;
+  mutable std::ostream* logStream;
+  mutable unsigned int progressLinesPrinted;
+  mutable int inPlaceProgressMode;
+  mutable std::vector<OptimiserObserver> optimiserObservers;
   
   CMatrix direction; // direction for 1-D optimisation.
   CMatrix paramStoreOne;
   CMatrix paramStoreTwo;
+
+  void writeDefaultOptimiserText(const OptimiserEvent& event) const;
+  void writeOptimiserLogLine(const OptimiserEvent& event) const;
+  std::string buildProgressBlock(const OptimiserEvent& event) const;
+  bool shouldUseInPlaceProgress() const;
+  static const char* optimiserName(int optimiserId);
+  OptimiserEvent makeOptimiserEvent(OptimiserPhase phase,
+                                    int optimiserId,
+                                    double objectiveVal,
+                                    double stepOrScale = std::numeric_limits<double>::quiet_NaN(),
+                                    const std::string& message = std::string()) const;
 }; 
 
 class CProbabilisticOptimisable : public COptimisable

@@ -12,7 +12,9 @@
 #include "CGp.h"
 #include "CKern.h"
 #include "CMatrix.h"
+#include "CModelDescription.h"
 #include "CNoise.h"
+#include "COptimisable.h"
 
 namespace py = pybind11;
 
@@ -30,11 +32,16 @@ public:
   double get_by_path(const std::string& path) const;
   std::vector<std::string> param_paths() const;
 
-  void optimize(unsigned int iters = 100);
+  void optimize(unsigned int iters = 100,
+                bool messages = false,
+                py::object callback = py::none());
   double objective() const;
 
   std::pair<py::array_t<double>, py::array_t<double>> predict(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+
+  std::string to_string() const;
+  ModelDescription describe() const;
 
   unsigned int n() const { return X.getRows(); }
   unsigned int input_dim() const { return X.getCols(); }
@@ -71,11 +78,16 @@ public:
   double get_by_path(const std::string& path) const;
   std::vector<std::string> param_paths() const;
 
-  void optimize(unsigned int iters = 100);
+  void optimize(unsigned int iters = 100,
+                bool messages = false,
+                py::object callback = py::none());
   double objective() const;
 
   std::pair<py::array_t<double>, py::array_t<double>> predict(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+
+  std::string to_string() const;
+  ModelDescription describe() const;
 
   unsigned int n() const { return X.getRows(); }
   unsigned int input_dim() const { return X.getCols(); }

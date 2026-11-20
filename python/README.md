@@ -138,7 +138,9 @@ m.optimize(iters=50)
 mu, var = m.predict(X)
 ```
 
-Shorthand (string kernel still builds signal + bias + white): `gpc.GPRegression(X, Y)` or `kernel="rbf"` / `"eq"` / `"mlp"` / `"arccos"`. Prefer **noisy** observations: noiseless \(Y\) drives `white.variance` → 0. `objective()` is **−log-likelihood** (SCG minimises it).
+Shorthand (CIP-0027): string kernels build **signal-only** compounds; observation noise is `likelihood.variance` (alias `Gaussian_noise.variance`). Bias/White are opt-in. Prefer **noisy** observations. `objective()` is **−log-likelihood** (SCG minimises it).
+
+`optimize(messages=True)` refreshes the paramz-style parameter table **in place**: Jupyter updates one `display_id` cell; terminal / terminal IPython uses ANSI cursor rewrite (not `clear_output`, which stacks in terminal IPython). It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks.
 
 - GPy porting fragment: [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md)
 - Tutorial map: [`docs/subset_checklist.md`](docs/subset_checklist.md)

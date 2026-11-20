@@ -36,7 +36,7 @@ The façade is an **ease-of-use and sharing surface**, not a second modelling en
 
 ## Notes (Optional)
 
-HOW is [CIP-001D](../cip/cip001D.md) (**Closed**). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Live progress and structured repr consume [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md) (CIP-001D Phase B2 deferred until 001E lands). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11). Interactive Python `help()` / docstring discoverability is [REQ-0017](./req0017_python-facade-help-docstrings.md) / [CIP-002F](../cip/cip002F.md).
+HOW is [CIP-001D](../cip/cip001D.md) (**Closed**). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Live progress and structured repr consume [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md) (Phase B2 lands with 001E). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11). Interactive Python `help()` / docstring discoverability is [REQ-0017](./req0017_python-facade-help-docstrings.md) / [CIP-002F](../cip/cip002F.md).
 
 ## References
 
@@ -63,3 +63,6 @@ Clarified non-goals: outer-iteration live progress and structured model repr are
 
 ### 2026-11-20 (close CIP-001D)
 GPy-form `gpc.kern` / `gpc.models` / compound `+` landed; side-by-side and subset checklist updated. CIP-001D Closed; Phase B2 deferred on CIP-001E. Requirement → Implemented. Interactive help/docstrings → REQ-0017 / CIP-002F (Proposed). Wheels remain CIP-002C.
+
+### 2026-11-20 (CIP-001E Phase B2)
+CIP-001E supplies `messages`/`callback` and structured `__str__`/`__repr__` on the façade.

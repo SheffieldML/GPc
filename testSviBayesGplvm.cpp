@@ -1,5 +1,4 @@
-/* CIP-0030 Phase 1–3: CSviBayesGplvm gates V1–V8 (points + inducing families)
-   and Phase 3 probit / ordered via Gauss–Hermite. */
+/* CIP-0030 Phase 1–4: CSviBayesGplvm gates V1–V8, probit/ordered, stream I/O. */
 
 #include "CAdam.h"
 #include "CBayesGplvm.h"
@@ -10,6 +9,7 @@
 #include "ndlexceptions.h"
 #include "ndlutil.h"
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <random>
 #include <string>
@@ -710,6 +710,52 @@ int main()
              "V8: weight-space MLP ELBO finite (K=1000 estimate)");
       expect(L1 > L0 - 5.0,
              "V8: weight-space MLP short train does not collapse ELBO");
+    }
+
+    // ---- Phase 4: stream round-trip ----
+    {
+      CCmpndKern kRt(Xdummy);
+      makeRbfKern(kRt, Xdummy);
+      CSviBayesGplvm mRt(&kRt, Y, Q, M, 2.0, 0);
+      mRt.setInducingType("points");
+      mRt.setNumSamples(2);
+      mRt.setNatGradGamma(0.12);
+      mRt.setLocalLearningRate(3e-3);
+      mRt.setSeed(9);
+      CAdam adamRt(1e-2);
+      adamRt.setBatchSize(N);
+      adamRt.setMaxIters(3);
+      adamRt.setSeed(9);
+      adamRt.maximise(mRt);
+      const string path = "crap_svibayesgplvm";
+      mRt.toFile(path, "testSviBayesGplvm Phase 4");
+      CRbfKern kLoad(1);
+      kLoad.setInitParam();
+      CMatrix Yload(1, 1);
+      CSviBayesGplvm loaded(&kLoad, Yload, 1, 1, 1.0, 0);
+      loaded.fromFile(path);
+      expect(loaded.getNumData() == N && loaded.getLatentDim() == Q
+             && loaded.getNumInducing() == M,
+             "Phase4: stream restores dims");
+      expect(loaded.getInducingType() == "points",
+             "Phase4: stream restores inducing type");
+      expect(loaded.getNumSamples() == 2,
+             "Phase4: stream restores samples");
+      expect(fabs(loaded.getNatGradGamma() - 0.12) < 1e-12,
+             "Phase4: stream restores natgrad gamma");
+      expect(fabs(loaded.getLocalLearningRate() - 3e-3) < 1e-12,
+             "Phase4: stream restores local lr");
+      expect(loaded.getMu().equals(mRt.getMu(), ndlutil::MATCHTOL),
+             "Phase4: stream restores mu");
+      expect(loaded.getLogS().equals(mRt.getLogS(), ndlutil::MATCHTOL),
+             "Phase4: stream restores logS");
+      expect(loaded.getSvgp().getWhitenedMean().equals(
+               mRt.getSvgp().getWhitenedMean(), ndlutil::MATCHTOL),
+             "Phase4: stream restores whitened mean");
+      expect(loaded.getKern()->getNumParams() == mRt.getKern()->getNumParams(),
+             "Phase4: stream restores kernel param count");
+      cout << "OK: Phase 4 stream round-trip" << endl;
+      remove(path.c_str());
     }
 
     // ---- Phase 3: probit / ordered ----

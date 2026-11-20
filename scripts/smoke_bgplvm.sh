@@ -28,6 +28,19 @@ STUB="$OUTDIR/tiny"
 ./bgplvm -v 1 -s 3 learn -x 2 -M 3 -# 2 \
   -k lin -k bias -k white \
   "$DATA" "$OUTDIR/cmpnd.model"
+# CIP-0030 Phase 4: SVI path (short Adam) + display / gnuplot / stream load.
+SVI_MODEL="$OUTDIR/tiny_svi.model"
+SVI_STUB="$OUTDIR/tiny_svi"
+./bgplvm -v 1 -s 4 learn --inference svi -x 2 -M 3 -# 5 \
+  --batch 4 --samples 1 --inducing points --natgrad-gamma 0.1 \
+  --local-lr 1e-2 --adam-lr 1e-2 -k rbf -o "$OUTDIR/tiny_svi" \
+  "$DATA" "$SVI_MODEL"
+./bgplvm -v 1 display "$SVI_MODEL"
+./bgplvm -v 1 gnuplot -r 8 -d 0 1 "$SVI_MODEL" "$SVI_STUB"
+test -f "${SVI_STUB}_plot.gp"
+test -f "${OUTDIR}/tiny_svi_mu.dat"
+test -f "${OUTDIR}/tiny_svi_S.dat"
+
 ./bgplvm learn -h >/dev/null
 ./bgplvm display -h >/dev/null
 ./bgplvm gnuplot -h >/dev/null
@@ -36,4 +49,4 @@ test -f "${STUB}_plot.gp"
 test -f "${STUB}_variance_matrix.dat"
 test -f "${OUTDIR}/tiny_mu.dat"
 test -f "${OUTDIR}/tiny_S.dat"
-echo "OK: bgplvm smoke (learn/display/gnuplot -d)"
+echo "OK: bgplvm smoke (learn/display/gnuplot -d + SVI)"

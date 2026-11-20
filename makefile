@@ -62,10 +62,10 @@ gplvm.o: gplvm.cpp gplvm.h ndlexceptions.h ndlstrutil.h CMatrix.h \
 	$(CC) -c gplvm.cpp -o gplvm.o $(CCFLAGS)
 
 # CIP-0017: Bayesian GP-LVM CLI.
-bgplvm: bgplvm.o CClctrl.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o bgplvm bgplvm.o CBayesGplvm.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+bgplvm: bgplvm.o CClctrl.o CBayesGplvm.o CSviBayesGplvm.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o bgplvm bgplvm.o CBayesGplvm.o CSviBayesGplvm.o CSvgp.o CAdam.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o $(LDFLAGS)
 
-bgplvm.o: bgplvm.cpp bgplvm.h CBayesGplvm.h CClctrl.h CKern.h
+bgplvm.o: bgplvm.cpp bgplvm.h CBayesGplvm.h CSviBayesGplvm.h CAdam.h CClctrl.h CKern.h
 	$(CC) -c bgplvm.cpp -o bgplvm.o $(CCFLAGS)
 
 ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
@@ -88,7 +88,7 @@ libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix
 	$(LIBSCOMMAND) libgp$(LIBSEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 
 libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h CTransform.h \

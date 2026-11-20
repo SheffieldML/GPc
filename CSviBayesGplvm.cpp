@@ -7,12 +7,12 @@ using namespace std;
 
 CSviBayesGplvm::CSviBayesGplvm(CKern* kernel, const CMatrix& Yin,
                                unsigned int latDim, unsigned int numInd,
-                               double beta, int verbosity)
-  : pkern(kernel), Y(Yin), psvgp(0), nData(Yin.getRows()),
-    outputDim(Yin.getCols()), latentDim(latDim), numInducing(numInd),
-    numSamples(1), antithetic(false), freezeNoise(false), rng(0),
-    natGradGamma(0.1), localAlpha(1e-2), localBeta1(0.9), localBeta2(0.999),
-    localEps(1e-8), localT(0)
+                               double beta, int verb)
+  : pkern(kernel), ownKern(false), Y(Yin), psvgp(0), verbosity(verb),
+    nData(Yin.getRows()), outputDim(Yin.getCols()), latentDim(latDim),
+    numInducing(numInd), numSamples(1), antithetic(false), freezeNoise(false),
+    rng(0), natGradGamma(0.1), localAlpha(1e-2), localBeta1(0.9),
+    localBeta2(0.999), localEps(1e-8), localT(0)
 {
   if(kernel == 0)
     throw ndlexceptions::Error("CSviBayesGplvm: null kernel");
@@ -46,6 +46,8 @@ CSviBayesGplvm::CSviBayesGplvm(CKern* kernel, const CMatrix& Yin,
 CSviBayesGplvm::~CSviBayesGplvm()
 {
   delete psvgp;
+  if(ownKern)
+    delete pkern;
 }
 
 void CSviBayesGplvm::initXpca()
@@ -95,6 +97,13 @@ void CSviBayesGplvm::setInducingType(const string& typeName)
   if(typeName == "points" || typeName == "whitenoise" || typeName == "greens")
     initZFromMu();
   psvgp->setInducingType(typeName);
+}
+
+string CSviBayesGplvm::getInducingType() const
+{
+  if(psvgp == 0 || psvgp->getInducing() == 0)
+    return "points";
+  return psvgp->getInducing()->typeName();
 }
 
 void CSviBayesGplvm::setLikelihood(CNoise* noise)
@@ -462,4 +471,137 @@ void CSviBayesGplvm::afterBatchStep(const vector<unsigned int>& batch)
   formSamples(batch, XB, yRows, eps);
   const double c = (double)nData / (double)(batch.size() * numSamples);
   psvgp->naturalGradientStepAt(natGradGamma, XB, yRows, c);
+}
+
+void CSviBayesGplvm::display(ostream& os) const
+{
+  os << "SVI Bayesian GPLVM (uncollapsed, sampled q(X)):" << endl;
+  os << "  N=" << nData << " D=" << outputDim << " q=" << latentDim
+     << " M=" << numInducing
+     << " beta=" << (psvgp == 0 ? 0.0 : psvgp->getBeta())
+     << " inducing=" << getInducingType() << endl;
+  os << "  samples=" << numSamples
+     << " antithetic=" << (antithetic ? 1 : 0)
+     << " natgrad_gamma=" << natGradGamma
+     << " local_lr=" << localAlpha << endl;
+  os << "  KL(q(X)||p(X))=" << klX() << endl;
+  if(pkern != 0)
+    pkern->display(os);
+}
+
+void CSviBayesGplvm::writeParamsToStream(ostream& os) const
+{
+  if(psvgp == 0 || pkern == 0)
+    throw ndlexceptions::Error("CSviBayesGplvm::writeParamsToStream: uninitialised model");
+  writeToStream(os, "baseType", "svibayesgplvm");
+  writeToStream(os, "type", "svibayesgplvm");
+  writeToStream(os, "numData", nData);
+  writeToStream(os, "outputDim", outputDim);
+  writeToStream(os, "latentDim", latentDim);
+  writeToStream(os, "numInducing", numInducing);
+  writeToStream(os, "beta", psvgp->getBeta());
+  writeToStream(os, "numSamples", numSamples);
+  writeToStream(os, "antithetic", antithetic);
+  writeToStream(os, "natGradGamma", natGradGamma);
+  writeToStream(os, "localLr", localAlpha);
+  writeToStream(os, "inducingType", getInducingType());
+  writeToStream(os, "windowWidth", psvgp->getInducing()->getWindowWidth());
+  Y.toStream(os);
+  mu.toStream(os);
+  logS.toStream(os);
+  const unsigned int nInd = psvgp->getInducing()->getNumParams();
+  writeToStream(os, "numInducingParams", nInd);
+  CMatrix indP(1, nInd > 0 ? nInd : 1);
+  indP.zeros();
+  if(nInd > 0)
+    psvgp->getInducing()->getParams(indP, 0);
+  indP.toStream(os);
+  psvgp->getWhitenedMean().toStream(os);
+  for(unsigned int j = 0; j < outputDim; j++)
+    psvgp->getWhitenedCov(j).toStream(os);
+  pkern->toStream(os);
+}
+
+void CSviBayesGplvm::readParamsFromStream(istream& is)
+{
+  string tbase = getBaseTypeStream(is);
+  if(tbase != "svibayesgplvm")
+    throw ndlexceptions::StreamFormatError("baseType", "Expected svibayesgplvm");
+  string t = getTypeStream(is);
+  if(t != "svibayesgplvm")
+    throw ndlexceptions::StreamFormatError("type", "Expected svibayesgplvm");
+  nData = (unsigned int)readIntFromStream(is, "numData");
+  outputDim = (unsigned int)readIntFromStream(is, "outputDim");
+  latentDim = (unsigned int)readIntFromStream(is, "latentDim");
+  numInducing = (unsigned int)readIntFromStream(is, "numInducing");
+  const double beta = readDoubleFromStream(is, "beta");
+  numSamples = (unsigned int)readIntFromStream(is, "numSamples");
+  antithetic = readBoolFromStream(is, "antithetic");
+  natGradGamma = readDoubleFromStream(is, "natGradGamma");
+  localAlpha = readDoubleFromStream(is, "localLr");
+  const string indType = readStringFromStream(is, "inducingType");
+  const double winW = readDoubleFromStream(is, "windowWidth");
+
+  if(nData == 0 || outputDim == 0 || latentDim == 0 || numInducing == 0)
+    throw ndlexceptions::StreamFormatError("dims", "SVI Bayesian GPLVM dims must be > 0");
+  if(!(beta > 0.0))
+    throw ndlexceptions::StreamFormatError("beta", "beta must be positive");
+
+  Y.resize(nData, outputDim);
+  mu.resize(nData, latentDim);
+  logS.resize(nData, latentDim);
+  Z.resize(numInducing, latentDim);
+  Y.fromStream(is);
+  mu.fromStream(is);
+  logS.fromStream(is);
+
+  const unsigned int nInd = (unsigned int)readIntFromStream(is, "numInducingParams");
+  CMatrix indP(1, nInd > 0 ? nInd : 1);
+  indP.fromStream(is);
+
+  CMatrix qM(numInducing, outputDim);
+  qM.fromStream(is);
+  vector<CMatrix> qC(outputDim);
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    qC[j].resize(numInducing, numInducing);
+    qC[j].fromStream(is);
+  }
+
+  CKern* loaded = readKernFromStream(is);
+  if(ownKern)
+    delete pkern;
+  pkern = loaded;
+  ownKern = true;
+
+  delete psvgp;
+  Z.zeros();
+  psvgp = new CSvgp(pkern, &mu, &Y, Z, beta, verbosity);
+  if(indType != "points")
+    psvgp->setInducingType(indType);
+  if(winW > 0.0)
+    psvgp->getInducing()->setWindowWidth(winW);
+  if(nInd > 0)
+  {
+    if(nInd != psvgp->getInducing()->getNumParams())
+      throw ndlexceptions::StreamFormatError(
+        "numInducingParams", "mismatch with inducing type");
+    psvgp->getInducing()->setParams(indP, 0);
+  }
+  psvgp->updateKernelMatrices();
+  psvgp->setWhitenedQ(qM, qC);
+  if(natGradGamma > 0.0)
+    psvgp->setNatGradGamma(natGradGamma);
+  Z.deepCopy(psvgp->getInducingCentres());
+
+  mMu.resize(nData, latentDim);
+  vMu.resize(nData, latentDim);
+  mLogS.resize(nData, latentDim);
+  vLogS.resize(nData, latentDim);
+  mMu.zeros();
+  vMu.zeros();
+  mLogS.zeros();
+  vLogS.zeros();
+  localT = 0;
+  freezeNoise = false;
 }

@@ -201,4 +201,4 @@ Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md))
 
 ## Later
 
-CIP-001E live progress / repr, custom kernel factories, coreg / GPLVM façades — follow-ups, not close blockers for the first subset.
+CIP-001E live progress / repr, custom kernel factories, coreg / GPLVM façades — follow-ups, not close blockers for the first subset. SVI Bayesian GPLVM (`CSviBayesGplvm`, CIP-0030) is CLI-first for now (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.

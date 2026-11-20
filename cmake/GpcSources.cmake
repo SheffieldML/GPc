@@ -35,6 +35,7 @@ set(GPC_BGPLVM_EXTRA_SOURCES
   ${GPC_ROOT}/CSviBayesGplvm.cpp
   ${GPC_ROOT}/CSvgp.cpp
   ${GPC_ROOT}/CAdam.cpp
+  ${GPC_ROOT}/CStochasticOptimisable.cpp
   ${GPC_ROOT}/CMltools.cpp
 )
 # Match makefile ppa link line: CPpa + CSparsePpa + CMltools (CIP-0026 sparse path).

@@ -25,12 +25,11 @@ int main(int argc, char** argv)
 
   CMatrix X(1, 1);
   CMatrix y(1, 1);
-  ctrl.readSvmlDataFile(X, y, "examples/spgp1d.svml");
+  ctrl.readData(X, y, "examples/spgp1d.csv");
 
+  // CIP-0027: RBF only; sparse observation noise in β (no auto Bias/White).
   CCmpndKern kern(X);
   kern.addKern(new CRbfKern(X));
-  kern.addKern(new CBiasKern(X));
-  kern.addKern(new CWhiteKern(X));
   kern.setByPath("rbf.lengthscale", 1.0);
 
   CGaussianNoise noise(&y);

@@ -8,8 +8,8 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 
 | Tutorial | Executable | Data | GPy counterpart |
 |---|---|---|---|
-| [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.svml` | `basic_gp` / `toy_rbf_1d` |
-| [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.svml` | `sparse_gp_regression` |
+| [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.csv` (`.svml` legacy) | `basic_gp` / `toy_rbf_1d` |
+| [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.csv` (`.svml` legacy) | `sparse_gp_regression` |
 | [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | EP classification → **IVM substitute** |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |
@@ -22,6 +22,7 @@ Owned outside CIP-0015 Stage 1, but linked here so the tutorial index stays the 
 | Tutorial | Executable | Data | GPy counterpart |
 |---|---|---|---|
 | [Bayesian GPLVM oil 100](./bgplvm_oil100.md) | `bgplvm` | `examples/oilTrain100.svml` | `BayesianGPLVM` |
+| [SVI Bayesian GPLVM](./bgplvm_svi.md) | `bgplvm --inference svi` | `examples/oilTrain100.svml` | uncollapsed / no-psi path ([CIP-0030](../../cip/cip0030.md)) |
 | [MRD two-view smoke](./mrd.md) | `demo_mrd` | synthesised in-process | `MRD` |
 
 ## GPy ↔ GPc checklist (partial)
@@ -31,7 +32,7 @@ Owned outside CIP-0015 Stage 1, but linked here so the tutorial index stays the 
 | `basic_gp` / `toy_rbf_1d` | Stage 1 — [regression_1d](./regression_1d.md) |
 | `basic_kernels` | Planned (compound + CIP-000C types) |
 | `models_basic` (constrain/fix) | Partial — CIP-0014 paths; demos use `setByPath` |
-| `sparse_gp_regression` | Stage 1 — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR; not FITC) |
+| `sparse_gp_regression` | Stage 1 — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR default; FITC/DTC available) |
 | `basic_classification` (EP) | IVM substitute — [ivm_unitsquare](./ivm_unitsquare.md) |
 | Coregionalization tutorials | Phase A helpers + later demo |
 | `gplvm_oil_100` | Stage 1 — [gplvm_oil100](./gplvm_oil100.md) |

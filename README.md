@@ -10,19 +10,22 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 | Compile | [![Compile](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/compile.yml?query=branch%3Amain) |
 | Reference tests | [![Reference tests](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/reference-tests.yml?query=branch%3Amain) |
 | Coverage | [![Coverage](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/coverage.yml?query=branch%3Amain) |
+| Wheels | [![Wheels](https://github.com/SheffieldML/GPc/actions/workflows/wheels.yml/badge.svg?branch=main)](https://github.com/SheffieldML/GPc/actions/workflows/wheels.yml?query=branch%3Amain) |
 | Codecov | [![codecov](https://codecov.io/gh/SheffieldML/GPc/branch/main/graph/badge.svg)](https://codecov.io/gh/SheffieldML/GPc/branch/main) |
 
-**Platforms:** Ubuntu and macOS are the blessed build targets (CIP-0006). Compile and Reference tests are hard gates on both. Coverage stays on Ubuntu. **Windows is not supported** in the current tree (no maintained `make` path / CI).
+**Platforms:** Ubuntu and macOS are the blessed build targets (CIP-0006). Compile and Reference tests are hard gates on both. Coverage stays on Ubuntu. **Windows** has an experimental soft-gated CMake smoke job (MSVC + Intel `ifx` + OpenBLAS, [CIP-002B](cip/cip002B.md)); there is no blessed `make` path on Windows.
 
 **Verification:** reference fixtures under `matfiles/` load through **libmatio** — MATLAB is not required to build or run the test gate (`make USE_MATIO=1 run-matio-tests`). Optional object-level MATLAB I/O remains behind `_NDLMATLAB`.
 
 **Release:** there is no numbered product release and no git tag yet. Treat `main` as the living source of truth; the Status badges above reflect CI on that branch.
 
-Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
+Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/). The target architecture shared with a future JAX-based GPy2 is in [`docs/target-architecture.md`](docs/target-architecture.md).
 
 **Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md).
 
-**Binaries / demos:** `make gp ivm gplvm bgplvm` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
+**Python façade (`gpc`):** NumPy-facing wrapper ([CIP-001D](cip/cip001D.md) / [CIP-002C](cip/cip002C.md)). Users: `pip install gpc` once published (see [`python/README.md`](python/README.md)). Contributors: `pip install -e "python/[test]"` with OpenBLAS + gfortran (same page).
+
+**Binaries / demos:** `make gp ivm gplvm bgplvm ppa` (or `make all`). Optional API demos: `make demos` builds `demo_regression_1d`, `demo_sparse_dtcvar`, `demo_bayes_gplvm`, and `demo_mrd`. Optimiser budget semantics for `-#`: [`docs/optimisers.md`](docs/optimisers.md).
 
 Gaussian Process Software
 =========================
@@ -44,7 +47,7 @@ The software is compiled by writing
 $ make gp
 ```
 
-at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored. Older platform fragments (`make.cygwin`, `make.fc6`, `make.macports`, `make.ubuntu`, `make.atlas`) live under `make/legacy/` and are not CI targets.
+at the command line. Architecture-specific options live in `make.linux` (Ubuntu / GitHub Actions) and `make.osx` (Homebrew macOS). Copy the right file to `make.inc` for a local override; without `make.inc`, `make.linux` is used (C++17). `make.inc` is gitignored. **Make remains the blessed native and CI path.** An optional thin CMake build ([CIP-0020](cip/cip0020.md)) can produce the same core library and CLI smoke targets (`cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix openblas)" && cmake --build build` on Homebrew macOS); it is not the CI gate yet. Older platform fragments and an archived 2020 CMake stub live under `make/legacy/` and are not CI targets.
 
 ### macOS (Homebrew)
 
@@ -58,9 +61,9 @@ $ ./gp -h
 
 `make.osx` uses Homebrew `g++-16` / `gfortran-16` and OpenBLAS. For the matio reference suite on the Mac: `make clean && make USE_MATIO=1 matio-tests` then `make run-matio-tests` (rebuild without `USE_MATIO` if you need `gp`/`ivm`/`gplvm` again, or link with matio as well).
 
-### Linux (Ubuntu) and `RELEASE=1` (CIP-0013)
+### Linux (Ubuntu), default build, and `RELEASE=1` (CIP-0013 / CIP-002D)
 
-Default `make.linux` links **OpenBLAS** (`libopenblas-dev`). For a timed / documented run build:
+Default `make.linux` links **OpenBLAS** (`libopenblas-dev`) and builds with **`-O2 -g`** and cheap checks (`GPC_CHECKS=1`: dimensions / API invariants). For the timed / documented competitive path:
 
 ```sh
 $ sudo apt-get install -y g++ gfortran libopenblas-dev
@@ -71,7 +74,7 @@ $ OPENBLAS_NUM_THREADS=1 ./benchGPc --kind ftc --N 1000 --q 2
 $ OPENBLAS_NUM_THREADS=1 python bench/run_bench.py --kinds ftc,dtcvar,fitc --N 1000 --M 50
 ```
 
-A bare `make` keeps `-ggdb -DDBG` with bounds checks on (`GPC_CHECKS=1`). Reference tests stay on that checking build. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip0013.md`](cip/cip0013.md).
+`make RELEASE=1` is `-O2 -DNDEBUG` with checks off (`GPC_CHECKS=0`). Exhaustive per-element checks: `make CHECKS=full …` (`GPC_CHECKS=2`); reference CI uses that. See [`docs/build-and-ci.md`](docs/build-and-ci.md) and [`cip/cip002D.md`](cip/cip002D.md).
 
 ### Reference tests without MATLAB (libmatio)
 
@@ -112,7 +115,7 @@ One of the advantages of interfacing to the LAPACK and BLAS libraries is that th
 
 ## General Information
 
-The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
+The way the software operates is through the command line. Supervised GP regression uses `./gp`. Classification / IVM uses `./ivm`. Probabilistic Point Assimilation (variational EM classification) uses `./ppa` ([CIP-0023](cip/cip0023.md)). MAP GP-LVM uses `./gplvm`; Bayesian GP-LVM uses `./bgplvm`. Multi-view MRD is the library class `CMrd` (`make demo_mrd`). Help:
 
 ```sh
 $ ./gp -h
@@ -131,23 +134,23 @@ All the tutorial optimisations suggested take less than 1/2 hour to run on my le
 
 ## Examples
 
-The software loads in data in the <a href="http://svmlight.joachims.org/">SVM light</a> format. This is to provide compatibility with other <a href="https://github.com/SheffieldML/GPmat/">Gaussian Process software</a>. Anton Schwaighofer has written <a href="http://staffwww.dcs.shef.ac.uk/people/N.Lawrence/software/svml_toolbox.html"> a package</a> which can write from MATLAB to the SVM light format.
+Preferred training data is dense <b>CSV/TSV</b> (last column = target <code>y</code>; preceding columns = <code>X</code>). The file extension selects the reader (<code>.csv</code>/<code>.tsv</code>/<code>.txt</code>, or legacy <a href="http://svmlight.joachims.org/">SVM-light</a> <code>.svml</code>). Python examples that need third-party sets should use <a href="https://github.com/sods/ods"><code>pods</code></a> (GPy parity; see CIP-0022 / REQ-0011). Older <code>.svml</code> files remain supported.
 
 For the maintained tutorial versions of these walks (GPy checklist mapping, DTCVAR sparse path, IVM / MAP GPLVM / Bayesian GPLVM / MRD), see [`docs/tutorials/`](docs/tutorials/).
 
 ## One Dimensional Data
 
-Provided with the software, in the `examples` directory, is a one dimensional regression problem. The file is called `sinc.svml` (see also [`docs/tutorials/regression_1d.md`](docs/tutorials/regression_1d.md)).
+Provided with the software, in the `examples` directory, is a one dimensional regression problem. Prefer `sinc.csv` (see also [`docs/tutorials/regression_1d.md`](docs/tutorials/regression_1d.md)); `sinc.svml` still works.
 
 First we will learn the data using the following command,
 
 ```sh
-$ ./gp -v 3 learn -# 100 examples/sinc.svml sinc.model
+$ ./gp -v 3 learn -# 100 examples/sinc.csv sinc.model
 ```
 
 The flag `-v 3` sets the verbosity level to 3 (the highest level) which causes the iterations of the scaled conjugate gradient algorithm to be shown. The flag `-# 100` is the optimiser budget (`setMaxIters`): for SCG (default) that is algorithm iterations; for `-O lbfgs` / `quasinew` it caps both reverse-communication steps and function evaluations (GPy-aligned). See [`docs/optimisers.md`](docs/optimisers.md).
 
-The software will load the data in `sinc.svml`. The labels are included in this file but they are <i>not</i> used in the optimisation of the model. They are for visualisation purposes only.
+The software will load the data in `sinc.csv` (dense CSV: last column is the continuous target).
 
 ### Gnuplot
 
@@ -186,7 +189,7 @@ Notice the fact that the covariance function is composed of an RBF kernel, also 
 For your convenience a `gnuplot` file may generated to visualise the data. First run
 
 ```sh
-$ ./gp gnuplot -r 400 examples/sinc.svml sinc.model sinc
+$ ./gp gnuplot -r 400 examples/sinc.csv sinc.model sinc
 ```
 
 The `sinc` supplied as the last argument acts as a stub for gnuplot to create names from. Generated scripts use the Qt terminal by default (works with a stock Homebrew `gnuplot`). For example:
@@ -212,19 +215,21 @@ The other files created are `sinc_error_bar_data.dat` (x, ymin, ymax for the ±2
 
 ### Other Data / Sparse DTCVAR
 
-You might also want to try a larger 1D set, `examples/spgp1d.svml`. Full GP:
+You might also want to try a larger 1D set, `examples/spgp1d.csv` (`.svml` still works). Full GP:
 
 ```sh
-$ ./gp -v 3 learn -# 100 examples/spgp1d.svml spgp1d.model
+$ ./gp -v 3 learn -# 100 examples/spgp1d.csv spgp1d.model
 ```
 
-Sparse variational (DTCVAR) with an inducing set — the maintained sparse tutorial path (prefer this over FITC; CLI FITC still errors out):
+Sparse variational (DTCVAR) with an inducing set — the maintained sparse tutorial path (prefer this over FITC; `-A fitc` / `-A dtc` also available):
 
 ```sh
-$ ./gp -v 3 learn -# 100 -A dtcvar -a 20 examples/spgp1d.svml spgp1d_dtcvar.model
+$ ./gp -v 3 learn -# 100 -A dtcvar -a 20 examples/spgp1d.csv spgp1d_dtcvar.model
 $ ./gp display spgp1d_dtcvar.model
-$ ./gp gnuplot -r 400 examples/spgp1d.svml spgp1d_dtcvar.model spgp1d_dtcvar
+$ ./gp gnuplot -r 400 examples/spgp1d.csv spgp1d_dtcvar.model spgp1d_dtcvar
 ```
+
+Optional inducing families (default `points`): `--inducing whitenoise` for stationary kernels when \(K_{uu}\) is lengthscale-ill-conditioned ([CIP-001C](cip/cip001C.md)); `--inducing greens` for **1-D** Brownian / Matérn causal features ([CIP-0029](cip/cip0029.md)); `--inducing weightspace` for MLP / arc-cosine **ridge** windows in whitened weight space ([CIP-0028](cip/cip0028.md) — finite \(\Sigma\) via `-k mlp`, angular limit via `-k arccos --arccos-order 0`). Window width: `--window-width`. Compounds: one of `mlp`/`mlpard`/`arccos` plus optional `white`; noise in \(\beta\). See [`docs/numerics.md`](docs/numerics.md) (Sparse inducing families).
 
 See [`docs/tutorials/sparse_regression_1d.md`](docs/tutorials/sparse_regression_1d.md) and optional `make demo_sparse_dtcvar`.
 

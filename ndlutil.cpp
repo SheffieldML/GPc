@@ -399,7 +399,60 @@ namespace ndlutil {
     return 0;
     }*/
 
-}
+
+
+  // Physicists' Gauss–Hermite abscissae/weights (n=20), Golub–Welsch / Abramowitz & Stegun.
+  void gaussHermite(unsigned int n, vector<double>& x, vector<double>& w)
+  {
+    if(n != 20)
+      throw ndlexceptions::Error("ndlutil::gaussHermite: only n=20 is shipped");
+    static const double x20[20] = {
+      -5.387480890011233,-4.603682444550744,-3.944764040115625,-3.347854567383216,
+      -2.788806058428130,-2.254974002074507,-1.738537712116586,-1.234076215395323,
+      -0.737473728545394,-0.245340708300901, 0.245340708300901, 0.737473728545394,
+       1.234076215395323, 1.738537712116586, 2.254974002074507, 2.788806058428130,
+       3.347854567383216, 3.944764040115625, 4.603682444550744, 5.387480890011233
+    };
+    static const double w20[20] = {
+      2.229393645534151e-13,4.399340992273075e-10,1.086069370769281e-07,7.802556478532086e-06,
+      2.283386360163540e-04,3.243773342237862e-03,2.481052088746361e-02,1.090172060200235e-01,
+      2.866755053628341e-01,4.622436696006101e-01,4.622436696006101e-01,2.866755053628341e-01,
+      1.090172060200235e-01,2.481052088746361e-02,3.243773342237862e-03,2.283386360163540e-04,
+      7.802556478532086e-06,1.086069370769281e-07,4.399340992273075e-10,2.229393645534151e-13
+    };
+    x.assign(x20, x20 + 20);
+    w.assign(w20, w20 + 20);
+  }
+
+  double gaussHermiteExpect(double mu, double var, unsigned int n,
+                            double (*g)(double f, void* ctx),
+                            double (*gPrime)(double f, void* ctx),
+                            void* ctx, double& gMu, double& gVar)
+  {
+    if(!(var >= 0.0))
+      throw ndlexceptions::Error("gaussHermiteExpect: var must be non-negative");
+    vector<double> x, w;
+    gaussHermite(n, x, w);
+    const double scale = sqrt(2.0 * max(var, 0.0));
+    const double invSqrtPi = 1.0 / sqrt(M_PI);
+    double E = 0.0;
+    gMu = 0.0;
+    gVar = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double fi = mu + scale * x[i];
+      const double wi = w[i] * invSqrtPi;
+      E += wi * g(fi, ctx);
+      const double gp = gPrime(fi, ctx);
+      gMu += wi * gp;
+      // f = μ + √(2 var) x_i;  ∂f/∂var = x_i / √(2 var) = x_i / scale.
+      if(scale > 0.0)
+        gVar += wi * gp * (x[i] / scale);
+    }
+    return E;
+  }
+
+} // namespace ndlutil
 
 //#ifdef _MSC_VER
 extern "C" double rand_(const int &flag)

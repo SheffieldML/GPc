@@ -1,0 +1,158 @@
+# CIP-002E tier 2: path-triggered + workflow_dispatch (unchanged policy).
+name: Bench timing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CMatrix.*'
+      - 'CKern.*'
+      - 'CNoise.*'
+      - 'CGp.*'
+      - 'CSvgp.*'
+      - 'CCholAdjoint.*'
+      - 'CLQAdjoint.*'
+      - 'CInducing.*'
+      - 'ndlutil.*'
+      - 'ndlfortran.*'
+      - 'bench/**'
+      - 'makefile'
+      - 'make.linux'
+      - 'make.osx'
+      - '.github/workflows/bench-timing.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'CMatrix.*'
+      - 'CKern.*'
+      - 'CNoise.*'
+      - 'CGp.*'
+      - 'CSvgp.*'
+      - 'CCholAdjoint.*'
+      - 'CLQAdjoint.*'
+      - 'CInducing.*'
+      - 'ndlutil.*'
+      - 'ndlfortran.*'
+      - 'bench/**'
+      - 'makefile'
+      - 'make.linux'
+      - 'make.osx'
+      - '.github/workflows/bench-timing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  # CIP-002D QW8: RELEASE timings as artifacts; self-baseline compare is warn-only.
+  bench-timing:
+    runs-on: ubuntu-latest
+    env:
+      GPC_BENCH_CELL: ubuntu-openblas-release
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ \
+            gfortran \
+            libopenblas-dev \
+            make \
+            python3
+
+      - name: Configure platform make fragment
+        run: rm -f make.inc
+
+      - name: Build benchGPc (RELEASE)
+        run: make RELEASE=1 bench
+
+      - name: Run fixed timing cases
+        run: |
+          python3 bench/run_timing_cases.py \
+            --bench ./benchGPc \
+            --cases bench/timing_cases.json \
+            --out bench/timings.json \
+            --sha "${{ github.sha }}"
+
+      - name: Upload timings artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-timings
+          path: |
+            bench/timings.json
+            bench/timing_cases.json
+          retention-days: 30
+
+      - name: Upload main timings baseline
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-timings-main
+          path: bench/timings.json
+          retention-days: 90
+
+      - name: Fetch main timings baseline
+        if: always() && github.event_name == 'pull_request' && hashFiles('bench/timings.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p bench/baseline
+          for id in $(gh run list \
+            --workflow=bench-timing.yml \
+            --branch=main \
+            --status=success \
+            --limit=30 \
+            --json databaseId \
+            --jq '.[].databaseId'); do
+            if gh run download "$id" \
+              -n bench-timings-main \
+              -D bench/baseline 2>/dev/null; then
+              echo "Downloaded baseline from run $id"
+              exit 0
+            fi
+          done
+          echo "No bench-timings-main artifact on recent main runs"
+
+      - name: Compare vs main baseline (warn-only)
+        if: always() && github.event_name == 'pull_request' && hashFiles('bench/timings.json') != ''
+        run: |
+          BASE=bench/baseline/timings.json
+          python3 bench/compare_timing.py \
+            "$BASE" bench/timings.json \
+            --md bench/timing_trend.md \
+            --baseline-ref main \
+            --head-ref "${{ github.sha }}"
+          if [ -f bench/timing_trend.md ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat bench/timing_trend.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Comment timing trend on PR
+        if: always() && github.event_name == 'pull_request' && hashFiles('bench/timing_trend.md') != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('bench/timing_trend.md', 'utf8');
+            const marker = '<!-- cip002d-bench-timing-trend -->';
+            const full = marker + '\n' + body;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100
+            });
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body: full
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body: full
+              });
+            }

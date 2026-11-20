@@ -271,6 +271,9 @@ public:
   {
     return nrows*ncols;
   }
+  // CIP-002D QW7: count of memAllocate calls (resize/new). Reset around one eval.
+  static void resetTotalAlloc() { totalAlloc = 0; }
+  static unsigned int getTotalAlloc() { return totalAlloc; }
   // Return pointer to the raw column-major storage for the matrix
   inline double* getVals() 
   {

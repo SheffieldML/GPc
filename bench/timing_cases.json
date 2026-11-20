@@ -1,0 +1,50 @@
+{
+  "protocol": "CIP-002D QW8 fixed cases (E1 / E2 sizes / E5); q=2; OPENBLAS_NUM_THREADS=1",
+  "cases": [
+    {
+      "id": "e1_ftc",
+      "kind": "ftc",
+      "kern": "rbf",
+      "N": 1000,
+      "q": 2,
+      "M": 0,
+      "reps": 7
+    },
+    {
+      "id": "e1_dtcvar",
+      "kind": "dtcvar",
+      "kern": "rbf",
+      "N": 5000,
+      "q": 2,
+      "M": 100,
+      "reps": 7
+    },
+    {
+      "id": "e1_fitc",
+      "kind": "fitc",
+      "kern": "rbf",
+      "N": 5000,
+      "q": 2,
+      "M": 100,
+      "reps": 7
+    },
+    {
+      "id": "e5_svgp",
+      "kind": "svgp",
+      "kern": "rbf",
+      "N": 5000,
+      "q": 2,
+      "M": 100,
+      "reps": 7
+    },
+    {
+      "id": "qw8_mlp_ftc",
+      "kind": "ftc",
+      "kern": "mlp",
+      "N": 1000,
+      "q": 2,
+      "M": 0,
+      "reps": 7
+    }
+  ]
+}

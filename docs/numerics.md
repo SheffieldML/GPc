@@ -15,6 +15,24 @@ accuracy, and invariance under extreme inputs (GPy CIP-0011 sibling). CI:
 `metrics.json` trend. Cross-branch outcome diff:
 `python3 numerical_stability/compare.py`. Strict xfails are listed in CIP-0019.
 
+**Two layers.** CIP-0019 owns pass/xfail `OUTCOME` cliffs (NaN / invariance /
+unexpected fail). CIP-001A adds a parallel `METRIC` stream: value, category,
+budget, and pinned cell label. Soft-warn by default on PR trend; do not merge
+metrics into `run-matio-tests`. Do not copy OUTCOME cliff tolerances into
+`emitMetric` budgets — cliffs detect gross failure; budgets track the category
+error mechanism. Tighten budgets only with analysis; never hide a bug by
+loosening them.
+
+| Category | Budget (starting) | Typical probes |
+|---|---|---|
+| `A_machine` | rtol 1e-14 / atol 1e-15 | `logDet` on scaled I; well-conditioned Cholesky reconstruct |
+| `B_linalg` | rtol 1e-12 / atol 1e-13 | `pdinv` residual vs cond; `jitChol` residual |
+| `C_special` | rtol 1e-10 / atol 1e-12 | `lnCumGaussian` vs `log(Φ)`; mills asymptote |
+| `D_analytic` | rtol 1e-8 / atol 1e-9 | kernel symmetry / diag; exact-vs-FITC when close |
+| `D_fd` | rtol 1e-5 / atol 1e-5 | FD vs analytic hyperparameter grads |
+| `E_invariance` | atol 1e-8 … 1e-6 | translation ΔK; input-rescaling LL |
+| `F_model` | rtol 1e-4 / atol 1e-5 | inducing≈X LL gap; predictive variance floor |
+
 Sparse algebra mode for the suite: `GPC_SPARSE_LINALG=stable|legacy` (cell label
 becomes `…+stable` / `…+legacy`). Dual-path metric compare:
 `make compare-sparse-modes` or `python3 numerical_stability/compare_sparse_modes.py`.
@@ -38,6 +56,8 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 - Evaluators call `ensureMUpToDate` / `ensureKUpToDate` / `ensureADUpToDate` / `ensureAlphaUpToDate` before reading cached factors.
 - One model instance is single-threaded; do not share a live `CGp` / `CGplvm` across threads.
 
+Intra-evaluation parallelism (GEMM distances via multi-threaded BLAS; optional OpenMP over disjoint workspace rows) is [CIP-0025](../cip/cip0025.md) / [REQ-0013](../requirements/req0013_intra-eval-kernel-parallelism.md) — L4 relative to the L2/L3 contract in [CIP-001F](../cip/cip001F.md). See [docs/build-and-ci.md](./build-and-ci.md) for `GPC_OPENMP` and BLAS nesting. Same-instance concurrent APIs remain out of scope.
+
 ## Spherical PITC ([CIP-000F](../cip/cip000F.md))
 
 `CGp::PITC` implements the GPmat spherical path: contiguous `blockEnd` partitions (default matching `gpCreate`), block \(D\) / \(A\) updates, log-likelihood, and `gpCovGrads`. Gate with `matfiles/testGppitc.mat` via `testGaussian("pitc")`. Regenerate with `make USE_MATIO=1 genTestGpPitc && python scripts/gen_testGppitc.py`. FD check: `make diagPitc && ./diagPitc`.
@@ -45,9 +65,28 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 
 FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/DTCVAR/PITC. An earlier FITC-only `+ N log 2π` before `L *= -0.5` double-counted that constant (offset \(\tfrac{d N}{2}\log 2\pi\); gradients unaffected). Removed 2026-11-16 — see backlog `2026-11-15_fitc-logtwopi-double-count`. MATLAB-era FITC fixtures may still differ by that amount; `testGp` accepts either convention via `logLikMatchesFixture`.
 
+## Sparse inducing families
+
+`CGp` sparse approximations (DTC / DTCVAR / FITC / PITC) take an inducing family via `--inducing` / `setInducingType`:
+
+| Family | CLI | \(K_{uu}\) | When to use |
+|---|---|---|---|
+| **points** (default) | `points` | \(k(Z,Z)\) | General case; inducing centres in input space |
+| **whitenoise** | `whitenoise` | window Gram \(\langle\psi_m,\psi_n\rangle\) (kernel-free) | Stationary kernels (RBF, Matérn, …) in any \(d\); lengthscale-driven \(\kappa(K_{uu})\) blow-up ([CIP-001C](../cip/cip001C.md)) |
+| **greens** | `greens` | same window Gram as WN | **1-D** causal / Markov kernels (Brownian, integrated Brownian, Exp / Matérn-\(\nu=p+\tfrac12\)); erf / smoothed-ramp \(K_{fu}\) ([CIP-0029](../cip/cip0029.md)) |
+| **weightspace** | `weightspace` | ridge Gram in whitened \(\boldsymbol\omega\) (kernel-free; \(\mathrm{diag}=1\)) | Dot-product kernels: **MLP** (finite \(\Sigma\), learn \(w,b\)) or **arccos** order 0 (infinite / angular) / order 1 (soft-ReLU); [CIP-0028](../cip/cip0028.md) |
+
+Fixed window width: `--window-width` (default: median nearest-neighbour spacing of centres; for weight-space ridge, init picks \(s\) from offset spacing under a \(\kappa(K_{uu})\le10^4\) budget). Greens rejects \(d\neq1\). Prefer DTCVAR for the variational bound; points remain the right default when \(K_{uu}\) is well conditioned.
+
+**Weight-space compounds.** Exactly one signal component among `mlp` / `mlpard` / `arccos`, plus optional `white` (contributes 0 to \(K_{fu}\)). Put observation noise in \(\beta\) / `Gaussian_noise.variance` ([CIP-0027](../cip/cip0027.md)). Bias, RBF, or a second signal kernel throws a clear Error. Init: orthogonal direction blocks capped by \(D'=d+1\), grow \(M\) via \(n_{\mathrm{off}}\). Prefer MLP when \(\Sigma\) should be learned; arccos-0 for the angular / infinite-\((w,b)\) limit; arccos-1 for Cho–Saul order-1 / soft-ReLU ridges (capture ~0.4 at the same \(\kappa\) budget where erf reaches ~0.9).
+
+Stability cells: `wn_ls_sweep_*` (point vs white-noise RBF); `greens_var_sweep_*` / `greens_ls_sweep_*` (Brownian variance and Matérn lengthscale vs greens); `ws_ridge_wv_sweep_*` (ridge weight-space: \(\kappa\) flat in `weightVariance`, variance captured, DTCVAR finite under StableFactor/LQ).
+
 ## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md) / [CIP-001B](../cip/cip001B.md))
 
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setSparseLinalgMode` or `gp … --sparse-linalg stable|lq|legacy` (prefer the long form: short `-L` collides with `--Learn-scales`).
+
+[CIP-000E](../cip/cip000E.md) introduced the dual-path flag and the first StableFactor forward path (trsm for \(V\)). [CIP-0012](../cip/cip0012.md) **upgraded StableFactor in place** to whitened \(C=I+B\Lambda^{-1}B^\top\) with reverse-mode adjoint gradients — 000E is superseded-complete; the flag and `diagDtcvar` harness remain. [CIP-001B](../cip/cip001B.md) adds the LQ default for collapsed bounds.
 
 - **LQ** (default, [CIP-001B](../cip/cip001B.md)): whitened forward \(B = U^{-\top}K_{uf}\); form \(C\) by LQ of \([I,\,\sqrt{\beta}B]\) (DTC/DTCVAR) or \([I,\,\sqrt{\beta}V]\) (FITC) instead of Gram+chol. Upper \(R=L^\top\) lands in `LcholC` for prediction. Gradients reverse through Seeger §4.3 `lqAdjoint` (`CLQAdjoint`) then the CIP-0012 whitening adjoints — not `pdinv(C)`. PITC stays on the StableFactor Gram path under `lq` for now.
 - **StableFactor** ([CIP-0012](../cip/cip0012.md)): same whitening; \(C = I + B\Lambda^{-1}B^\top\) via `syrk`+`potrf` (DTC/DTCVAR: \(C=I+\beta BB^\top\); FITC diagonal \(\Lambda\); PITC: \(Q_b=B_b^\top B_b\), \(C=I+\beta\sum B_b D_b^{-1}B_b^\top\)). Reverse-mode grads for DTC/DTCVAR/FITC/PITC use Murray blocked Cholesky / `trsm` adjoints (`CCholAdjoint`). Prediction for all four approximations uses \(U,C\) factors.

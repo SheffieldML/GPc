@@ -2,11 +2,11 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001D"
-last_updated: "2026-11-18"
-status: "In Progress"
-compressed: false
+last_updated: "2026-11-20"
+status: "Closed"
+compressed: true
 related_requirements: ["000E", "0008", "0005", "0009", "000F"]
-related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E"]
+related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E", "0028", "002F"]
 tags:
 - cip
 - python
@@ -26,19 +26,22 @@ title: "Light Python façade over GPc for GPy users"
 
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
-- [x] In Progress - Actively being implemented (worktree `cip001D-python-facade`)
-- [ ] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
 ## Backlog
 
 - [Phase A — scaffold + NumPy/`CMatrix` bridge](../backlog/features/2026-11-18_cip001D-phase-a-scaffold.md) (High, Completed)
-- [Phase B — FTC GPRegression + paths](../backlog/features/2026-11-18_cip001D-phase-b-gp.md) (High, In Progress — smoke green; docs/native compare open)
-- [Phase C — sparse DTCVAR façade](../backlog/features/2026-11-18_cip001D-phase-c-sparse.md) (High, Ready)
-- [Phase D — subset checklist + polish](../backlog/features/2026-11-18_cip001D-phase-d-polish.md) (Medium, Ready)
-- [Phase E — notebooks / pods / thin plot extras](../backlog/features/2026-11-18_cip001D-phase-e-notebooks.md) (Medium, Ready)
+- [Phase B — FTC GPRegression + paths](../backlog/features/2026-11-18_cip001D-phase-b-gp.md) (High, Completed)
+- [Phase C — sparse DTCVAR façade](../backlog/features/2026-11-18_cip001D-phase-c-sparse.md) (High, Completed)
+- [Phase D — subset checklist + polish](../backlog/features/2026-11-18_cip001D-phase-d-polish.md) (Medium, Completed)
+- [Phase E — notebooks / pods / thin plot extras](../backlog/features/2026-11-18_cip001D-phase-e-notebooks.md) (Medium, Completed)
+- [Phase F — MLP / arc-cosine kernels + olympic notebook](../backlog/features/2026-11-19_cip001D-phase-f-mlp-kernels.md) (High, Completed)
+- [GPy-form kern / models / compound +](../backlog/features/2026-11-20_cip001D-gpy-form-kern-models.md) (High, Completed)
+- Sibling (CIP-0028): [Python weight-space inducing + ridge notebook](../backlog/features/2026-11-19_cip0028-python-weightspace-notebook.md) (High, Completed)
 
 ## Summary
 
@@ -228,12 +231,14 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 ## Implementation Status
 
 - [x] Phase A: package scaffold + NumPy/`CMatrix` bridge
-- [ ] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native (wrapper + smoke tests green; docs/compare open)
-- [x] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML)
-- [ ] Phase C: sparse DTCVAR façade + pytest
-- [ ] Phase D: subset checklist, negative tests, README install notes
-- [ ] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
-- [ ] Close: REQ-000E acceptance criteria checked; compress usage into `docs/` / README
+- [x] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native
+- [x] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML) — supplied with [CIP-001E](./cip001E.md)
+- [x] Phase C: sparse DTCVAR façade + pytest (`fitc` / `dtc` also exposed; DTCVAR default)
+- [x] Phase D: subset checklist, negative tests, README install notes
+- [x] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
+- [x] Phase F: MLP / arc-cosine string kernels + notebooks
+- [x] GPy-form API: `gpc.kern` / `gpc.models` / compound `+` / `kernel=` object (string defaults retained)
+- [x] Close: REQ-000E façade acceptance for first subset checked (compound-kernel recipe + side-by-side). Interactive `help()` / docstring richness → [CIP-002F](./cip002F.md). Binary wheels → [CIP-002C](./cip002C.md).
 
 ## References
 

@@ -6,6 +6,31 @@
 #include <sstream>
 #include <vector>
 #include "ndlstrutil.h"
+#include "lapack.h"
+
+namespace {
+/* CIP-002D QW4: Frobenius products over contiguous column-major storage. */
+inline double frobeniusDot(const CMatrix& A, const CMatrix& B)
+{
+  DIMENSIONMATCH(A.getRows() == B.getRows() && A.getCols() == B.getCols());
+  const int n = (int)(A.getRows() * A.getCols());
+  return ddot_(n, A.getVals(), 1, B.getVals(), 1);
+}
+inline double frobeniusNorm2(const CMatrix& A)
+{
+  const int n = (int)(A.getRows() * A.getCols());
+  return ddot_(n, A.getVals(), 1, A.getVals(), 1);
+}
+/* Add W(:, col0:col0+ncols-1) into dest (same row count); one daxpy when contiguous. */
+inline void axpyContiguousBlock(CMatrix& dest, const CMatrix& W,
+                                unsigned int col0, double alpha)
+{
+  DIMENSIONMATCH(dest.getRows() == W.getRows());
+  DIMENSIONMATCH(col0 + dest.getCols() <= W.getCols());
+  const int n = (int)(dest.getRows() * dest.getCols());
+  daxpy_(n, alpha, W.getVals() + (size_t)col0 * W.getRows(), 1, dest.getVals(), 1);
+}
+} // namespace
 CGp::CGp() 
   : CMapModel(), CProbabilisticOptimisable()
 {
@@ -107,6 +132,9 @@ void CGp::_init()
   jitter = 1e-6;
   inducingFixed=false;
   betaFixed=false;
+  likelihoodVarianceFixed=false;
+  allowWhiteAndLikelihoodNoise=false;
+  dualNoiseWarned=false;
   spherical=true;
   optimiseX = false;
   backConstrained = false;
@@ -349,6 +377,9 @@ void CGp::initVals()
     pnoise->updateSites(m, beta, i, nu, g, i);
   }
   setBetaVals(1e3);
+  // CIP-0027: sparse β is the algebra; keep likelihood.variance = 1/β in sync.
+  if(isSparseApproximation() && isGaussianNoise())
+    syncLikelihoodVarianceFromSparseBeta();
   updateM();
   
   if(isSparseApproximation()) 
@@ -363,6 +394,7 @@ void CGp::initVals()
       X_u.copyRowRow(i, *pX, ind[i]);	
     }
   }
+  maybeWarnDualObservationNoise();
 }
 
 
@@ -382,6 +414,155 @@ string CGp::getNoiseType() const
   return pnoise->getType();
 }
 
+bool CGp::isGaussianNoise() const
+{
+  return pnoise!=0 && pnoise->getType()=="gaussian";
+}
+
+bool CGp::isLikelihoodVariancePath(const string& path) const
+{
+  return path=="likelihood.variance"
+    || path=="Gaussian_noise.variance"
+    || path=="sigma2";
+}
+
+bool CGp::hasWhiteComponent() const
+{
+  const vector<string> paths=pkern->paramPaths();
+  for(size_t i=0; i<paths.size(); i++)
+  {
+    const string& p=paths[i];
+    if(p.compare(0, 5, "white")==0 && p.find(".variance")!=string::npos)
+      return true;
+  }
+  return false;
+}
+
+bool CGp::hasTrainableWhite() const
+{
+  if(!hasWhiteComponent())
+    return false;
+  try
+  {
+    const unsigned int idx=pkern->paramIndex("white.variance");
+    return !isKernParamFixed(idx);
+  }
+  catch(ndlexceptions::Error&)
+  {
+    // Duplicate / whitefixed labels: treat any positive white as trainable.
+    return pkern->getWhite()>0.0;
+  }
+}
+
+bool CGp::addsLikelihoodVarianceToGram() const
+{
+  // CIP-0027: FTC Gram gets σ² from the likelihood when White is not already
+  // owning observation noise (legacy dual-path fallback).
+  if(isSparseApproximation() || !isGaussianNoise())
+    return false;
+  if(hasWhiteComponent())
+  {
+    if(likelihoodVarianceFixed)
+      return false;
+    // Migrating: White fixed, variance free → likelihood owns the Gram noise.
+    try
+    {
+      const unsigned int idx=pkern->paramIndex("white.variance");
+      if(isKernParamFixed(idx))
+        return true;
+    }
+    catch(ndlexceptions::Error&)
+    {
+    }
+    return false;
+  }
+  return true;
+}
+
+double CGp::getLikelihoodVariance() const
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("likelihood.variance requires a Gaussian noise model.");
+  return static_cast<const CGaussianNoise*>(pnoise)->getVariance();
+}
+
+void CGp::setLikelihoodVariance(double val)
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("likelihood.variance requires a Gaussian noise model.");
+  BOUNDCHECK(val>0.0);
+  static_cast<CGaussianNoise*>(pnoise)->setVariance(val);
+  if(isSparseApproximation())
+    syncSparseBetaFromLikelihoodVariance();
+  setKupToDate(false);
+  maybeWarnDualObservationNoise();
+}
+
+void CGp::syncSparseBetaFromLikelihoodVariance()
+{
+  if(!isSparseApproximation() || !isGaussianNoise())
+    return;
+  const double s2=getLikelihoodVariance();
+  BOUNDCHECK(s2>0.0);
+  setBetaVal(1.0/s2);
+}
+
+void CGp::syncLikelihoodVarianceFromSparseBeta()
+{
+  if(!isSparseApproximation() || !isGaussianNoise())
+    return;
+  const double b=getBetaVal();
+  BOUNDCHECK(b>0.0);
+  static_cast<CGaussianNoise*>(pnoise)->setVariance(1.0/b);
+}
+
+void CGp::maybeWarnDualObservationNoise() const
+{
+  if(dualNoiseWarned || getVerbosity()<1)
+    return;
+  if(!isGaussianNoise() || !hasTrainableWhite() || likelihoodVarianceFixed)
+    return;
+  if(allowWhiteAndLikelihoodNoise)
+  {
+    cerr << "Warning (CIP-0027): allowWhiteAndLikelihoodNoise: trainable White "
+         << "and free likelihood.variance both present." << endl;
+  }
+  else
+  {
+    cerr << "Warning (CIP-0027): trainable White and free likelihood.variance "
+         << "are both present; prefer likelihood.variance and drop White for "
+         << "Gaussian regression (IVM keeps White)." << endl;
+  }
+  dualNoiseWarned=true;
+}
+
+void CGp::enforceObservationNoisePolicy() const
+{
+  // CIP-0027 Phase C: FTC Gaussian regression must not freely train both
+  // White-in-K and likelihood.variance unless explicitly allowed.
+  if(isSparseApproximation() || !isGaussianNoise())
+    return;
+  if(allowWhiteAndLikelihoodNoise)
+    return;
+  if(hasTrainableWhite() && !likelihoodVarianceFixed)
+  {
+    throw ndlexceptions::Error(
+      "CIP-0027: trainable White and free likelihood.variance both present. "
+      "Fix likelihood.variance (legacy White noise), drop White "
+      "(likelihood-owned noise), or setAllowWhiteAndLikelihoodNoise(true) "
+      "/ --allow-white-and-noise.");
+  }
+}
+
+void CGp::fixLikelihoodVariance(bool val)
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("Cannot fix likelihood.variance without Gaussian noise.");
+  likelihoodVarianceFixed=val;
+  if(isSparseApproximation())
+    betaFixed=val;
+}
+
 void CGp::ensureKernFixedSize()
 {
   const unsigned int n = pkern->getNumParams();
@@ -394,6 +575,14 @@ void CGp::resolveFixPath(const string& path, int& kind, unsigned int& index) con
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(p) || isLikelihoodVariancePath(path))
+  {
+    if(!isGaussianNoise())
+      throw ndlexceptions::Error("likelihood.variance fix path requires Gaussian noise.");
+    kind=3;
+    index=0;
+    return;
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
@@ -420,9 +609,11 @@ vector<string> CGp::paramPaths() const
 {
   vector<string> paths;
   const vector<string> kpaths=pkern->paramPaths();
-  paths.reserve(kpaths.size()+getOutputDim()+1);
+  paths.reserve(kpaths.size()+getOutputDim()+2);
   for(size_t i=0; i<kpaths.size(); i++)
     paths.push_back(string("kern.")+kpaths[i]);
+  if(isGaussianNoise())
+    paths.push_back("likelihood.variance");
   if(isSparseApproximation())
     paths.push_back("beta");
   if(isOutputScaleLearnt())
@@ -438,6 +629,12 @@ double CGp::getByPath(const string& path) const
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(path) || isLikelihoodVariancePath(p))
+  {
+    if(isSparseApproximation())
+      return 1.0/getBetaVal();
+    return getLikelihoodVariance();
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
@@ -461,11 +658,18 @@ void CGp::setByPath(const string& path, double val)
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(path) || isLikelihoodVariancePath(p))
+  {
+    setLikelihoodVariance(val);
+    return;
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
       throw ndlexceptions::Error("beta path only valid for sparse approximations.");
     setBetaVal(val);
+    if(isGaussianNoise())
+      syncLikelihoodVarianceFromSparseBeta();
     return;
   }
   if(p.compare(0, 6, "scale.")==0)
@@ -480,6 +684,7 @@ void CGp::setByPath(const string& path, double val)
   }
   pkern->setByPath(p, val);
   setKupToDate(false);
+  maybeWarnDualObservationNoise();
 }
 
 void CGp::fixKernParam(unsigned int index)
@@ -508,6 +713,8 @@ void CGp::fixBeta(bool val)
   if(val && !isSparseApproximation())
     throw ndlexceptions::Error("Cannot fix beta on a non-sparse GP.");
   betaFixed=val;
+  if(isGaussianNoise())
+    likelihoodVarianceFixed=val;
 }
 
 void CGp::clearFixes()
@@ -516,6 +723,7 @@ void CGp::clearFixes()
   for(size_t i=0; i<kernParamFixed.size(); i++)
     kernParamFixed[i]=false;
   betaFixed=false;
+  likelihoodVarianceFixed=false;
   for(size_t i=0; i<scaleParamFixed.size(); i++)
     scaleParamFixed[i]=false;
 }
@@ -529,6 +737,8 @@ void CGp::fix(const string& path)
     fixKernParam(index);
   else if(kind==1)
     fixBeta(true);
+  else if(kind==3)
+    fixLikelihoodVariance(true);
   else
   {
     if(scaleParamFixed.size()!=getOutputDim())
@@ -546,6 +756,8 @@ void CGp::unfix(const string& path)
     unfixKernParam(index);
   else if(kind==1)
     fixBeta(false);
+  else if(kind==3)
+    fixLikelihoodVariance(false);
   else
   {
     if(scaleParamFixed.size()!=getOutputDim())
@@ -563,6 +775,8 @@ bool CGp::isFixed(const string& path) const
     return isKernParamFixed(index);
   if(kind==1)
     return betaFixed;
+  if(kind==3)
+    return likelihoodVarianceFixed;
   if(index>=scaleParamFixed.size())
     return false;
   return scaleParamFixed[index];
@@ -587,6 +801,8 @@ void CGp::setInducingType(const string& typeName)
   {
     delete pInducing;
     pInducing = new CInducingPoints(&X_u);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, getInputDim());
   }
   else if(typeName == "whitenoise")
   {
@@ -595,9 +811,41 @@ void CGp::setInducingType(const string& typeName)
       s0 = 1.0;
     delete pInducing;
     pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, getInputDim());
+  }
+  else if(typeName == "greens")
+  {
+    if(getInputDim() != 1 || X_u.getCols() != 1)
+      throw ndlexceptions::Error(
+          "Inducing type greens requires 1-D inputs (CIP-0029); "
+          "got inputDim=" + std::to_string(getInputDim()) + ".");
+    double s0 = CInducingWhiteNoise::medianSpacing(X_u);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    delete pInducing;
+    pInducing = new CInducingGreens(&X_u, s0, false);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, 1);
+  }
+  else if(typeName == "weightspace")
+  {
+    // CIP-0028 ridge default: orthogonal direction blocks (≤ D'=d+1), n_off
+    // offsets, s from spacing so κ(K_uu) stays in the Phase-1 budget (~10^4).
+    // Random per-row directions collapse in low D' at large M.
+    const unsigned int d = getInputDim();
+    const unsigned int Dp = d + 1;
+    CMatrix W;
+    const double s0 = CInducingWeightSpace::makeRidgeInit(W, numActive, d, 7u);
+    delete pInducing;
+    pInducing = new CInducingWeightSpace(W, s0, false, true);
+    if(!isInducingFixed())
+      gX_u.resize(numActive, Dp + 1);
   }
   else
-    throw ndlexceptions::Error("Unknown inducing type (use points or whitenoise): " + typeName);
+    throw ndlexceptions::Error(
+        "Unknown inducing type (use points, whitenoise, greens, or weightspace): "
+        + typeName);
   setKupToDate(false);
 }
 
@@ -686,7 +934,12 @@ unsigned int CGp::getOptNumParams() const
         tot += numActive*getInputDim();
     }
     if(!betaFixed)
-      tot++; // for beta value.
+      tot++; // for beta value (aliases likelihood.variance).
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    // CIP-0027: FTC optimises σ² on the likelihood when it owns Gram noise.
+    tot++;
   }
   // for learning scales.
   if(isOutputScaleLearnt()) 
@@ -770,6 +1023,11 @@ void CGp::getOptParams(CMatrix& param) const
       counter++;
     }
   }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    param.setVal(betaTransform->xtoa(getLikelihoodVariance()), counter);
+    counter++;
+  }
 }
 
 void CGp::setOptParams(const CMatrix& param)
@@ -840,7 +1098,15 @@ void CGp::setOptParams(const CMatrix& param)
     {
       beta.setVal(betaTransform->atox(param.getVal(counter)), 0);
       counter++;
+      if(isGaussianNoise())
+        syncLikelihoodVarianceFromSparseBeta();
     }
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    static_cast<CGaussianNoise*>(pnoise)->setVariance(
+      betaTransform->atox(param.getVal(counter)));
+    counter++;
   }
   
 }
@@ -1083,6 +1349,9 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
     for(unsigned int i=0; i<kX.getCols(); i++)
     {
       double vsVal = pkern->diagComputeElement(Xin, i) - kX.norm2Col(i);
+      // CIP-0027: match sparse (+1/β) and legacy White-in-diag predictive noise.
+      if(addsLikelihoodVarianceToGram())
+        vsVal += getLikelihoodVariance();
       CHECKZEROORPOSITIVE(vsVal>=0);
       for(unsigned int j=0; j<getOutputDim(); j++)
       {
@@ -1176,6 +1445,9 @@ void CGp::_updateK() const
   case FTC:
     // CIP-0013 P4: bulk kernel path (CStationaryKern / CCmpndKern::compute).
     pkern->compute(K, *pX);
+    // CIP-0027: observation noise on the Gram from likelihood.variance.
+    if(addsLikelihoodVarianceToGram())
+      ndlnoise::addObservationNoiseDiag(K, getLikelihoodVariance());
     break;
   case DTC:
   case DTCVAR:
@@ -1725,9 +1997,72 @@ double CGp::logLikelihood() const
   L-=(double)getOutputDim()*(double)getNumData()*ndlutil::HALFLOGTWOPI;
   return L;
 }
-// compute the gradients wrt parameters and latent variables.
-double CGp::logLikelihoodGradient(CMatrix& g) const 
+
+double CGp::sparsePpaElboGpTerms() const
 {
+  // Sparse PPA variational GP terms (CIP-0026), inducing form of dense
+  // ppaCalculateLogLike parts 1–4:
+  //   q(u)=N(m_u,S_u), S_u = β^{-1} K_uu A^{-1} K_uu,
+  //   m_u = K_uu A^{-1} K_uf m,  Cov_f̄ = β^{-1} K_fu A^{-1} K_uf
+  //   (DTCVAR: + diag(K-Q) on the site trace).
+  // L = -KL(q(u)||p(u)) - ½ β tr(Cov_f̄) + kernPrior.
+  if(!isSparseApproximation())
+    throw ndlexceptions::Error("sparsePpaElboGpTerms requires a sparse approximation");
+  if(getApproximationType() != DTC && getApproximationType() != DTCVAR)
+    throw ndlexceptions::NotImplementedError(
+      "sparsePpaElboGpTerms: DTC/DTCVAR only (FITC/PITC use interim monitor)");
+  if(!isSpherical())
+    throw ndlexceptions::NotImplementedError("sparsePpaElboGpTerms: non-spherical not implemented");
+
+  ensureMUpToDate();
+  ensureKUpToDate();
+  ensureADUpToDate();
+
+  const double betaVal = getBetaVal();
+  const unsigned int M = numActive;
+  const unsigned int dOut = getOutputDim();
+
+  CMatrix AinvKuu(M, M);
+  AinvKuu.symm(Ainv, K_uu, 1.0, 0.0, "l", "l");
+  const double trAinvKuu = AinvKuu.trace();
+  // log|S_u| = -M log β + 2 log|K_uu| - log|A|
+  const double logDetS = -(double)M * log(betaVal) + 2.0 * logDetK_uu - logDetA;
+  const double trKuuInvS = trAinvKuu / betaVal;
+
+  CMatrix e(M, 1);
+  CMatrix AinvE(M, 1);
+  CMatrix KuuAinvE(M, 1);
+  double negKL = 0.0;
+  for(unsigned int j = 0; j < dOut; j++)
+    {
+      e.gemvColCol(0, K_uf, m, j, 1.0, 0.0, "n");
+      AinvE.symvColCol(0, Ainv, e, 0, 1.0, 0.0, "l");
+      KuuAinvE.symvColCol(0, K_uu, AinvE, 0, 1.0, 0.0, "u");
+      const double quad = AinvE.dotColCol(0, KuuAinvE, 0);
+      // -KL = ½ (M + log|S| - log|K_uu| - tr(K_uu^{-1}S) - m_u^T K_uu^{-1} m_u)
+      negKL += 0.5 * ((double)M + logDetS - logDetK_uu - trKuuInvS - quad);
+    }
+
+  // tr(Cov_Q) = β^{-1} tr(A^{-1} K_uf K_fu) = β^{-1}(M - β^{-1} tr(A^{-1} K_uu))
+  const double trCovQ = ((double)M - trAinvKuu / betaVal) / betaVal;
+  double part4 = -0.5 * betaVal * trCovQ * (double)dOut;
+  if(getApproximationType() == DTCVAR)
+    {
+      // Extra site variance under true p(f|u): sum_i (K_ii - Q_ii).
+      // diagD_i = β (K_ii - Q_ii) on the DTCVAR path.
+      double sumKmQ = 0.0;
+      for(unsigned int i = 0; i < diagD.getRows(); i++)
+        sumKmQ += diagD.getVal(i) / betaVal;
+      part4 += -0.5 * betaVal * sumKmQ * (double)dOut;
+    }
+
+  return negKL + part4 + pkern->priorLogProb();
+}
+
+// compute the gradients wrt parameters and latent variables.
+double CGp::logLikelihoodGradient(CMatrix& g) const
+{
+  enforceObservationNoisePolicy();
   ensureMUpToDate();
   updateG();
   g.zeros();
@@ -1759,9 +2094,14 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
     if(!isInducingFixed()) 
     {
       // Centre grads live in gX_u (inducing params; s fixed by default).
-      for(unsigned int j=0; j<getInputDim(); j++) 
+      // Weight-space uses domainDim=d+1 (CIP-0028 Design A).
+      const unsigned int dInd =
+          (pInducing != 0) ? pInducing->domainDim() : getInputDim();
+      const unsigned int mInd =
+          (pInducing != 0) ? pInducing->numInducing() : numActive;
+      for(unsigned int j=0; j<dInd; j++) 
       {
-        for(unsigned int i=0; i<numActive; i++) 
+        for(unsigned int i=0; i<mInd; i++) 
         {
           g.setVal(gX_u.getVal(i, j), 0, counter);
           counter++;
@@ -1795,6 +2135,13 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
       counter++;
     }
   }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    // gBeta holds ∂L/∂σ² before the positive-transform factor.
+    const double gVar = gBeta.getVal(0);
+    g.setVal(gVar*betaTransform->gradfact(getLikelihoodVariance()), 0, counter);
+    counter++;
+  }
   //setADupToDate(false);
   return logLikelihood();
 
@@ -1812,6 +2159,12 @@ void CGp::updateG() const
   CMatrix tempG2(1, numKernParams);
   CMatrix tmpV(getOutputDim(), 1);
   g_param.zeros();
+  if(addsLikelihoodVarianceToGram())
+  {
+    if(gBeta.getRows()!=1 || gBeta.getCols()!=1)
+      gBeta.resize(1, 1);
+    gBeta.zeros();
+  }
 
   switch(getApproximationType()) 
   {
@@ -1835,6 +2188,11 @@ void CGp::updateG() const
       for(unsigned int i=0; i<numKernParams; i++) 
       {
         g_param.addVal(tempG.getVal(i), i);
+      }
+      if(addsLikelihoodVarianceToGram())
+      {
+        // ∂K/∂σ² = I ⇒ ∂L/∂σ² = tr(covGrad).
+        gBeta.addVal(covGrad.trace(), 0);
       }
 
       if(isOptimiseX())
@@ -2058,9 +2416,7 @@ void CGp::gpCovGrads() const
         Qbar.zeros();
         CMatrix Wbar;
         lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            Abar.setVal(Abar.getVal(i, j) + Wbar.getVal(i, Mact + j), i, j);
+        axpyContiguousBlock(Abar, Wbar, Mact, 1.0);
 
         // A = √β B ⇒ Bbar = √β Abar.
         CMatrix Bbar(Abar);
@@ -2070,10 +2426,7 @@ void CGp::gpCovGrads() const
         CMatrix CinvB(B);
         CinvB.trsm(LcholC, 1.0, "l", "u", "t", "n");
         CinvB.trsm(LcholC, 1.0, "l", "u", "n", "n");
-        double trCinvBB = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            trCinvBB += CinvB.getVal(i, j) * B.getVal(i, j);
+        const double trCinvBB = frobeniusDot(CinvB, B);
         double gbetaM2L = dOut * (trCinvBB - (double)Ndat / betaVal);
         CMatrix u(Mact, 1);
         CMatrix a(Mact, 1);
@@ -2092,13 +2445,7 @@ void CGp::gpCovGrads() const
             + betaVal * betaVal * BTaNorm2;
         }
         if(dtcvar)
-        {
-          double bFro2 = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-              bFro2 += B.getVal(i, j) * B.getVal(i, j);
-          gbetaM2L += dOut * (diagK.sum() - bFro2);
-        }
+          gbetaM2L += dOut * (diagK.sum() - frobeniusNorm2(B));
         gBeta.setVal(-0.5 * gbetaM2L, 0);
 
         CMatrix Ubar;
@@ -2141,10 +2488,7 @@ void CGp::gpCovGrads() const
         if(dtcvar)
           Bbar.axpy(B, -2.0 * betaVal * dOut);
 
-        double trCinvBB = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            trCinvBB += CinvB.getVal(i, j) * B.getVal(i, j);
+        const double trCinvBB = frobeniusDot(CinvB, B);
 
         double gbetaM2L = dOut * (trCinvBB - (double)Ndat / betaVal);
 
@@ -2169,14 +2513,7 @@ void CGp::gpCovGrads() const
 
         if(dtcvar)
         {
-          double bFro2 = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-            {
-              const double bij = B.getVal(i, j);
-              bFro2 += bij * bij;
-            }
-          gbetaM2L += dOut * (diagK.sum() - bFro2);
+          gbetaM2L += dOut * (diagK.sum() - frobeniusNorm2(B));
           gLambda.setVals(-0.5 * dOut * betaVal);
         }
 
@@ -2360,9 +2697,8 @@ void CGp::gpCovGrads() const
           Qbar.zeros();
           CMatrix Wbar;
           lqAdjoint(Wbar, Llow, Qlq, Lbar, Qbar, false);
-          for(unsigned int i = 0; i < Mact; i++)
-            for(unsigned int j = 0; j < Ndat; j++)
-              Vbar.setVal(sqrtBeta * Wbar.getVal(i, Mact + j), i, j);
+          Vbar.zeros();
+          axpyContiguousBlock(Vbar, Wbar, Mact, sqrtBeta);
         }
         else
           Vbar.symm(Cbar, Vfit, 2.0 * betaVal, 0.0, "u", "l");
@@ -2370,40 +2706,21 @@ void CGp::gpCovGrads() const
         for(unsigned int j = 0; j < Ndat; j++)
         {
           const double s = sqrt(diagD.getVal(j));
-          double vDot = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-          {
-            Bbar.setVal(Bbar.getVal(i, j) + Vbar.getVal(i, j) / s, i, j);
-            vDot += Vbar.getVal(i, j) * Vfit.getVal(i, j);
-          }
+          Bbar.axpyColCol(j, Vbar, j, 1.0 / s);
+          const double vDot = Vbar.dotColCol(j, Vfit, j);
           Dbar.setVal(Dbar.getVal(j) - vDot / (2.0 * diagD.getVal(j)), j);
         }
 
         // gBeta (-2L) before q→B: explicit β + Dbar·(k-q)
-        double vvT_Cbar = 0.0;
-        for(unsigned int i = 0; i < Mact; i++)
-          for(unsigned int j = 0; j < Ndat; j++)
-            vvT_Cbar += Vbar.getVal(i, j) * Vfit.getVal(i, j) / (2.0 * betaVal);
         // <Cbar, V V^T> = (1/(2β)) <Vbar, V> since Vbar = 2β Cbar V
+        const double vvT_Cbar = frobeniusDot(Vbar, Vfit) / (2.0 * betaVal);
         gbetaM2L += vvT_Cbar + mwSum - 2.0 * betaVal * uaSum;
         for(unsigned int j = 0; j < Ndat; j++)
-        {
-          double q = 0.0;
-          for(unsigned int i = 0; i < Mact; i++)
-          {
-            const double bij = B.getVal(i, j);
-            q += bij * bij;
-          }
-          gbetaM2L += Dbar.getVal(j) * (diagK.getVal(j) - q);
-        }
+          gbetaM2L += Dbar.getVal(j) * (diagK.getVal(j) - B.norm2Col(j));
 
         // q → B: Bbar -= 2β Dbar_j B_{:,j}
         for(unsigned int j = 0; j < Ndat; j++)
-        {
-          const double s = -2.0 * betaVal * Dbar.getVal(j);
-          for(unsigned int i = 0; i < Mact; i++)
-            Bbar.setVal(Bbar.getVal(i, j) + s * B.getVal(i, j), i, j);
-        }
+          Bbar.axpyColCol(j, B, j, -2.0 * betaVal * Dbar.getVal(j));
 
         // gLambda = ∂L/∂k = -0.5 * Dbar * β
         gLambda.resize(Ndat, 1);
@@ -2904,6 +3221,7 @@ void CGp::fromMxArray(const mxArray* matlabArray)
 // Optimise the GP with respect to latent positions and kernel parameters.
 void CGp::optimise(unsigned int iters)
 {
+  enforceObservationNoisePolicy();
   // Live messaging is the in-place paramz table via OptimiserEvent (verbosity>0).
   // Gradient checking is diagnostic only — keep it off the normal messages path.
   if(getVerbosity() > 3 && getOptNumParams() < 40)
@@ -3120,9 +3438,11 @@ void CGp::readParamsFromStream(istream& in)
     X_u.fromStream(in);
     if(X_u.getCols()!=getInputDim())
       throw ndlexceptions::StreamFormatError("inputDim", "X_u columns doesn't match input dimension.");
-    // CIP-001C optional keys (absent ⇒ points). Peek without failing old files.
+    // CIP-001C / CIP-0028 / CIP-0029 optional keys (absent ⇒ points).
     string inducingType = "points";
     double windowWidth = -1.0;
+    CMatrix weightCentres;
+    bool haveWeightCentres = false;
     if(in.good() && !in.eof())
     {
       streampos pos = in.tellg();
@@ -3134,7 +3454,9 @@ void CGp::readParamsFromStream(istream& in)
         if(tokens.size() == 2 && tokens[0] == "inducingType")
         {
           inducingType = tokens[1];
-          if(inducingType == "whitenoise" && in.good() && !in.eof())
+          if((inducingType == "whitenoise" || inducingType == "greens"
+              || inducingType == "weightspace")
+             && in.good() && !in.eof())
           {
             streampos pos2 = in.tellg();
             string line2;
@@ -3146,6 +3468,23 @@ void CGp::readParamsFromStream(istream& in)
                 windowWidth = atof(t2[1].c_str());
               else
                 in.seekg(pos2);
+            }
+          }
+          if(inducingType == "weightspace" && in.good() && !in.eof())
+          {
+            streampos pos3 = in.tellg();
+            string line3;
+            if(ndlstrutil::getline(in, line3) && line3.size() > 0)
+            {
+              vector<string> t3;
+              ndlstrutil::tokenise(t3, line3, "=");
+              if(t3.size() >= 1 && t3[0] == "weightCentres")
+              {
+                weightCentres.fromStream(in);
+                haveWeightCentres = true;
+              }
+              else
+                in.seekg(pos3);
             }
           }
         }
@@ -3164,6 +3503,73 @@ void CGp::readParamsFromStream(istream& in)
         s0 = 1.0;
       delete pInducing;
       pInducing = new CInducingWhiteNoise(&X_u, s0, false);
+    }
+    else if(inducingType == "greens")
+    {
+      if(getInputDim() != 1 || X_u.getCols() != 1)
+        throw ndlexceptions::StreamFormatError(
+            "inducingType",
+            "greens inducing requires 1-D inputs (CIP-0029).");
+      double s0 = windowWidth;
+      if(!(s0 > 0.0))
+        s0 = CInducingWhiteNoise::medianSpacing(X_u);
+      if(!(s0 > 0.0))
+        s0 = 1.0;
+      delete pInducing;
+      pInducing = new CInducingGreens(&X_u, s0, false);
+    }
+    else if(inducingType == "weightspace")
+    {
+      const unsigned int d = getInputDim();
+      const unsigned int Dp = d + 1;
+      CMatrix W(numActive, Dp + 1);
+      bool ridge = true;
+      if(haveWeightCentres)
+      {
+        if(weightCentres.getRows() != numActive)
+          throw ndlexceptions::StreamFormatError(
+              "weightCentres",
+              "weightCentres must have numActive rows.");
+        if(weightCentres.getCols() == Dp + 1)
+        {
+          W.deepCopy(weightCentres);
+          ridge = true;
+        }
+        else if(weightCentres.getCols() == Dp)
+        {
+          // Legacy isotropic stream: M × (d+1).
+          W.resize(numActive, Dp);
+          W.deepCopy(weightCentres);
+          ridge = false;
+        }
+        else
+          throw ndlexceptions::StreamFormatError(
+              "weightCentres",
+              "weightCentres must be numActive x (inputDim+2) ridge "
+              "or numActive x (inputDim+1) isotropic.");
+      }
+      else
+      {
+        W.zeros();
+        for(unsigned int i = 0; i < numActive; i++)
+        {
+          for(unsigned int j = 0; j < d; j++)
+            W.setVal((X_u.getRows() == numActive && X_u.getCols() == d)
+                         ? X_u.getVal(i, j) : 0.0,
+                     i, j);
+          W.setVal(1.0, i, d);
+          W.setVal(0.0, i, Dp);
+        }
+      }
+      double s0 = windowWidth;
+      if(!(s0 > 0.0))
+        s0 = ridge ? 0.6 : CInducingWhiteNoise::medianSpacing(W);
+      if(!(s0 > 0.0))
+        s0 = 1.0;
+      delete pInducing;
+      pInducing = new CInducingWeightSpace(W, s0, false, ridge);
+      if(!isInducingFixed())
+        gX_u.resize(numActive, W.getCols());
     }
     else
     {
@@ -3199,11 +3605,17 @@ void CGp::writeParamsToStream(ostream& out) const
   {
     writeToStream(out, "fixInducing", isInducingFixed());
     X_u.toStream(out);
-    // CIP-001C: additive keys (absent on load ⇒ points).
+    // CIP-001C / CIP-0028 / CIP-0029: additive keys (absent on load ⇒ points).
     const string indType = getInducingType();
     writeToStream(out, "inducingType", indType);
-    if(indType == "whitenoise" && pInducing != 0)
+    if((indType == "whitenoise" || indType == "greens" || indType == "weightspace")
+       && pInducing != 0)
       writeToStream(out, "windowWidth", pInducing->getWindowWidth());
+    if(indType == "weightspace" && pInducing != 0)
+    {
+      writeToStream(out, "weightCentres", "");
+      pInducing->centres().toStream(out);
+    }
   }
   //py->toStream(out);
   //pX->toStream(out);

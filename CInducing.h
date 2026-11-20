@@ -125,4 +125,114 @@ class CInducingWhiteNoise : public CInducing
   mutable CMatrix tempG;
 };
 
+// CIP-0029: 1-D Green's / causal-root inducing (Gaussian windows on the line).
+// Phase 0: kernel-free Kuu + CLI/stream; Kuf/grads throw until Phase 1 kernels land.
+class CInducingGreens : public CInducing
+{
+ public:
+  CInducingGreens(CMatrix* pZIn, double sIn, bool learnSIn = false);
+  virtual ~CInducingGreens() {}
+
+  unsigned int numInducing() const;
+  unsigned int domainDim() const;
+  bool kuuDependsOnKernel() const { return false; }
+  std::string typeName() const { return "greens"; }
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern) const;
+
+  unsigned int getNumParams() const;
+  void getParams(CMatrix& param, unsigned int offset) const;
+  void setParams(const CMatrix& param, unsigned int offset);
+
+  const CMatrix& centres() const { return *pZ; }
+  void setCentres(const CMatrix& Z);
+
+  double getWindowWidth() const { return s; }
+  void setWindowWidth(double sIn);
+
+ private:
+  void fillKuu(CMatrix& Kuu) const;
+  void assertOneD() const;
+  void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
+  void gradZFromKuu(CMatrix& gZ, const CMatrix& gKuu, const CMatrix& Kuu) const;
+
+  CMatrix* pZ; // not owned; points at CGp::X_u (1-D)
+  double s;
+  bool learnS;
+  mutable CMatrix Kfu;
+  mutable CMatrix gKfu;
+  mutable CMatrix tempG;
+};
+
+// CIP-0028 Design A: weight-space inducing owns W (M × (d+1)); X_u unused.
+// Phase 0: kernel-free Kuu + CLI/stream; Kuf/grads throw until Phase 1 MLP hooks.
+class CInducingWeightSpace : public CInducing
+{
+ public:
+  // Ridge (default): W is M × (d+2) = [direction v ∈ R^{d+1} | offset a].
+  // Isotropic oracle: W is M × (d+1) centres; pass ridgeIn=false.
+  CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn = false,
+                       bool ridgeIn = true);
+  virtual ~CInducingWeightSpace() {}
+
+  unsigned int numInducing() const;
+  unsigned int domainDim() const;
+  bool kuuDependsOnKernel() const { return false; }
+  std::string typeName() const { return "weightspace"; }
+  bool isRidge() const { return ridge; }
+  unsigned int weightDim() const; // d+1 (direction / isotropic centre dim)
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern) const;
+
+  unsigned int getNumParams() const;
+  void getParams(CMatrix& param, unsigned int offset) const;
+  void setParams(const CMatrix& param, unsigned int offset);
+
+  const CMatrix& centres() const { return W; }
+  void setCentres(const CMatrix& Z);
+
+  double getWindowWidth() const { return s; }
+  void setWindowWidth(double sIn);
+
+  // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
+  void ridgeFactors(CMatrix& V, CMatrix& a) const;
+
+  // CIP-0028 ridge init: orthogonal direction blocks (≤ D'=d+1), n_off offsets
+  // on [-2.5, 2.5], and s from offset spacing so κ(K_uu) stays ~≤10^4.
+  // WOut is M × (d+2); returns recommended window width.
+  static double makeRidgeInit(CMatrix& WOut, unsigned int M, unsigned int inputDim,
+                              unsigned int rngSeed = 7u);
+
+ private:
+  void fillKuu(CMatrix& Kuu) const;
+  void fillKuuIsotropic(CMatrix& Kuu) const;
+  void fillKuuRidge(CMatrix& Kuu) const;
+  void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
+  void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
+  // Analytic ∂⟨gKuu,Kuu⟩/∂(unit V, a); then chain to raw W via normalisation.
+  void gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKuu) const;
+
+  CMatrix W; // owned; ridge: M×(d+2); isotropic: M×(d+1)
+  double s;
+  bool learnS;
+  bool ridge;
+  mutable CMatrix Kfu;
+  mutable CMatrix gKfu;
+  mutable CMatrix tempG;
+  mutable CMatrix Vtmp;
+  mutable CMatrix atmp;
+};
+
 #endif /* CINDUCING_H */

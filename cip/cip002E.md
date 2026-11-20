@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-20"
 id: "002E"
 last_updated: "2026-11-20"
-status: "Implemented"
+status: "Closed"
 compressed: false
 related_requirements: ["0002", "0001", "000E"]
 related_cips: ["0019", "001A", "002C", "002D", "002B"]
@@ -27,7 +27,7 @@ title: "Tier CI triggers — hard gates every PR; numerics/wheels path or specia
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
@@ -106,7 +106,7 @@ No runtime or API change. Contributors may see fewer checks on a PR; merge polic
 - [x] Wheels demoted now (soft gate remains; packaging paths only)
 - [x] Compile/Reference `paths-ignore` for governance/markdown
 - [ ] Windows job-level path filter (deferred)
-- [ ] Spot-check PRs / dispatches as in Testing Strategy (close after green on Actions)
+- [x] Spot-check PRs / dispatches as in Testing Strategy (close after green on Actions)
 
 ## References
 

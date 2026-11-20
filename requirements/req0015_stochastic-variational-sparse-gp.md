@@ -1,10 +1,10 @@
 ---
 id: "0015"
 title: "Sparse GPs can be trained by stochastic variational inference on minibatches"
-status: "Implemented"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-19"
-last_updated: "2026-11-19"
+last_updated: "2026-11-20"
 related_tenets: ["assert-and-verify", "compose-through-interfaces", "ecosystem-interoperability", "flexibility-with-performance", "lapack-owns-linear-algebra"]
 stakeholders: ["maintainers", "modellers", "GPy users", "teachers"]
 tags: ["svgp", "svi", "sparse", "inducing", "natural-gradients", "minibatch", "classification"]

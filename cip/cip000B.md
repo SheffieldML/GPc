@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-13"
 id: "000B"
-last_updated: "2026-11-15"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0005", "0008", "000C", "0011"]
@@ -23,7 +23,7 @@ title: "Remove dead paths and fix contradicting comments"
 - [x] Accepted
 - [x] In Progress
 - [x] Implemented
-- [ ] Closed
+- [x] Closed
 
 ## Summary
 
@@ -65,7 +65,7 @@ This is lower risk than [CIP-0008](cip0008.md)–[CIP-000A](cip000A.md) and can 
 - [x] Replace commented kernel-factory / `testKern` archives with CIP-000C pointers
 - [x] Scrub deferred `testNoise` / `testIvm` commented stubs
 - [x] Dead-code policy sentence in `docs/workflow.md`
-- [ ] CI green; CIP Closed
+- [x] CI green; CIP Closed
 
 ## Testing Strategy
 

@@ -1,10 +1,10 @@
 ---
 id: "0013"
 title: "Intra-evaluation covariance work can use BLAS and OpenMP without app-managed threads"
-status: "In Progress"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-20"
 related_tenets: ["flexibility-with-performance", "lapack-owns-linear-algebra", "assert-and-verify"]
 stakeholders: ["maintainers", "benchmark-users"]
 tags: ["performance", "kernels", "blas", "openmp", "concurrency"]

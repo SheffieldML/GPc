@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002D"
 last_updated: "2026-11-20"
-status: "Implemented"
+status: "Closed"
 compressed: false
 related_requirements: ["0013", "0007", "0010", "0015", "0002", "0016"]
 related_cips: ["0013", "0009", "0012", "001B", "002A", "0028", "001F", "0020", "002B", "002C"]
@@ -29,7 +29,7 @@ title: "CPU quick wins that also prepare for GPUs; GPU backend options sketched"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

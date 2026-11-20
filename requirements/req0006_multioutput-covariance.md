@@ -1,10 +1,10 @@
 ---
 id: "0006"
 title: "Users can model correlated multiple outputs via coregionalization"
-status: "Implemented"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-15"
-last_updated: "2026-11-15"
+last_updated: "2026-11-20"
 related_tenets: ["compose-through-interfaces", "assert-and-verify", "ecosystem-interoperability", "flexibility-with-performance"]
 stakeholders: ["maintainers", "modellers"]
 tags: ["kernels", "multioutput", "coregionalize", "gpy"]

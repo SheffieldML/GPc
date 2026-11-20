@@ -2,7 +2,7 @@
 
 Decisions that keep the matio reference suite trustworthy against MATLAB-era fixtures.
 
-**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md) · [CIP-0019](../cip/cip0019.md) · [CIP-001A](../cip/cip001A.md)  
+**Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000A](../cip/cip000A.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md) · [CIP-0019](../cip/cip0019.md) · [CIP-001A](../cip/cip001A.md)  
 **Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
 
 ## Adversarial numerical stability ([CIP-0019](../cip/cip0019.md) / [CIP-001A](../cip/cip001A.md))
@@ -47,6 +47,10 @@ Optimiser budgets (`-#` / L-BFGS vs SCG vs GPy): see [optimisers.md](./optimiser
 ## CMatrix ownership ([CIP-0008](../cip/cip0008.md))
 
 `CMatrix` owns its column-major `double* vals` buffer under the Rule of Five: deep copy construction/assignment, move construction/assignment that transfer the buffer, and a destructor that frees it. Do not rely on compiler-generated assignment (that aliases pointers). Prefer `deepCopy` when an existing object must take on another matrix’s values without using `operator=`; moved-from matrices are empty (`vals == NULL`) and may only be destroyed or assigned into.
+
+## Compound / tensor kernel ownership ([CIP-000A](../cip/cip000A.md))
+
+`CComponentKern` stores children in `vector<unique_ptr<CKern>>`. `addKern(const CKern*)` clones into an owned component (caller keeps the argument). `addKern(unique_ptr<CKern>)` takes ownership without cloning — use that for stream and MATLAB factories that allocate. The shallow `CComponentKern` copy constructor is deleted; `CCmpndKern` / `CTensorKern` deep-copy via `addKern` (including the tensor slash / leave-one-out constructor). Model-level owners such as `CGp::pkern` remain raw pointers for now.
 
 ## GP / GPLVM working-state caches ([CIP-0009](../cip/cip0009.md))
 

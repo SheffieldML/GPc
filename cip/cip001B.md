@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001B"
 last_updated: "2026-11-20"
-status: "Implemented"
+status: "Closed"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0012", "000E", "0013", "0019", "001A"]
@@ -31,7 +31,7 @@ title: "LQ factorisation for collapsed VFE/DTC (and FITC) sparse bounds"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

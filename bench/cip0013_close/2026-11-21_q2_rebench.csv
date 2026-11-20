@@ -1,0 +1,12 @@
+kind,N,q,M,gpc_ll,gpy_ll,numpy_ll,gpc_median_ms,gpy_median_ms,gpc_over_gpy,gate,gate_notes,gpc_flags,gpc_checks,threads
+ftc,1000,2,0,737.011,737.0114223,737.011433,1.8400,73.3578,0.025,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+ftc,2000,2,0,1570,1570.00007,1570.000055,8.1730,429.5342,0.019,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+ftc,4000,2,0,3306.04,3306.040043,3306.040025,38.0450,2988.2963,0.013,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+dtcvar,2000,2,50,-6155.86,-6155.860784,,3.7350,5.5990,0.667,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,2000,2,50,649.834,649.8158712,,3.8550,5.2486,0.734,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1
+dtcvar,2000,2,200,28.279,28.27867611,,22.3370,39.2891,0.569,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1
+fitc,2000,2,200,1281.49,1281.485152,,25.4820,46.7841,0.545,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+dtcvar,10000,2,50,-16731,-16730.98658,,18.8560,32.5940,0.579,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,50,4438.3,4438.214277,,17.5340,34.8890,0.503,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1
+dtcvar,10000,2,200,874.961,874.9595516,,100.1810,168.6652,0.594,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,200,6997.13,6997.084586,,99.8650,206.3478,0.484,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1

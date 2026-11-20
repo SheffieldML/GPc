@@ -2,9 +2,9 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001C"
-last_updated: "2026-11-20"
+last_updated: "2026-11-21"
 status: "Closed"
-compressed: false
+compressed: true
 related_requirements: ["000D", "0002", "0005"]
 related_cips: ["0012", "001B", "0013", "0017", "0019", "001A"]
 tags:
@@ -208,7 +208,7 @@ Add `virtual double spectralDensity(double rho) const` (default throws) to `CSta
 - [x] Phase 2: `CInducingWhiteNoise` + RBF/RBF-ARD closed forms + equivalence gate
 - [x] Phase 3: `spectralDensity` + generic Hankel path (Matérn 3/2, 5/2, Exp); RBF-via-Hankel gate ~1e-10
 - [x] Phase 4: Meff, CLI `--inducing`/`--window-width`, stream keys, `wn_ls_sweep_*` stability cells
-- [ ] Compression into `docs/numerics.md`
+- [x] Compression into `docs/numerics.md` (sparse inducing families table)
 - [x] Pilot spike (`diagWhiteNoisePilot` / `diagVikCompare`): pre-acceptance evidence
 
 

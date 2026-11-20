@@ -30,6 +30,10 @@ Runtime constraints by path: `constrainPositive`, `constrainZeroOne`, `constrain
 
 `fix` / `unfix` / `isFixed` use the same path grammar. Fix masks are not stream-persisted yet; loads default to all free.
 
+## Structured display (CIP-001E)
+
+`CGp` / `CKern` / `CNoise` expose `describe()` → `ModelDescription` (path rows in GPy units, transform/fix flags). `display(ostream&)` formats that structure; `CGp::display` writes only to the passed stream. Live optimiser redraw uses the same snapshot ([optimisers.md](./optimisers.md) progress observers).
+
 ## CLI
 
 ```bash

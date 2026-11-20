@@ -10,9 +10,10 @@ from typing import Any, Sequence
 
 
 class Kern:
-    """Base for façade kernel descriptors."""
+    """Base for façade kernel descriptors (thin handles; maths stay in C++)."""
 
     def __add__(self, other: object) -> Add:
+        """Return a compound kernel (``CCmpndKern`` parts list)."""
         if not isinstance(other, Kern):
             return NotImplemented
         return Add(self, other)
@@ -23,6 +24,7 @@ class Kern:
         return Add(other, self)
 
     def to_parts(self) -> list[dict[str, Any]]:
+        """Serialize to the parts list consumed by the C++ constructor."""
         raise NotImplementedError
 
     def _flat_leaves(self) -> list[Kern]:
@@ -33,6 +35,7 @@ class Add(Kern):
     """Sum of kernels (maps to ``CCmpndKern``)."""
 
     def __init__(self, *items: Kern) -> None:
+        """Build a flattened sum of kernel descriptors."""
         leaves: list[Kern] = []
         for item in items:
             leaves.extend(item._flat_leaves())
@@ -44,6 +47,7 @@ class Add(Kern):
         return list(self._leaves)
 
     def to_parts(self) -> list[dict[str, Any]]:
+        """Serialize each leaf to a parts dict for the C++ binding."""
         return [leaf.to_parts()[0] for leaf in self._leaves]
 
     def __repr__(self) -> str:
@@ -72,6 +76,8 @@ class _Atomic(Kern):
 
 
 class RBF(_Atomic):
+    """Isotropic RBF / squared-exponential (inverseWidth storage; lengthscale paths)."""
+
     _type = "rbf"
 
     def __init__(
@@ -80,6 +86,15 @@ class RBF(_Atomic):
         variance: float = 1.0,
         lengthscale: float = 1.0,
     ) -> None:
+        """Create an RBF kernel descriptor.
+
+        Parameters
+        ----------
+        input_dim
+            Input dimension.
+        variance, lengthscale
+            GPy-natural units (CIP-0014 paths ``rbf.variance``, ``rbf.lengthscale``).
+        """
         super().__init__(
             input_dim, variance=variance, lengthscale=lengthscale
         )
@@ -96,6 +111,7 @@ class ExpQuad(_Atomic):
         variance: float = 1.0,
         lengthscale: float = 1.0,
     ) -> None:
+        """Create an ExpQuad descriptor (paths under ``ExpQuad.*``)."""
         super().__init__(
             input_dim, variance=variance, lengthscale=lengthscale
         )
@@ -105,20 +121,28 @@ EQ = ExpQuad
 
 
 class White(_Atomic):
+    """White noise kernel (often used for observation noise in compounds)."""
+
     _type = "white"
 
     def __init__(self, input_dim: int, variance: float = 1.0) -> None:
+        """Create a White kernel descriptor (``white.variance``)."""
         super().__init__(input_dim, variance=variance)
 
 
 class Bias(_Atomic):
+    """Constant bias kernel."""
+
     _type = "bias"
 
     def __init__(self, input_dim: int, variance: float = 1.0) -> None:
+        """Create a Bias kernel descriptor (``bias.variance``)."""
         super().__init__(input_dim, variance=variance)
 
 
 class MLP(_Atomic):
+    """Williams infinite-MLP (arcsin) covariance."""
+
     _type = "mlp"
 
     def __init__(
@@ -128,6 +152,7 @@ class MLP(_Atomic):
         weight_variance: float = 10.0,
         bias_variance: float = 10.0,
     ) -> None:
+        """Create an MLP kernel descriptor (``mlp.*`` paths / aliases)."""
         super().__init__(
             input_dim,
             variance=variance,
@@ -137,6 +162,8 @@ class MLP(_Atomic):
 
 
 class ArcCosine(_Atomic):
+    """Cho–Saul arc-cosine kernel (order 0 or 1)."""
+
     _type = "arccos"
 
     def __init__(
@@ -145,6 +172,7 @@ class ArcCosine(_Atomic):
         variance: float = 1.0,
         order: int = 0,
     ) -> None:
+        """Create an ArcCosine kernel descriptor (``arccos.variance``; order 0|1)."""
         if int(order) not in (0, 1):
             raise ValueError("ArcCosine order must be 0 or 1")
         super().__init__(input_dim, variance=variance)

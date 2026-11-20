@@ -1,7 +1,7 @@
 ---
 id: "0017"
 title: "Public gpc surface is discoverable via Python help and docstrings"
-status: "Proposed"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-20"
 last_updated: "2026-11-20"
@@ -24,15 +24,15 @@ Markdown side-by-side porting guides from [REQ-000E](./req000E_gpy-facing-python
 
 ## Acceptance Criteria
 
-- [ ] Public constructors and methods on the documented first subset (`GPRegression`, `SparseGPRegression`, `gpc.kern` factories, path helpers) have non-empty docstrings visible via `help()` / `__doc__`
-- [ ] Docstrings state GPy-facing intent briefly (what the call does, key args, units/paths where relevant) without claiming API identity with GPy
-- [ ] A smoke test or checklist asserts `__doc__` is present for the public subset (fails closed if stripped)
-- [ ] Optional Sphinx/autodoc generation may consume the same docstrings later; it is not required to close this requirement if `help()` coverage is met
-- [ ] Non-goals are explicit: full Sphinx site as a close blocker; paramz-style dynamic help trees; putting documentation generation in the optimiser hot path; replacing CIP-001D markdown porting guides
+- [x] Public constructors and methods on the documented first subset (`GPRegression`, `SparseGPRegression`, `gpc.kern` factories, path helpers) have non-empty docstrings visible via `help()` / `__doc__`
+- [x] Docstrings state GPy-facing intent briefly (what the call does, key args, units/paths where relevant) without claiming API identity with GPy
+- [x] A smoke test or checklist asserts `__doc__` is present for the public subset (fails closed if stripped)
+- [x] Optional Sphinx/autodoc generation may consume the same docstrings later; it is not required to close this requirement if `help()` coverage is met
+- [x] Non-goals are explicit: full Sphinx site as a close blocker; paramz-style dynamic help trees; putting documentation generation in the optimiser hot path; replacing CIP-001D markdown porting guides
 
 ## Notes (Optional)
 
-HOW is [CIP-002F](../cip/cip002F.md) (Proposed). Complements [REQ-000E](./req000E_gpy-facing-python-facade.md) without reopening CIP-001D.
+HOW is [CIP-002F](../cip/cip002F.md) (**Closed**). Complements [REQ-000E](./req000E_gpy-facing-python-facade.md) without reopening CIP-001D.
 
 ## References
 
@@ -44,3 +44,6 @@ HOW is [CIP-002F](../cip/cip002F.md) (Proposed). Complements [REQ-000E](./req000
 
 ### 2026-11-20
 Requirement created after CIP-001D close: interactive help deliberately left out of 001D so documentation stays a separate CIP with a Python-compatible source of truth.
+
+### 2026-11-20 (delivery)
+CIP-002F Accepted → Implemented → Closed on `cip002F-python-help-docstrings`. Pybind + pure-Python docstrings; `test_help_docstrings.py` green. Requirement → Validated.

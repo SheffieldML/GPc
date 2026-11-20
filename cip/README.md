@@ -33,7 +33,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Closed** — StableFactor default after soak).
 - [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Implemented** on main via #60). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Closes without waiting for CIP-0012.
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
-- [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 tutorials/demos done; Phase A helpers next. Notebooks are checklist only.
+- [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**In Progress**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Stage 1 + Phase A (`CMultioutput` / coreg factory) done; Phase B demos next. Notebooks are checklist only.
 - [CIP-0017](./cip0017.md): Psi statistics and Bayesian GP-LVM, GPy-parity subset (**Closed**). CLI: `./bgplvm`.
 - [CIP-0018](./cip0018.md): Manifold Relevance Determination, GPy-parity subset (**Closed**). Implements [REQ-000C](../requirements/req000C_manifold-relevance-determination.md). `CMrd` + `testMrd` / `demo_mrd`; see [docs/tutorials/mrd.md](../docs/tutorials/mrd.md).
 - [CIP-0019](./cip0019.md): Numerical stability suite, separate from matio reference tests (**Closed**). Mirrors GPy CIP-0011; see `numerical_stability/`.

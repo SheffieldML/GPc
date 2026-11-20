@@ -19,6 +19,7 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CTransform.cpp
   ${GPC_ROOT}/COptimisable.cpp
   ${GPC_ROOT}/CKern.cpp
+  ${GPC_ROOT}/CMultioutput.cpp
   ${GPC_ROOT}/CDist.cpp
   ${GPC_ROOT}/ndlassert.cpp
 )

@@ -1,13 +1,24 @@
 # CIP-002C: binary wheels via cibuildwheel (soft gate until soak).
 # Phase B: delocate/auditwheel self-contained OpenBLAS; pytest on repaired wheel.
-# Makefile Compile / Reference / Coverage remain the hard native gates.
+# Makefile Compile / Reference remain the hard native gates.
+#
+# CIP-002E tier 2+3: path-triggered on PR/main + workflow_dispatch.
+# Not an every-PR hard gate — packaging surface only (or manual run).
 name: Wheels
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'python/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/wheels.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'python/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/wheels.yml'
   workflow_dispatch:
 
 jobs:

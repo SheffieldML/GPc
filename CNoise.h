@@ -631,6 +631,8 @@ class CProbitNoise : public CNoise
   {
     return bias.getVal(0, index);
   }
+  // CIP-0027: probit σ² is fixed (softener is White-in-K); expose for tests.
+  double getSigma2() const { return sigma2; }
   
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.

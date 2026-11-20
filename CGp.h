@@ -363,13 +363,15 @@ public:
   // Meff = M - tr(C^{-1}) after ensureAD (whitened path); legacy uses A.
   double getEffectiveInducingCount() const;
 
-  // Model-level GPy-style paths (CIP-0014 Phase C): kern.*, beta, scale.j.
+  // Model-level GPy-style paths (CIP-0014 Phase C): kern.*, beta, scale.j,
+  // likelihood.variance (CIP-0027; alias Gaussian_noise.variance).
   vector<string> paramPaths() const;
   double getByPath(const string& path) const;
   void setByPath(const string& path, double val);
 
   // Per-parameter fix masks (CIP-0014 Phase B). Paths use Phase A kernel
-  // names (e.g. rbf.variance); also beta and scale.j. Not stream-persisted yet.
+  // names (e.g. rbf.variance); also beta, scale.j, likelihood.variance.
+  // Not stream-persisted yet.
   void fix(const string& path);
   void unfix(const string& path);
   bool isFixed(const string& path) const;
@@ -378,7 +380,15 @@ public:
   bool isKernParamFixed(unsigned int index) const;
   void fixBeta(bool val=true);
   bool isBetaFixed() const { return betaFixed; }
+  void fixLikelihoodVariance(bool val=true);
+  bool isLikelihoodVarianceFixed() const { return likelihoodVarianceFixed; }
   void clearFixes();
+
+  // CIP-0027: Gaussian observation noise on the likelihood.
+  bool isGaussianNoise() const;
+  double getLikelihoodVariance() const;
+  void setLikelihoodVariance(double val);
+  bool addsLikelihoodVarianceToGram() const;
   // Flag which indicates if K/Kinv/DynK/DynKInv need recomputation.
   bool isKupToDate() const 
   {
@@ -600,11 +610,19 @@ public:
   bool spherical;
   bool inducingFixed;
   bool betaFixed;
+  bool likelihoodVarianceFixed;
+  mutable bool dualNoiseWarned;
   vector<bool> kernParamFixed;
   vector<bool> scaleParamFixed;
   void ensureKernFixedSize();
   void resolveFixPath(const string& path, int& kind, unsigned int& index) const;
-  // kind: 0=kern, 1=beta, 2=scale
+  // kind: 0=kern, 1=beta, 2=scale, 3=likelihood.variance (CIP-0027)
+  bool isLikelihoodVariancePath(const string& path) const;
+  bool hasWhiteComponent() const;
+  bool hasTrainableWhite() const;
+  void syncSparseBetaFromLikelihoodVariance();
+  void syncLikelihoodVarianceFromSparseBeta();
+  void maybeWarnDualObservationNoise() const;
   mutable bool KupToDate;
   mutable bool AlphaUpToDate;
   mutable bool ADupToDate;

@@ -131,6 +131,8 @@ void CGp::_init()
   jitter = 1e-6;
   inducingFixed=false;
   betaFixed=false;
+  likelihoodVarianceFixed=false;
+  dualNoiseWarned=false;
   spherical=true;
   optimiseX = false;
   backConstrained = false;
@@ -373,6 +375,9 @@ void CGp::initVals()
     pnoise->updateSites(m, beta, i, nu, g, i);
   }
   setBetaVals(1e3);
+  // CIP-0027: sparse β is the algebra; keep likelihood.variance = 1/β in sync.
+  if(isSparseApproximation() && isGaussianNoise())
+    syncLikelihoodVarianceFromSparseBeta();
   updateM();
   
   if(isSparseApproximation()) 
@@ -387,6 +392,7 @@ void CGp::initVals()
       X_u.copyRowRow(i, *pX, ind[i]);	
     }
   }
+  maybeWarnDualObservationNoise();
 }
 
 
@@ -406,6 +412,129 @@ string CGp::getNoiseType() const
   return pnoise->getType();
 }
 
+bool CGp::isGaussianNoise() const
+{
+  return pnoise!=0 && pnoise->getType()=="gaussian";
+}
+
+bool CGp::isLikelihoodVariancePath(const string& path) const
+{
+  return path=="likelihood.variance"
+    || path=="Gaussian_noise.variance"
+    || path=="sigma2";
+}
+
+bool CGp::hasWhiteComponent() const
+{
+  const vector<string> paths=pkern->paramPaths();
+  for(size_t i=0; i<paths.size(); i++)
+  {
+    const string& p=paths[i];
+    if(p.compare(0, 5, "white")==0 && p.find(".variance")!=string::npos)
+      return true;
+  }
+  return false;
+}
+
+bool CGp::hasTrainableWhite() const
+{
+  if(!hasWhiteComponent())
+    return false;
+  try
+  {
+    const unsigned int idx=pkern->paramIndex("white.variance");
+    return !isKernParamFixed(idx);
+  }
+  catch(ndlexceptions::Error&)
+  {
+    // Duplicate / whitefixed labels: treat any positive white as trainable.
+    return pkern->getWhite()>0.0;
+  }
+}
+
+bool CGp::addsLikelihoodVarianceToGram() const
+{
+  // CIP-0027: FTC Gram gets σ² from the likelihood when White is not already
+  // owning observation noise (legacy dual-path fallback).
+  if(isSparseApproximation() || !isGaussianNoise())
+    return false;
+  if(hasWhiteComponent())
+  {
+    if(likelihoodVarianceFixed)
+      return false;
+    // Migrating: White fixed, variance free → likelihood owns the Gram noise.
+    try
+    {
+      const unsigned int idx=pkern->paramIndex("white.variance");
+      if(isKernParamFixed(idx))
+        return true;
+    }
+    catch(ndlexceptions::Error&)
+    {
+    }
+    return false;
+  }
+  return true;
+}
+
+double CGp::getLikelihoodVariance() const
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("likelihood.variance requires a Gaussian noise model.");
+  return static_cast<const CGaussianNoise*>(pnoise)->getVariance();
+}
+
+void CGp::setLikelihoodVariance(double val)
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("likelihood.variance requires a Gaussian noise model.");
+  BOUNDCHECK(val>0.0);
+  static_cast<CGaussianNoise*>(pnoise)->setVariance(val);
+  if(isSparseApproximation())
+    syncSparseBetaFromLikelihoodVariance();
+  setKupToDate(false);
+  maybeWarnDualObservationNoise();
+}
+
+void CGp::syncSparseBetaFromLikelihoodVariance()
+{
+  if(!isSparseApproximation() || !isGaussianNoise())
+    return;
+  const double s2=getLikelihoodVariance();
+  BOUNDCHECK(s2>0.0);
+  setBetaVal(1.0/s2);
+}
+
+void CGp::syncLikelihoodVarianceFromSparseBeta()
+{
+  if(!isSparseApproximation() || !isGaussianNoise())
+    return;
+  const double b=getBetaVal();
+  BOUNDCHECK(b>0.0);
+  static_cast<CGaussianNoise*>(pnoise)->setVariance(1.0/b);
+}
+
+void CGp::maybeWarnDualObservationNoise() const
+{
+  if(dualNoiseWarned || getVerbosity()<1)
+    return;
+  if(!isGaussianNoise() || !hasTrainableWhite() || likelihoodVarianceFixed)
+    return;
+  cerr << "Warning (CIP-0027): trainable White and free likelihood.variance "
+       << "are both present; prefer likelihood.variance and drop White for "
+       << "Gaussian regression (IVM keeps White)." << endl;
+  dualNoiseWarned=true;
+}
+
+void CGp::fixLikelihoodVariance(bool val)
+{
+  if(!isGaussianNoise())
+    throw ndlexceptions::Error("Cannot fix likelihood.variance without Gaussian noise.");
+  likelihoodVarianceFixed=val;
+  if(isSparseApproximation())
+    betaFixed=val;
+}
+
 void CGp::ensureKernFixedSize()
 {
   const unsigned int n = pkern->getNumParams();
@@ -418,6 +547,14 @@ void CGp::resolveFixPath(const string& path, int& kind, unsigned int& index) con
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(p) || isLikelihoodVariancePath(path))
+  {
+    if(!isGaussianNoise())
+      throw ndlexceptions::Error("likelihood.variance fix path requires Gaussian noise.");
+    kind=3;
+    index=0;
+    return;
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
@@ -444,9 +581,11 @@ vector<string> CGp::paramPaths() const
 {
   vector<string> paths;
   const vector<string> kpaths=pkern->paramPaths();
-  paths.reserve(kpaths.size()+getOutputDim()+1);
+  paths.reserve(kpaths.size()+getOutputDim()+2);
   for(size_t i=0; i<kpaths.size(); i++)
     paths.push_back(string("kern.")+kpaths[i]);
+  if(isGaussianNoise())
+    paths.push_back("likelihood.variance");
   if(isSparseApproximation())
     paths.push_back("beta");
   if(isOutputScaleLearnt())
@@ -462,6 +601,12 @@ double CGp::getByPath(const string& path) const
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(path) || isLikelihoodVariancePath(p))
+  {
+    if(isSparseApproximation())
+      return 1.0/getBetaVal();
+    return getLikelihoodVariance();
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
@@ -485,11 +630,18 @@ void CGp::setByPath(const string& path, double val)
   string p=path;
   if(p.compare(0, 5, "kern.")==0)
     p=p.substr(5);
+  if(isLikelihoodVariancePath(path) || isLikelihoodVariancePath(p))
+  {
+    setLikelihoodVariance(val);
+    return;
+  }
   if(p=="beta")
   {
     if(!isSparseApproximation())
       throw ndlexceptions::Error("beta path only valid for sparse approximations.");
     setBetaVal(val);
+    if(isGaussianNoise())
+      syncLikelihoodVarianceFromSparseBeta();
     return;
   }
   if(p.compare(0, 6, "scale.")==0)
@@ -504,6 +656,7 @@ void CGp::setByPath(const string& path, double val)
   }
   pkern->setByPath(p, val);
   setKupToDate(false);
+  maybeWarnDualObservationNoise();
 }
 
 void CGp::fixKernParam(unsigned int index)
@@ -532,6 +685,8 @@ void CGp::fixBeta(bool val)
   if(val && !isSparseApproximation())
     throw ndlexceptions::Error("Cannot fix beta on a non-sparse GP.");
   betaFixed=val;
+  if(isGaussianNoise())
+    likelihoodVarianceFixed=val;
 }
 
 void CGp::clearFixes()
@@ -540,6 +695,7 @@ void CGp::clearFixes()
   for(size_t i=0; i<kernParamFixed.size(); i++)
     kernParamFixed[i]=false;
   betaFixed=false;
+  likelihoodVarianceFixed=false;
   for(size_t i=0; i<scaleParamFixed.size(); i++)
     scaleParamFixed[i]=false;
 }
@@ -553,6 +709,8 @@ void CGp::fix(const string& path)
     fixKernParam(index);
   else if(kind==1)
     fixBeta(true);
+  else if(kind==3)
+    fixLikelihoodVariance(true);
   else
   {
     if(scaleParamFixed.size()!=getOutputDim())
@@ -570,6 +728,8 @@ void CGp::unfix(const string& path)
     unfixKernParam(index);
   else if(kind==1)
     fixBeta(false);
+  else if(kind==3)
+    fixLikelihoodVariance(false);
   else
   {
     if(scaleParamFixed.size()!=getOutputDim())
@@ -587,6 +747,8 @@ bool CGp::isFixed(const string& path) const
     return isKernParamFixed(index);
   if(kind==1)
     return betaFixed;
+  if(kind==3)
+    return likelihoodVarianceFixed;
   if(index>=scaleParamFixed.size())
     return false;
   return scaleParamFixed[index];
@@ -744,7 +906,12 @@ unsigned int CGp::getOptNumParams() const
         tot += numActive*getInputDim();
     }
     if(!betaFixed)
-      tot++; // for beta value.
+      tot++; // for beta value (aliases likelihood.variance).
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    // CIP-0027: FTC optimises σ² on the likelihood when it owns Gram noise.
+    tot++;
   }
   // for learning scales.
   if(isOutputScaleLearnt()) 
@@ -828,6 +995,11 @@ void CGp::getOptParams(CMatrix& param) const
       counter++;
     }
   }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    param.setVal(betaTransform->xtoa(getLikelihoodVariance()), counter);
+    counter++;
+  }
 }
 
 void CGp::setOptParams(const CMatrix& param)
@@ -898,7 +1070,15 @@ void CGp::setOptParams(const CMatrix& param)
     {
       beta.setVal(betaTransform->atox(param.getVal(counter)), 0);
       counter++;
+      if(isGaussianNoise())
+        syncLikelihoodVarianceFromSparseBeta();
     }
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    static_cast<CGaussianNoise*>(pnoise)->setVariance(
+      betaTransform->atox(param.getVal(counter)));
+    counter++;
   }
   
 }
@@ -1141,6 +1321,9 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
     for(unsigned int i=0; i<kX.getCols(); i++)
     {
       double vsVal = pkern->diagComputeElement(Xin, i) - kX.norm2Col(i);
+      // CIP-0027: match sparse (+1/β) and legacy White-in-diag predictive noise.
+      if(addsLikelihoodVarianceToGram())
+        vsVal += getLikelihoodVariance();
       CHECKZEROORPOSITIVE(vsVal>=0);
       for(unsigned int j=0; j<getOutputDim(); j++)
       {
@@ -1234,6 +1417,9 @@ void CGp::_updateK() const
   case FTC:
     // CIP-0013 P4: bulk kernel path (CStationaryKern / CCmpndKern::compute).
     pkern->compute(K, *pX);
+    // CIP-0027: observation noise on the Gram from likelihood.variance.
+    if(addsLikelihoodVarianceToGram())
+      ndlnoise::addObservationNoiseDiag(K, getLikelihoodVariance());
     break;
   case DTC:
   case DTCVAR:
@@ -1920,6 +2106,13 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
       counter++;
     }
   }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    // gBeta holds ∂L/∂σ² before the positive-transform factor.
+    const double gVar = gBeta.getVal(0);
+    g.setVal(gVar*betaTransform->gradfact(getLikelihoodVariance()), 0, counter);
+    counter++;
+  }
   //setADupToDate(false);
   return logLikelihood();
 
@@ -1937,6 +2130,12 @@ void CGp::updateG() const
   CMatrix tempG2(1, numKernParams);
   CMatrix tmpV(getOutputDim(), 1);
   g_param.zeros();
+  if(addsLikelihoodVarianceToGram())
+  {
+    if(gBeta.getRows()!=1 || gBeta.getCols()!=1)
+      gBeta.resize(1, 1);
+    gBeta.zeros();
+  }
 
   switch(getApproximationType()) 
   {
@@ -1960,6 +2159,11 @@ void CGp::updateG() const
       for(unsigned int i=0; i<numKernParams; i++) 
       {
         g_param.addVal(tempG.getVal(i), i);
+      }
+      if(addsLikelihoodVarianceToGram())
+      {
+        // ∂K/∂σ² = I ⇒ ∂L/∂σ² = tr(covGrad).
+        gBeta.addVal(covGrad.trace(), 0);
       }
 
       if(isOptimiseX())

@@ -1,8 +1,11 @@
-/* CIP-0018: CMrd ELBO, grads, factorizeSpace. */
+/* CIP-0018: CMrd ELBO, grads, factorizeSpace, GPy fixture compare. */
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
+#include <string>
 #include "CMrd.h"
 #include "ndlutil.h"
 
@@ -15,6 +18,65 @@ const unsigned int Q = 3;
 const unsigned int M = 3;
 const unsigned int D0 = 2;
 const unsigned int D1 = 3;
+
+// Looser than MATCHTOL: GPy vs C++ Cholesky / BLAS stack differences.
+const double FIXTURE_TOL = 1e-6;
+
+string nextToken(istream& in)
+{
+  string tok;
+  while(in >> tok)
+  {
+    if(!tok.empty() && tok[0] == '#')
+    {
+      string rest;
+      getline(in, rest);
+      continue;
+    }
+    return tok;
+  }
+  return string();
+}
+
+void expectKey(istream& in, const string& key)
+{
+  const string tok = nextToken(in);
+  if(tok != key)
+    throw ndlexceptions::Error("fixture: expected key " + key + " got " + tok);
+}
+
+double readDouble(istream& in)
+{
+  const string tok = nextToken(in);
+  return atof(tok.c_str());
+}
+
+unsigned int readUint(istream& in)
+{
+  return (unsigned int)readDouble(in);
+}
+
+void readMatrix(istream& in, const string& key, CMatrix& A)
+{
+  expectKey(in, key);
+  const unsigned int rows = readUint(in);
+  const unsigned int cols = readUint(in);
+  A.resize(rows, cols);
+  for(unsigned int i = 0; i < rows; i++)
+    for(unsigned int j = 0; j < cols; j++)
+      A.setVal(readDouble(in), i, j);
+}
+
+int failNear(double a, double b, double tol, const string& what)
+{
+  if(fabs(a - b) > tol)
+  {
+    cout << "FAILURE: " << what << " a=" << a << " b=" << b
+         << " |diff|=" << fabs(a - b) << endl;
+    return 1;
+  }
+  return 0;
+}
 
 void fillViewY(CMatrix& Y, unsigned int sharedQ, unsigned int privateQ, double scale)
 {
@@ -222,6 +284,84 @@ int testRejectOneView()
   }
 }
 
+int testGpyFixture(const string& path)
+{
+  ifstream in(path.c_str());
+  if(!in.is_open())
+  {
+    cout << "FAILURE: cannot open fixture " << path << endl;
+    return 1;
+  }
+
+  expectKey(in, "N");
+  const unsigned int n = readUint(in);
+  expectKey(in, "D0");
+  const unsigned int d0 = readUint(in);
+  expectKey(in, "D1");
+  const unsigned int d1 = readUint(in);
+  expectKey(in, "Q");
+  const unsigned int q = readUint(in);
+  expectKey(in, "M");
+  const unsigned int m = readUint(in);
+  expectKey(in, "beta0");
+  const double beta0 = readDouble(in);
+  expectKey(in, "beta1");
+  const double beta1 = readDouble(in);
+  expectKey(in, "inverseWidth0");
+  const double iw0 = readDouble(in);
+  expectKey(in, "variance0");
+  const double var0 = readDouble(in);
+  expectKey(in, "inverseWidth1");
+  const double iw1 = readDouble(in);
+  expectKey(in, "variance1");
+  const double var1 = readDouble(in);
+
+  CMatrix Y0, Y1, mu, S, Z;
+  readMatrix(in, "Y0", Y0);
+  readMatrix(in, "Y1", Y1);
+  readMatrix(in, "mu", mu);
+  readMatrix(in, "S", S);
+  readMatrix(in, "Z", Z);
+  expectKey(in, "elbo");
+  const double elboRef = readDouble(in);
+
+  if(Y0.getRows() != n || Y0.getCols() != d0 || Y1.getRows() != n || Y1.getCols() != d1
+     || mu.getRows() != n || mu.getCols() != q || S.getRows() != n || S.getCols() != q
+     || Z.getRows() != m || Z.getCols() != q)
+  {
+    cout << "FAILURE: fixture dimension mismatch" << endl;
+    return 1;
+  }
+
+  vector<CMatrix> Ys;
+  Ys.push_back(Y0);
+  Ys.push_back(Y1);
+  CRbfKern* k0 = new CRbfKern(q);
+  k0->setInitParam();
+  k0->setInverseWidth(iw0);
+  k0->setVariance(var0);
+  CRbfKern* k1 = new CRbfKern(q);
+  k1->setInitParam();
+  k1->setInverseWidth(iw1);
+  k1->setVariance(var1);
+  vector<CKern*> ks;
+  ks.push_back(k0);
+  ks.push_back(k1);
+
+  CMrd model(Ys, ks, q, m, 0);
+  model.getView(0)->setBeta(beta0);
+  model.getView(1)->setBeta(beta1);
+  model.getMu().deepCopy(mu);
+  model.getS().deepCopy(S);
+  model.getZ().deepCopy(Z);
+
+  const double elbo = model.logLikelihood();
+  const int fail = failNear(elbo, elboRef, FIXTURE_TOL, "MRD ELBO vs GPy");
+  if(fail == 0)
+    cout << "OK: GPy fixture " << path << " (ELBO=" << elbo << ")" << endl;
+  return fail;
+}
+
 } // namespace
 
 int main()
@@ -235,6 +375,7 @@ int main()
     fail += testOptimiseAndFactorize();
     fail += testStreamRoundTrip();
     fail += testRejectOneView();
+    fail += testGpyFixture("testdata/cip0018/mrd_rbf_tiny.txt");
     cout << "Number of failures: " << fail << "." << endl;
     return fail > 0 ? 1 : 0;
   }

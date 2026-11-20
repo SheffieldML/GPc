@@ -1,6 +1,8 @@
 #include "CKern.h"
+#include "CMultioutput.h"
 #include <cmath>
 #include <sstream>
+#include <vector>
 using namespace std;
 
 static int fails = 0;
@@ -438,6 +440,122 @@ static void testTensorRejectsIndexWhite()
   expect(threw, "tensor rejects indexwhite");
 }
 
+static void testBuildXYAndSlices()
+{
+  CMatrix X0(2, 1);
+  X0.setVal(0.0, 0, 0);
+  X0.setVal(1.0, 1, 0);
+  CMatrix X1(3, 1);
+  X1.setVal(2.0, 0, 0);
+  X1.setVal(3.0, 1, 0);
+  X1.setVal(4.0, 2, 0);
+  CMatrix Y0(2, 1);
+  Y0.setVal(10.0, 0, 0);
+  Y0.setVal(11.0, 1, 0);
+  CMatrix Y1(3, 1);
+  Y1.setVal(20.0, 0, 0);
+  Y1.setVal(21.0, 1, 0);
+  Y1.setVal(22.0, 2, 0);
+  vector<CMatrix> Xs;
+  Xs.push_back(X0);
+  Xs.push_back(X1);
+  vector<CMatrix> Ys;
+  Ys.push_back(Y0);
+  Ys.push_back(Y1);
+
+  CMatrix X;
+  CMatrix Y;
+  buildXY(Xs, Ys, X, Y);
+  expect(X.getRows()==5 && X.getCols()==2, "buildXY X shape");
+  expect(Y.getRows()==5 && Y.getCols()==1, "buildXY Y shape");
+  expect(fabs(X.getVal(0, 1))<ndlutil::MATCHTOL, "buildXY index0");
+  expect(fabs(X.getVal(2, 1)-1.0)<ndlutil::MATCHTOL, "buildXY index1");
+  expect(fabs(Y.getVal(4, 0)-22.0)<ndlutil::MATCHTOL, "buildXY Y last");
+
+  vector<CRowSlice> slices = getSlices(Xs);
+  expect(slices.size()==2 && slices[0].start==0 && slices[0].stop==2
+         && slices[1].start==2 && slices[1].stop==5, "getSlices blocks");
+
+  CMatrix idx(5, 1);
+  for(unsigned int i = 0; i < 5; i++)
+    idx.setVal(X.getVal(i, 1), i, 0);
+  vector<vector<CRowSlice> > byIdx = indexToSlices(idx);
+  expect(byIdx.size()==2 && byIdx[0].size()==1 && byIdx[0][0].start==0
+         && byIdx[0][0].stop==2 && byIdx[1][0].start==2 && byIdx[1][0].stop==5,
+         "indexToSlices contiguous");
+
+  CMatrix Xstar(2, 2);
+  Xstar.setVal(0.5, 0, 0);
+  Xstar.setVal(9.0, 0, 1);
+  Xstar.setVal(1.5, 1, 0);
+  Xstar.setVal(9.0, 1, 1);
+  stampOutputIndex(Xstar, 1);
+  expect(fabs(Xstar.getVal(0, 1)-1.0)<ndlutil::MATCHTOL
+         && fabs(Xstar.getVal(1, 1)-1.0)<ndlutil::MATCHTOL, "stampOutputIndex");
+
+  bool threw = false;
+  try
+  {
+    CMatrix Ybad(2, 2);
+    buildXY(Xs, vector<CMatrix>(1, Ybad), X, Y);
+  }
+  catch(...) { threw = true; }
+  expect(threw, "buildXY rejects size mismatch");
+
+  threw = false;
+  CMatrix badIdx(3, 1);
+  badIdx.setVal(0.0, 0, 0);
+  badIdx.setVal(1.7, 1, 0);
+  badIdx.setVal(1.0, 2, 0);
+  try { indexToSlices(badIdx); }
+  catch(...) { threw = true; }
+  expect(threw, "indexToSlices rejects non-integer");
+}
+
+static void testCoregFactorySmoke()
+{
+  CMatrix X0(4, 1);
+  CMatrix X1(4, 1);
+  CMatrix Y0(4, 1);
+  CMatrix Y1(4, 1);
+  for(unsigned int i = 0; i < 4; i++)
+  {
+    const double t = 0.5 * i;
+    X0.setVal(t, i, 0);
+    X1.setVal(t, i, 0);
+    Y0.setVal(sin(t), i, 0);
+    Y1.setVal(cos(t), i, 0);
+  }
+  vector<CMatrix> Xs;
+  Xs.push_back(X0);
+  Xs.push_back(X1);
+  vector<CMatrix> Ys;
+  Ys.push_back(Y0);
+  Ys.push_back(Y1);
+
+  CRbfKern spatial(1);
+  spatial.setInitParam();
+  CCmpndKern* k = createCoregionalizedKern(spatial, 2, 1, true);
+  expect(k->getNumKerns()==2, "coreg kern ICM+indexwhite");
+  expect(k->getInputDim()==2, "coreg kern inputDim q+1");
+  delete k;
+
+  CCoregionalizedRegression model(Xs, Ys, spatial, 1, true, 0);
+  expect(model.getNumOutputs()==2, "factory numOutputs");
+  expect(model.getX().getRows()==8 && model.getX().getCols()==2, "factory X shape");
+  expect(model.getSlices().size()==2, "factory slices");
+  const double L = model.getModel().logLikelihood();
+  expect(!(std::isnan(L) || std::isinf(L)), "factory ELBO finite");
+  CMatrix mu(2, 1);
+  CMatrix var(2, 1);
+  CMatrix Xstar(2, 2);
+  Xstar.setVal(0.25, 0, 0);
+  Xstar.setVal(0.75, 1, 0);
+  stampOutputIndex(Xstar, 0);
+  model.getModel().posteriorMeanVar(mu, var, Xstar);
+  expect(!(std::isnan(mu.getVal(0)) || std::isnan(var.getVal(0))), "factory predict finite");
+}
+
 int main()
 {
   try
@@ -451,6 +569,8 @@ int main()
     testIndexWhite();
     testStreamRoundTrip();
     testTensorRejectsIndexWhite();
+    testBuildXYAndSlices();
+    testCoregFactorySmoke();
     cout << "Number of failures: " << fails << "." << endl;
     return fails>0 ? 1 : 0;
   }

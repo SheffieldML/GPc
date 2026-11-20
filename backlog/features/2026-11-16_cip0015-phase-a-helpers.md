@@ -1,10 +1,10 @@
 ---
 id: "2026-11-16_cip0015-phase-a-helpers"
 title: "Phase A: build_XY, slices, coregionalized CGp factory (CIP-0015)"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-20"
 category: "features"
 related_cips: ["0015", "000D"]
 owner: "Neil Lawrence"
@@ -27,11 +27,11 @@ Does **not** block [Stage 1](../documentation/2026-11-16_cip0015-stage1-current-
 
 ## Acceptance Criteria
 
-- [ ] `build_XY` (or equivalent) stacks per-output `X`/`y` and appends integer-valued output index as last column
-- [ ] Slice helpers comparable to GPy `get_slices` / `index_to_slices` for per-output row ranges
-- [ ] Factory returns a documented ownership model: ICM or LCM + `CIndexWhiteKern` + `CGp` + Gaussian noise on stacked targets
-- [ ] Unit tests cover shapes, index cast failures, and basic factory smoke (extend `testCoregionalize` or sibling)
-- [ ] Docs updated in `docs/coregionalize.md` (or tutorial cross-link) for the helper API
+- [x] `build_XY` (or equivalent) stacks per-output `X`/`y` and appends integer-valued output index as last column
+- [x] Slice helpers comparable to GPy `get_slices` / `index_to_slices` for per-output row ranges
+- [x] Factory returns a documented ownership model: ICM or LCM + `CIndexWhiteKern` + `CGp` + Gaussian noise on stacked targets
+- [x] Unit tests cover shapes, index cast failures, and basic factory smoke (extend `testCoregionalize` or sibling)
+- [x] Docs updated in `docs/coregionalize.md` (or tutorial cross-link) for the helper API
 
 ## Implementation Notes
 
@@ -50,3 +50,7 @@ Does **not** block [Stage 1](../documentation/2026-11-16_cip0015-stage1-current-
 ### 2026-11-16
 
 Task created (Ready) after CIP-0015 Accepted; parallel to Stage 1, not a Stage 1 dependency.
+
+### 2026-11-20
+
+Delivered `CMultioutput.h` / `.cpp`: `buildXY`, `getSlices`, `indexToSlices`, `stampOutputIndex`, `createCoregionalizedKern` / LCM variant, and owning `CCoregionalizedRegression`. Tests in `testCoregionalize`; docs in `docs/coregionalize.md`. Status → Completed.

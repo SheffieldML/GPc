@@ -46,27 +46,11 @@ class CStochasticOptimisable {
       progressObserver(ev);
   }
 
-  /// CIP-001E / CIP-0030: scrolling Adam progress for CLI (verbosity-gated).
+  /// CIP-001E-style progress: in-place rewrite on TTY, scrolling lines otherwise.
+  /// Optional snapshot() appends a multi-line model block (e.g. display/describe).
   void installDefaultTextProgress(std::ostream& os, int verbosity,
-                                  const std::string& optimiserName = "adam")
-  {
-    if(verbosity <= 0)
-    {
-      clearProgressObserver();
-      return;
-    }
-    setProgressObserver(
-        [&os, verbosity, optimiserName](const StochasticOptimiserEvent& ev) {
-          if(verbosity <= 0)
-            return;
-          os << "Running " << optimiserName << " · iter " << ev.iteration
-             << " · objective " << ev.objectiveEstimate
-             << " · batch " << ev.batchSize << std::endl;
-          if(ev.terminal)
-            os << "Warning: Maximum number of iterations has been exceeded"
-               << std::endl;
-        });
-  }
+                                  const std::string& optimiserName = "adam",
+                                  std::function<std::string()> snapshot = {});
 
  private:
   std::function<void(const StochasticOptimiserEvent&)> progressObserver;

@@ -619,18 +619,13 @@ void CClivm::learn() {
       defaultKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
     kern.addKern(defaultKern);
   }
-  CKern* biasKern = new CBiasKern(X);
-  if(missingData)
-    biasKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(biasKernVariance, 0);
-  
+  // CIP-0027 Phase B′: keep trained White as the IVM softener (probit σ² is
+  // fixed tiny; CIvm::updateM needs getWhite()). Drop auto Bias — probit bias
+  // covers the mean offset; RBF+White ≈ RBF+Bias+White on unitsquare Jaccard.
+  // Explicit -k bias still works. Regression/PPA/Python already dropped both.
   CKern* whiteKern = new CWhiteKern(X);
   if(missingData)
     whiteKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-  //biasKern->setParam(whiteKernVariance, 0);
-  
-  kern.addKern(biasKern);
-  
   kern.addKern(whiteKern);
   
   noise->setTarget(&y);
@@ -1301,7 +1296,7 @@ void CClivm::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Kernel options:" << endl;
-    helpArgument("-k, --kernel string", "Type of kernel function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad; prefer -P ExpQuad.lengthscale=…), exp, ratquad, mlp. Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian, plus bias/white/ard variants.");
+    helpArgument("-k, --kernel string", "Type of kernel function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad; prefer -P ExpQuad.lengthscale=…), exp, ratquad, mlp (default lin if none given). CIP-0027: auto-appends White as the IVM softener (probit σ² fixed); Bias is opt-in via -k bias. Additional stream/testKern types (CIP-000C): matern32, matern52, … plus white/ard variants.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic kernel.");
     helpArgument("-v, --variance float", "Variance parameter for kernel.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP kernel.");

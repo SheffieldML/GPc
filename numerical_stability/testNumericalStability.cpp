@@ -859,6 +859,9 @@ struct RegGp
       applySparseMode(*model);
     }
     model->setBetaVal(100.0);
+    // CIP-0027 Phase C: RegGp uses White as observation noise on FTC.
+    if(approx == CGp::FTC)
+      model->fixLikelihoodVariance(true);
     model->setVerbosity(0);
   }
 
@@ -1046,6 +1049,7 @@ int testModels()
     for(int i = 0; i < noise.getOutputDim(); i++)
       noise.setBiasVal(0.0, i);
     CGp model(&kern, &noise, &Xd, CGp::FTC, 0, 0);
+    model.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     model.setBetaVal(1e10);
     model.setVerbosity(0);
     check("exact_gp_duplicate_inputs_tiny_noise", gpAllFinite(model));
@@ -1095,6 +1099,7 @@ int testModels()
     for(int i = 0; i < noiseB.getOutputDim(); i++)
       noiseB.setBiasVal(0.0, i);
     CGp b(&kernB, &noiseB, &Xb, CGp::FTC, 0, 0);
+    b.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     b.setBetaVal(100.0);
     b.setVerbosity(0);
     const double llDiff = fabs(b.logLikelihood() - llA);
@@ -1169,6 +1174,7 @@ int testModels()
     for(int i = 0; i < noise.getOutputDim(); i++)
       noise.setBiasVal(0.0, i);
     CGp model(&kern, &noise, &Xd, CGp::FTC, 0, 0);
+    model.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     model.setBetaVal(100.0);
     model.setVerbosity(0);
     check("exp_kernel_gp_duplicates_finite", gpAllFinite(model));

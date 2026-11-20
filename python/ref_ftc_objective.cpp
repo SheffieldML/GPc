@@ -2,6 +2,7 @@
  *
  * Mirrors python/src/wrap_gp.cpp construction on a fixed toy (N=8) and prints
  * computeObjectiveVal after the same path sets as test_gp_regression.py.
+ * CIP-0027: RBF + likelihood.variance (no auto Bias/White).
  *
  * Build (from python/): make ref_ftc_objective
  * Run: ./ref_ftc_objective
@@ -32,11 +33,7 @@ int main()
   CCmpndKern kern(X);
   {
     CRbfKern rbf(X);
-    CBiasKern bias(X);
-    CWhiteKern white(X);
     kern.addKern(&rbf);
-    kern.addKern(&bias);
-    kern.addKern(&white);
   }
   kern.setByPath("rbf.lengthscale", 1.0);
   kern.setByPath("rbf.variance", 1.0);
@@ -46,11 +43,10 @@ int main()
     noise.setBiasVal(0.0, j);
 
   CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
-  model.setBetaVal(1.0);
+  model.setLikelihoodVariance(1.0);
   model.setByPath("rbf.lengthscale", 0.5);
   model.setByPath("rbf.variance", 1.0);
-  model.setByPath("bias.variance", 0.1);
-  model.setByPath("white.variance", 0.05);
+  model.setByPath("likelihood.variance", 0.05);
 
   cout << setprecision(17) << model.computeObjectiveVal() << endl;
   return 0;

@@ -6,7 +6,7 @@ C++ core; NumPy arrays cross the process boundary only.
 GPy-shaped entry points::
 
     import gpc
-    k = gpc.kern.RBF(1) + gpc.kern.Bias(1) + gpc.kern.White(1)
+    k = gpc.kern.RBF(1)  # CIP-0027: Bias/White opt-in; noise is likelihood.variance
     m = gpc.models.GPRegression(X, Y, kernel=k)
 
 String-kernel constructors remain available for the default signal+bias+white

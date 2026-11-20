@@ -24,6 +24,7 @@ def test_kern_add_flattens():
 
 
 def test_gp_regression_with_kern_object():
+    """Explicit White in kern object uses legacy White-owned noise (CIP-0027)."""
     X, Y = _toy()
     k = gpc.kern.RBF(1, lengthscale=0.5, variance=1.0) + gpc.kern.Bias(1, variance=0.1) + gpc.kern.White(
         1, variance=0.05
@@ -65,10 +66,12 @@ def test_sparse_with_kern_object():
     assert mu.shape == Y.shape
 
 
-def test_string_kernel_still_default_compound():
+def test_string_kernel_default_signal_only():
+    """CIP-0027: string kernels are signal-only; noise is likelihood.variance."""
     X, Y = _toy()
     m = gpc.GPRegression(X, Y)
     paths = m.param_paths()
     assert any("rbf" in p for p in paths)
-    assert any("bias" in p for p in paths)
-    assert any("white" in p for p in paths)
+    assert any(p == "likelihood.variance" or p.endswith("likelihood.variance") for p in paths)
+    assert not any("bias" in p for p in paths)
+    assert not any("white" in p for p in paths)

@@ -79,21 +79,14 @@ std::string signalKindLabel(SignalKind kind)
   }
 }
 
-void addBiasWhite(CCmpndKern& kern, const CMatrix& X)
-{
-  CBiasKern bias(X);
-  CWhiteKern white(X);
-  kern.addKern(&bias);
-  kern.addKern(&white);
-}
-
 void addOptionalWhite(CCmpndKern& kern, const CMatrix& X)
 {
   CWhiteKern white(X);
   kern.addKern(&white);
 }
 
-// FTC / point-inducing compound: signal + bias + white (GPy-familiar default).
+// CIP-0027 Phase B: string-kernel default is signal only (no auto Bias/White).
+// Observation noise is likelihood.variance (FTC) or β (sparse).
 void addFtcStyleCompound(CCmpndKern& kern,
                          const CMatrix& X,
                          SignalKind kind,
@@ -105,7 +98,6 @@ void addFtcStyleCompound(CCmpndKern& kern,
   {
     CEqKern eq(X);
     kern.addKern(&eq);
-    addBiasWhite(kern, X);
     kern.setByPath("ExpQuad.lengthscale", 1.0);
     kern.setByPath("ExpQuad.variance", 1.0);
     break;
@@ -114,7 +106,6 @@ void addFtcStyleCompound(CCmpndKern& kern,
   {
     CMlpKern mlp(X);
     kern.addKern(&mlp);
-    addBiasWhite(kern, X);
     kern.setByPath("mlp.weightVariance", 10.0);
     kern.setByPath("mlp.biasVariance", 10.0);
     kern.setByPath("mlp.variance", 1.0);
@@ -125,7 +116,6 @@ void addFtcStyleCompound(CCmpndKern& kern,
     CArcCosineKern ac(X);
     ac.setOrder(arccosOrder);
     kern.addKern(&ac);
-    addBiasWhite(kern, X);
     kern.setByPath("arccos.variance", 1.0);
     break;
   }
@@ -134,7 +124,6 @@ void addFtcStyleCompound(CCmpndKern& kern,
   {
     CRbfKern rbf(X);
     kern.addKern(&rbf);
-    addBiasWhite(kern, X);
     kern.setByPath("rbf.lengthscale", 1.0);
     kern.setByPath("rbf.variance", 1.0);
     break;
@@ -335,7 +324,18 @@ PyGPRegression::PyGPRegression(
     noise->setBiasVal(0.0, j);
 
   model = std::make_unique<CGp>(kern.get(), noise.get(), &X, CGp::FTC, 0, verbosity);
-  model->setBetaVal(1.0);
+  model->setLikelihoodVariance(1.0);
+  // CIP-0027 Phase C: explicit White in a kern object → legacy White-owned
+  // observation noise (matches ./gp learn -k white). Likelihood-owned noise
+  // is the string-kernel default (no White).
+  try
+  {
+    (void)kern->getByPath("white.variance");
+    model->fixLikelihoodVariance(true);
+  }
+  catch(ndlexceptions::Error&)
+  {
+  }
 }
 
 void PyGPRegression::set_by_path(const std::string& path, double val)

@@ -29,6 +29,55 @@ This file now also contains the code for ordered categorical noise models.
 using namespace std;
 
 const string NOISEVERSION="0.1";
+
+/* CIP-0027 Phase 0 — likelihood surface (docs/target-architecture.md rule 2).
+ *
+ * Canonical / GPy2 names for new work (existing C++ methods stay as oracles/wrappers):
+ *   log_density              — log p(y|f) at a latent sample (exact f)
+ *   variational_expectations — E_q[log p(y|f)]  (maps to expectedLogLikelihood)
+ *   log_predictive_density   — log E_q[p(y|f)]  (maps to logLikelihood(mu,var,y))
+ *   predictive_moments       — out() mean / variance of the observation
+ *   ep_moments               — deferred to follow-on likelihood/inference CIP
+ *
+ * Batched helpers take contiguous (Y, mu, var) blocks and write into
+ * caller-provided buffers. They take observation variance as a parameter so
+ * they add no fields to CNoise. Per-element virtuals remain for tests only;
+ * do not add new hot-path per-element methods here.
+ *
+ * Parameter naming (rule 7): likelihood.variance is canonical;
+ * Gaussian_noise.variance is the GPy1 alias (wired in Phase A via CIP-0014).
+ */
+namespace ndlnoise {
+
+/** Add spherical observation noise σ² to the diagonal of a Gram matrix (FTC Phase A). */
+void addObservationNoiseDiag(CMatrix& K, double sigma2);
+
+/** log p(y|f) = N(y; f, σ²) elementwise into logDens (bias offsets optional, length = cols). */
+void gaussianLogDensity(CMatrix& logDens,
+                        const CMatrix& y,
+                        const CMatrix& f,
+                        double sigma2,
+                        const double* biasOrNull = 0);
+
+/** E_q[log p(y|f)] for q(f)=N(μ,v); also fills gMu, gVar. Matches CGaussianNoise::expectedLogLikelihood. */
+void gaussianVariationalExpectations(CMatrix& ell,
+                                     CMatrix& gMu,
+                                     CMatrix& gVar,
+                                     const CMatrix& y,
+                                     const CMatrix& mu,
+                                     const CMatrix& var,
+                                     double sigma2,
+                                     const double* biasOrNull = 0);
+
+/** log E_q[p(y|f)] for Gaussian noise; matches CGaussianNoise::logLikelihood(mu,var,y) up to bias. */
+double gaussianLogPredictiveDensity(const CMatrix& y,
+                                    const CMatrix& mu,
+                                    const CMatrix& var,
+                                    double sigma2,
+                                    const double* biasOrNull = 0);
+
+} // namespace ndlnoise
+
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
 class CNoise : public CTransformable, public COptimisable, public CStreamInterface, public CMatInterface {
  public:
@@ -390,6 +439,14 @@ class CGaussianNoise : public CNoise {
     bias.deepCopy(bia);
   }
   double getSigma2() const { return sigma2; }
+  void setSigma2(double val)
+  {
+    BOUNDCHECK(val > 0.0);
+    sigma2 = val;
+  }
+  // CIP-0027: canonical name is variance (path likelihood.variance); sigma2 is legacy.
+  double getVariance() const { return getSigma2(); }
+  void setVariance(double val) { setSigma2(val); }
   
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.
@@ -574,6 +631,8 @@ class CProbitNoise : public CNoise
   {
     return bias.getVal(0, index);
   }
+  // CIP-0027: probit σ² is fixed (softener is White-in-K); expose for tests.
+  double getSigma2() const { return sigma2; }
   
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.

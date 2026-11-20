@@ -661,22 +661,9 @@ void CClppa::learn()
 	defaultKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
       kern.addKern(defaultKern);
     }
-  CKern* biasKern = new CBiasKern(X);
-  if(missingData)
-    biasKern->addPrior(prior, 0); // place L1 regulariser on variance for ncnm model.
-
-  kern.addKern(biasKern);
-
-  // Sparse PPA (CIP-0026): observation noise lives in β — do not add white
-  // (CWhiteKern cross-covariance is zero, so DTC M=N would not recover dense).
+  // CIP-0027 Phase B: do not auto-append Bias or White.
+  // Observation / site noise stays in β + outer CNoise; explicit -k bias/white still work.
   const bool useSparse = (approxTypeStr!="dense" && approxTypeStr!="ftc");
-  if(!useSparse)
-    {
-      CKern* whiteKern = new CWhiteKern(X);
-      if(missingData)
-	whiteKern->addPrior(prior, 0);
-      kern.addKern(whiteKern);
-    }
 
   noise->setTarget(&y);
   noise->initParams();

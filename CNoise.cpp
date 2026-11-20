@@ -3,6 +3,97 @@
 
 using namespace std;
 
+namespace ndlnoise {
+
+void addObservationNoiseDiag(CMatrix& K, double sigma2)
+{
+  DIMENSIONMATCH(K.getRows() == K.getCols());
+  BOUNDCHECK(sigma2 >= 0.0);
+  for(unsigned int i = 0; i < K.getRows(); i++)
+    K.setVal(K.getVal(i, i) + sigma2, i, i);
+}
+
+void gaussianLogDensity(CMatrix& logDens,
+                        const CMatrix& y,
+                        const CMatrix& f,
+                        double sigma2,
+                        const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(f));
+  DIMENSIONMATCH(logDens.dimensionsMatch(y));
+  BOUNDCHECK(sigma2 > 0.0);
+  const double halfLogTwoPiSigma2 = ndlutil::HALFLOGTWOPI + 0.5 * log(sigma2);
+  const double invSigma2 = 1.0 / sigma2;
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      const double r = y.getVal(i, j) - f.getVal(i, j) - b;
+      logDens.setVal(-halfLogTwoPiSigma2 - 0.5 * invSigma2 * r * r, i, j);
+    }
+  }
+}
+
+void gaussianVariationalExpectations(CMatrix& ell,
+                                     CMatrix& gMu,
+                                     CMatrix& gVar,
+                                     const CMatrix& y,
+                                     const CMatrix& mu,
+                                     const CMatrix& var,
+                                     double sigma2,
+                                     const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(mu));
+  DIMENSIONMATCH(mu.dimensionsMatch(var));
+  DIMENSIONMATCH(ell.dimensionsMatch(y));
+  DIMENSIONMATCH(gMu.dimensionsMatch(y));
+  DIMENSIONMATCH(gVar.dimensionsMatch(y));
+  BOUNDCHECK(sigma2 > 0.0);
+  const double betaLik = 1.0 / sigma2;
+  const double constTerm = -ndlutil::HALFLOGTWOPI + 0.5 * log(betaLik);
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      const double r = y.getVal(i, j) - mu.getVal(i, j) - b;
+      const double v = var.getVal(i, j);
+      gMu.setVal(betaLik * r, i, j);
+      gVar.setVal(-0.5 * betaLik, i, j);
+      ell.setVal(constTerm - 0.5 * betaLik * (r * r + v), i, j);
+    }
+  }
+}
+
+double gaussianLogPredictiveDensity(const CMatrix& y,
+                                    const CMatrix& mu,
+                                    const CMatrix& var,
+                                    double sigma2,
+                                    const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(mu));
+  DIMENSIONMATCH(y.dimensionsMatch(var));
+  BOUNDCHECK(sigma2 > 0.0);
+  double L = 0.0;
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      double arg = y.getVal(i, j) - mu.getVal(i, j) - b;
+      arg *= arg;
+      const double v = var.getVal(i, j) + sigma2;
+      L += log(v) + arg / v;
+    }
+  }
+  L += static_cast<double>(y.getRows() * y.getCols()) * log(2.0 * M_PI);
+  L *= -0.5;
+  return L;
+}
+
+} // namespace ndlnoise
+
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
                                      double& /*gMu*/, double& /*gVar*/) const
 {

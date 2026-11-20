@@ -62,7 +62,7 @@ jobs:
             '*/tools/diagPitc.cpp' \
             '*/tools/genTestGpPitc.cpp' \
             --output-file coverage.info
-          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
+          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|NoiseBatched|NoiseInLikelihood|Cip0027Perf|IvmSoftener|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
             echo "ERROR: test drivers still present in coverage.info" >&2
             lcov --list coverage.info
             exit 1

@@ -243,7 +243,7 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 - [x] Phase 2: QW4–QW5 stationary (MLP/0028 bulk deferred; `testCGp` / `testKern` / `testLQAdjoint` green)
 - [x] Phase 3: QW6–QW7 (`CSvgp` batched marginals/sites; workspaces; `CMatrix::totalAlloc` + `benchGPc --kind svgp`; `CSparsePpa` skipped — no analogous per-point marginal hot path)
 - [x] Phase 4: QW8 (`--kern mlp`; `bench/run_timing_cases.py` + `compare_timing.py`; warn-only `.github/workflows/bench-timing.yml`) and [REQ-0016](../requirements/req0016_gpu-training-decision.md) Proposed from Part B
-- [ ] Follow-up (not blocking Implemented): bulk diag grads / inducing ∂Z / MLP bulk — [backlog](../backlog/infrastructure/2026-11-20_cip002D-followup-bulk-diag-grad-inducing.md)
+- [x] Follow-up (not blocking Implemented): bulk diag grads / inducing ∂Z / MLP bulk — [backlog](../backlog/infrastructure/2026-11-20_cip002D-followup-bulk-diag-grad-inducing.md) (code landed; optional `RELEASE=1` timing soak still open on the task)
 
 ### Post-merge re-measurement (2026-11-20)
 

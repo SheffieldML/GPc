@@ -521,6 +521,34 @@ void CKern::getGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGr
     g.setVal(val*getTransformGradFact(param, i), getTransformIndex(i));
   }  
 }
+void CKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                          const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // Default: per-inducing getGradX (oracle for bulk overrides).
+  const unsigned int M = Z.getRows();
+  const unsigned int d = Z.getCols();
+  const unsigned int N = X.getRows();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+  gZ.resize(M, d);
+  gZ.zeros();
+  CMatrix dgKX(M, d);
+  CMatrix gKX(M, d);
+  CMatrix gKX_uf(N, d);
+  getDiagGradX(dgKX, Z);
+  for(unsigned int i=0; i<M; i++)
+  {
+    getGradX(gKX_uf, Z, i, X);
+    getGradX(gKX, Z, i, Z);
+    gKX.scale(2.0);
+    gKX.copyRowRow(i, dgKX, i);
+    for(unsigned int j=0; j<d; j++)
+      gZ.setVal(gKX.dotColCol(j, gKuu, i), i, j);
+    for(unsigned int j=0; j<d; j++)
+      gZ.addVal(gKX_uf.dotColRow(j, gKuf, i), i, j);
+  }
+}
 void CKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
 {
   // CIP-002D follow-up: bulk diagonal parameter gradients.
@@ -862,6 +890,21 @@ void CCmpndKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& 
   }
   if(regularise)
     addPriorGrad(g);
+}
+void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                               const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // K = Σ_c K_c ⇒ ∂L/∂Z = Σ_c ∂L_c/∂Z with the same cotangents.
+  const unsigned int M = Z.getRows();
+  const unsigned int d = Z.getCols();
+  gZ.resize(M, d);
+  gZ.zeros();
+  CMatrix gZc(M, d);
+  for(size_t i=0; i<components.size(); i++)
+  {
+    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf);
+    gZ.axpy(gZc, 1.0);
+  }
 }
 double CCmpndKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
@@ -2008,6 +2051,70 @@ void CRbfKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
   DIMENSIONMATCH(gX.dimensionsMatch(X));
   if(!addG)
     gX.zeros();
+}
+void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // CIP-002D QW5: gZ = γ (W X − diag(W 1) Z) with W = K ⊙ gK (+ 2× for Kuu).
+  // Falls back when activeDims is a subset (getGradX only touches those cols).
+  if(!isDefaultActiveDims())
+  {
+    CKern::inducingGradZ(gZ, Z, X, gKuu, gKuf);
+    return;
+  }
+  const unsigned int M = Z.getRows();
+  const unsigned int N = X.getRows();
+  const unsigned int d = Z.getCols();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+
+  CMatrix Kuf(M, N);
+  compute(Kuf, Z, X);
+  CMatrix Wuf(M, N);
+  Wuf.deepCopy(Kuf);
+  Wuf.dotMultiply(gKuf);
+  Wuf.scale(inverseWidth);
+  gZ.resize(M, d);
+  gZ.gemm(Wuf, X, 1.0, 0.0, "n", "n");
+  CMatrix rowSum(M, 1);
+  rowSum.zeros();
+  rowSum.sumRow(Wuf, 1.0, 0.0);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double rs = rowSum.getVal(i);
+    for(unsigned int q=0; q<d; q++)
+      gZ.addVal(-rs * Z.getVal(i, q), i, q);
+  }
+
+  CMatrix Kuu(M, M);
+  compute(Kuu, Z);
+  CMatrix Wuu(M, M);
+  Wuu.deepCopy(Kuu);
+  Wuu.dotMultiply(gKuu);
+  Wuu.scale(2.0 * inverseWidth);
+  CMatrix gZuu(M, d);
+  gZuu.gemm(Wuu, Z, 1.0, 0.0, "n", "n");
+  CMatrix rowSumU(M, 1);
+  rowSumU.zeros();
+  rowSumU.sumRow(Wuu, 1.0, 0.0);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double rs = rowSumU.getVal(i);
+    for(unsigned int q=0; q<d; q++)
+      gZuu.addVal(-rs * Z.getVal(i, q), i, q);
+  }
+  gZ.axpy(gZuu, 1.0);
+
+  // Diagonal ∂k(z,z)/∂z correction (zero for RBF; kept for API parity).
+  CMatrix dgKX(M, d);
+  getDiagGradX(dgKX, Z);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double gii = gKuu.getVal(i, i);
+    for(unsigned int q=0; q<d; q++)
+      gZ.addVal(dgKX.getVal(i, q) * gii, i, q);
+  }
 }
 double CRbfKern::getWhite() const
 {
@@ -3235,6 +3342,23 @@ void CLinKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cv
   if(regularise)
     addPriorGrad(g);
 }
+void CLinKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // ∂k(z,x)/∂z = σ x; after ×2 on Kuu and diag replace (no-op for Lin):
+  // gZ = σ gKuf X + 2σ gKuu Z.
+  const unsigned int M = Z.getRows();
+  const unsigned int N = X.getRows();
+  const unsigned int d = Z.getCols();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+  gZ.resize(M, d);
+  gZ.gemm(gKuf, X, variance, 0.0, "n", "n");
+  CMatrix gZuu(M, d);
+  gZuu.gemm(gKuu, Z, 2.0 * variance, 0.0, "n", "n");
+  gZ.axpy(gZuu, 1.0);
+}
   
 
 CMlpKern::CMlpKern() : CKern()
@@ -3386,6 +3510,75 @@ double CMlpKern::computeElement(const CMatrix& X1, unsigned int index1,
   double denom1=weightVariance*X1.norm2Row(index1)+biasVariance+1.0;  
   double denom2=weightVariance*X2.norm2Row(index2)+biasVariance+1.0;  
   return variance*asin(numer/sqrt(denom1*denom2));
+}
+void CMlpKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  // CIP-002D QW5: syrk for G=XXᵀ then element-wise asin map.
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  const unsigned int N = X.getRows();
+  K.syrk(X, 1.0, 0.0, "u", "n");
+  K.copySymmetric("u");
+  K.setSymmetric(true);
+  innerProdi.resize(1, N);
+  for(unsigned int i=0; i<N; i++)
+    innerProdi.setVal(X.norm2Row(i), i);
+  for(unsigned int j=0; j<N; j++)
+  {
+    const double denomj = weightVariance*innerProdi.getVal(j)+biasVariance+1.0;
+    for(unsigned int i=0; i<=j; i++)
+    {
+      const double denomi = weightVariance*innerProdi.getVal(i)+biasVariance+1.0;
+      const double numer = weightVariance*K.getVal(i, j)+biasVariance;
+      const double arg = numer/sqrt(denomi*denomj);
+      const double kij = variance*asin(arg);
+      K.setVal(kij, i, j);
+      if(i!=j)
+        K.setVal(kij, j, i);
+    }
+  }
+  K.setSymmetric(true);
+}
+void CMlpKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  // CIP-002D QW5: gemm for G=XX2ᵀ then element-wise asin map.
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols()==X2.getRows());
+  const unsigned int N = X.getRows();
+  const unsigned int M = X2.getRows();
+  K.gemm(X, X2, 1.0, 0.0, "n", "t");
+  innerProdi.resize(1, N);
+  innerProdj.resize(1, M);
+  for(unsigned int i=0; i<N; i++)
+    innerProdi.setVal(X.norm2Row(i), i);
+  for(unsigned int j=0; j<M; j++)
+    innerProdj.setVal(X2.norm2Row(j), j);
+  for(unsigned int j=0; j<M; j++)
+  {
+    const double denomj = weightVariance*innerProdj.getVal(j)+biasVariance+1.0;
+    for(unsigned int i=0; i<N; i++)
+    {
+      const double denomi = weightVariance*innerProdi.getVal(i)+biasVariance+1.0;
+      const double numer = weightVariance*K.getVal(i, j)+biasVariance;
+      K.setVal(variance*asin(numer/sqrt(denomi*denomj)), i, j);
+    }
+  }
+}
+void CMlpKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols()==1);
+  BOUNDCHECK(row < X2.getRows());
+  const unsigned int N = X.getRows();
+  for(unsigned int i=0; i<N; i++)
+    K.setVal(X.dotRowRow(i, X2, row), i, 0);
+  const double denom2 = weightVariance*X2.norm2Row(row)+biasVariance+1.0;
+  for(unsigned int i=0; i<N; i++)
+  {
+    const double denom1 = weightVariance*X.norm2Row(i)+biasVariance+1.0;
+    const double numer = weightVariance*K.getVal(i, 0)+biasVariance;
+    K.setVal(variance*asin(numer/sqrt(denom1*denom2)), i, 0);
+  }
 }
 void CMlpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {

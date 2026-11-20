@@ -186,8 +186,10 @@ int main()
     std::ostringstream oss;
     rbf.display(oss);
     const string text = oss.str();
-    expect(text.find("lengthscale:") != string::npos, "RBF display contains lengthscale");
-    expect(text.find("variance:") != string::npos, "RBF display contains variance");
+    // CIP-001E Paramz-style table prints bare paths (no "lengthscale:" labels).
+    expect(text.find("lengthscale") != string::npos, "RBF display contains lengthscale");
+    expect(text.find("variance") != string::npos, "RBF display contains variance");
+    expect(text.find("Parameters:") != string::npos, "RBF display has Parameters header");
   }
 
   if(failures)

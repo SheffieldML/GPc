@@ -31,9 +31,9 @@ Post-merge re-measurement of CIP-002D on `main` (2026-11-20) confirmed the Phase
 
 ## Acceptance Criteria
 
-- [ ] Bulk `getDiagGradParams` (or equivalent) removes the per-point \(1\times1\) loop; stationary kernels use the closed form
-- [ ] `regularise=true` applies the prior once, not \(N\) times (regression test)
-- [ ] Allocation gate: `CMatrix::totalAlloc` per sparse evaluation is \(O(1)\) in \(N\) (or a documented small constant), pinned by a test or `benchGPc` check
+- [x] Bulk `getDiagGradParams` (or equivalent) removes the per-point \(1\times1\) loop; stationary kernels use the closed form
+- [x] `regularise=true` applies the prior once, not \(N\) times (regression test)
+- [x] Allocation gate: `CMatrix::totalAlloc` per sparse evaluation is \(O(1)\) in \(N\) (or a documented small constant), pinned by a test or `benchGPc` check
 - [ ] Inducing \(\partial Z\) uses a batched `getGradX` / GEMM-friendly path (no per-inducing `getGradX` in the hot loop)
 - [ ] MLP (and CIP-0028 directional/weight-space features as applicable) have a bulk path exercised by existing or new tests
 - [ ] Likelihoods unchanged to printed / `MATCHTOL` digits on the CIP-002D timing cases; suites green under `CHECKS=full` and `RELEASE=1`
@@ -60,3 +60,14 @@ Post-merge re-measurement of CIP-002D on `main` (2026-11-20) confirmed the Phase
 ### 2026-11-20
 
 Task created from post-merge re-measurement comments. CIP-002D E1/E2 re-measure recorded as done; these three items stay open.
+
+### 2026-11-20 (item 1)
+
+Bulk `getDiagGradParams` landed on branch `cip002D-bulk-diag-grad`:
+
+- Stationary leaves: closed form (`K_ii = variance` → variance gets `sum(w)`, lengthscales 0)
+- `CCmpndKern` / `CTensorKern` overrides (product rule for tensor); `CLinKern` closed form
+- `regularise` applied once; pinned by `testDiagGradParams`
+- Alloc pin: compound rbf+bias+white reports `totalAlloc=3` at both \(N=128\) and \(N=2048\)
+
+Items 2–3 (inducing \(\partial Z\), MLP bulk) still open.

@@ -521,6 +521,49 @@ void CKern::getGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGr
     g.setVal(val*getTransformGradFact(param, i), getTransformIndex(i));
   }  
 }
+void CKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // CIP-002D follow-up: bulk diagonal parameter gradients.
+  // cvGrad is N×1 (FITC/DTCVAR λ weights). Stationary leaves have K_ii =
+  // variance, so ∂diag/∂variance = 1 and lengthscale grads are zero.
+  // Compound/tensor kernels override; non-stationary leaves fall back to a
+  // per-point path with regularise applied once (not ×N).
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+
+  if(isStationary())
+  {
+    g.zeros();
+    double s = 0.0;
+    for(unsigned int i=0; i<cvGrad.getRows(); i++)
+      s += cvGrad.getVal(i);
+    for(unsigned int p=0; p<getNumParams(); p++)
+    {
+      if(getParamName(p)=="variance")
+        g.setVal(s, p);
+    }
+    if(regularise)
+      addPriorGrad(g);
+    return;
+  }
+
+  CMatrix xi(1, X.getCols());
+  CMatrix cvGradi(1, 1);
+  CMatrix gtemp(1, g.getCols());
+  g.zeros();
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    xi.copyRowRow(0, X, i);
+    cvGradi.copyRowRow(0, cvGrad, i);
+    cvGradi.setSymmetric(true);
+    getGradParams(gtemp, xi, cvGradi, false);
+    g.axpy(gtemp, 1.0);
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
 void CKern::getDiagGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -799,6 +842,27 @@ void CCmpndKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covG
     start = end+1;
   }
 }
+void CCmpndKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // O(components) allocations, independent of N — avoids N× getGradParams
+  // temporaries from the old per-point 1×1 loop through compound.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int np = components[i]->getNumParams();
+    CMatrix subg(1, np);
+    components[i]->getDiagGradParams(subg, X, cvGrad, false);
+    g.setMatrix(0, start, subg);
+    start += np;
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
 double CCmpndKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
   
@@ -1054,6 +1118,38 @@ void CTensorKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cov
     g.setMatrix(0, start, subg);
     start = end+1;
   }
+}
+void CTensorKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // Product rule: ∂/∂θ_i of ∏_j diag_j = (∏_{j≠i} diag_j) · ∂diag_i/∂θ_i.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  g.zeros();
+  const unsigned int N = X.getRows();
+  CMatrix w(N, 1);
+  unsigned int start = 0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    for(unsigned int n=0; n<N; n++)
+    {
+      double p = cvGrad.getVal(n);
+      for(size_t j=0; j<components.size(); j++)
+      {
+        if(j!=i)
+          p *= components[j]->diagComputeElement(X, n);
+      }
+      w.setVal(p, n);
+    }
+    const unsigned int np = components[i]->getNumParams();
+    CMatrix subg(1, np);
+    components[i]->getDiagGradParams(subg, X, w, false);
+    g.setMatrix(0, start, subg);
+    start += np;
+  }
+  if(regularise)
+    addPriorGrad(g);
 }
 double CTensorKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
@@ -3124,6 +3220,20 @@ double CLinKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
       g1 += dot*covGrad.getVal(i, j);
     }
   return g1;
+}
+void CLinKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // K_ii = variance * ||x_i||^2 → ∂diag/∂variance = ||x_i||^2.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  double s = 0.0;
+  for(unsigned int i=0; i<X.getRows(); i++)
+    s += cvGrad.getVal(i) * X.norm2Row(i);
+  g.setVal(s, 0);
+  if(regularise)
+    addPriorGrad(g);
 }
   
 

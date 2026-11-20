@@ -203,22 +203,10 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
     if(regularise)
       addPriorGrad(g); /// don't forget to add prior gradient at the end.
   }
-  virtual void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const
-  {
-    //TODO Code explicitly for things like RBF where it will always be zero.
-    CMatrix xi(1, X.getCols());
-    CMatrix cvGradi(1, 1);
-    CMatrix gtemp(1, g.getCols());
-    g.zeros();
-    for(unsigned int i=0; i<X.getRows(); i++)
-    {
-      xi.copyRowRow(0, X, i);
-      cvGradi.copyRowRow(0, cvGrad, i);
-      cvGradi.setSymmetric(true);
-      getGradParams(gtemp, xi, cvGradi, regularise);
-      g.axpy(gtemp, 1.0);
-    }
-  }
+  // CIP-002D follow-up: bulk diagonal ∂/∂θ. Stationary leaves use closed form
+  // (K_ii = variance); CCmpndKern / CTensorKern override for composition.
+  // regularise applies the prior once (not per data point).
+  virtual void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   // Get gradient of a particular parameter.
   virtual double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const=0;
   virtual double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const=0;
@@ -693,6 +681,7 @@ class CCmpndKern: public CComponentKern {
   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double psi0(const CMatrix& mu, const CMatrix& S) const;
@@ -781,6 +770,7 @@ class CTensorKern: public CComponentKern {
 /*   void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const; */
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   unsigned int addKern(const CKern* kern);
@@ -1292,6 +1282,7 @@ class CLinKern: public CKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;

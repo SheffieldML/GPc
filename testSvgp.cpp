@@ -579,6 +579,201 @@ int main()
                  && gZ.getRows() == Mm && gZ.getCols() == 1,
                  "Phase 0a: white-noise elboGrad shapes");
         }
+
+        // CIP-0030 Phase 0b: explicit-input core + ∂ELBO/∂X.
+        {
+          auto fdGX = [](CSvgp& sv, CMatrix& XB, const vector<unsigned int>& rows,
+                         double c, CMatrix& gXfd, double eps = 1e-5) {
+            const unsigned int B = XB.getRows();
+            const unsigned int q = XB.getCols();
+            gXfd.resize(B, q);
+            for(unsigned int i = 0; i < B; i++)
+              for(unsigned int d = 0; d < q; d++)
+                {
+                  const double x0 = XB.getVal(i, d);
+                  XB.setVal(x0 + eps, i, d);
+                  const double Lp = sv.dataTermAt(XB, rows, c);
+                  XB.setVal(x0 - eps, i, d);
+                  const double Lm = sv.dataTermAt(XB, rows, c);
+                  XB.setVal(x0, i, d);
+                  gXfd.setVal((Lp - Lm) / (2.0 * eps), i, d);
+                }
+          };
+
+          // --- points / RBF: FD ∂ELBO/∂X and batch-partition exactness ---
+          {
+            const unsigned int N = 24, M = 6, q = 2;
+            mt19937 rng(3);
+            normal_distribution<double> nd(0.0, 1.0);
+            CMatrix X(N, q), y(N, 1), Z(M, q);
+            for(unsigned int i = 0; i < N; i++)
+              {
+                for(unsigned int d = 0; d < q; d++)
+                  X.setVal(nd(rng), i, d);
+                y.setVal(X.getVal(i, 0) - 0.5 * X.getVal(i, 1) + 0.05 * nd(rng), i, 0);
+              }
+            for(unsigned int k = 0; k < M; k++)
+              for(unsigned int d = 0; d < q; d++)
+                Z.setVal(X.getVal(k * (N / M), d), k, d);
+            CCmpndKern kern(X);
+            CRbfKern* prbf = new CRbfKern(X);
+            prbf->setParam(1.0, 0);
+            prbf->setParam(1.0, 1);
+            kern.addKern(prbf);
+            CSvgp sv(&kern, &X, &y, Z, 5.0, 0);
+            sv.naturalGradientStep(1.0);
+
+            vector<unsigned int> all(N);
+            for(unsigned int i = 0; i < N; i++)
+              all[i] = i;
+            CMatrix XB(X);
+            CMatrix gK, gZ, gX;
+            double gB = 0.0;
+            const double c = 1.0;
+            const double L = sv.elboGradAt(gK, gZ, gB, &gX, XB, all, c);
+            expect(isfinite(L) && gX.getRows() == N && gX.getCols() == q,
+                   "Phase 0b: points elboGradAt fills gX");
+            CMatrix gXfd;
+            fdGX(sv, XB, all, c, gXfd);
+            const double err = maxAbsDiff(gX, gXfd);
+            cout << "  info: Phase 0b points max|gX-FD|=" << err << endl;
+            expect(err < 2e-4, "Phase 0b: points gX matches FD");
+
+            // Batch-partition: mean of dataTermAt over a partition equals full.
+            const unsigned int nPart = 4;
+            vector<unsigned int> perm(N);
+            for(unsigned int i = 0; i < N; i++)
+              perm[i] = i;
+            shuffle(perm.begin(), perm.end(), rng);
+            double meanL = 0.0;
+            CMatrix gXmean(N, q);
+            gXmean.zeros();
+            for(unsigned int p = 0; p < nPart; p++)
+              {
+                vector<unsigned int> rows;
+                for(unsigned int i = 0; i < N; i++)
+                  if(i % nPart == p)
+                    rows.push_back(perm[i]);
+                CMatrix XBp(rows.size(), q);
+                for(unsigned int k = 0; k < rows.size(); k++)
+                  for(unsigned int d = 0; d < q; d++)
+                    XBp.setVal(X.getVal(rows[k], d), k, d);
+                const double cp = (double)N / (double)rows.size();
+                meanL += sv.dataTermAt(XBp, rows, cp) / (double)nPart;
+                CMatrix gKp, gZp, gXp;
+                double gBp = 0.0;
+                sv.elboGradAt(gKp, gZp, gBp, &gXp, XBp, rows, cp);
+                for(unsigned int k = 0; k < rows.size(); k++)
+                  for(unsigned int d = 0; d < q; d++)
+                    gXmean.addVal(gXp.getVal(k, d) / (double)nPart, rows[k], d);
+              }
+            const double Lfull = sv.dataTermAt(XB, all, 1.0);
+            expect(fabs(meanL - Lfull) < 1e-10,
+                   "Phase 0b: partition dataTermAt averages to full");
+            // gX under c=N/|B| averages to full-batch gX (same site scaling).
+            CMatrix gXfull;
+            sv.elboGradAt(gK, gZ, gB, &gXfull, XB, all, 1.0);
+            const double gerr = maxAbsDiff(gXmean, gXfull);
+            cout << "  info: Phase 0b partition max|gXmean-gXfull|=" << gerr << endl;
+            expect(gerr < 1e-8, "Phase 0b: partition gX averages to full");
+          }
+
+          // --- white-noise RBF ---
+          {
+            const unsigned int N = 20, M = 5;
+            CMatrix X(N, 1), y(N, 1), Z(M, 1);
+            for(unsigned int i = 0; i < N; i++)
+              {
+                const double x = -1.5 + 3.0 * (double)i / (double)(N - 1);
+                X.setVal(x, i, 0);
+                y.setVal(sin(2.0 * x), i, 0);
+              }
+            for(unsigned int k = 0; k < M; k++)
+              Z.setVal(-1.2 + 2.4 * (double)k / (double)(M - 1), k, 0);
+            CCmpndKern kern(X);
+            CRbfKern* prbf = new CRbfKern(X);
+            prbf->setParam(1.5, 0);
+            prbf->setParam(1.0, 1);
+            kern.addKern(prbf);
+            CSvgp sv(&kern, &X, &y, Z, 8.0, 0);
+            sv.setInducingType("whitenoise");
+            sv.naturalGradientStep(0.8);
+            vector<unsigned int> all(N);
+            for(unsigned int i = 0; i < N; i++)
+              all[i] = i;
+            CMatrix XB(X), gK, gZ, gX, gXfd;
+            double gB = 0.0;
+            sv.elboGradAt(gK, gZ, gB, &gX, XB, all, 1.0);
+            fdGX(sv, XB, all, 1.0, gXfd);
+            const double err = maxAbsDiff(gX, gXfd);
+            cout << "  info: Phase 0b WN max|gX-FD|=" << err << endl;
+            expect(err < 5e-4, "Phase 0b: white-noise gX matches FD");
+          }
+
+          // --- weight-space MLP ridge ---
+          {
+            const unsigned int N = 16, M = 8, q = 2;
+            mt19937 rng(5);
+            normal_distribution<double> nd(0.0, 1.0);
+            CMatrix X(N, q), y(N, 1), Z(M, q);
+            for(unsigned int i = 0; i < N; i++)
+              {
+                for(unsigned int d = 0; d < q; d++)
+                  X.setVal(nd(rng), i, d);
+                y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+              }
+            for(unsigned int k = 0; k < M; k++)
+              for(unsigned int d = 0; d < q; d++)
+                Z.setVal(nd(rng) * 0.5, k, d);
+            CMlpKern kern(X);
+            kern.setParam(1.0, 0);  // weight variance
+            kern.setParam(1.0, 1);  // bias variance
+            kern.setParam(1.0, 2);  // variance
+            CSvgp sv(&kern, &X, &y, Z, 4.0, 0);
+            sv.setInducingType("weightspace");
+            for(unsigned int t = 0; t < 5; t++)
+              sv.naturalGradientStep(0.3);
+            vector<unsigned int> all(N);
+            for(unsigned int i = 0; i < N; i++)
+              all[i] = i;
+            CMatrix XB(X), gK, gZ, gX, gXfd;
+            double gB = 0.0;
+            sv.elboGradAt(gK, gZ, gB, &gX, XB, all, 1.0);
+            fdGX(sv, XB, all, 1.0, gXfd, 1e-5);
+            const double err = maxAbsDiff(gX, gXfd);
+            cout << "  info: Phase 0b weightspace max|gX-FD|=" << err << endl;
+            expect(err < 5e-3, "Phase 0b: weight-space gX matches FD");
+          }
+
+          // --- Green's / Brownian 1-D ---
+          {
+            const unsigned int N = 18, M = 6;
+            CMatrix X(N, 1), y(N, 1), Z(M, 1);
+            for(unsigned int i = 0; i < N; i++)
+              {
+                const double x = 0.05 + 0.9 * (double)i / (double)(N - 1);
+                X.setVal(x, i, 0);
+                y.setVal(sin(4.0 * x), i, 0);
+              }
+            for(unsigned int k = 0; k < M; k++)
+              Z.setVal(0.1 + 0.8 * (double)k / (double)(M - 1), k, 0);
+            CBrownianKern kern(X);
+            kern.setParam(1.0, 0);
+            CSvgp sv(&kern, &X, &y, Z, 6.0, 0);
+            sv.setInducingType("greens");
+            sv.naturalGradientStep(0.5);
+            vector<unsigned int> all(N);
+            for(unsigned int i = 0; i < N; i++)
+              all[i] = i;
+            CMatrix XB(X), gK, gZ, gX, gXfd;
+            double gB = 0.0;
+            sv.elboGradAt(gK, gZ, gB, &gX, XB, all, 1.0);
+            fdGX(sv, XB, all, 1.0, gXfd);
+            const double err = maxAbsDiff(gX, gXfd);
+            cout << "  info: Phase 0b greens max|gX-FD|=" << err << endl;
+            expect(err < 5e-4, "Phase 0b: Green's gX matches FD");
+          }
+        }
       }
     }
   catch(ndlexceptions::Error& e)

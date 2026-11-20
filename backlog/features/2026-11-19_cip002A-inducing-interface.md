@@ -1,7 +1,7 @@
 ---
 id: "2026-11-19_cip002A-inducing-interface"
 title: "CIP-0030 Phase 0a / CIP-002A: route CSvgp K_uu/K_uf through CInducing"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
 last_updated: "2026-11-20"
@@ -51,3 +51,7 @@ Retargeted to CIP-0030 Phase 0a; priority High; status In Progress. Implementati
 
 ### 2026-11-20 (later)
 Phase 0a core landed: owned `CInducing*`, `setInducing` / `setInducingType`, matrices and grads via inducing. `testSvgp` green including white-noise smoke. CLI/stream inducing-type selection still deferred.
+
+### 2026-11-20 (Phase 0b)
+Phase 0a acceptance criteria for the model core are met; remaining CLI/stream inducing-type flag stays deferred to Phase 4. Status Completed for the inducing-routing deliverable.
+

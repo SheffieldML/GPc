@@ -719,7 +719,7 @@ void CComponentKern::readParamsFromStream(istream& in)
     if(i<components.size())
       components[i]->fromStream(in);
     else
-      addKern(readKernFromStream(in));
+      addKern(std::unique_ptr<CKern>(readKernFromStream(in)));
   }
   
 }
@@ -756,16 +756,9 @@ CCmpndKern::CCmpndKern(const CCmpndKern& kern) : CComponentKern()
 {
   _init();
   setInputDim(kern.getInputDim());
-  // Start empty: CComponentKern(kern) would shallow-copy pointers, then
-  // addKern would duplicate (and grow size mid-loop).
+  // Deep-copy via cloning addKern (components are unique_ptr-owned).
   for(size_t i=0; i<kern.components.size(); i++)
-    addKern(kern.components[i]);
-}
-// Class destructor
-CCmpndKern::~CCmpndKern()
-{
-  for(size_t i=0; i<components.size(); i++)
-    delete components[i];
+    addKern(kern.components[i].get());
 }
 void CCmpndKern::_init()
 {
@@ -983,7 +976,7 @@ CTensorKern::CTensorKern(const CTensorKern& kern) : CComponentKern()
   _init();
   setInputDim(kern.getInputDim());
   for(size_t i=0; i<kern.components.size(); i++)
-    addKern(kern.components[i]);
+    addKern(kern.components[i].get());
 }
 CTensorKern::CTensorKern(const CTensorKern& kern, unsigned int comp) : CComponentKern()
 {
@@ -993,16 +986,9 @@ CTensorKern::CTensorKern(const CTensorKern& kern, unsigned int comp) : CComponen
   BOUNDCHECK(comp<kern.components.size());
   setInputDim(kern.getInputDim());
   for(size_t i=0; i<comp; i++)
-    addKern(kern.components[i]);
+    addKern(kern.components[i].get());
   for(size_t i=comp+1; i<kern.components.size(); i++)
-    addKern(kern.components[i]);
-}
-// Class destructor
-CTensorKern::~CTensorKern()
-{
-  for(size_t i=0; i<components.size(); i++)
-    delete components[i];
-
+    addKern(kern.components[i].get());
 }
 void CTensorKern::_init()
 {
@@ -1026,6 +1012,18 @@ unsigned int CTensorKern::addKern(const CKern* kern)
     throw ndlexceptions::Error("indexwhite must be summed outside a tensor (CIP-000D), not multiplied inside it");
   }
   return CComponentKern::addKern(kern);
+}
+unsigned int CTensorKern::addKern(std::unique_ptr<CKern> kern)
+{
+  if(kern->getWhite())
+  {
+    throw ndlexceptions::Error("Components of a tensor kernel should not contain white noise");
+  }
+  if(kern->getType()=="indexwhite")
+  {
+    throw ndlexceptions::Error("indexwhite must be summed outside a tensor (CIP-000D), not multiplied inside it");
+  }
+  return CComponentKern::addKern(std::move(kern));
 }
 double CTensorKern::diagComputeElement(const CMatrix& X, unsigned int index) const
 {
@@ -9385,37 +9383,37 @@ void CComponentKern::extractParamFromMxArray(const mxArray* matlabArray)
     compElement = mxGetCell(compArray, i);
     kernType = mxArrayExtractStringField(compElement, "type");
     if(kernType == "lin")
-      kernNum = addKern(new CLinKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CLinKern(getInputDim())));
     else if(kernType == "rbf")  
-      kernNum = addKern(new CRbfKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CRbfKern(getInputDim())));
     else if(kernType == "eq" || kernType == "ExpQuad" || kernType == "expquad")
-      kernNum = addKern(new CEqKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CEqKern(getInputDim())));
     else if(kernType == "ratquad")  
-      kernNum = addKern(new CRatQuadKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CRatQuadKern(getInputDim())));
     else if(kernType == "matern32")  
-      kernNum = addKern(new CMatern32Kern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CMatern32Kern(getInputDim())));
     else if(kernType == "matern52")  
-      kernNum = addKern(new CMatern52Kern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CMatern52Kern(getInputDim())));
     else if(kernType == "mlp")  
-      kernNum = addKern(new CMlpKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CMlpKern(getInputDim())));
     else if(kernType == "poly")  
-      kernNum = addKern(new CPolyKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CPolyKern(getInputDim())));
     else if(kernType == "polyard")  
-      kernNum = addKern(new CPolyardKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CPolyardKern(getInputDim())));
     else if(kernType == "linard")  
-      kernNum = addKern(new CLinardKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CLinardKern(getInputDim())));
     else if(kernType == "rbfard")  
-      kernNum = addKern(new CRbfardKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CRbfardKern(getInputDim())));
     else if(kernType == "mlpard")  
-      kernNum = addKern(new CMlpardKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CMlpardKern(getInputDim())));
     else if(kernType == "white")
-      kernNum = addKern(new CWhiteKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CWhiteKern(getInputDim())));
     else if(kernType == "bias")
-      kernNum = addKern(new CBiasKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CBiasKern(getInputDim())));
     else if(kernType == "cmpnd")
-      kernNum = addKern(new CCmpndKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CCmpndKern(getInputDim())));
     else if(kernType == "tensor")
-      kernNum = addKern(new CTensorKern(getInputDim()));
+      kernNum = addKern(std::unique_ptr<CKern>(new CTensorKern(getInputDim())));
     else
       throw ndlexceptions::Error("Unknown kernel type.");
     components[kernNum]->fromMxArray(compElement);
@@ -11471,8 +11469,8 @@ void CCmpndKern::psi2(CMatrix& Psi2, const CMatrix& mu, const CMatrix& S, const 
   {
     for(size_t j = i + 1; j < components.size(); j++)
     {
-      CKern* p1 = components[i];
-      CKern* p2 = components[j];
+      CKern* p1 = components[i].get();
+      CKern* p2 = components[j].get();
       if(p1->getType() == "white" || p2->getType() == "white")
         continue;
       if(p1->getType() == "bias" && (p2->getType() == "rbf" || p2->getType() == "rbfard" || p2->getType() == "lin"))
@@ -11562,7 +11560,7 @@ void CCmpndKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix
   unsigned int paramOffset = 0;
   for(size_t i = 0; i < components.size(); i++)
   {
-    CKern* p1 = components[i];
+    CKern* p1 = components[i].get();
     CMatrix eff_dL_dpsi1 = dL_dpsi1;
     // copy
     eff_dL_dpsi1.deepCopy(dL_dpsi1);
@@ -11570,7 +11568,7 @@ void CCmpndKern::getGradPsi(CMatrix& gParams, CMatrix& gZ, CMatrix& gMu, CMatrix
     {
       if(j == i)
         continue;
-      CKern* p2 = components[j];
+      CKern* p2 = components[j].get();
       if(p2->getType() == "white")
         continue;
       if(p2->getType() == "bias")
@@ -11757,7 +11755,7 @@ inline bool wsIsSilentType(const string& t)
 {
   return t == "white";
 }
-inline CKern* wsSelectCompoundSignal(const vector<CKern*>& components)
+inline CKern* wsSelectCompoundSignal(const vector<std::unique_ptr<CKern> >& components)
 {
   CKern* signal = 0;
   for(size_t i = 0; i < components.size(); i++)
@@ -11771,7 +11769,7 @@ inline CKern* wsSelectCompoundSignal(const vector<CKern*>& components)
         throw ndlexceptions::Error(
             "weight-space compound: at most one of mlp / mlpard / arccos "
             "(got a second '" + t + "')");
-      signal = components[i];
+      signal = components[i].get();
       continue;
     }
     throw ndlexceptions::Error(

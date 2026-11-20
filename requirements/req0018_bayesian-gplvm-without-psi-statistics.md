@@ -1,7 +1,7 @@
 ---
 id: "0018"
 title: "Bayesian GP-LVM can be trained without closed-form psi statistics"
-status: "In Progress"
+status: "Validated"
 priority: "High"
 created: "2026-11-20"
 last_updated: "2026-11-20"

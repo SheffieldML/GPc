@@ -1,10 +1,10 @@
 ---
 id: "000D"
 title: "Sparse GPs can use inducing variables whose conditioning does not depend on kernel hyperparameters"
-status: "Implemented"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-20"
 related_tenets: ["compose-through-interfaces", "assert-and-verify", "lapack-owns-linear-algebra", "flexibility-with-performance", "ecosystem-interoperability"]
 stakeholders: ["maintainers", "modellers"]
 tags: ["sparse", "inducing", "inter-domain", "numerics", "jitter", "dtcvar", "fitc"]

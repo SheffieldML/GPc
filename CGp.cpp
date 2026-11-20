@@ -132,6 +132,7 @@ void CGp::_init()
   inducingFixed=false;
   betaFixed=false;
   likelihoodVarianceFixed=false;
+  allowWhiteAndLikelihoodNoise=false;
   dualNoiseWarned=false;
   spherical=true;
   optimiseX = false;
@@ -520,10 +521,36 @@ void CGp::maybeWarnDualObservationNoise() const
     return;
   if(!isGaussianNoise() || !hasTrainableWhite() || likelihoodVarianceFixed)
     return;
-  cerr << "Warning (CIP-0027): trainable White and free likelihood.variance "
-       << "are both present; prefer likelihood.variance and drop White for "
-       << "Gaussian regression (IVM keeps White)." << endl;
+  if(allowWhiteAndLikelihoodNoise)
+  {
+    cerr << "Warning (CIP-0027): allowWhiteAndLikelihoodNoise: trainable White "
+         << "and free likelihood.variance both present." << endl;
+  }
+  else
+  {
+    cerr << "Warning (CIP-0027): trainable White and free likelihood.variance "
+         << "are both present; prefer likelihood.variance and drop White for "
+         << "Gaussian regression (IVM keeps White)." << endl;
+  }
   dualNoiseWarned=true;
+}
+
+void CGp::enforceObservationNoisePolicy() const
+{
+  // CIP-0027 Phase C: FTC Gaussian regression must not freely train both
+  // White-in-K and likelihood.variance unless explicitly allowed.
+  if(isSparseApproximation() || !isGaussianNoise())
+    return;
+  if(allowWhiteAndLikelihoodNoise)
+    return;
+  if(hasTrainableWhite() && !likelihoodVarianceFixed)
+  {
+    throw ndlexceptions::Error(
+      "CIP-0027: trainable White and free likelihood.variance both present. "
+      "Fix likelihood.variance (legacy White noise), drop White "
+      "(likelihood-owned noise), or setAllowWhiteAndLikelihoodNoise(true) "
+      "/ --allow-white-and-noise.");
+  }
 }
 
 void CGp::fixLikelihoodVariance(bool val)
@@ -2032,8 +2059,9 @@ double CGp::sparsePpaElboGpTerms() const
 }
 
 // compute the gradients wrt parameters and latent variables.
-double CGp::logLikelihoodGradient(CMatrix& g) const 
+double CGp::logLikelihoodGradient(CMatrix& g) const
 {
+  enforceObservationNoisePolicy();
   ensureMUpToDate();
   updateG();
   g.zeros();
@@ -3192,6 +3220,7 @@ void CGp::fromMxArray(const mxArray* matlabArray)
 // Optimise the GP with respect to latent positions and kernel parameters.
 void CGp::optimise(unsigned int iters)
 {
+  enforceObservationNoisePolicy();
   if(getVerbosity()>2)
   {
     cout << "Initial model:" << endl;

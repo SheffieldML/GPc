@@ -395,6 +395,12 @@ public:
   double getLikelihoodVariance() const;
   void setLikelihoodVariance(double val);
   bool addsLikelihoodVarianceToGram() const;
+  // Phase C: permit free White and free likelihood.variance together (FTC).
+  void setAllowWhiteAndLikelihoodNoise(bool val) { allowWhiteAndLikelihoodNoise = val; }
+  bool isAllowWhiteAndLikelihoodNoise() const { return allowWhiteAndLikelihoodNoise; }
+  // Throws if FTC Gaussian has trainable White and free likelihood.variance
+  // without allowWhiteAndLikelihoodNoise (CIP-0027 Phase C harden).
+  void enforceObservationNoisePolicy() const;
   // Flag which indicates if K/Kinv/DynK/DynKInv need recomputation.
   bool isKupToDate() const 
   {
@@ -617,6 +623,7 @@ public:
   bool inducingFixed;
   bool betaFixed;
   bool likelihoodVarianceFixed;
+  bool allowWhiteAndLikelihoodNoise;
   mutable bool dualNoiseWarned;
   vector<bool> kernParamFixed;
   vector<bool> scaleParamFixed;

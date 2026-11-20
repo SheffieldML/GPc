@@ -62,6 +62,9 @@ struct ToyGp
       model->setInducingFixed(true);
     }
     model->setBetaVal(10.0);
+    // CIP-0027 Phase C: ToyGp uses White as observation noise — fix likelihood.variance.
+    if(approx == CGp::FTC)
+      model->fixLikelihoodVariance(true);
   }
 
   ~ToyGp() { delete model; }

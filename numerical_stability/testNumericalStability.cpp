@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "CGp.h"
+#include "CInducing.h"
 #include "CKern.h"
 #include "CMatrix.h"
 #include "CNoise.h"
@@ -858,6 +859,9 @@ struct RegGp
       applySparseMode(*model);
     }
     model->setBetaVal(100.0);
+    // CIP-0027 Phase C: RegGp uses White as observation noise on FTC.
+    if(approx == CGp::FTC)
+      model->fixLikelihoodVariance(true);
     model->setVerbosity(0);
   }
 
@@ -1045,6 +1049,7 @@ int testModels()
     for(int i = 0; i < noise.getOutputDim(); i++)
       noise.setBiasVal(0.0, i);
     CGp model(&kern, &noise, &Xd, CGp::FTC, 0, 0);
+    model.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     model.setBetaVal(1e10);
     model.setVerbosity(0);
     check("exact_gp_duplicate_inputs_tiny_noise", gpAllFinite(model));
@@ -1094,6 +1099,7 @@ int testModels()
     for(int i = 0; i < noiseB.getOutputDim(); i++)
       noiseB.setBiasVal(0.0, i);
     CGp b(&kernB, &noiseB, &Xb, CGp::FTC, 0, 0);
+    b.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     b.setBetaVal(100.0);
     b.setVerbosity(0);
     const double llDiff = fabs(b.logLikelihood() - llA);
@@ -1168,6 +1174,7 @@ int testModels()
     for(int i = 0; i < noise.getOutputDim(); i++)
       noise.setBiasVal(0.0, i);
     CGp model(&kern, &noise, &Xd, CGp::FTC, 0, 0);
+    model.fixLikelihoodVariance(true); // CIP-0027: White-owned noise
     model.setBetaVal(100.0);
     model.setVerbosity(0);
     check("exp_kernel_gp_duplicates_finite", gpAllFinite(model));
@@ -1480,6 +1487,354 @@ int testModels()
     check("wn_ls_sweep_kappa_wn_below_1e6", maxKappaWn < 1e6);
     check("wn_ls_sweep_point_kappa_exceeds_wn", maxKappaPt > 10.0 * maxKappaWn,
           "point max κ should dominate WN (kernel-driven ill-conditioning)");
+  }
+
+  // -------------------------------------------------------------------------
+  // CIP-0029 Phase 4: greens inducing — Brownian variance sweep + Matérn ls.
+  // Greens K_uu is window-Gram (kernel-free); κ flat vs kernel scale.
+  // -------------------------------------------------------------------------
+  {
+    const unsigned int n = 40, m = 10;
+    const double beta = 50.0;
+    const double sWin = 0.2;
+    auto kappaSym = [](CMatrix spd) {
+      CMatrix evals(1, spd.getRows());
+      spd.setSymmetric(true);
+      spd.syev(evals, "n", "u");
+      double mx = 0.0, mn = numeric_limits<double>::infinity();
+      for(unsigned int i = 0; i < evals.getCols(); i++)
+      {
+        const double d = fabs(evals.getVal(i));
+        mx = max(mx, d);
+        if(d > 0.0)
+          mn = min(mn, d);
+      }
+      if(!isfinite(mn) || mn <= 0.0)
+        return numeric_limits<double>::infinity();
+      return mx / mn;
+    };
+
+    // Positive 1-D grid for Brownian / greens.
+    CMatrix Xb(n, 1), Yb(n, 1), Zub(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double t = 0.15 + 1.7 * (double)i / (double)(n - 1);
+      Xb.setVal(t, i, 0);
+      Yb.setVal(sin(t), i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Zub.setVal(0.2 + 1.5 * (double)i / (double)(m - 1), i, 0);
+
+    const double vars[] = {0.1, 1.0, 10.0, 100.0};
+    bool greensVarFiniteStable = true;
+    bool greensVarFiniteLq = true;
+    double maxKappaGreensVar = 0.0;
+    double maxKappaPtBrownian = 0.0;
+    double kappaGreensVarFirst = -1.0;
+    double maxKappaGreensVarSpread = 0.0;
+
+    for(unsigned int vi = 0; vi < 4; vi++)
+    {
+      const double var = vars[vi];
+      CBrownianKern kernPt(Xb);
+      kernPt.setVariance(var);
+      CMatrix KuuPt(m, m);
+      CInducingPoints indPt(&Zub);
+      indPt.computeKuu(KuuPt, kernPt);
+      const double kPt = kappaSym(KuuPt);
+      maxKappaPtBrownian = max(maxKappaPtBrownian, kPt);
+
+      CBrownianKern kernG(Xb);
+      kernG.setVariance(var);
+      CInducingGreens indG(&Zub, sWin, false);
+      CMatrix KuuG;
+      indG.computeKuu(KuuG, kernG);
+      const double kG = kappaSym(KuuG);
+      maxKappaGreensVar = max(maxKappaGreensVar, kG);
+      if(kappaGreensVarFirst < 0.0)
+        kappaGreensVarFirst = kG;
+      maxKappaGreensVarSpread = max(maxKappaGreensVarSpread, fabs(kG - kappaGreensVarFirst));
+
+      ostringstream mk;
+      mk << "greens_var_sweep_kappa_pt_v" << var;
+      emitMetric(mk.str(), "B_linalg", kPt, 1e8, "abs");
+      ostringstream mkg;
+      mkg << "greens_var_sweep_kappa_greens_v" << var;
+      emitMetric(mkg.str(), "B_linalg", kG, 1e6, "abs");
+
+      for(int mode = 0; mode < 2; mode++)
+      {
+        const bool useLq = (mode == 1);
+        CBrownianKern kern(Xb);
+        kern.setVariance(var);
+        CGaussianNoise noise(&Yb);
+        noise.setBiasVal(0.0, 0);
+        CGp gp(&kern, &noise, &Xb, CGp::DTCVAR, m, 0);
+        gp.setInducingVals(Zub);
+        gp.setInducingFixed(true);
+        gp.setBetaVal(beta);
+        gp.setVerbosity(0);
+        gp.setInducingType("greens");
+        gp.getInducing()->setWindowWidth(sWin);
+        gp.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                     : CGp::SparseLinalgStableFactor);
+        if(!gpAllFinite(gp))
+        {
+          if(useLq)
+            greensVarFiniteLq = false;
+          else
+            greensVarFiniteStable = false;
+        }
+      }
+    }
+
+    emitMetric("greens_var_sweep_max_kappa_greens", "B_linalg", maxKappaGreensVar, 1e6, "abs");
+    emitMetric("greens_var_sweep_max_kappa_point", "B_linalg", maxKappaPtBrownian, 1e8, "abs");
+    emitMetric("greens_var_sweep_kappa_spread", "B_linalg", maxKappaGreensVarSpread, 1e-6, "abs");
+    check("greens_var_sweep_finite_stable", greensVarFiniteStable);
+    check("greens_var_sweep_finite_lq", greensVarFiniteLq);
+    check("greens_var_sweep_kappa_below_1e6", maxKappaGreensVar < 1e6);
+    check("greens_var_sweep_kappa_flat_vs_var", maxKappaGreensVarSpread < 1e-8,
+          "greens κ(K_uu) must be independent of Brownian variance");
+
+    // Matérn-5/2 lengthscale sweep on [-1,1]: point κ grows as ℓ shrinks.
+    CMatrix Xm(n, 1), Ym(n, 1), Zum(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double x = -1.0 + 2.0 * (double)i / (double)(n - 1);
+      Xm.setVal(x, i, 0);
+      Ym.setVal(sin(2.0 * x), i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Zum.setVal(-1.0 + 2.0 * (double)i / (double)(m - 1), i, 0);
+
+    const double ells[] = {0.05, 0.2, 1.0, 5.0};
+    bool greensLsFiniteStable = true;
+    bool greensLsFiniteLq = true;
+    double maxKappaPtMatern = 0.0;
+    double maxKappaGreensLs = 0.0;
+    double kappaGreensLsFirst = -1.0;
+    double maxKappaGreensLsSpread = 0.0;
+
+    for(unsigned int ei = 0; ei < 4; ei++)
+    {
+      const double ell = ells[ei];
+      CMatern52Kern kernPt(Xm);
+      kernPt.setParam(ell, 0);
+      kernPt.setParam(1.0, 1);
+      CMatrix KuuPt(m, m);
+      CInducingPoints indPt(&Zum);
+      indPt.computeKuu(KuuPt, kernPt);
+      const double kPt = kappaSym(KuuPt);
+      maxKappaPtMatern = max(maxKappaPtMatern, kPt);
+
+      CMatern52Kern kernG(Xm);
+      kernG.setParam(ell, 0);
+      kernG.setParam(1.0, 1);
+      CInducingGreens indG(&Zum, sWin, false);
+      CMatrix KuuG;
+      indG.computeKuu(KuuG, kernG);
+      const double kG = kappaSym(KuuG);
+      maxKappaGreensLs = max(maxKappaGreensLs, kG);
+      if(kappaGreensLsFirst < 0.0)
+        kappaGreensLsFirst = kG;
+      maxKappaGreensLsSpread = max(maxKappaGreensLsSpread, fabs(kG - kappaGreensLsFirst));
+
+      ostringstream mk;
+      mk << "greens_ls_sweep_kappa_pt_ell" << ell;
+      emitMetric(mk.str(), "B_linalg", kPt, 1e12, "abs");
+      ostringstream mkg;
+      mkg << "greens_ls_sweep_kappa_greens_ell" << ell;
+      emitMetric(mkg.str(), "B_linalg", kG, 1e6, "abs");
+
+      for(int mode = 0; mode < 2; mode++)
+      {
+        const bool useLq = (mode == 1);
+        CMatern52Kern kern(Xm);
+        kern.setParam(ell, 0);
+        kern.setParam(1.0, 1);
+        CGaussianNoise noise(&Ym);
+        noise.setBiasVal(0.0, 0);
+        CGp gp(&kern, &noise, &Xm, CGp::DTCVAR, m, 0);
+        gp.setInducingVals(Zum);
+        gp.setInducingFixed(true);
+        gp.setBetaVal(beta);
+        gp.setVerbosity(0);
+        gp.setInducingType("greens");
+        gp.getInducing()->setWindowWidth(sWin);
+        gp.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                     : CGp::SparseLinalgStableFactor);
+        if(!gpAllFinite(gp))
+        {
+          if(useLq)
+            greensLsFiniteLq = false;
+          else
+            greensLsFiniteStable = false;
+        }
+      }
+    }
+
+    emitMetric("greens_ls_sweep_max_kappa_point", "B_linalg", maxKappaPtMatern, 1e12, "abs");
+    emitMetric("greens_ls_sweep_max_kappa_greens", "B_linalg", maxKappaGreensLs, 1e6, "abs");
+    emitMetric("greens_ls_sweep_kappa_spread", "B_linalg", maxKappaGreensLsSpread, 1e-6, "abs");
+    check("greens_ls_sweep_finite_stable", greensLsFiniteStable);
+    check("greens_ls_sweep_finite_lq", greensLsFiniteLq);
+    check("greens_ls_sweep_kappa_below_1e6", maxKappaGreensLs < 1e6);
+    check("greens_ls_sweep_kappa_flat_vs_ell", maxKappaGreensLsSpread < 1e-8,
+          "greens κ(K_uu) must be independent of Matérn lengthscale");
+    check("greens_ls_sweep_point_kappa_exceeds_greens",
+          maxKappaPtMatern > 10.0 * maxKappaGreensLs,
+          "point max κ should dominate greens on short lengthscales");
+  }
+
+  // -------------------------------------------------------------------------
+  // CIP-0028 Phase 3: ridge weight-space — weightVariance sweep under κ≤10⁴.
+  // K_uu is kernel-free ⇒ κ flat in wv (sanity). Primary: variance captured
+  // and DTCVAR finite under StableFactor / LQ.
+  // -------------------------------------------------------------------------
+  {
+    const unsigned int d = 8;
+    const unsigned int M = 32;
+    const unsigned int n = 40;
+    const double beta = 20.0;
+    const double wvs[] = {0.25, 1.0, 4.0};
+    auto kappaSym = [](CMatrix spd) {
+      CMatrix evals(1, spd.getRows());
+      spd.setSymmetric(true);
+      spd.syev(evals, "n", "u");
+      double mx = 0.0, mn = numeric_limits<double>::infinity();
+      for(unsigned int i = 0; i < evals.getCols(); i++)
+      {
+        const double e = fabs(evals.getVal(i));
+        if(e > mx) mx = e;
+        if(e < mn) mn = e;
+      }
+      return mx / max(mn, 1e-18);
+    };
+
+    CMatrix W;
+    const double sWin = CInducingWeightSpace::makeRidgeInit(W, M, d, 19u);
+    CInducingWeightSpace indProbe(W, sWin, false, true);
+    CMatrix Kuu(M, M);
+    {
+      CMatrix Xd(1, d);
+      Xd.zeros();
+      CMlpKern dummy(Xd);
+      indProbe.computeKuu(Kuu, dummy);
+    }
+    const double kappa0 = kappaSym(Kuu);
+    emitMetric("ws_ridge_wv_sweep_kappa0", "B_linalg", kappa0, 1e4, "abs");
+    check("ws_ridge_wv_sweep_kappa_le_1e4", kappa0 <= 1e4);
+
+    CMatrix X(n, d), Y(n, 1), Xu(M, d);
+    ndlutil::init_genrand(21u);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < d; j++)
+        X.setVal((j == 0) ? (-1.2 + 2.4 * (double)i / (double)(n - 1))
+                          : 0.2 * ndlutil::randn(),
+                 i, j);
+      Y.setVal(sin(2.0 * X.getVal(i, 0)) + 0.05 * ndlutil::randn(), i, 0);
+    }
+    Xu.zeros();
+
+    bool allFiniteStable = true;
+    bool allFiniteLq = true;
+    double maxKappaSpread = 0.0;
+    double minCapture = numeric_limits<double>::infinity();
+
+    CMatrix Vr(M, d + 1), ar(M, 1);
+    indProbe.ridgeFactors(Vr, ar);
+    CMatrix Uchol(Kuu);
+    for(unsigned int i = 0; i < M; i++)
+      Uchol.addVal(1e-10, i, i);
+    Uchol.setSymmetric(true);
+    Uchol.chol();
+
+    for(unsigned int wi = 0; wi < 3; wi++)
+    {
+      const double wv = wvs[wi];
+      CMlpKern kernCap(X);
+      kernCap.setParam(wv, 0);
+      kernCap.setParam(0.05, 1);
+      kernCap.setParam(1.0, 2);
+      // κ(K_uu) independent of wv — rebuild probe Kuu is identical; record spread.
+      CMatrix KuuW(M, M);
+      indProbe.computeKuu(KuuW, kernCap);
+      const double kW = kappaSym(KuuW);
+      maxKappaSpread = max(maxKappaSpread, fabs(kW - kappa0) / max(kappa0, 1.0));
+      ostringstream mk;
+      mk << "ws_ridge_wv_sweep_kappa_wv" << wv;
+      emitMetric(mk.str(), "B_linalg", kW, 1e4, "abs");
+
+      CMatrix Kfu(n, M);
+      kernCap.wsRidgeCrossCompute(Kfu, X, Vr, ar, sWin);
+      double capture = 0.0;
+      for(unsigned int ni = 0; ni < n; ni++)
+      {
+        vector<double> yv(M);
+        for(unsigned int i = 0; i < M; i++)
+        {
+          double sum = Kfu.getVal(ni, i);
+          for(unsigned int k = 0; k < i; k++)
+            sum -= Uchol.getVal(k, i) * yv[k];
+          yv[i] = sum / Uchol.getVal(i, i);
+        }
+        double q = 0.0;
+        for(unsigned int i = 0; i < M; i++)
+          q += yv[i] * yv[i];
+        capture += q / max(kernCap.diagComputeElement(X, ni), 1e-18);
+      }
+      capture /= (double)n;
+      minCapture = min(minCapture, capture);
+      ostringstream mc;
+      mc << "ws_ridge_wv_sweep_capture_wv" << wv;
+      emitMetric(mc.str(), "F_model", capture, 0.25, "abs");
+
+      for(int mode = 0; mode < 2; mode++)
+      {
+        const bool useLq = (mode == 1);
+        CCmpndKern kern(X);
+        kern.addKern(new CMlpKern(X));
+        kern.setParam(wv, 0);
+        kern.setParam(0.05, 1);
+        kern.setParam(1.0, 2);
+        CGaussianNoise noise(&Y);
+        noise.setBiasVal(0.0, 0);
+        CGp gp(&kern, &noise, &X, CGp::DTCVAR, M, 0);
+        gp.setInducingVals(Xu);
+        gp.setInducingFixed(true);
+        gp.setBetaVal(beta);
+        gp.setVerbosity(0);
+        gp.setInducingType("weightspace");
+        gp.getInducing()->setCentres(W);
+        gp.getInducing()->setWindowWidth(sWin);
+        gp.setSparseLinalgMode(useLq ? CGp::SparseLinalgLQ
+                                     : CGp::SparseLinalgStableFactor);
+        const bool ok = gpAllFinite(gp);
+        if(!ok)
+        {
+          if(useLq)
+            allFiniteLq = false;
+          else
+            allFiniteStable = false;
+        }
+        if(ok)
+        {
+          ostringstream mll;
+          mll << "ws_ridge_wv_sweep_ll_wv" << wv << (useLq ? "_lq" : "_stable");
+          emitMetric(mll.str(), "F_model", gp.logLikelihood(), 1e6, "abs");
+        }
+      }
+    }
+
+    emitMetric("ws_ridge_wv_sweep_kappa_spread", "B_linalg", maxKappaSpread, 1e-10, "abs");
+    emitMetric("ws_ridge_wv_sweep_min_capture", "F_model", minCapture, 0.25, "abs");
+    check("ws_ridge_wv_sweep_kappa_flat_in_wv", maxKappaSpread < 1e-10,
+          "ridge K_uu is kernel-free so κ must be flat in weightVariance");
+    check("ws_ridge_wv_sweep_capture_ge_0.25", minCapture >= 0.25);
+    check("ws_ridge_wv_sweep_finite_stable", allFiniteStable);
+    check("ws_ridge_wv_sweep_finite_lq", allFiniteLq);
   }
 
   {

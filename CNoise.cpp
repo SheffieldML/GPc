@@ -2,6 +2,226 @@
 #include "CNoise.h"
 
 using namespace std;
+
+namespace ndlnoise {
+
+void addObservationNoiseDiag(CMatrix& K, double sigma2)
+{
+  DIMENSIONMATCH(K.getRows() == K.getCols());
+  BOUNDCHECK(sigma2 >= 0.0);
+  for(unsigned int i = 0; i < K.getRows(); i++)
+    K.setVal(K.getVal(i, i) + sigma2, i, i);
+}
+
+void gaussianLogDensity(CMatrix& logDens,
+                        const CMatrix& y,
+                        const CMatrix& f,
+                        double sigma2,
+                        const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(f));
+  DIMENSIONMATCH(logDens.dimensionsMatch(y));
+  BOUNDCHECK(sigma2 > 0.0);
+  const double halfLogTwoPiSigma2 = ndlutil::HALFLOGTWOPI + 0.5 * log(sigma2);
+  const double invSigma2 = 1.0 / sigma2;
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      const double r = y.getVal(i, j) - f.getVal(i, j) - b;
+      logDens.setVal(-halfLogTwoPiSigma2 - 0.5 * invSigma2 * r * r, i, j);
+    }
+  }
+}
+
+void gaussianVariationalExpectations(CMatrix& ell,
+                                     CMatrix& gMu,
+                                     CMatrix& gVar,
+                                     const CMatrix& y,
+                                     const CMatrix& mu,
+                                     const CMatrix& var,
+                                     double sigma2,
+                                     const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(mu));
+  DIMENSIONMATCH(mu.dimensionsMatch(var));
+  DIMENSIONMATCH(ell.dimensionsMatch(y));
+  DIMENSIONMATCH(gMu.dimensionsMatch(y));
+  DIMENSIONMATCH(gVar.dimensionsMatch(y));
+  BOUNDCHECK(sigma2 > 0.0);
+  const double betaLik = 1.0 / sigma2;
+  const double constTerm = -ndlutil::HALFLOGTWOPI + 0.5 * log(betaLik);
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      const double r = y.getVal(i, j) - mu.getVal(i, j) - b;
+      const double v = var.getVal(i, j);
+      gMu.setVal(betaLik * r, i, j);
+      gVar.setVal(-0.5 * betaLik, i, j);
+      ell.setVal(constTerm - 0.5 * betaLik * (r * r + v), i, j);
+    }
+  }
+}
+
+double gaussianLogPredictiveDensity(const CMatrix& y,
+                                    const CMatrix& mu,
+                                    const CMatrix& var,
+                                    double sigma2,
+                                    const double* biasOrNull)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(mu));
+  DIMENSIONMATCH(y.dimensionsMatch(var));
+  BOUNDCHECK(sigma2 > 0.0);
+  double L = 0.0;
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      const double b = biasOrNull ? biasOrNull[j] : 0.0;
+      double arg = y.getVal(i, j) - mu.getVal(i, j) - b;
+      arg *= arg;
+      const double v = var.getVal(i, j) + sigma2;
+      L += log(v) + arg / v;
+    }
+  }
+  L += static_cast<double>(y.getRows() * y.getCols()) * log(2.0 * M_PI);
+  L *= -0.5;
+  return L;
+}
+
+} // namespace ndlnoise
+
+double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
+                                     double& /*gMu*/, double& /*gVar*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "expectedLogLikelihood not implemented for noise type " + getType());
+}
+
+double CGaussianNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                             double& gMu, double& gVar) const
+{
+  // p(y|f) = N(y|f, sigma2); E_q[log p] with q(f)=N(mu,var).
+  const double betaLik = 1.0 / sigma2;
+  const double r = y - muVal;
+  gMu = betaLik * r;
+  gVar = -0.5 * betaLik;
+  return -ndlutil::HALFLOGTWOPI + 0.5 * log(betaLik)
+    - 0.5 * betaLik * (r * r + var);
+}
+
+namespace {
+struct ProbitEllCtx {
+  double y;
+  double bias;
+};
+double probitLogLik(double f, void* ctx)
+{
+  const ProbitEllCtx* c = static_cast<const ProbitEllCtx*>(ctx);
+  return ndlutil::lnCumGaussian(c->y * (f + c->bias));
+}
+double probitLogLikPrime(double f, void* ctx)
+{
+  const ProbitEllCtx* c = static_cast<const ProbitEllCtx*>(ctx);
+  return c->y * ndlutil::gradLnCumGaussian(c->y * (f + c->bias));
+}
+}
+
+double CProbitNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                           double& gMu, double& gVar) const
+{
+  // E_q[log Φ(y (f + bias))]; Gauss–Hermite n=20 (CIP-002A Phase 4).
+  // Bias: use process 0 by default; CSvgp sets process via setExpectedLogLikBias.
+  ProbitEllCtx ctx;
+  ctx.y = y;
+  ctx.bias = ellBias;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, probitLogLik, probitLogLikPrime,
+                                     &ctx, gMu, gVar);
+}
+
+namespace {
+struct OrderedEllCtx {
+  int targ;
+  double bias;
+  double sigma2;
+  unsigned int numCats;
+  const CMatrix* widths;
+};
+// log p(y|f) for ordered categorical (observation noise sigma2; thresholds via widths).
+double orderedLogLik(double f, void* vctx)
+{
+  const OrderedEllCtx* c = static_cast<const OrderedEllCtx*>(vctx);
+  if(isnan((double)c->targ))
+    return 0.0;
+  const double s = 1.0 / sqrt(c->sigma2);
+  double muAdj = f + c->bias;
+  if(c->targ == 0)
+    return ndlutil::lnCumGaussian(-muAdj * s);
+  if(c->targ > 0 && (unsigned int)c->targ < c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    const double u = muAdj * s;
+    const double uprime = (muAdj - c->widths->getVal(0, (unsigned int)c->targ - 1)) * s;
+    return ndlutil::lnDiffCumGaussian(u, uprime);
+  }
+  if((unsigned int)c->targ == c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    return ndlutil::lnCumGaussian(muAdj * s);
+  }
+  throw ndlexceptions::Error("orderedLogLik: invalid category");
+}
+double orderedLogLikPrime(double f, void* vctx)
+{
+  // ∂ log p(y|f) / ∂f — same as getGradInputs gmu at varSigma=0.
+  const OrderedEllCtx* c = static_cast<const OrderedEllCtx*>(vctx);
+  if(isnan((double)c->targ))
+    return 0.0;
+  const double s = 1.0 / sqrt(c->sigma2);
+  double muAdj = f + c->bias;
+  if(c->targ == 0)
+  {
+    const double z = -muAdj * s;
+    return -s * ndlutil::gradLnCumGaussian(z);
+  }
+  if(c->targ > 0 && (unsigned int)c->targ < c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    const double u = muAdj * s;
+    const double uprime = (muAdj - c->widths->getVal(0, (unsigned int)c->targ - 1)) * s;
+    const double B1 = ndlutil::gaussOverDiffCumGaussian(u, uprime, 1);
+    const double B2 = ndlutil::gaussOverDiffCumGaussian(u, uprime, 2);
+    return s * (B1 - B2);
+  }
+  if((unsigned int)c->targ == c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    return s * ndlutil::gradLnCumGaussian(muAdj * s);
+  }
+  throw ndlexceptions::Error("orderedLogLikPrime: invalid category");
+}
+}
+
+double COrderedNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                            double& gMu, double& gVar) const
+{
+  OrderedEllCtx ctx;
+  ctx.targ = (int)y;
+  ctx.bias = ellBias;
+  ctx.sigma2 = sigma2;
+  ctx.numCats = numCats;
+  ctx.widths = &widths;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, orderedLogLik, orderedLogLikPrime,
+                                     &ctx, gMu, gVar);
+}
+
 void CNoise::getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const
 {
   DIMENSIONMATCH(g.dimensionsMatch(nu));
@@ -836,6 +1056,7 @@ void CProbitNoise::_init()
 {
   setType("probit");
   setName("Probit");
+  ellBias = 0.0;
 }
 void CProbitNoise::initNames()
 {
@@ -1445,6 +1666,7 @@ void COrderedNoise::_init()
 {
   setType("ordered");
   setName("Ordered Categorical");
+  ellBias = 0.0;
 }
 void COrderedNoise::initNames()
 {

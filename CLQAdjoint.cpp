@@ -171,27 +171,10 @@ void lqAdjoint(CMatrix& Wbar,
     LbarLow.deepCopy(Lbar);
   }
 
-  // M = L^T Lbar - Qbar Q^T   (m×m)
+  // M = L^T Lbar - Qbar Q^T   (m×m) — CIP-002D QW3: BLAS gemm
   CMatrix M(m, m);
-  M.zeros();
-  // M += L^T Lbar
-  for(unsigned int i = 0; i < m; i++)
-    for(unsigned int j = 0; j < m; j++)
-    {
-      double s = 0.0;
-      for(unsigned int k = 0; k < m; k++)
-        s += Llow.getVal(k, i) * LbarLow.getVal(k, j);
-      M.setVal(s, i, j);
-    }
-  // M -= Qbar Q^T
-  for(unsigned int i = 0; i < m; i++)
-    for(unsigned int j = 0; j < m; j++)
-    {
-      double s = 0.0;
-      for(unsigned int k = 0; k < n; k++)
-        s += Qbar.getVal(i, k) * Q.getVal(j, k);
-      M.setVal(M.getVal(i, j) - s, i, j);
-    }
+  M.gemm(Llow, LbarLow, 1.0, 0.0, "t", "n");
+  M.gemm(Qbar, Q, -1.0, 1.0, "n", "t");
 
   // copyltu(M): Seeger et al. arXiv:1710.08717 §4.3 — keep lower incl. diag,
   // mirror to upper so the projected tangent lives in the LQ manifold coords.
@@ -210,15 +193,7 @@ void lqAdjoint(CMatrix& Wbar,
   // S = Qbar + copyltu(M) Q
   CMatrix S(m, n);
   S.deepCopy(Qbar);
-  // S += Msym * Q
-  for(unsigned int i = 0; i < m; i++)
-    for(unsigned int j = 0; j < n; j++)
-    {
-      double s = S.getVal(i, j);
-      for(unsigned int k = 0; k < m; k++)
-        s += Msym.getVal(i, k) * Q.getVal(k, j);
-      S.setVal(s, i, j);
-    }
+  S.gemm(Msym, Q, 1.0, 1.0, "n", "n");
 
   // Wbar = L^{-T} S
   Wbar.deepCopy(S);

@@ -1,8 +1,28 @@
 #include "CKern.h"
 #include <cmath>
 #include <vector>
+#ifdef GPC_OPENMP
+#include <omp.h>
+#endif
 
 using namespace std;
+
+// CIP-0025 / CIP-002D QW5: prefer GEMM distance when input dim is large enough
+// that dgemm amortises, or when the block is large (sparse K_uf at q=2).
+// Small n,q keep the scalar path (CIP-0025 knee: n≈100, q<8).
+static const unsigned int kGemmDistMinQ = 8;
+static const unsigned int kGemmDistMinNM = 1024;
+
+static bool useGemmDistance(unsigned int q, unsigned int inputDim,
+                            bool defaultActive, unsigned int nRows,
+                            unsigned int nCols)
+{
+  if(!defaultActive || q != inputDim)
+    return false;
+  if(q >= kGemmDistMinQ)
+    return true;
+  return nRows * nCols >= kGemmDistMinNM;
+}
 
 namespace {
 
@@ -68,9 +88,16 @@ bool typesCompatible(const string& type, const string& name)
     return true;
   if(type=="brownian" && (name=="Brownian" || name=="brownian"))
     return true;
+  if((type=="ibrownian" || type=="integratedbrownian")
+     && (name=="IntegratedBrownian" || name=="ibrownian" || name=="integratedbrownian"))
+    return true;
   if((type=="rbf" || type=="rbfard") && name=="rbf")
     return true;
+  if(type=="eq" && (name=="ExpQuad" || name=="eq" || name=="expquad"))
+    return true;
   if((type=="mlp" || type=="mlpard") && name=="mlp")
+    return true;
+  if((type=="arccos" || type=="arccosine") && (name=="ArcCosine" || name=="arccos" || name=="arccosine"))
     return true;
   if(type=="poly" && name=="poly")
     return true;
@@ -96,8 +123,11 @@ string CKern::gpyComponentName() const
   if(t=="stdperiodic") return "std_periodic";
   if(t=="cosine") return "Cosine";
   if(t=="brownian") return "Brownian";
+  if(t=="ibrownian" || t=="integratedbrownian") return "IntegratedBrownian";
   if(t=="rbfard") return "rbf";
+  if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
+  if(t=="arccos" || t=="arccosine") return "ArcCosine";
   return t;
 }
 
@@ -517,6 +547,77 @@ void CKern::getGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGr
     g.setVal(val*getTransformGradFact(param, i), getTransformIndex(i));
   }  
 }
+void CKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                          const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // Default: per-inducing getGradX (oracle for bulk overrides).
+  const unsigned int M = Z.getRows();
+  const unsigned int d = Z.getCols();
+  const unsigned int N = X.getRows();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+  gZ.resize(M, d);
+  gZ.zeros();
+  CMatrix dgKX(M, d);
+  CMatrix gKX(M, d);
+  CMatrix gKX_uf(N, d);
+  getDiagGradX(dgKX, Z);
+  for(unsigned int i=0; i<M; i++)
+  {
+    getGradX(gKX_uf, Z, i, X);
+    getGradX(gKX, Z, i, Z);
+    gKX.scale(2.0);
+    gKX.copyRowRow(i, dgKX, i);
+    for(unsigned int j=0; j<d; j++)
+      gZ.setVal(gKX.dotColCol(j, gKuu, i), i, j);
+    for(unsigned int j=0; j<d; j++)
+      gZ.addVal(gKX_uf.dotColRow(j, gKuf, i), i, j);
+  }
+}
+void CKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // CIP-002D follow-up: bulk diagonal parameter gradients.
+  // cvGrad is N×1 (FITC/DTCVAR λ weights). Stationary leaves have K_ii =
+  // variance, so ∂diag/∂variance = 1 and lengthscale grads are zero.
+  // Compound/tensor kernels override; non-stationary leaves fall back to a
+  // per-point path with regularise applied once (not ×N).
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+
+  if(isStationary())
+  {
+    g.zeros();
+    double s = 0.0;
+    for(unsigned int i=0; i<cvGrad.getRows(); i++)
+      s += cvGrad.getVal(i);
+    for(unsigned int p=0; p<getNumParams(); p++)
+    {
+      if(getParamName(p)=="variance")
+        g.setVal(s, p);
+    }
+    if(regularise)
+      addPriorGrad(g);
+    return;
+  }
+
+  CMatrix xi(1, X.getCols());
+  CMatrix cvGradi(1, 1);
+  CMatrix gtemp(1, g.getCols());
+  g.zeros();
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    xi.copyRowRow(0, X, i);
+    cvGradi.copyRowRow(0, cvGrad, i);
+    cvGradi.setSymmetric(true);
+    getGradParams(gtemp, xi, cvGradi, false);
+    g.axpy(gtemp, 1.0);
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
 void CKern::getDiagGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -795,6 +896,42 @@ void CCmpndKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covG
     start = end+1;
   }
 }
+void CCmpndKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // O(components) allocations, independent of N — avoids N× getGradParams
+  // temporaries from the old per-point 1×1 loop through compound.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int np = components[i]->getNumParams();
+    CMatrix subg(1, np);
+    components[i]->getDiagGradParams(subg, X, cvGrad, false);
+    g.setMatrix(0, start, subg);
+    start += np;
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
+void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                               const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // K = Σ_c K_c ⇒ ∂L/∂Z = Σ_c ∂L_c/∂Z with the same cotangents.
+  const unsigned int M = Z.getRows();
+  const unsigned int d = Z.getCols();
+  gZ.resize(M, d);
+  gZ.zeros();
+  CMatrix gZc(M, d);
+  for(size_t i=0; i<components.size(); i++)
+  {
+    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf);
+    gZ.axpy(gZc, 1.0);
+  }
+}
 double CCmpndKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
   
@@ -1050,6 +1187,38 @@ void CTensorKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cov
     g.setMatrix(0, start, subg);
     start = end+1;
   }
+}
+void CTensorKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // Product rule: ∂/∂θ_i of ∏_j diag_j = (∏_{j≠i} diag_j) · ∂diag_i/∂θ_i.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  g.zeros();
+  const unsigned int N = X.getRows();
+  CMatrix w(N, 1);
+  unsigned int start = 0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    for(unsigned int n=0; n<N; n++)
+    {
+      double p = cvGrad.getVal(n);
+      for(size_t j=0; j<components.size(); j++)
+      {
+        if(j!=i)
+          p *= components[j]->diagComputeElement(X, n);
+      }
+      w.setVal(p, n);
+    }
+    const unsigned int np = components[i]->getNumParams();
+    CMatrix subg(1, np);
+    components[i]->getDiagGradParams(subg, X, w, false);
+    g.setMatrix(0, start, subg);
+    start += np;
+  }
+  if(regularise)
+    addPriorGrad(g);
 }
 double CTensorKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
@@ -1551,18 +1720,76 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
   m_workR2Sym.resize(n, n);
   m_workKSym.resize(n, n);
   const double s = scaleFactor();
-  for(unsigned int i = 0; i < n; i++)
+  const unsigned int q = X.getCols();
+
+  if(useGemmDistance(q, getInputDim(), isDefaultActiveDims(), n, n))
   {
-    m_workR2Sym.setVal(0.0, i, i);
-    m_workKSym.setVal(diagComputeElement(X, i), i, i);
-    for(unsigned int j = 0; j < i; j++)
+    // CIP-0025 Track 1 / CIP-002D QW5 — GEMM distance path.
+    // R^2_ij = ||xi||^2 + ||xj||^2 - 2 xi·xj
+    // Step 1: m_workR2Sym = -2 * X * X^T  (column-major dgemm, beta=0)
+    m_workR2Sym.gemm(X, X, -2.0, 0.0, "n", "t");
+    // Step 2: Row squared norms
+    std::vector<double> rowNorm2(n, 0.0);
+    for(unsigned int i = 0; i < n; i++)
     {
-      const double r2 = dist2Active(X, i, X, j);
-      const double k = K_of_r(s * sqrt(r2));
-      m_workR2Sym.setVal(r2, i, j);
-      m_workR2Sym.setVal(r2, j, i);
-      m_workKSym.setVal(k, i, j);
-      m_workKSym.setVal(k, j, i);
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++)
+      {
+        const double v = X.getVal(i, c);
+        nrm += v * v;
+      }
+      rowNorm2[i] = nrm;
+    }
+    // Step 3: Add row norms, clamp r2 >= 0, set diagonal exactly 0
+    for(unsigned int i = 0; i < n; i++)
+    {
+      m_workR2Sym.setVal(0.0, i, i);
+      for(unsigned int j = 0; j < i; j++)
+      {
+        double r2 = m_workR2Sym.getVal(i, j) + rowNorm2[i] + rowNorm2[j];
+        if(r2 < 0.0) r2 = 0.0;
+        m_workR2Sym.setVal(r2, i, j);
+        m_workR2Sym.setVal(r2, j, i);
+      }
+    }
+    // Step 4: Apply K_of_r — diagonal via diagComputeElement; off-diag rows
+    // in parallel (each thread i writes row i and symmetric col i — disjoint).
+    for(unsigned int i = 0; i < n; i++)
+      m_workKSym.setVal(diagComputeElement(X, i), i, i);
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < i; j++)
+      {
+        const double k = K_of_r(s * sqrt(m_workR2Sym.getVal(i, j)));
+        m_workKSym.setVal(k, i, j);
+        m_workKSym.setVal(k, j, i);
+      }
+    }
+  }
+  else
+  {
+    // Scalar path: small q (< kGemmDistMinQ) or non-default activeDims.
+    // OpenMP over disjoint-write symmetric rows: thread i writes
+    // row i (cols 0..i-1) and col i (rows 0..i-1) — no overlap between threads.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      m_workR2Sym.setVal(0.0, i, i);
+      m_workKSym.setVal(diagComputeElement(X, i), i, i);
+      for(unsigned int j = 0; j < i; j++)
+      {
+        const double r2 = dist2Active(X, i, X, j);
+        const double k = K_of_r(s * sqrt(r2));
+        m_workR2Sym.setVal(r2, i, j);
+        m_workR2Sym.setVal(r2, j, i);
+        m_workKSym.setVal(k, i, j);
+        m_workKSym.setVal(k, j, i);
+      }
     }
   }
   m_symX = &X;
@@ -1576,14 +1803,60 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
   m_workR2Rect.resize(n, m);
   m_workKRect.resize(n, m);
   const double s = scaleFactor();
-  for(unsigned int i = 0; i < n; i++)
+  const unsigned int q = X.getCols();
+
+  if(X2.getCols() == getInputDim()
+     && useGemmDistance(q, getInputDim(), isDefaultActiveDims(), n, m))
   {
+    // CIP-0025 Track 1 / CIP-002D QW5 — GEMM distance path for rectangular blocks.
+    // R^2_ij = ||xi||^2 + ||x2j||^2 - 2 xi·x2j
+    m_workR2Rect.gemm(X, X2, -2.0, 0.0, "n", "t");
+    // Row squared norms for X and X2
+    std::vector<double> rowNorm2X(n, 0.0);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++) { const double v = X.getVal(i, c); nrm += v * v; }
+      rowNorm2X[i] = nrm;
+    }
+    std::vector<double> rowNorm2X2(m, 0.0);
     for(unsigned int j = 0; j < m; j++)
     {
-      const double r2 = dist2Active(X, i, X2, j);
-      const double k = K_of_r(s * sqrt(r2));
-      m_workR2Rect.setVal(r2, i, j);
-      m_workKRect.setVal(k, i, j);
+      double nrm = 0.0;
+      for(unsigned int c = 0; c < q; c++) { const double v = X2.getVal(j, c); nrm += v * v; }
+      rowNorm2X2[j] = nrm;
+    }
+    // Add norms, clamp r2 >= 0, apply K_of_r.
+    // Rows are fully disjoint: OpenMP parallel over outer index i is safe.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < m; j++)
+      {
+        double r2 = m_workR2Rect.getVal(i, j) + rowNorm2X[i] + rowNorm2X2[j];
+        if(r2 < 0.0) r2 = 0.0;
+        m_workR2Rect.setVal(r2, i, j);
+        m_workKRect.setVal(K_of_r(s * sqrt(r2)), i, j);
+      }
+    }
+  }
+  else
+  {
+    // Scalar path: small q or non-default activeDims. Each row i is independent.
+#ifdef GPC_OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for(unsigned int i = 0; i < n; i++)
+    {
+      for(unsigned int j = 0; j < m; j++)
+      {
+        const double r2 = dist2Active(X, i, X2, j);
+        const double k = K_of_r(s * sqrt(r2));
+        m_workR2Rect.setVal(r2, i, j);
+        m_workKRect.setVal(k, i, j);
+      }
     }
   }
   m_rectX = &X;
@@ -1685,6 +1958,36 @@ void CRbfKern::_init()
   addTransform(CTransform::defaultPositive(), 1);
   setStationary(true);
 }
+
+// CIP-0024: GPy ExpQuad / EQ — thin RBF subclass, lengthscale-first surface.
+void CEqKern::_markEq()
+{
+  setType("eq");
+  setName("ExpQuad");
+}
+CEqKern::CEqKern() : CRbfKern()
+{
+  _markEq();
+}
+CEqKern::CEqKern(unsigned int inDim) : CRbfKern(inDim)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CMatrix& X) : CRbfKern(X)
+{
+  _markEq();
+}
+CEqKern::CEqKern(const CEqKern& kern) : CRbfKern(kern)
+{
+  _markEq();
+}
+CEqKern::~CEqKern()
+{
+}
+string CEqKern::gpyComponentName() const
+{
+  return "ExpQuad";
+}
 void CRbfKern::setInitParam()
 {
   inverseWidth = 1.0;
@@ -1743,14 +2046,28 @@ void CRbfKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const C
   DIMENSIONMATCH(gX.getCols()==X2.getCols());
   if(!addG)
     gX.zeros();
+  // CIP-002D QW5: hoist isDefaultActiveDims out of the inner loop (via dist2Active).
+  const bool defaultActive = isDefaultActiveDims();
+  const unsigned int q = defaultActive ? X.getCols() : 0;
   for(unsigned int k=0; k<X2.getRows(); k++)
   {
-    double n2 = dist2Active(X, row, X2, k);
+    double n2 = 0.0;
+    if(defaultActive)
+    {
+      for(unsigned int j = 0; j < q; j++)
+      {
+        const double d = X2.getVal(k, j) - X.getVal(row, j);
+        n2 += d * d;
+      }
+    }
+    else
+      n2 = dist2Active(X, row, X2, k);
+    const double e = exp(-n2*wi2);
     for(unsigned int d=0; d<activeDims.size(); d++)
     {
       unsigned int j = activeDims[d];
       BOUNDCHECK(j<X2.getCols());
-      double val = pf*(X2.getVal(k, j)-X.getVal(row, j))*exp(-n2*wi2);
+      double val = pf*(X2.getVal(k, j)-X.getVal(row, j))*e;
       gX.addVal(val, k, j);
     }
   }
@@ -1760,6 +2077,70 @@ void CRbfKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
   DIMENSIONMATCH(gX.dimensionsMatch(X));
   if(!addG)
     gX.zeros();
+}
+void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // CIP-002D QW5: gZ = γ (W X − diag(W 1) Z) with W = K ⊙ gK (+ 2× for Kuu).
+  // Falls back when activeDims is a subset (getGradX only touches those cols).
+  if(!isDefaultActiveDims())
+  {
+    CKern::inducingGradZ(gZ, Z, X, gKuu, gKuf);
+    return;
+  }
+  const unsigned int M = Z.getRows();
+  const unsigned int N = X.getRows();
+  const unsigned int d = Z.getCols();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+
+  CMatrix Kuf(M, N);
+  compute(Kuf, Z, X);
+  CMatrix Wuf(M, N);
+  Wuf.deepCopy(Kuf);
+  Wuf.dotMultiply(gKuf);
+  Wuf.scale(inverseWidth);
+  gZ.resize(M, d);
+  gZ.gemm(Wuf, X, 1.0, 0.0, "n", "n");
+  CMatrix rowSum(M, 1);
+  rowSum.zeros();
+  rowSum.sumRow(Wuf, 1.0, 0.0);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double rs = rowSum.getVal(i);
+    for(unsigned int q=0; q<d; q++)
+      gZ.addVal(-rs * Z.getVal(i, q), i, q);
+  }
+
+  CMatrix Kuu(M, M);
+  compute(Kuu, Z);
+  CMatrix Wuu(M, M);
+  Wuu.deepCopy(Kuu);
+  Wuu.dotMultiply(gKuu);
+  Wuu.scale(2.0 * inverseWidth);
+  CMatrix gZuu(M, d);
+  gZuu.gemm(Wuu, Z, 1.0, 0.0, "n", "n");
+  CMatrix rowSumU(M, 1);
+  rowSumU.zeros();
+  rowSumU.sumRow(Wuu, 1.0, 0.0);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double rs = rowSumU.getVal(i);
+    for(unsigned int q=0; q<d; q++)
+      gZuu.addVal(-rs * Z.getVal(i, q), i, q);
+  }
+  gZ.axpy(gZuu, 1.0);
+
+  // Diagonal ∂k(z,z)/∂z correction (zero for RBF; kept for API parity).
+  CMatrix dgKX(M, d);
+  getDiagGradX(dgKX, Z);
+  for(unsigned int i=0; i<M; i++)
+  {
+    const double gii = gKuu.getVal(i, i);
+    for(unsigned int q=0; q<d; q++)
+      gZ.addVal(dgKX.getVal(i, q) * gii, i, q);
+  }
 }
 double CRbfKern::getWhite() const
 {
@@ -1781,25 +2162,37 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, co
   const bool useWork = hasRectWorkspace(X, X2);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  for(unsigned int j=0; j<nrows; j++)
+  if(useWork)
   {
-    for(unsigned int i=0; i<ncols; i++)
+    // CIP-002D QW5: fuse K ⊙ r² ⊙ covGrad over contiguous workspaces.
+    const double* r2 = rectR2Vals();
+    const double* Kw = rectKVals();
+    const double* cg = covGrad.getVals();
+    for(unsigned int i = 0; i < ncols; i++)
     {
-      double dist2 = 0.0;
-      double k = 0.0;
-      if(useWork)
+      const size_t col = (size_t)i * nrows;
+      for(unsigned int j = 0; j < nrows; j++)
       {
-        dist2 = rectR2(j, i);
-        k = rectK(j, i) * invVar;
+        const size_t ix = col + j;
+        const double k = Kw[ix] * invVar;
+        const double kcg = k * cg[ix];
+        g1 -= halfVariance * r2[ix] * kcg;
+        g2 += kcg;
       }
-      else
+    }
+  }
+  else
+  {
+    for(unsigned int j=0; j<nrows; j++)
+    {
+      for(unsigned int i=0; i<ncols; i++)
       {
-        dist2 = dist2Active(X, j, X2, i);
-        k = exp(-dist2*halfInverseWidth);
+        const double dist2 = dist2Active(X, j, X2, i);
+        const double k = exp(-dist2*halfInverseWidth);
+        const double kcg_ij = k*covGrad.getVal(j,i);
+        g1 -= halfVariance*dist2*kcg_ij;
+        g2 += kcg_ij;
       }
-      double kcg_ij = k*covGrad.getVal(j,i);
-      g1 -= halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
-      g2 += kcg_ij;                    // dk()/dalpha in SBIK paper
     }
   }
   g.setVal(g1, 0);
@@ -1821,26 +2214,38 @@ void CRbfKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGra
   const bool useWork = hasSymWorkspace(X);
   const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
 
-  for(unsigned int j=0; j<nrows; j++)
+  if(useWork)
   {
-    g2 += covGrad.getVal(j,j);
-    for(unsigned int i=0; i<j; i++)
+    // CIP-002D QW5: fused symmetric pass over workspace (lower triangle + diag).
+    const double* r2 = symR2Vals();
+    const double* Kw = symKVals();
+    const double* cg = covGrad.getVals();
+    for(unsigned int j = 0; j < nrows; j++)
     {
-      double k = 0.0;
-      double dist2 = 0.0;
-      if(useWork)
+      g2 += cg[j + (size_t)j * nrows];
+      for(unsigned int i = 0; i < j; i++)
       {
-        dist2 = symR2(i, j);
-        k = symK(i, j) * invVar;
+        const size_t ix = i + (size_t)j * nrows;
+        const double k = Kw[ix] * invVar;
+        const double kcg = k * cg[ix];
+        g1 -= 2.0 * halfVariance * r2[ix] * kcg;
+        g2 += 2.0 * kcg;
       }
-      else
+    }
+  }
+  else
+  {
+    for(unsigned int j=0; j<nrows; j++)
+    {
+      g2 += covGrad.getVal(j,j);
+      for(unsigned int i=0; i<j; i++)
       {
-        dist2 = dist2Active(X, i, X, j);
-        k = exp(-dist2*halfInverseWidth);
+        const double dist2 = dist2Active(X, i, X, j);
+        const double k = exp(-dist2*halfInverseWidth);
+        const double kcg_ij = k*covGrad.getVal(i,j);
+        g1 -= 2.0*halfVariance*dist2*kcg_ij;
+        g2 += 2.0*kcg_ij;
       }
-      double kcg_ij = k*covGrad.getVal(i,j);
-      g1 -= 2.0*halfVariance*dist2*kcg_ij; // dk()/dgamma in SBIK paper
-      g2 += 2.0*kcg_ij;                    // dk()/dalpha in SBIK paper
     }
   }
   g.setVal(g1, 0);
@@ -2949,6 +3354,37 @@ double CLinKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
     }
   return g1;
 }
+void CLinKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise) const
+{
+  // K_ii = variance * ||x_i||^2 → ∂diag/∂variance = ||x_i||^2.
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==getNumParams());
+  DIMENSIONMATCH(cvGrad.getRows()==X.getRows());
+  DIMENSIONMATCH(cvGrad.getCols()==1);
+  double s = 0.0;
+  for(unsigned int i=0; i<X.getRows(); i++)
+    s += cvGrad.getVal(i) * X.norm2Row(i);
+  g.setVal(s, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+void CLinKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuu, const CMatrix& gKuf) const
+{
+  // ∂k(z,x)/∂z = σ x; after ×2 on Kuu and diag replace (no-op for Lin):
+  // gZ = σ gKuf X + 2σ gKuu Z.
+  const unsigned int M = Z.getRows();
+  const unsigned int N = X.getRows();
+  const unsigned int d = Z.getCols();
+  DIMENSIONMATCH(gKuu.getRows()==M && gKuu.getCols()==M);
+  DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
+  DIMENSIONMATCH(X.getCols()==d);
+  gZ.resize(M, d);
+  gZ.gemm(gKuf, X, variance, 0.0, "n", "n");
+  CMatrix gZuu(M, d);
+  gZuu.gemm(gKuu, Z, 2.0 * variance, 0.0, "n", "n");
+  gZ.axpy(gZuu, 1.0);
+}
   
 
 CMlpKern::CMlpKern() : CKern()
@@ -3101,6 +3537,75 @@ double CMlpKern::computeElement(const CMatrix& X1, unsigned int index1,
   double denom2=weightVariance*X2.norm2Row(index2)+biasVariance+1.0;  
   return variance*asin(numer/sqrt(denom1*denom2));
 }
+void CMlpKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  // CIP-002D QW5: syrk for G=XXᵀ then element-wise asin map.
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  const unsigned int N = X.getRows();
+  K.syrk(X, 1.0, 0.0, "u", "n");
+  K.copySymmetric("u");
+  K.setSymmetric(true);
+  innerProdi.resize(1, N);
+  for(unsigned int i=0; i<N; i++)
+    innerProdi.setVal(X.norm2Row(i), i);
+  for(unsigned int j=0; j<N; j++)
+  {
+    const double denomj = weightVariance*innerProdi.getVal(j)+biasVariance+1.0;
+    for(unsigned int i=0; i<=j; i++)
+    {
+      const double denomi = weightVariance*innerProdi.getVal(i)+biasVariance+1.0;
+      const double numer = weightVariance*K.getVal(i, j)+biasVariance;
+      const double arg = numer/sqrt(denomi*denomj);
+      const double kij = variance*asin(arg);
+      K.setVal(kij, i, j);
+      if(i!=j)
+        K.setVal(kij, j, i);
+    }
+  }
+  K.setSymmetric(true);
+}
+void CMlpKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  // CIP-002D QW5: gemm for G=XX2ᵀ then element-wise asin map.
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols()==X2.getRows());
+  const unsigned int N = X.getRows();
+  const unsigned int M = X2.getRows();
+  K.gemm(X, X2, 1.0, 0.0, "n", "t");
+  innerProdi.resize(1, N);
+  innerProdj.resize(1, M);
+  for(unsigned int i=0; i<N; i++)
+    innerProdi.setVal(X.norm2Row(i), i);
+  for(unsigned int j=0; j<M; j++)
+    innerProdj.setVal(X2.norm2Row(j), j);
+  for(unsigned int j=0; j<M; j++)
+  {
+    const double denomj = weightVariance*innerProdj.getVal(j)+biasVariance+1.0;
+    for(unsigned int i=0; i<N; i++)
+    {
+      const double denomi = weightVariance*innerProdi.getVal(i)+biasVariance+1.0;
+      const double numer = weightVariance*K.getVal(i, j)+biasVariance;
+      K.setVal(variance*asin(numer/sqrt(denomi*denomj)), i, j);
+    }
+  }
+}
+void CMlpKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  DIMENSIONMATCH(K.getCols()==1);
+  BOUNDCHECK(row < X2.getRows());
+  const unsigned int N = X.getRows();
+  for(unsigned int i=0; i<N; i++)
+    K.setVal(X.dotRowRow(i, X2, row), i, 0);
+  const double denom2 = weightVariance*X2.norm2Row(row)+biasVariance+1.0;
+  for(unsigned int i=0; i<N; i++)
+  {
+    const double denom1 = weightVariance*X.norm2Row(i)+biasVariance+1.0;
+    const double numer = weightVariance*K.getVal(i, 0)+biasVariance;
+    K.setVal(variance*asin(numer/sqrt(denom1*denom2)), i, 0);
+  }
+}
 void CMlpKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
 {
   DIMENSIONMATCH(g.getRows()==1);
@@ -3204,6 +3709,1633 @@ double CMlpKern::getGradParam(unsigned int index, const CMatrix& X, const CMatri
   BOUNDCHECK(index<nParams);
   throw ndlexceptions::NotImplementedError( "Error getGradParam is not currently implemented for CMlpKern");
   
+}
+
+// ---- CIP-0028 Phase 1: MLP weight-space inducing (√p Gaussian product) ----
+namespace {
+
+// φ = sqrt(π variance / 2) erf(wᵀx̃ / √2) recovers MLP asin (no 2/π).
+// K_fu = ∫ φ √p ψ with ψ L²-normalised Gaussian windows on weight space.
+// sigmaDiag length D=d+1: isotropic uses (α,...,α,β); ARD uses (α s_0,...,α s_{d-1},β).
+inline double mlpWsKfuElementDiag(double variance, const vector<double>& sigmaDiag,
+                                  const CMatrix& X, unsigned int n,
+                                  const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  BOUNDCHECK(W.getCols() == D);
+  BOUNDCHECK(sigmaDiag.size() == D);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
+
+  const double s2 = s * s;
+  const double invS2 = 1.0 / s2;
+  double logDetSeff = 0.0;
+  double quadW = 0.0;
+  double quadMuLamW = 0.0;
+  double logAbsSigma = 0.0;
+  vector<double> mu(D);
+  vector<double> Sdiag(D);
+  for(unsigned int j = 0; j < D; j++)
+  {
+    const double sig2 = sigmaDiag[j];
+    BOUNDCHECK(sig2 > 0.0);
+    const double lamP = 1.0 / (2.0 * sig2);
+    const double lamEff = invS2 + lamP;
+    Sdiag[j] = 1.0 / lamEff;
+    const double wh = W.getVal(m, j);
+    mu[j] = Sdiag[j] * invS2 * wh;
+    logDetSeff += log(Sdiag[j]);
+    logAbsSigma += log(sig2);
+    quadW += wh * wh * invS2;
+    quadMuLamW += mu[j] * wh * invS2;
+  }
+
+  const double logCsqrtP = -0.25 * (double)D * log(2.0 * M_PI) - 0.25 * logAbsSigma;
+  const double logCpsi = 0.25 * (double)D * log(4.0 * M_PI * s2)
+                         - 0.5 * (double)D * log(2.0 * M_PI * s2);
+  const double logInt = logCsqrtP + logCpsi
+                        + 0.5 * (double)D * log(2.0 * M_PI)
+                        + 0.5 * logDetSeff
+                        + (-0.5 * quadW + 0.5 * quadMuLamW);
+  const double intSqrtPPsi = exp(logInt);
+
+  double muDot = mu[d];
+  double xSx = Sdiag[d];
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xj = X.getVal(n, j);
+    muDot += mu[j] * xj;
+    xSx += Sdiag[j] * xj * xj;
+  }
+  const double erfArg = (muDot / sqrt(2.0)) / sqrt(1.0 + xSx);
+  const double erfMean = erf(erfArg);
+  const double B = sqrt(variance * M_PI / 2.0);
+  return B * intSqrtPPsi * erfMean;
+}
+
+inline double mlpWsKfuElement(double variance, double weightVar, double biasVar,
+                              const CMatrix& X, unsigned int n,
+                              const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  vector<double> sigmaDiag(d + 1, weightVar);
+  sigmaDiag[d] = biasVar;
+  return mlpWsKfuElementDiag(variance, sigmaDiag, X, n, W, m, s);
+}
+
+// Analytic isotropic √p Gaussian-product feature state (one n,m).
+struct IsoKfuState
+{
+  double B, I, z, erfz, ep, muDot, xSx, r, s2, invS2;
+  vector<double> Sdiag;
+  vector<double> mu;
+  vector<double> sigmaDiag;
+  vector<double> wh;
+  vector<double> xt; // x̃ = (x, 1)
+};
+
+inline void isoKfuFillState(IsoKfuState& st, double variance, const vector<double>& sigmaDiag,
+                            const CMatrix& X, unsigned int n, const CMatrix& W, unsigned int m,
+                            double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  st.sigmaDiag = sigmaDiag;
+  st.s2 = s * s;
+  st.invS2 = 1.0 / st.s2;
+  st.Sdiag.resize(D);
+  st.mu.resize(D);
+  st.wh.resize(D);
+  st.xt.resize(D);
+  double logDetSeff = 0.0;
+  double logAbsSigma = 0.0;
+  double quadW = 0.0;
+  double quadMuLamW = 0.0;
+  for(unsigned int j = 0; j < D; j++)
+  {
+    const double sig2 = sigmaDiag[j];
+    const double lamP = 1.0 / (2.0 * sig2);
+    const double lamEff = st.invS2 + lamP;
+    st.Sdiag[j] = 1.0 / lamEff;
+    st.wh[j] = W.getVal(m, j);
+    st.mu[j] = st.Sdiag[j] * st.invS2 * st.wh[j];
+    logDetSeff += log(st.Sdiag[j]);
+    logAbsSigma += log(sig2);
+    quadW += st.wh[j] * st.wh[j] * st.invS2;
+    quadMuLamW += st.mu[j] * st.wh[j] * st.invS2;
+  }
+  const double logCsqrtP = -0.25 * (double)D * log(2.0 * M_PI) - 0.25 * logAbsSigma;
+  const double logCpsi = 0.25 * (double)D * log(4.0 * M_PI * st.s2)
+                         - 0.5 * (double)D * log(2.0 * M_PI * st.s2);
+  st.I = exp(logCsqrtP + logCpsi + 0.5 * (double)D * log(2.0 * M_PI)
+             + 0.5 * logDetSeff - 0.5 * quadW + 0.5 * quadMuLamW);
+  st.B = sqrt(variance * M_PI / 2.0);
+  st.muDot = st.mu[d];
+  st.xSx = st.Sdiag[d];
+  st.xt[d] = 1.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    st.xt[j] = X.getVal(n, j);
+    st.muDot += st.mu[j] * st.xt[j];
+    st.xSx += st.Sdiag[j] * st.xt[j] * st.xt[j];
+  }
+  st.r = sqrt(1.0 + st.xSx);
+  st.z = (st.muDot / sqrt(2.0)) / st.r;
+  st.erfz = erf(st.z);
+  st.ep = (2.0 / sqrt(M_PI)) * exp(-st.z * st.z);
+}
+
+inline void isoAccumX(CMatrix& gX, unsigned int n, const IsoKfuState& st, double gScale)
+{
+  const unsigned int d = gX.getCols();
+  const double pref = gScale * st.B * st.I * st.ep;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double dz = (st.mu[j] / sqrt(2.0)) / st.r
+                      - st.z * (st.Sdiag[j] * st.xt[j]) / (st.r * st.r);
+    gX.addVal(pref * dz, n, j);
+  }
+}
+
+inline void isoAccumW(CMatrix& gW, unsigned int m, const IsoKfuState& st, double gScale)
+{
+  const unsigned int D = st.wh.size();
+  for(unsigned int k = 0; k < D; k++)
+  {
+    const double dlogI = st.wh[k] * (-st.invS2 + st.Sdiag[k] / (st.s2 * st.s2));
+    const double dI = st.I * dlogI;
+    const double dz = (st.Sdiag[k] * st.xt[k] * st.invS2 / sqrt(2.0)) / st.r;
+    gW.addVal(gScale * st.B * (dI * st.erfz + st.I * st.ep * dz), m, k);
+  }
+}
+
+inline double isoDKdS(const IsoKfuState& st, double s)
+{
+  const unsigned int D = st.wh.size();
+  const double invS2 = st.invS2;
+  const double dInvS2 = -2.0 / (s * s * s);
+  double dlogI = -0.5 * (double)D / s; // ∂logCpsi/∂s
+  vector<double> dS(D), dmu(D);
+  for(unsigned int j = 0; j < D; j++)
+  {
+    dS[j] = -st.Sdiag[j] * st.Sdiag[j] * dInvS2;
+    dmu[j] = dS[j] * invS2 * st.wh[j] + st.Sdiag[j] * dInvS2 * st.wh[j];
+    dlogI += 0.5 * dS[j] / st.Sdiag[j];
+    dlogI += st.wh[j] * st.wh[j] / (s * s * s); // ∂(-½ w²/s²)/∂s
+    dlogI += 0.5 * (dmu[j] * st.wh[j] * invS2 + st.mu[j] * st.wh[j] * dInvS2);
+  }
+  const double dI = st.I * dlogI;
+  double dmuDot = 0.0;
+  double dxSx = 0.0;
+  for(unsigned int j = 0; j < D; j++)
+  {
+    dmuDot += dmu[j] * st.xt[j];
+    dxSx += dS[j] * st.xt[j] * st.xt[j];
+  }
+  const double dr = dxSx / (2.0 * st.r);
+  const double dz = ((dmuDot / sqrt(2.0)) * st.r - (st.muDot / sqrt(2.0)) * dr)
+                    / (st.r * st.r);
+  return st.B * (dI * st.erfz + st.I * st.ep * dz);
+}
+
+inline void isoAccumSigma(vector<double>& gSig, const IsoKfuState& st, double gScale)
+{
+  const unsigned int D = st.sigmaDiag.size();
+  for(unsigned int j = 0; j < D; j++)
+  {
+    const double sig2 = st.sigmaDiag[j];
+    const double dS = st.Sdiag[j] * st.Sdiag[j] / (2.0 * sig2 * sig2);
+    const double dmu = dS * st.invS2 * st.wh[j];
+    const double dlogI = -0.25 / sig2 + 0.5 * dS / st.Sdiag[j]
+                         + 0.5 * dmu * st.wh[j] * st.invS2;
+    const double dI = st.I * dlogI;
+    const double dmuDot = dmu * st.xt[j];
+    const double dxSx = dS * st.xt[j] * st.xt[j];
+    const double dr = dxSx / (2.0 * st.r);
+    const double dz = ((dmuDot / sqrt(2.0)) * st.r - (st.muDot / sqrt(2.0)) * dr)
+                      / (st.r * st.r);
+    gSig[j] += gScale * st.B * (dI * st.erfz + st.I * st.ep * dz);
+  }
+}
+
+void mlpIsoGradParamsDiag(CMatrix& g, double variance, const vector<double>& sigmaDiag,
+                          bool ardScales, const CMatrix& scales, double weightVar,
+                          const CMatrix& X, const CMatrix& W, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = X.getCols();
+  g.zeros();
+  IsoKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      isoKfuFillState(st, variance, sigmaDiag, X, n, W, m, s);
+      const double dKdVar = (st.B / (2.0 * variance)) * st.I * st.erfz;
+      vector<double> gSig(d + 1, 0.0);
+      isoAccumSigma(gSig, st, wgt);
+      if(!ardScales)
+      {
+        double gAlpha = 0.0;
+        for(unsigned int j = 0; j < d; j++)
+          gAlpha += gSig[j];
+        g.addVal(gAlpha, 0);
+        g.addVal(gSig[d], 1);
+        g.addVal(wgt * dKdVar, 2);
+      }
+      else
+      {
+        double gAlpha = 0.0;
+        for(unsigned int j = 0; j < d; j++)
+          gAlpha += gSig[j] * scales.getVal(j);
+        g.addVal(gAlpha, 0);
+        g.addVal(gSig[d], 1);
+        g.addVal(wgt * dKdVar, 2);
+        for(unsigned int j = 0; j < d; j++)
+          g.addVal(gSig[j] * weightVar, 3 + j);
+      }
+    }
+  }
+}
+
+void mlpIsoGradWDiag(CMatrix& gW, double variance, const vector<double>& sigmaDiag,
+                     const CMatrix& X, const CMatrix& W, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  gW.resize(M, W.getCols());
+  gW.zeros();
+  IsoKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      isoKfuFillState(st, variance, sigmaDiag, X, n, W, m, s);
+      isoAccumW(gW, m, st, wgt);
+    }
+}
+
+void mlpIsoGradXDiag(CMatrix& gX, double variance, const vector<double>& sigmaDiag,
+                     const CMatrix& X, const CMatrix& W, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  gX.resize(N, X.getCols());
+  gX.zeros();
+  IsoKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      isoKfuFillState(st, variance, sigmaDiag, X, n, W, m, s);
+      isoAccumX(gX, n, st, wgt);
+    }
+}
+
+void mlpIsoGradSDiag(CMatrix& gS, double variance, const vector<double>& sigmaDiag,
+                     const CMatrix& X, const CMatrix& W, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  gS.resize(1, 1);
+  gS.zeros();
+  IsoKfuState st;
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      isoKfuFillState(st, variance, sigmaDiag, X, n, W, m, s);
+      acc += wgt * isoDKdS(st, s);
+    }
+  gS.setVal(acc, 0);
+}
+
+} // namespace
+
+void CMlpKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(W.getCols() == d + 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpWsKfuElement(variance, weightVariance, biasVariance, X, n, W, m, s), n, m);
+}
+
+void CMlpardKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(W.getCols() == d + 1);
+  BOUNDCHECK(s > 0.0);
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpWsKfuElementDiag(variance, sigmaDiag, X, n, W, m, s), n, m);
+}
+
+void CMlpardKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                               const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradParamsDiag(g, variance, sigmaDiag, true, scales, weightVariance, X, W, s, gKfu);
+}
+
+void CMlpardKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradWDiag(gW, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+void CMlpardKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradXDiag(gX, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+void CMlpardKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                          const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradSDiag(gS, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+void CMlpKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                            const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  CMatrix dummyScales(1, 1);
+  mlpIsoGradParamsDiag(g, variance, sigmaDiag, false, dummyScales, weightVariance,
+                       X, W, s, gKfu);
+}
+
+void CMlpKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradWDiag(gW, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+void CMlpKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradXDiag(gX, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+void CMlpKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                       const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpIsoGradSDiag(gS, variance, sigmaDiag, X, W, s, gKfu);
+}
+
+// ---- CIP-0028 ridge erf windows (prior-whitened weight space) ----
+namespace {
+
+// GPc MLP feature φ = √(π v / 2) erf(ωᵀ x̂ / √2). Ridge measure: t~N(μ,c_s) along v,
+// N(0,I) on the orthogonal complement. Matches CMlpKern::computeElement (v asin, no 2/π).
+inline double mlpRidgeKfuElementDiag(double variance, const vector<double>& sigmaDiag,
+                                     const CMatrix& X, unsigned int n,
+                                     const CMatrix& V, unsigned int m,
+                                     double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  BOUNDCHECK(V.getCols() == Dp);
+  BOUNDCHECK(sigmaDiag.size() == Dp);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
+
+  const double s2 = s * s;
+  const double cs = 2.0 * s2 / (2.0 + s2);
+  const double mu = a * cs / s2;
+  const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                    * sqrt(2.0 * M_PI * cs)
+                    * exp(mu * mu / (2.0 * cs) - a * a / (2.0 * s2));
+  const double B = sqrt(variance * M_PI / 2.0);
+
+  // x̂ = Σ^{1/2} x̃
+  double xhatN2 = 0.0;
+  double vtx = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xh = sqrt(sigmaDiag[j]) * X.getVal(n, j);
+    xhatN2 += xh * xh;
+    vtx += V.getVal(m, j) * xh;
+  }
+  {
+    const double xh = sqrt(sigmaDiag[d]); // bias coord of x̃ is 1
+    xhatN2 += xh * xh;
+    vtx += V.getVal(m, d) * xh;
+  }
+
+  const double varLin = xhatN2 - (1.0 - cs) * vtx * vtx;
+  const double den = sqrt(1.0 + max(varLin, 0.0));
+  const double erfArg = (mu * vtx / sqrt(2.0)) / den;
+  return B * Am * erf(erfArg);
+}
+
+inline double mlpRidgeKfuElement(double variance, double weightVar, double biasVar,
+                                 const CMatrix& X, unsigned int n,
+                                 const CMatrix& V, unsigned int m,
+                                 double a, double s)
+{
+  const unsigned int d = X.getCols();
+  vector<double> sigmaDiag(d + 1, weightVar);
+  sigmaDiag[d] = biasVar;
+  return mlpRidgeKfuElementDiag(variance, sigmaDiag, X, n, V, m, a, s);
+}
+
+// Analytic ridge feature state for one (n,m); used by all ∂K_fu paths.
+struct RidgeKfuState
+{
+  double B, Am, mu, cs, s2, t, n2, den, z, erfz, ep;
+  vector<double> xhat;
+  vector<double> v;
+};
+
+inline void ridgeKfuFillState(RidgeKfuState& st, double variance, const vector<double>& sigmaDiag,
+                              const CMatrix& X, unsigned int n, const CMatrix& V, unsigned int m,
+                              double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  st.s2 = s * s;
+  st.cs = 2.0 * st.s2 / (2.0 + st.s2);
+  st.mu = a * st.cs / st.s2;
+  st.Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * st.s2, -0.25)
+          * sqrt(2.0 * M_PI * st.cs)
+          * exp(st.mu * st.mu / (2.0 * st.cs) - a * a / (2.0 * st.s2));
+  st.B = sqrt(variance * M_PI / 2.0);
+  st.xhat.resize(Dp);
+  st.v.resize(Dp);
+  st.n2 = 0.0;
+  st.t = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    st.xhat[j] = sqrt(sigmaDiag[j]) * X.getVal(n, j);
+    st.v[j] = V.getVal(m, j);
+    st.n2 += st.xhat[j] * st.xhat[j];
+    st.t += st.v[j] * st.xhat[j];
+  }
+  st.xhat[d] = sqrt(sigmaDiag[d]);
+  st.v[d] = V.getVal(m, d);
+  st.n2 += st.xhat[d] * st.xhat[d];
+  st.t += st.v[d] * st.xhat[d];
+  const double varLin = st.n2 - (1.0 - st.cs) * st.t * st.t;
+  st.den = sqrt(1.0 + max(varLin, 0.0));
+  st.z = (st.mu * st.t / sqrt(2.0)) / st.den;
+  st.erfz = erf(st.z);
+  st.ep = (2.0 / sqrt(M_PI)) * exp(-st.z * st.z);
+}
+
+inline void ridgeAccumX(CMatrix& gX, unsigned int n, const RidgeKfuState& st,
+                        const vector<double>& sigmaDiag, double gScale)
+{
+  const unsigned int d = gX.getCols();
+  const double pref = gScale * st.B * st.Am * st.ep * (st.mu / sqrt(2.0)) / (st.den * st.den * st.den);
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double dz_dxh = st.v[j] * (1.0 + st.n2) - st.t * st.xhat[j];
+    gX.addVal(pref * dz_dxh * sqrt(sigmaDiag[j]), n, j);
+  }
+}
+
+inline void ridgeAccumVA(CMatrix& gV, CMatrix& ga, unsigned int m, const RidgeKfuState& st,
+                         double a, double gScale)
+{
+  const unsigned int Dp = st.v.size();
+  const double prefZ = gScale * st.B * st.Am * st.ep * (st.mu / sqrt(2.0)) / (st.den * st.den * st.den);
+  for(unsigned int k = 0; k < Dp; k++)
+    gV.addVal(prefZ * st.xhat[k] * (1.0 + st.n2), m, k);
+
+  const double dmu_da = st.cs / st.s2;
+  const double dAm_da = st.Am * (st.mu - a) / st.s2;
+  const double dz_da = dmu_da * (st.t / sqrt(2.0)) / st.den;
+  ga.addVal(gScale * st.B * (dAm_da * st.erfz + st.Am * st.ep * dz_da), m, 0);
+}
+
+inline double ridgeDKdS(const RidgeKfuState& st, double a, double s)
+{
+  const double dcs = 8.0 * s / ((2.0 + s * s) * (2.0 + s * s));
+  const double dmu = a * (s * dcs - 2.0 * st.cs) / (s * s * s);
+  const double dden = (st.t * st.t * dcs) / (2.0 * st.den);
+  const double dz = (st.t / sqrt(2.0)) * (dmu * st.den - st.mu * dden)
+                    / (st.den * st.den);
+  const double dlogA = -0.5 / s + 0.5 * dcs / st.cs + st.mu * dmu / st.cs
+                       - st.mu * st.mu * dcs / (2.0 * st.cs * st.cs)
+                       + a * a / (s * s * s);
+  const double dAm = st.Am * dlogA;
+  return st.B * (dAm * st.erfz + st.Am * st.ep * dz);
+}
+
+inline void ridgeAccumSigmaDiag(vector<double>& gSigma, const RidgeKfuState& st,
+                                const vector<double>& sigmaDiag, double gScale)
+{
+  const unsigned int Dp = st.xhat.size();
+  const double pref = gScale * st.B * st.Am * st.ep * (st.mu / sqrt(2.0))
+                      / (st.den * st.den * st.den);
+  for(unsigned int j = 0; j < Dp; j++)
+  {
+    const double dz_dxh = st.v[j] * (1.0 + st.n2) - st.t * st.xhat[j];
+    const double dK_dxh = pref * dz_dxh;
+    gSigma[j] += dK_dxh * st.xhat[j] / (2.0 * sigmaDiag[j]);
+  }
+}
+
+void mlpRidgeGradParamsDiag(CMatrix& g, double variance, const vector<double>& sigmaDiag,
+                            bool ardScales, const CMatrix& scales,
+                            double weightVar, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int nParams = g.getCols();
+  g.zeros();
+  RidgeKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      ridgeKfuFillState(st, variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s);
+      // variance (last MLP param before optional ARD scales)
+      const double dKdVar = (st.B / (2.0 * variance)) * st.Am * st.erfz;
+      // param layout: MLP = [weightVar, biasVar, variance]; ARD adds scales after.
+      if(!ardScales)
+      {
+        vector<double> gSig(d + 1, 0.0);
+        ridgeAccumSigmaDiag(gSig, st, sigmaDiag, w);
+        double gAlpha = 0.0;
+        for(unsigned int j = 0; j < d; j++)
+          gAlpha += gSig[j];
+        g.addVal(gAlpha, 0);           // weightVariance
+        g.addVal(gSig[d], 1);          // biasVariance
+        g.addVal(w * dKdVar, 2);       // variance
+      }
+      else
+      {
+        vector<double> gSig(d + 1, 0.0);
+        ridgeAccumSigmaDiag(gSig, st, sigmaDiag, w);
+        double gAlpha = 0.0;
+        for(unsigned int j = 0; j < d; j++)
+          gAlpha += gSig[j] * scales.getVal(j);
+        g.addVal(gAlpha, 0);
+        g.addVal(gSig[d], 1);
+        g.addVal(w * dKdVar, 2);
+        for(unsigned int j = 0; j < d; j++)
+          g.addVal(gSig[j] * weightVar, 3 + j);
+      }
+      (void)nParams;
+    }
+  }
+}
+
+void mlpRidgeGradXDiag(CMatrix& gX, double variance, const vector<double>& sigmaDiag,
+                       const CMatrix& X, const CMatrix& V, const CMatrix& a, double s,
+                       const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  gX.resize(N, X.getCols());
+  gX.zeros();
+  RidgeKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      ridgeKfuFillState(st, variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s);
+      ridgeAccumX(gX, n, st, sigmaDiag, w);
+    }
+}
+
+void mlpRidgeGradSDiag(CMatrix& gS, double variance, const vector<double>& sigmaDiag,
+                       const CMatrix& X, const CMatrix& V, const CMatrix& a, double s,
+                       const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  gS.resize(1, 1);
+  gS.zeros();
+  RidgeKfuState st;
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      ridgeKfuFillState(st, variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s);
+      acc += w * ridgeDKdS(st, a.getVal(m, 0), s);
+    }
+  gS.setVal(acc, 0);
+}
+
+void mlpRidgeGradVADiag(CMatrix& gV, CMatrix& ga, double variance,
+                        const vector<double>& sigmaDiag, const CMatrix& X,
+                        const CMatrix& V, const CMatrix& a, double s,
+                        const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int Dp = V.getCols();
+  gV.resize(M, Dp);
+  gV.zeros();
+  ga.resize(M, 1);
+  ga.zeros();
+  RidgeKfuState st;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      ridgeKfuFillState(st, variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s);
+      ridgeAccumVA(gV, ga, m, st, a.getVal(m, 0), w);
+    }
+}
+
+} // namespace
+
+void CMlpKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpRidgeKfuElement(variance, weightVariance, biasVariance, X, n, V, m,
+                                    a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CMlpKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                 const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  CMatrix dummyScales(1, 1);
+  mlpRidgeGradParamsDiag(g, variance, sigmaDiag, false, dummyScales, weightVariance,
+                         X, V, a, s, gKfu);
+}
+
+void CMlpKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradXDiag(gX, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+void CMlpKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                            const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradSDiag(gS, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+void CMlpKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                             const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1, weightVariance);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradVADiag(gV, ga, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                      const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(mlpRidgeKfuElementDiag(variance, sigmaDiag, X, n, V, m, a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CMlpardKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                    const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradParamsDiag(g, variance, sigmaDiag, true, scales, weightVariance,
+                         X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                               const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradXDiag(gX, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                               const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradSDiag(gS, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+void CMlpardKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                                const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  vector<double> sigmaDiag(d + 1);
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  mlpRidgeGradVADiag(gV, ga, variance, sigmaDiag, X, V, a, s, gKfu);
+}
+
+// ---- CIP-0028 Phase 2: arc-cosine kernel ----
+namespace {
+
+inline void arccosAugmentStats(const CMatrix& X1, unsigned int i1,
+                               const CMatrix& X2, unsigned int i2,
+                               double& dot, double& n1, double& n2)
+{
+  const unsigned int d = X1.getCols();
+  dot = 1.0; // bias components
+  double n1sq = 1.0;
+  double n2sq = 1.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double a = X1.getVal(i1, j);
+    const double b = X2.getVal(i2, j);
+    dot += a * b;
+    n1sq += a * a;
+    n2sq += b * b;
+  }
+  n1 = sqrt(n1sq);
+  n2 = sqrt(n2sq);
+}
+
+inline double arccosClampCos(double c)
+{
+  if(c > 1.0) return 1.0;
+  if(c < -1.0) return -1.0;
+  return c;
+}
+
+inline double arccosNormPdf(double z)
+{
+  return exp(-0.5 * z * z) / sqrt(2.0 * M_PI);
+}
+
+inline double arccosNormCdf(double z)
+{
+  return 0.5 * (1.0 + erf(z / sqrt(2.0)));
+}
+
+inline double arccos0WsElement(double variance, const CMatrix& X, unsigned int n,
+                               const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  double n2 = 1.0;
+  double muDot = W.getVal(m, d); // bias weight × 1
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xj = X.getVal(n, j);
+    n2 += xj * xj;
+    muDot += W.getVal(m, j) * xj;
+  }
+  const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+  const double B = sqrt(variance * M_PI / 2.0);
+  const double erfArg = (muDot / sqrt(2.0)) / sqrt(1.0 + s * s * n2);
+  return B * psiScale * erf(erfArg);
+}
+
+inline double arccos1WsElement(double variance, const CMatrix& X, unsigned int n,
+                               const CMatrix& W, unsigned int m, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  double n2 = 1.0;
+  double mu = W.getVal(m, d);
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xj = X.getVal(n, j);
+    n2 += xj * xj;
+    mu += W.getVal(m, j) * xj;
+  }
+  const double nx = sqrt(n2);
+  const double psiScale = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+  const double B = sqrt(variance);
+  const double sig = s * nx;
+  double soft = 0.0;
+  if(sig < 1e-14)
+    soft = (mu > 0.0) ? mu : 0.0;
+  else
+  {
+    const double z = mu / sig;
+    soft = mu * arccosNormCdf(z) + sig * arccosNormPdf(z);
+  }
+  return B * psiScale * soft;
+}
+
+void arccos0GradAll(CMatrix& gParams, CMatrix& gW, CMatrix& gX, CMatrix& gS,
+                    double variance, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu, bool doParams, bool doW, bool doX, bool doS)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  if(doParams) { gParams.zeros(); }
+  if(doW) { gW.resize(M, D); gW.zeros(); }
+  if(doX) { gX.resize(N, d); gX.zeros(); }
+  if(doS) { gS.resize(1, 1); gS.zeros(); }
+  double accS = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      double n2 = 1.0;
+      double muDot = W.getVal(m, d);
+      vector<double> xt(D);
+      xt[d] = 1.0;
+      for(unsigned int j = 0; j < d; j++)
+      {
+        xt[j] = X.getVal(n, j);
+        n2 += xt[j] * xt[j];
+        muDot += W.getVal(m, j) * xt[j];
+      }
+      const double psi = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+      const double B = sqrt(variance * M_PI / 2.0);
+      const double den = sqrt(1.0 + s * s * n2);
+      const double z = (muDot / sqrt(2.0)) / den;
+      const double erfz = erf(z);
+      const double ep = (2.0 / sqrt(M_PI)) * exp(-z * z);
+      if(doParams)
+        gParams.addVal(wgt * (B / (2.0 * variance)) * psi * erfz, 0);
+      if(doW)
+      {
+        for(unsigned int k = 0; k < D; k++)
+        {
+          const double dz = (xt[k] / sqrt(2.0)) / den;
+          gW.addVal(wgt * B * psi * ep * dz, m, k);
+        }
+      }
+      if(doX)
+      {
+        for(unsigned int j = 0; j < d; j++)
+        {
+          const double dz = (W.getVal(m, j) / sqrt(2.0)) / den
+                            - z * (s * s * xt[j]) / (den * den);
+          gX.addVal(wgt * B * psi * ep * dz, n, j);
+        }
+      }
+      if(doS)
+      {
+        const double dpsi = psi * (0.5 * (double)D / s);
+        const double dz = -z * (s * n2) / (den * den);
+        accS += wgt * B * (dpsi * erfz + psi * ep * dz);
+      }
+    }
+  }
+  if(doS)
+    gS.setVal(accS, 0);
+}
+
+void arccos1GradAll(CMatrix& gParams, CMatrix& gW, CMatrix& gX, CMatrix& gS,
+                    double variance, const CMatrix& X, const CMatrix& W, double s,
+                    const CMatrix& gKfu, bool doParams, bool doW, bool doX, bool doS)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int D = d + 1;
+  if(doParams) { gParams.zeros(); }
+  if(doW) { gW.resize(M, D); gW.zeros(); }
+  if(doX) { gX.resize(N, d); gX.zeros(); }
+  if(doS) { gS.resize(1, 1); gS.zeros(); }
+  double accS = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double wgt = gKfu.getVal(n, m);
+      if(wgt == 0.0)
+        continue;
+      double n2 = 1.0;
+      double mu = W.getVal(m, d);
+      vector<double> xt(D);
+      xt[d] = 1.0;
+      for(unsigned int j = 0; j < d; j++)
+      {
+        xt[j] = X.getVal(n, j);
+        n2 += xt[j] * xt[j];
+        mu += W.getVal(m, j) * xt[j];
+      }
+      const double nx = sqrt(n2);
+      const double psi = pow(4.0 * M_PI * s * s, 0.25 * (double)D);
+      const double B = sqrt(variance);
+      const double sig = s * nx;
+      double soft = 0.0;
+      double Phi = 0.0;
+      double phi = 0.0;
+      if(sig < 1e-14)
+      {
+        soft = (mu > 0.0) ? mu : 0.0;
+        Phi = (mu > 0.0) ? 1.0 : 0.0;
+        phi = 0.0;
+      }
+      else
+      {
+        const double z = mu / sig;
+        Phi = arccosNormCdf(z);
+        phi = arccosNormPdf(z);
+        soft = mu * Phi + sig * phi;
+      }
+      if(doParams)
+        gParams.addVal(wgt * (0.5 / sqrt(variance)) * psi * soft, 0);
+      if(doW)
+      {
+        for(unsigned int k = 0; k < D; k++)
+          gW.addVal(wgt * B * psi * Phi * xt[k], m, k);
+      }
+      if(doX)
+      {
+        for(unsigned int j = 0; j < d; j++)
+        {
+          const double dsoft = Phi * W.getVal(m, j)
+                               + phi * s * xt[j] / max(nx, 1e-15);
+          gX.addVal(wgt * B * psi * dsoft, n, j);
+        }
+      }
+      if(doS)
+      {
+        const double dpsi = psi * (0.5 * (double)D / s);
+        accS += wgt * B * (dpsi * soft + psi * phi * nx);
+      }
+    }
+  }
+  if(doS)
+    gS.setVal(accS, 0);
+}
+
+} // namespace
+
+CArcCosineKern::CArcCosineKern() : CKern(), order(0)
+{
+  _init();
+}
+CArcCosineKern::CArcCosineKern(unsigned int inDim) : CKern(inDim), order(0)
+{
+  _init();
+  setInputDim(inDim);
+}
+CArcCosineKern::CArcCosineKern(const CMatrix& X) : CKern(X), order(0)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CArcCosineKern::CArcCosineKern(const CArcCosineKern& kern) : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  order = kern.order;
+}
+CArcCosineKern::~CArcCosineKern()
+{
+}
+double CArcCosineKern::getVariance() const
+{
+  return variance;
+}
+void CArcCosineKern::setOrder(unsigned int ord)
+{
+  if(ord > 1)
+    throw ndlexceptions::Error("CArcCosineKern order must be 0 or 1.");
+  order = ord;
+}
+void CArcCosineKern::_init()
+{
+  nParams = 1;
+  setType("arccos");
+  setName("ArcCosine");
+  setParamName("variance", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setStationary(false);
+  order = 0;
+}
+void CArcCosineKern::setInitParam()
+{
+  variance = 1.0;
+}
+void CArcCosineKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  variance = val;
+}
+double CArcCosineKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  return variance;
+}
+double CArcCosineKern::getWhite() const
+{
+  return 0.0;
+}
+
+double CArcCosineKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  if(order == 0)
+    return variance * (M_PI / 2.0); // asin(1)
+  // order 1: σ² ||x̃||²
+  double n2 = 1.0;
+  for(unsigned int j = 0; j < X.getCols(); j++)
+  {
+    const double x = X.getVal(index, j);
+    n2 += x * x;
+  }
+  return variance * n2;
+}
+
+double CArcCosineKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                      const CMatrix& X2, unsigned int index2) const
+{
+  double dot = 0.0, n1 = 0.0, n2 = 0.0;
+  arccosAugmentStats(X1, index1, X2, index2, dot, n1, n2);
+  if(!(n1 > 0.0) || !(n2 > 0.0))
+    return 0.0;
+  const double c = arccosClampCos(dot / (n1 * n2));
+  const double theta = acos(c);
+  if(order == 0)
+    return variance * asin(c); // Williams infinite-MLP angular form
+  // Cho & Saul order 1: (σ²/π) ||x||||y|| (sinθ + (π-θ)cosθ)
+  const double J1 = sin(theta) + (M_PI - theta) * c;
+  return variance * (n1 * n2 / M_PI) * J1;
+}
+
+void CArcCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
+                                   const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getCols() == nParams);
+  double g0 = 0.0;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+    for(unsigned int j = 0; j < X2.getRows(); j++)
+    {
+      const double k = computeElement(X, i, X2, j);
+      if(variance > 0.0)
+        g0 += (k / variance) * covGrad.getVal(i, j);
+    }
+  g.setVal(g0, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CArcCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad,
+                                   bool regularise) const
+{
+  DIMENSIONMATCH(g.getCols() == nParams);
+  double g0 = 0.0;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < i; j++)
+    {
+      const double k = computeElement(X, i, X, j);
+      if(variance > 0.0)
+        g0 += 2.0 * (k / variance) * covGrad.getVal(i, j);
+    }
+    const double kd = diagComputeElement(X, i);
+    if(variance > 0.0)
+      g0 += (kd / variance) * covGrad.getVal(i, i);
+  }
+  g.setVal(g0, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CArcCosineKern::getGradParam(unsigned int /*index*/, const CMatrix& /*X*/,
+                                    const CMatrix& /*X2*/, const CMatrix& /*cvGrd*/) const
+{
+  throw ndlexceptions::NotImplementedError("getGradParam not implemented for CArcCosineKern");
+}
+double CArcCosineKern::getGradParam(unsigned int /*index*/, const CMatrix& /*X*/,
+                                    const CMatrix& /*cvGrd*/) const
+{
+  throw ndlexceptions::NotImplementedError("getGradParam not implemented for CArcCosineKern");
+}
+
+void CArcCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row,
+                              const CMatrix& X2, bool addG) const
+{
+  // FD w.r.t. X row for both orders (keeps order-1 tractable).
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols() == X2.getCols());
+  CMatrix Xp(X);
+  CMatrix Xm(X);
+  const double eps = 1e-6;
+  for(unsigned int j = 0; j < X.getCols(); j++)
+  {
+    const double x0 = X.getVal(row, j);
+    const double h = eps * max(1.0, fabs(x0));
+    Xp.setVal(x0 + h, row, j);
+    Xm.setVal(x0 - h, row, j);
+    for(unsigned int k = 0; k < X2.getRows(); k++)
+    {
+      const double gp = computeElement(Xp, row, X2, k);
+      const double gm = computeElement(Xm, row, X2, k);
+      double val = 0.0;
+      if(addG)
+        val = gX.getVal(k, j);
+      val += (gp - gm) / (2.0 * h);
+      gX.setVal(val, k, j);
+    }
+    Xp.setVal(x0, row, j);
+    Xm.setVal(x0, row, j);
+  }
+}
+
+void CArcCosineKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  CMatrix Xp(X);
+  CMatrix Xm(X);
+  const double eps = 1e-6;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < X.getCols(); j++)
+    {
+      const double x0 = X.getVal(i, j);
+      const double h = eps * max(1.0, fabs(x0));
+      Xp.setVal(x0 + h, i, j);
+      Xm.setVal(x0 - h, i, j);
+      const double gp = diagComputeElement(Xp, i);
+      const double gm = diagComputeElement(Xm, i);
+      double val = 0.0;
+      if(addG)
+        val = gX.getVal(i, j);
+      val += (gp - gm) / (2.0 * h);
+      gX.setVal(val, i, j);
+      Xp.setVal(x0, i, j);
+      Xm.setVal(x0, i, j);
+    }
+  }
+}
+
+void CArcCosineKern::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "inputDim", getInputDim());
+  writeToStream(out, "numParams", getNumParams());
+  writeToStream(out, "order", (int)order);
+  CMatrix par(1, getNumParams());
+  getParams(par);
+  par.toStream(out);
+  writeToStream(out, "numPriors", getNumPriors());
+  writePriorsToStream(out);
+}
+
+void CArcCosineKern::readParamsFromStream(istream& in)
+{
+  setInputDim(readIntFromStream(in, "inputDim"));
+  unsigned int numParams = readIntFromStream(in, "numParams");
+  setOrder((unsigned int)readIntFromStream(in, "order"));
+  CMatrix par(1, numParams);
+  par.fromStream(in);
+  if(numParams == getNumParams())
+    setParams(par);
+  else
+    throw ndlexceptions::StreamFormatError("numParams",
+        "Listed number of parameters does not match computed number of parameters.");
+  unsigned int numPriors = readIntFromStream(in, "numPriors");
+  readPriorsFromStream(in, numPriors);
+}
+
+void CArcCosineKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = W.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(W.getCols() == d + 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double val = (order == 0)
+        ? arccos0WsElement(variance, X, n, W, m, s)
+        : arccos1WsElement(variance, X, n, W, m, s);
+      Kfu.setVal(val, n, m);
+    }
+  }
+}
+
+void CArcCosineKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                                  const CMatrix& gKfu) const
+{
+  CMatrix dummyW(1, 1), dummyX(1, 1), dummyS(1, 1);
+  if(order == 0)
+    arccos0GradAll(g, dummyW, dummyX, dummyS, variance, X, W, s, gKfu,
+                   true, false, false, false);
+  else
+    arccos1GradAll(g, dummyW, dummyX, dummyS, variance, X, W, s, gKfu,
+                   true, false, false, false);
+}
+void CArcCosineKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
+{
+  CMatrix dummyP(1, 1), dummyX(1, 1), dummyS(1, 1);
+  if(order == 0)
+    arccos0GradAll(dummyP, gW, dummyX, dummyS, variance, X, W, s, gKfu,
+                   false, true, false, false);
+  else
+    arccos1GradAll(dummyP, gW, dummyX, dummyS, variance, X, W, s, gKfu,
+                   false, true, false, false);
+}
+void CArcCosineKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
+{
+  CMatrix dummyP(1, 1), dummyW(1, 1), dummyS(1, 1);
+  if(order == 0)
+    arccos0GradAll(dummyP, dummyW, gX, dummyS, variance, X, W, s, gKfu,
+                   false, false, true, false);
+  else
+    arccos1GradAll(dummyP, dummyW, gX, dummyS, variance, X, W, s, gKfu,
+                   false, false, true, false);
+}
+void CArcCosineKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                             const CMatrix& gKfu) const
+{
+  CMatrix dummyP(1, 1), dummyW(1, 1), dummyX(1, 1);
+  if(order == 0)
+    arccos0GradAll(dummyP, dummyW, dummyX, gS, variance, X, W, s, gKfu,
+                   false, false, false, true);
+  else
+    arccos1GradAll(dummyP, dummyW, dummyX, gS, variance, X, W, s, gKfu,
+                   false, false, false, true);
+}
+
+namespace {
+
+// Soft-ReLU E[max(0,z)] for z~N(m,v).
+inline double arccosSoftReLU(double m, double v)
+{
+  if(!(v > 1e-28))
+    return (m > 0.0) ? m : 0.0;
+  const double sig = sqrt(v);
+  const double z = m / sig;
+  return m * arccosNormCdf(z) + sig * arccosNormPdf(z);
+}
+
+// Arc-cosine ridge K_fu (Σ = I in whitened coords). Order 0: erf; order 1: soft-ReLU.
+inline double arccosRidgeKfuElement(unsigned int ord, double variance,
+                                    const CMatrix& X, unsigned int n,
+                                    const CMatrix& V, unsigned int m,
+                                    double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  BOUNDCHECK(V.getCols() == Dp);
+  BOUNDCHECK(s > 0.0 && variance >= 0.0);
+  const double s2 = s * s;
+  const double cs = 2.0 * s2 / (2.0 + s2);
+  const double mu = a * cs / s2;
+  const double Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25)
+                    * sqrt(2.0 * M_PI * cs)
+                    * exp(mu * mu / (2.0 * cs) - a * a / (2.0 * s2));
+
+  double n2 = 0.0;
+  double vtx = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    const double xh = X.getVal(n, j);
+    n2 += xh * xh;
+    vtx += V.getVal(m, j) * xh;
+  }
+  {
+    const double xh = 1.0; // bias coord
+    n2 += xh * xh;
+    vtx += V.getVal(m, d) * xh;
+  }
+  const double varLin = n2 - (1.0 - cs) * vtx * vtx;
+
+  if(ord == 0)
+  {
+    const double B = sqrt(variance * M_PI / 2.0);
+    const double den = sqrt(1.0 + max(varLin, 0.0));
+    const double erfArg = (mu * vtx / sqrt(2.0)) / den;
+    return B * Am * erf(erfArg);
+  }
+  const double B = sqrt(variance);
+  return B * Am * arccosSoftReLU(mu * vtx, max(varLin, 0.0));
+}
+
+struct ArcRidge1State
+{
+  double B, Am, mu, cs, s2, t, n2, vlin, soft, z, sig;
+  vector<double> xhat;
+  vector<double> vdir;
+};
+
+inline void arcRidge1Fill(ArcRidge1State& st, double variance, const CMatrix& X,
+                          unsigned int n, const CMatrix& V, unsigned int m,
+                          double a, double s)
+{
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  st.s2 = s * s;
+  st.cs = 2.0 * st.s2 / (2.0 + st.s2);
+  st.mu = a * st.cs / st.s2;
+  st.Am = pow(2.0 * M_PI, -0.25) * pow(M_PI * st.s2, -0.25)
+          * sqrt(2.0 * M_PI * st.cs)
+          * exp(st.mu * st.mu / (2.0 * st.cs) - a * a / (2.0 * st.s2));
+  st.B = sqrt(variance);
+  st.xhat.resize(Dp);
+  st.vdir.resize(Dp);
+  st.n2 = 0.0;
+  st.t = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    st.xhat[j] = X.getVal(n, j);
+    st.vdir[j] = V.getVal(m, j);
+    st.n2 += st.xhat[j] * st.xhat[j];
+    st.t += st.vdir[j] * st.xhat[j];
+  }
+  st.xhat[d] = 1.0;
+  st.vdir[d] = V.getVal(m, d);
+  st.n2 += 1.0;
+  st.t += st.vdir[d];
+  st.vlin = st.n2 - (1.0 - st.cs) * st.t * st.t;
+  if(st.vlin < 0.0) st.vlin = 0.0;
+  const double mean = st.mu * st.t;
+  st.soft = arccosSoftReLU(mean, st.vlin);
+  if(st.vlin > 1e-28)
+  {
+    st.sig = sqrt(st.vlin);
+    st.z = mean / st.sig;
+  }
+  else
+  {
+    st.sig = 0.0;
+    st.z = (mean > 0.0) ? 1e6 : -1e6;
+  }
+}
+
+// ∂soft/∂mean = Φ(z); ∂soft/∂vlin = φ(z)/(2√v).
+inline void arcRidge1DSoft(const ArcRidge1State& st, double& dMean, double& dV)
+{
+  dMean = arccosNormCdf(st.z);
+  dV = (st.vlin > 1e-28) ? (0.5 * arccosNormPdf(st.z) / st.sig) : 0.0;
+}
+
+void arccos1RidgeGradAll(CMatrix& gParams, CMatrix& gV, CMatrix& ga, CMatrix& gX, CMatrix& gS,
+                         double variance, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu,
+                         bool doParams, bool doVA, bool doX, bool doS)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = X.getCols();
+  const unsigned int Dp = d + 1;
+  if(doParams) { gParams.resize(1, 1); gParams.zeros(); }
+  if(doVA) { gV.resize(M, Dp); gV.zeros(); ga.resize(M, 1); ga.zeros(); }
+  if(doX) { gX.resize(N, d); gX.zeros(); }
+  if(doS) { gS.resize(1, 1); gS.zeros(); }
+  double accS = 0.0;
+  ArcRidge1State st;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      const double am = a.getVal(m, 0);
+      arcRidge1Fill(st, variance, X, n, V, m, am, s);
+      double dSoftMean = 0.0, dSoftV = 0.0;
+      arcRidge1DSoft(st, dSoftMean, dSoftV);
+      const double pref = w * st.B * st.Am;
+
+      if(doParams && variance > 0.0)
+        gParams.addVal(w * (0.5 / variance) * st.B * st.Am * st.soft, 0);
+
+      if(doX || doVA || doS)
+      {
+        // d soft / d t and helpers for chain rules.
+        const double dMean_dt = st.mu;
+        const double dV_dt = -2.0 * (1.0 - st.cs) * st.t;
+        const double dSoft_dt = dSoftMean * dMean_dt + dSoftV * dV_dt;
+
+        if(doX)
+        {
+          for(unsigned int j = 0; j < d; j++)
+          {
+            const double dt = st.vdir[j];
+            const double dv = 2.0 * st.xhat[j] - 2.0 * (1.0 - st.cs) * st.t * dt;
+            const double dmean = st.mu * dt;
+            const double dsoft = dSoftMean * dmean + dSoftV * dv;
+            gX.addVal(pref * dsoft, n, j);
+          }
+        }
+        if(doVA)
+        {
+          for(unsigned int k = 0; k < Dp; k++)
+            gV.addVal(pref * dSoft_dt * st.xhat[k], m, k);
+          const double dmu_da = st.cs / st.s2;
+          const double dAm_da = st.Am * (st.mu - am) / st.s2;
+          const double dsoft_da = dSoftMean * (dmu_da * st.t);
+          ga.addVal(w * st.B * (dAm_da * st.soft + st.Am * dsoft_da), m, 0);
+        }
+        if(doS)
+        {
+          const double dcs = 8.0 * s / ((2.0 + s * s) * (2.0 + s * s));
+          const double dmu = am * (s * dcs - 2.0 * st.cs) / (s * s * s);
+          const double dlogA = -0.5 / s + 0.5 * dcs / st.cs + st.mu * dmu / st.cs
+                               - st.mu * st.mu * dcs / (2.0 * st.cs * st.cs)
+                               + am * am / (s * s * s);
+          const double dAm = st.Am * dlogA;
+          const double dmean = dmu * st.t;
+          const double dv = st.t * st.t * dcs; // ∂vlin/∂cs * dcs
+          const double dsoft = dSoftMean * dmean + dSoftV * dv;
+          accS += w * st.B * (dAm * st.soft + st.Am * dsoft);
+        }
+      }
+    }
+  }
+  if(doS)
+    gS.setVal(accS, 0);
+}
+
+} // namespace
+
+void CArcCosineKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                         const CMatrix& a, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      Kfu.setVal(arccosRidgeKfuElement(order, variance, X, n, V, m, a.getVal(m, 0), s),
+                 n, m);
+}
+
+void CArcCosineKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                       const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    // Order-0 ridge ≡ MLP ridge with Σ = I.
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    CMatrix dummyScales(1, 1);
+    // Remap: MLP grads land on [wv, bv, var]; we only need variance.
+    CMatrix gMlp(1, 3);
+    mlpRidgeGradParamsDiag(gMlp, variance, sigmaDiag, false, dummyScales, 1.0,
+                           X, V, a, s, gKfu);
+    g.resize(1, 1);
+    g.setVal(gMlp.getVal(2), 0);
+    return;
+  }
+  CMatrix dummyV(1, 1), dummyA(1, 1), dummyX(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(g, dummyV, dummyA, dummyX, dummyS, variance, X, V, a, s, gKfu,
+                      true, false, false, false);
+}
+
+void CArcCosineKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                                  const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradXDiag(gX, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyV(1, 1), dummyA(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(dummyP, dummyV, dummyA, gX, dummyS, variance, X, V, a, s, gKfu,
+                      false, false, true, false);
+}
+
+void CArcCosineKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                                  const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradSDiag(gS, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyV(1, 1), dummyA(1, 1), dummyX(1, 1);
+  arccos1RidgeGradAll(dummyP, dummyV, dummyA, dummyX, gS, variance, X, V, a, s, gKfu,
+                      false, false, false, true);
+}
+
+void CArcCosineKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  if(order == 0)
+  {
+    const unsigned int d = getInputDim();
+    vector<double> sigmaDiag(d + 1, 1.0);
+    mlpRidgeGradVADiag(gV, ga, variance, sigmaDiag, X, V, a, s, gKfu);
+    return;
+  }
+  CMatrix dummyP(1, 1), dummyX(1, 1), dummyS(1, 1);
+  arccos1RidgeGradAll(dummyP, gV, ga, dummyX, dummyS, variance, X, V, a, s, gKfu,
+                      false, true, false, false);
 }
 
 CPolyKern::CPolyKern() : CKern()
@@ -6130,6 +8262,460 @@ double CBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const C
   throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CBrownianKern");
 }
 
+// CIP-0029 Phase 1: Wiener causal root × Gaussian windows.
+// f(t)=σ∫_0^t ξ, u_m=∫ψ_m ξ, ψ=(4πs²)^{1/4} N(·;z,s²)
+// ⇒ K_fu = σ (4πs²)^{1/4} [Φ((t-z)/s) − Φ(−z/s)].
+namespace {
+inline double greensPsiNorm(double s)
+{
+  return pow(4.0 * M_PI * s * s, 0.25);
+}
+} // namespace
+
+void CBrownianKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double dPhi = ndlutil::cumGaussian((t - z) / s) - ndlutil::cumGaussian(-z / s);
+      Kfu.setVal(amp * dPhi, n, m);
+    }
+  }
+}
+
+void CBrownianKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  // ∂K/∂variance = K/(2 variance)
+  double gVar = 0.0;
+  const double inv2var = (variance == 0.0) ? 0.0 : 0.5 / variance;
+  CMatrix Kfu;
+  greensCrossCompute(Kfu, X, Z, s);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gVar += gKfu.getVal(n, m) * Kfu.getVal(n, m) * inv2var;
+  g.setVal(gVar, 0);
+}
+
+void CBrownianKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp_s = sigma * c / s;
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z = Z.getVal(m, 0);
+    const double phiBeta = ndlutil::ngaussian(-z / s);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      const double phiAlpha = ndlutil::ngaussian((t - z) / s);
+      // ∂K/∂z = σ c / s (−φ(α) + φ(β))
+      acc += gKfu.getVal(n, m) * amp_s * (-phiAlpha + phiBeta);
+    }
+    gZ.setVal(acc, m, 0);
+  }
+}
+
+void CBrownianKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp_s = sigma * c / s;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      // ∂K/∂t = σ c / s φ((t-z)/s)
+      acc += gKfu.getVal(n, m) * amp_s * ndlutil::ngaussian((t - z) / s);
+    }
+    gX.setVal(acc, n, 0);
+  }
+}
+
+void CBrownianKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gS.resize(1, 1);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dKdS = sigma * (
+          (c / (2.0 * s)) * dPhi
+          + c * (-ndlutil::ngaussian(alpha) * alpha / s
+                 + ndlutil::ngaussian(beta) * beta / s));
+      acc += gKfu.getVal(n, m) * dKdS;
+    }
+  }
+  gS.setVal(acc, 0, 0);
+}
+
+// CIP-0029 Phase 3: integrated Brownian I(t)=∫_0^t W.
+CIntegratedBrownianKern::CIntegratedBrownianKern() : CKern()
+{
+  _init();
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(unsigned int inDim) : CKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(const CMatrix& X) : CKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CIntegratedBrownianKern::CIntegratedBrownianKern(const CIntegratedBrownianKern& kern)
+  : CKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+}
+CIntegratedBrownianKern::~CIntegratedBrownianKern()
+{
+}
+double CIntegratedBrownianKern::getVariance() const
+{
+  return variance;
+}
+void CIntegratedBrownianKern::_init()
+{
+  nParams = 1;
+  setType("ibrownian");
+  setName("Integrated Brownian");
+  setParamName("variance", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setStationary(false);
+}
+void CIntegratedBrownianKern::setInitParam()
+{
+  if(getInputDim()!=1)
+    throw ndlexceptions::Error("The integrated Brownian kernel is only defined for a single (1-D) input dimension.");
+  variance = 1.0;
+}
+double CIntegratedBrownianKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  const double ax = fabs(X.getVal(index, 0));
+  return variance * ax * ax * ax / 3.0;
+}
+void CIntegratedBrownianKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo==0);
+  variance = val;
+}
+double CIntegratedBrownianKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo==0);
+  return variance;
+}
+double CIntegratedBrownianKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                              const CMatrix& X2, unsigned int index2) const
+{
+  const double x = X1.getVal(index1, 0);
+  const double y = X2.getVal(index2, 0);
+  const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+  if(!sameSign)
+    return 0.0;
+  const double a = fabs(x) < fabs(y) ? fabs(x) : fabs(y);
+  const double b = fabs(x) < fabs(y) ? fabs(y) : fabs(x);
+  // 0≤a≤b: k = variance (a² b / 2 − a³ / 6)
+  return variance * (0.5 * a * a * b - a * a * a / 6.0);
+}
+void CIntegratedBrownianKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row,
+                                      const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  const double x = X.getVal(row, 0);
+  const double sgnX = (x>0.0) - (x<0.0);
+  const double ax = fabs(x);
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    const double y = X2.getVal(k, 0);
+    const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+    double val = 0.0;
+    if(sameSign)
+    {
+      const double ay = fabs(y);
+      // ∂/∂ax of k(ax,ay); chain with sgnX.
+      double dAbs = 0.0;
+      if(ax <= ay)
+        dAbs = variance * (ax * ay - 0.5 * ax * ax);
+      else
+        dAbs = variance * (0.5 * ay * ay);
+      val = dAbs * sgnX;
+    }
+    if(addG)
+      gX.addVal(val, k, 0);
+    else
+      gX.setVal(val, k, 0);
+  }
+}
+void CIntegratedBrownianKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    const double x = X.getVal(i, 0);
+    const double sgnX = (x>0.0) - (x<0.0);
+    const double ax = fabs(x);
+    // d(v |x|³/3)/dx = v x² sgn(x)
+    const double val = variance * ax * ax * sgnX;
+    if(addG)
+      gX.addVal(val, i, 0);
+    else
+      gX.setVal(val, i, 0);
+  }
+}
+double CIntegratedBrownianKern::getWhite() const
+{
+  return 0.0;
+}
+void CIntegratedBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
+                                           const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1 = 0.0;
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    const double x = X.getVal(i, 0);
+    for(unsigned int j=0; j<X2.getRows(); j++)
+    {
+      const double y = X2.getVal(j, 0);
+      const bool sameSign = (x>0.0 && y>0.0) || (x<0.0 && y<0.0);
+      double base = 0.0;
+      if(sameSign)
+      {
+        const double a = fabs(x) < fabs(y) ? fabs(x) : fabs(y);
+        const double b = fabs(x) < fabs(y) ? fabs(y) : fabs(x);
+        base = 0.5 * a * a * b - a * a * a / 6.0;
+      }
+      g1 += covGrad.getVal(i, j) * base;
+    }
+  }
+  g.setVal(g1, 0);
+  if(regularise)
+    addPriorGrad(g);
+}
+void CIntegratedBrownianKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad,
+                                           bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise);
+}
+double CIntegratedBrownianKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2,
+                                             const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not implemented for CIntegratedBrownianKern");
+}
+double CIntegratedBrownianKern::getGradParam(unsigned int index, const CMatrix& X,
+                                             const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not implemented for CIntegratedBrownianKern");
+}
+
+// Causal root g(u)=σ u 1_{u≥0} on [0,t]:
+// K_fu = σ c [(t−z)(Φ(α)−Φ(β)) + s(φ(α)−φ(β))], α=(t−z)/s, β=−z/s.
+void CIntegratedBrownianKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X,
+                                                 const CMatrix& Z, double s) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dPhiDens = ndlutil::ngaussian(alpha) - ndlutil::ngaussian(beta);
+      Kfu.setVal(amp * ((t - z) * dPhi + s * dPhiDens), n, m);
+    }
+  }
+}
+void CIntegratedBrownianKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z,
+                                               double s, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  double gVar = 0.0;
+  const double inv2var = (variance == 0.0) ? 0.0 : 0.5 / variance;
+  CMatrix Kfu;
+  greensCrossCompute(Kfu, X, Z, s);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gVar += gKfu.getVal(n, m) * Kfu.getVal(n, m) * inv2var;
+  g.setVal(gVar, 0);
+}
+void CIntegratedBrownianKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z = Z.getVal(m, 0);
+    const double beta = -z / s;
+    const double phiBeta = ndlutil::ngaussian(beta);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double t = X.getVal(n, 0);
+      const double alpha = (t - z) / s;
+      const double phiAlpha = ndlutil::ngaussian(alpha);
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      // ∂B/∂z, B=(t−z)ΔΦ + s Δφ
+      const double dBdz = -dPhi
+                          + (t - z) / s * (-phiAlpha + phiBeta)
+                          + alpha * phiAlpha - beta * phiBeta;
+      acc += gKfu.getVal(n, m) * amp * dBdz;
+    }
+    gZ.setVal(acc, m, 0);
+  }
+}
+void CIntegratedBrownianKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  const double amp = sigma * c;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      // ∂B/∂t = ΔΦ
+      acc += gKfu.getVal(n, m) * amp * dPhi;
+    }
+    gX.setVal(acc, n, 0);
+  }
+}
+void CIntegratedBrownianKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z,
+                                          double s, const CMatrix& gKfu) const
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gS.resize(1, 1);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm(s);
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double t = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double alpha = (t - z) / s;
+      const double beta = -z / s;
+      const double phiA = ndlutil::ngaussian(alpha);
+      const double phiB = ndlutil::ngaussian(beta);
+      const double dPhi = ndlutil::cumGaussian(alpha) - ndlutil::cumGaussian(beta);
+      const double dPhiDens = phiA - phiB;
+      const double B = (t - z) * dPhi + s * dPhiDens;
+      const double dBds = -(t - z) / s * (alpha * phiA - beta * phiB)
+                          + dPhiDens
+                          + alpha * alpha * phiA - beta * beta * phiB;
+      // K = σ c B; dc/ds = c/(2s)
+      const double dKdS = sigma * ((c / (2.0 * s)) * B + c * dBds);
+      acc += gKfu.getVal(n, m) * dKdS;
+    }
+  }
+  gS.setVal(acc, 0, 0);
+}
+
 // Coregionalize kernel (CIP-000D / GPy Coregionalize).
 CCoregionalizeKern::CCoregionalizeKern() : CKern(), outputDim(1), rank(1)
 {
@@ -6610,6 +9196,8 @@ CKern* readKernFromStream(istream& in)
 
   else if(type=="rbf")
     pkern = new CRbfKern();
+  else if(type=="eq" || type=="ExpQuad" || type=="expquad")
+    pkern = new CEqKern();
   else if(type=="exp")
     pkern = new CExpKern();
   else if(type=="ratquad")
@@ -6624,6 +9212,8 @@ CKern* readKernFromStream(istream& in)
     pkern = new CPolyKern();
   else if(type=="mlp")
     pkern = new CMlpKern();
+  else if(type=="arccos" || type=="arccosine")
+    pkern = new CArcCosineKern();
   else if(type=="rbfard")
     pkern = new CRbfardKern();
   else if(type=="linard")
@@ -6644,6 +9234,8 @@ CKern* readKernFromStream(istream& in)
     pkern = new CCosineKern();
   else if(type=="brownian")
     pkern = new CBrownianKern();
+  else if(type=="ibrownian" || type=="integratedbrownian")
+    pkern = new CIntegratedBrownianKern();
   else if(type=="coregionalize")
     pkern = new CCoregionalizeKern();
   else if(type=="indexwhite")
@@ -6796,6 +9388,8 @@ void CComponentKern::extractParamFromMxArray(const mxArray* matlabArray)
       kernNum = addKern(new CLinKern(getInputDim()));
     else if(kernType == "rbf")  
       kernNum = addKern(new CRbfKern(getInputDim()));
+    else if(kernType == "eq" || kernType == "ExpQuad" || kernType == "expquad")
+      kernNum = addKern(new CEqKern(getInputDim()));
     else if(kernType == "ratquad")  
       kernNum = addKern(new CRatQuadKern(getInputDim()));
     else if(kernType == "matern32")  
@@ -7213,6 +9807,100 @@ void CKern::wnGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*Z*/,
   throw ndlexceptions::NotImplementedError("wnGradS not implemented for kernel type " + getType());
 }
 
+void CKern::greensCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*Z*/,
+                               double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::greensGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradParams not implemented for kernel type " + getType());
+}
+void CKern::greensGradZ(CMatrix& /*gZ*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradZ not implemented for kernel type " + getType());
+}
+void CKern::greensGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradX not implemented for kernel type " + getType());
+}
+void CKern::greensGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                        const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "greensGradS not implemented for kernel type " + getType());
+}
+
+void CKern::wsCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*W*/,
+                           double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::wsGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradParams not implemented for kernel type " + getType());
+}
+void CKern::wsGradW(CMatrix& /*gW*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradW not implemented for kernel type " + getType());
+}
+void CKern::wsGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradX not implemented for kernel type " + getType());
+}
+void CKern::wsGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                    const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsGradS not implemented for kernel type " + getType());
+}
+
+void CKern::wsRidgeCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                                const CMatrix& /*a*/, double /*s*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeCrossCompute not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradParams not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                         const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradX not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradS(CMatrix& /*gS*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                         const CMatrix& /*a*/, double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradS not implemented for kernel type " + getType());
+}
+void CKern::wsRidgeGradVA(CMatrix& /*gV*/, CMatrix& /*ga*/, const CMatrix& /*X*/,
+                          const CMatrix& /*V*/, const CMatrix& /*a*/, double /*s*/,
+                          const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "wsRidgeGradVA not implemented for kernel type " + getType());
+}
+
 // CIP-001C Phase 3: Bochner spectral density + Hankel / cosine K_fu path.
 namespace {
 
@@ -7396,6 +10084,262 @@ double CMatern52Kern::spectralLengthScale() const
 double CMatern52Kern::spectralDensity(double rho) const
 {
   return maternSpectralDensity(rho, variance, lengthScale, 2.5, getInputDim());
+}
+
+// CIP-0029 Phase 2: causal Matérn / Exp × Gaussian windows (1-D).
+namespace {
+
+inline double greensPsiNorm1d(double s)
+{
+  return pow(4.0 * M_PI * s * s, 0.25);
+}
+
+// Shared FD grads for greensCrossCompute (mirrors Hankel wnGrad* FD).
+const double GREENS_FD_EPS = 1e-6;
+
+void greensFdGradParams(CKern& kern, CMatrix& g, const CMatrix& X, const CMatrix& Z,
+                        double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(g.getCols() == nParams);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  g.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int p = 0; p < nParams; p++)
+  {
+    const double p0 = kern.getParam(p);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(p0));
+    kern.setParam(p0 + h, p);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    kern.setParam(p0 - h, p);
+    kern.greensCrossCompute(Km, X, Z, s);
+    kern.setParam(p0, p);
+    double gp = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+        gp += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    g.setVal(gp, p);
+  }
+}
+
+void greensFdGradZ(const CKern& kern, CMatrix& gZ, const CMatrix& X, CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(Z.getCols() == 1);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gZ.resize(M, 1);
+  gZ.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const double z0 = Z.getVal(m, 0);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(z0));
+    Z.setVal(z0 + h, m, 0);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    Z.setVal(z0 - h, m, 0);
+    kern.greensCrossCompute(Km, X, Z, s);
+    Z.setVal(z0, m, 0);
+    double acc = 0.0;
+    for(unsigned int n = 0; n < N; n++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    gZ.setVal(acc, m, 0);
+  }
+}
+
+void greensFdGradX(const CKern& kern, CMatrix& gX, CMatrix& X, const CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  gX.resize(N, 1);
+  gX.zeros();
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double x0 = X.getVal(n, 0);
+    const double h = GREENS_FD_EPS * max(1.0, fabs(x0));
+    X.setVal(x0 + h, n, 0);
+    kern.greensCrossCompute(Kp, X, Z, s);
+    X.setVal(x0 - h, n, 0);
+    kern.greensCrossCompute(Km, X, Z, s);
+    X.setVal(x0, n, 0);
+    double acc = 0.0;
+    for(unsigned int m = 0; m < M; m++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+    gX.setVal(acc, n, 0);
+  }
+}
+
+void greensFdGradS(const CKern& kern, CMatrix& gS, const CMatrix& X, const CMatrix& Z,
+                   double s, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(s > 0.0);
+  gS.resize(1, 1);
+  const double h = GREENS_FD_EPS * max(1.0, fabs(s));
+  CMatrix Kp(N, M);
+  CMatrix Km(N, M);
+  kern.greensCrossCompute(Kp, X, Z, s + h);
+  kern.greensCrossCompute(Km, X, Z, max(s - h, 1e-12));
+  double acc = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      acc += gKfu.getVal(n, m) * (Kp.getVal(n, m) - Km.getVal(n, m)) / (2.0 * h);
+  gS.setVal(acc, 0, 0);
+}
+
+// Causal g*ψ for Matérn ν=1/2,3/2,5/2 (polynomial × exp decay).
+// degree 0: g ∝ e^{-λt}; 1: ∝ t e^{-λt}; 2: ∝ t² e^{-λt}.
+void maternCausalGreensKfu(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                           double s, double variance, double lambda, int polyDegree)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  DIMENSIONMATCH(X.getCols() == 1 && Z.getCols() == 1);
+  BOUNDCHECK(s > 0.0);
+  BOUNDCHECK(lambda > 0.0);
+  Kfu.resize(N, M);
+  const double sigma = sqrt(variance);
+  const double c = greensPsiNorm1d(s);
+  double amp = 0.0;
+  if(polyDegree == 0)
+    amp = sigma * sqrt(2.0 * lambda) * c;
+  else if(polyDegree == 1)
+    amp = sigma * 2.0 * pow(lambda, 1.5) * c;
+  else if(polyDegree == 2)
+    amp = sigma * sqrt(4.0 / 3.0) * pow(lambda, 2.5) * c;
+  else
+    throw ndlexceptions::Error("maternCausalGreensKfu: unsupported polyDegree");
+
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double x = X.getVal(n, 0);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double z = Z.getVal(m, 0);
+      const double mu = z + lambda * s * s;
+      const double alpha = (x - mu) / s;
+      const double Phi = ndlutil::cumGaussian(alpha);
+      const double phi = ndlutil::ngaussian(alpha);
+      const double efac = exp(-lambda * (x - z) + 0.5 * lambda * lambda * s * s);
+      double shape = 0.0;
+      if(polyDegree == 0)
+        shape = Phi;
+      else if(polyDegree == 1)
+      {
+        // ∫ (x-τ) e^{λτ} N = efac_raw * [(x-μ)Φ + s φ]; overall efac includes e^{-λx+...}
+        shape = (x - mu) * Phi + s * phi;
+      }
+      else
+      {
+        // ∫ (x-τ)² e^{λτ} N; I0,I1,I2 without outer e^{-λx}
+        const double I0 = Phi;
+        const double I1 = mu * Phi - s * phi;
+        const double I2 = (mu * mu + s * s) * Phi - s * (mu + x) * phi;
+        shape = x * x * I0 - 2.0 * x * I1 + I2;
+      }
+      Kfu.setVal(amp * efac * shape, n, m);
+    }
+  }
+}
+
+} // namespace
+
+void CExpKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                  double s) const
+{
+  // λ = inverseWidth (scaleFactor); g(t)=σ√(2λ) e^{-λt} 1_{t≥0}.
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, inverseWidth, 0);
+}
+void CExpKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CExpKern&>(*this), g, X, Z, s, gKfu);
+}
+void CExpKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CExpKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CExpKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                           const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
+}
+
+void CMatern32Kern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, scaleFactor(), 1);
+}
+void CMatern32Kern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CMatern32Kern&>(*this), g, X, Z, s, gKfu);
+}
+void CMatern32Kern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CMatern32Kern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CMatern32Kern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
+}
+
+void CMatern52Kern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                       double s) const
+{
+  maternCausalGreensKfu(Kfu, X, Z, s, variance, scaleFactor(), 2);
+}
+void CMatern52Kern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                     const CMatrix& gKfu) const
+{
+  greensFdGradParams(const_cast<CMatern52Kern&>(*this), g, X, Z, s, gKfu);
+}
+void CMatern52Kern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Zmut(Z);
+  greensFdGradZ(*this, gZ, X, Zmut, s, gKfu);
+}
+void CMatern52Kern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  CMatrix Xmut(X);
+  greensFdGradX(*this, gX, Xmut, Z, s, gKfu);
+}
+void CMatern52Kern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                                const CMatrix& gKfu) const
+{
+  greensFdGradS(*this, gS, X, Z, s, gKfu);
 }
 
 void CStationaryKern::wnCrossComputeHankel(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z, double s) const
@@ -7676,6 +10620,104 @@ void CWhiteKern::wnGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*Z*/
 {
   gS.resize(1, 1);
   gS.zeros();
+}
+
+void CWhiteKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                    double /*s*/) const
+{
+  Kfu.resize(X.getRows(), Z.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::greensGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*Z*/,
+                                  double /*s*/, const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::greensGradZ(CMatrix& gZ, const CMatrix& /*X*/, const CMatrix& Z, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+}
+void CWhiteKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::greensGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/,
+                             const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+
+void CWhiteKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double /*s*/) const
+{
+  Kfu.resize(X.getRows(), W.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::wsGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::wsGradW(CMatrix& gW, const CMatrix& /*X*/, const CMatrix& W, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gW.resize(W.getRows(), W.getCols());
+  gW.zeros();
+}
+void CWhiteKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*W*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::wsGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*W*/, double /*s*/,
+                         const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+
+void CWhiteKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                     const CMatrix& /*a*/, double /*s*/) const
+{
+  Kfu.resize(X.getRows(), V.getRows());
+  Kfu.zeros();
+}
+void CWhiteKern::wsRidgeGradParams(CMatrix& g, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                                   const CMatrix& /*a*/, double /*s*/,
+                                   const CMatrix& /*gKfu*/) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+}
+void CWhiteKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+}
+void CWhiteKern::wsRidgeGradS(CMatrix& gS, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                              const CMatrix& /*a*/, double /*s*/,
+                              const CMatrix& /*gKfu*/) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+}
+void CWhiteKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& /*X*/,
+                               const CMatrix& V, const CMatrix& a, double /*s*/,
+                               const CMatrix& /*gKfu*/) const
+{
+  gV.resize(V.getRows(), V.getCols());
+  gV.zeros();
+  ga.resize(a.getRows(), 1);
+  ga.zeros();
 }
 
 void CBiasKern::wnCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*Z*/, double /*s*/) const
@@ -8633,4 +11675,202 @@ void CCmpndKern::wnGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double
     components[i]->wnGradS(tmp, X, Z, s, gKfu);
     gS.axpy(tmp, 1.0);
   }
+}
+
+void CCmpndKern::greensCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& Z,
+                                    double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  components[0]->greensCrossCompute(Kfu, X, Z, s);
+  CMatrix tmp;
+  for(size_t i = 1; i < components.size(); i++)
+  {
+    components[i]->greensCrossCompute(tmp, X, Z, s);
+    Kfu.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradParams(CMatrix& g, const CMatrix& X, const CMatrix& Z, double s,
+                                  const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->greensGradParams(subg, X, Z, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::greensGradZ(CMatrix& gZ, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gZ.resize(Z.getRows(), Z.getCols());
+  gZ.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradZ(tmp, X, Z, s, gKfu);
+    gZ.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradX(CMatrix& gX, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gX.resize(X.getRows(), X.getCols());
+  gX.zeros();
+  CMatrix tmp;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradX(tmp, X, Z, s, gKfu);
+    gX.axpy(tmp, 1.0);
+  }
+}
+
+void CCmpndKern::greensGradS(CMatrix& gS, const CMatrix& X, const CMatrix& Z, double s,
+                             const CMatrix& gKfu) const
+{
+  gS.resize(1, 1);
+  gS.zeros();
+  CMatrix tmp(1, 1);
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    components[i]->greensGradS(tmp, X, Z, s, gKfu);
+    gS.axpy(tmp, 1.0);
+  }
+}
+
+namespace {
+
+// CIP-0028 Phase 3: weight-space compounds allow exactly one signal kernel
+// (mlp / mlpard / arccos) plus optional white (contributes 0 to K_fu; put
+// observation noise in β / Gaussian_noise.variance — CIP-0027).
+inline bool wsIsSignalType(const string& t)
+{
+  return t == "mlp" || t == "mlpard" || t == "arccos" || t == "arccosine";
+}
+inline bool wsIsSilentType(const string& t)
+{
+  return t == "white";
+}
+inline CKern* wsSelectCompoundSignal(const vector<CKern*>& components)
+{
+  CKern* signal = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    const string t = components[i]->getType();
+    if(wsIsSilentType(t))
+      continue;
+    if(wsIsSignalType(t))
+    {
+      if(signal != 0)
+        throw ndlexceptions::Error(
+            "weight-space compound: at most one of mlp / mlpard / arccos "
+            "(got a second '" + t + "')");
+      signal = components[i];
+      continue;
+    }
+    throw ndlexceptions::Error(
+        "weight-space compound: unsupported component '" + t
+        + "' (allowed: one mlp|mlpard|arccos plus optional white; "
+          "put observation noise in beta / Gaussian_noise.variance)");
+  }
+  if(signal == 0)
+    throw ndlexceptions::Error(
+        "weight-space compound: need one mlp|mlpard|arccos component");
+  return signal;
+}
+
+} // namespace
+
+void CCmpndKern::wsCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& W, double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  wsSelectCompoundSignal(components)->wsCrossCompute(Kfu, X, W, s);
+}
+
+void CCmpndKern::wsGradParams(CMatrix& g, const CMatrix& X, const CMatrix& W, double s,
+                              const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  wsSelectCompoundSignal(components); // validate before filling
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->wsGradParams(subg, X, W, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::wsGradW(CMatrix& gW, const CMatrix& X, const CMatrix& W, double s,
+                         const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradW(gW, X, W, s, gKfu);
+}
+
+void CCmpndKern::wsGradX(CMatrix& gX, const CMatrix& X, const CMatrix& W, double s,
+                         const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradX(gX, X, W, s, gKfu);
+}
+
+void CCmpndKern::wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
+                         const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsGradS(gS, X, W, s, gKfu);
+}
+
+void CCmpndKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                     const CMatrix& a, double s) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  wsSelectCompoundSignal(components)->wsRidgeCrossCompute(Kfu, X, V, a, s);
+}
+
+void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                   const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  wsSelectCompoundSignal(components);
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    CMatrix subg(1, components[i]->getNumParams());
+    components[i]->wsRidgeGradParams(subg, X, V, a, s, gKfu);
+    g.setMatrix(0, start, subg);
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                              const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradX(gX, X, V, a, s, gKfu);
+}
+
+void CCmpndKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                              const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradS(gS, X, V, a, s, gKfu);
+}
+
+void CCmpndKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X,
+                               const CMatrix& V, const CMatrix& a, double s,
+                               const CMatrix& gKfu) const
+{
+  CKern* signal = wsSelectCompoundSignal(components);
+  signal->wsRidgeGradVA(gV, ga, X, V, a, s, gKfu);
 }

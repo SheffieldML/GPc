@@ -1,10 +1,11 @@
+# CIP-002E tier 3: main push + workflow_dispatch (not every PR).
+# Overlaps Reference tests under gcov; PR correctness stays on reference-tests.yml.
 name: Coverage
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   coverage:
@@ -15,8 +16,8 @@ jobs:
 
       - name: Install toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          chmod +x scripts/ci_apt_install.sh
+          ./scripts/ci_apt_install.sh \
             g++ \
             gfortran \
             libopenblas-dev \
@@ -28,10 +29,19 @@ jobs:
         run: |
           rm -f make.inc
           make clean || true
-          make USE_MATIO=1 COVERAGE=1 matio-tests bgplvm
+          # testSparsePpa: CIP-0026 — exercises CGp::sparsePpaElboGpTerms (CIP-0011 gate).
+          # testSvgp: CIP-002A — CSvgp / CAdam / expectedLogLikelihood / gaussHermite.
+          # CIP-002D: exhaustive checks for correctness coverage.
+          make USE_MATIO=1 COVERAGE=1 CHECKS=full matio-tests bgplvm testSparsePpa testSvgp
 
       - name: Run matio reference tests
         run: make run-matio-tests
+
+      - name: Run sparse PPA gate (coverage for sparsePpaElboGpTerms)
+        run: ./testSparsePpa
+
+      - name: Run SVGP gate (coverage for CSvgp / CAdam / GH probit)
+        run: ./testSvgp
 
       - name: Smoke bgplvm CLI (coverage for bgplvm.cpp)
         run: make run-bgplvm-smoke
@@ -52,7 +62,7 @@ jobs:
             '*/tools/diagPitc.cpp' \
             '*/tools/genTestGpPitc.cpp' \
             --output-file coverage.info
-          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
+          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|NoiseBatched|NoiseInLikelihood|Cip0027Perf|IvmSoftener|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
             echo "ERROR: test drivers still present in coverage.info" >&2
             lcov --list coverage.info
             exit 1

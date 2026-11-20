@@ -36,7 +36,7 @@ This requirement addresses **kernel-driven** ill-conditioning of \(K_{uu}\). Col
 
 ## Notes (Optional)
 
-HOW is [CIP-001C](../cip/cip001C.md). Follow-on CIPs (Green's-function features; weight-space features for dot-product kernels) should also cite this requirement. Phase 3 Hankel / Matérn spectral path is done (`testWnHankel`); stability-suite cell remains a backlog follow-up.
+HOW for stationary kernels is [CIP-001C](../cip/cip001C.md) (Closed). Weight-space / MLP follow-on is [CIP-0028](../cip/cip0028.md) (Proposed). Green's-function / causal-root follow-on is [CIP-0029](../cip/cip0029.md) (Closed; 1-D greens inducing). Phase 3 Hankel / Matérn and Phase 4 stability cells for CIP-001C are done.
 
 ## References
 

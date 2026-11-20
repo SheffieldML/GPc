@@ -30,16 +30,34 @@
 # Local platform flags (copy make.linux / make.osx → make.inc). CI uses make.linux.
 make.inc
 
+# CIP-0020 out-of-tree CMake build directory
+/build/
+
+# CIP-0020 / CIP-001D Python packaging
+python/.venv/
+python/build/
+python/*.egg-info/
+python/gpc/_gpc*.so
+python/gpc/_gpc*.dylib
+python/src/*.o
+python/**/__pycache__/
+__pycache__/
+
 #
 *.dat
 *~
 gp
 gplvm
 ivm
+/ppa
 demo_regression_1d
 demo_sparse_dtcvar
+python/ref_ftc_objective
+python/ref_ftc_objective.dSYM/
 testGp
 testOptimisable
+/testPpa
+/testIvm
 diagDtcvar
 genTestGpDtcvar
 diag_dtc_state.txt
@@ -131,3 +149,4 @@ numerical_stability/last-compare.md
 numerical_stability/baseline/
 numerical_stability/mode_compare/
 numerical_stability/__pycache__/
+diagWeightSpaceRidge

@@ -647,9 +647,8 @@ void CMatrix::zeros()
 }
 void CMatrix::memAllocate()
 {
-  // totalAlloc += nrows*ncols;
-//   if(nrows*ncols > 10)
-//     cout << "Allocating " << nrows*ncols << " memory. Total " << totalAlloc << endl;
+  // CIP-002D QW7: count allocation events (not element count).
+  ++totalAlloc;
   BOUNDCHECK(nrows>0);
   BOUNDCHECK(ncols>0);
   switch(allocation)
@@ -856,42 +855,36 @@ CMatrix jitChol(const CMatrix& inMatrix, unsigned int maxTries = 10)
 
 double jitChol(CMatrix& outMatrix, const CMatrix& inMatrix, unsigned int maxTries = 10) 
 {
-
+  // Free-function twin of CMatrix::jitChol. A failed potrf overwrites the
+  // buffer and clears the symmetric flag — always copy before each attempt.
+  // Null matrices keep a zero jitter seed (addDiag is a no-op); after maxTries
+  // throw, matching the member and numerical_stability jitChol_zero_raises.
+  // (The old fall-through `return jitter` made -O2 default builds look like
+  // success on zeros when a partial factor was reused — CIP-002D QW1.)
   DIMENSIONMATCH(outMatrix.dimensionsMatch(inMatrix));
-  double jitter = 0;
-  outMatrix.copy(inMatrix);
-  for(unsigned int i = 0; i<maxTries; i++)
+  double jitter = 0.0;
+  for(unsigned int i = 0; i < maxTries; i++)
   {
     try
     {
-      if(jitter==0)
+      outMatrix.copy(inMatrix);
+      if(jitter == 0.0)
       {
-	jitter = 1e-6*abs(inMatrix.trace()/inMatrix.getRows());
-	outMatrix.chol("U");
-	return jitter;
+        jitter = 1e-6 * std::abs(inMatrix.trace() / (double)inMatrix.getRows());
+        outMatrix.chol("U");
+        return jitter;
       }
-      else
-      {
-	cout << "Warning, matrix is not positive definite in jitChol, adding " << jitter << " jitter";
-	outMatrix.copy(inMatrix);
-	outMatrix.addDiag(jitter);
-	outMatrix.chol("U");
-	return jitter;
-      }
+      cout << "Warning, matrix is not positive definite in jitChol, adding " << jitter << " jitter";
+      outMatrix.addDiag(jitter);
+      outMatrix.chol("U");
+      return jitter;
     }
-    catch(ndlexceptions::MatrixNonPosDef& e)
+    catch(ndlexceptions::MatrixNonPosDef&)
     {
-      bool nonPosDef = true;
       jitter *= 10.0;
-      if(i==maxTries)
-	throw ndlexceptions::MatrixNonPosDef();
-    }
-    catch(...)
-    {
-      throw;
     }
   }
-  return jitter; // should never get here, but prevents clang warning on lack of return for non void function.
+  throw ndlexceptions::MatrixNonPosDef();
 }
 
 

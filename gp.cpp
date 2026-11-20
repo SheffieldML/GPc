@@ -105,6 +105,7 @@ void CClgp::learn()
   vector<double> biasVariances;
   vector<double> variances;
   vector<double> degrees;
+  vector<int> arccosOrders;
   vector<bool> selectInputs;
   vector<string> setSpecs;
   bool centreData=true;
@@ -116,6 +117,7 @@ void CClgp::learn()
   string sparseLinalgStr = "lq";
   string inducingTypeStr = "points";
   double windowWidth = -1.0;
+  bool allowWhiteAndNoise = false;
   bool labelsProvided = true;
   double signalVariance = 0.0;
   vector<int> labels;
@@ -163,6 +165,9 @@ void CClgp::learn()
         incrementArgument();
         windowWidth = getDoubleFromCurrentArgument();
       }
+      else if (isCurrentArg("--allow-white-and-noise", "--allow-white-and-noise")) {
+        allowWhiteAndNoise=true;
+      }
       else if (isCurrentArg("-k", "--kernel")) {
         incrementArgument(); 
         kernelTypes.push_back(getCurrentArgument()); 
@@ -173,14 +178,25 @@ void CClgp::learn()
         biasVariances.push_back(-1.0);
         variances.push_back(-1.0);
         degrees.push_back(-1.0);
+        arccosOrders.push_back(-1);
         selectInputs.push_back(false);
+      }
+      else if (isCurrentArg("--arccos-order", "--arccos-order")) {
+        incrementArgument();
+        if(kernelTypes.size()==0)
+          exitError("Arc-cosine order must come after -k arccos.");
+        if(kernelTypes[kernelTypes.size()-1]!="arccos"
+           && kernelTypes[kernelTypes.size()-1]!="arccosine")
+          exitError("--arccos-order only valid for arccos / arccosine covariance.");
+        arccosOrders[arccosOrders.size()-1]=getIntFromCurrentArgument();
       }
       else if (isCurrentArg("-g", "--gamma")) {
         incrementArgument(); 
         if(kernelTypes.size()==0)
           exitError("Inverse width specification must come after covariance function type is specified.");
-        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
-          exitError("Inverse width parameter only valid for RBF, exponential and rational quadratic covariance function.");
+        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="eq"
+           && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
+          exitError("Inverse width parameter only valid for RBF/EQ, exponential and rational quadratic covariance function.");
         rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if (isCurrentArg("-d", "--degree")) {
@@ -298,6 +314,15 @@ void CClgp::learn()
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
 	}
+    else if(kernelTypes[i]=="eq" || kernelTypes[i]=="ExpQuad" || kernelTypes[i]=="expquad") {
+      if(selectInputs[i])
+        exitError("EQ/ExpQuad covariance does not map to ARD via -i; use -k rbfard.");
+      kernels.push_back(new CEqKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("inverseWidth", rbfInvWidths[i]);
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
     else if(kernelTypes[i]=="exp") {
       if(selectInputs[i])
         exitError("Exponential covariance function not available with input selection yet.");
@@ -332,14 +357,24 @@ void CClgp::learn()
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
     }
+    else if(kernelTypes[i] == "arccos" || kernelTypes[i] == "arccosine") {
+      if(selectInputs[i])
+        exitError("Arc-cosine covariance does not map to ARD via -i yet.");
+      CArcCosineKern* ak = new CArcCosineKern(*M);
+      if(arccosOrders[i] >= 0)
+        ak->setOrder((unsigned int)arccosOrders[i]);
+      kernels.push_back(ak);
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
     else if(kernelTypes[i] == "bias" && kernelUsageFlag[i]!=KERNEL_USAGE_FWD) {
-      // fwd covariance function always has bias component
+      // Explicit -k bias only (CIP-0027: no longer auto-appended).
       kernels.push_back(new CBiasKern(*M));
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
     }
     else if(kernelTypes[i] == "white" && kernelUsageFlag[i]!=KERNEL_USAGE_FWD) {
-      // fwd covariance function always includes a white noise component
+      // Explicit -k white only (CIP-0027: observation noise is likelihood.variance).
       kernels.push_back(new CWhiteKern(*M));
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
@@ -358,15 +393,12 @@ void CClgp::learn()
     }
   }
   // if no covariance function was specified, add an RBF.
+  // CIP-0027 Phase B: do not auto-append Bias or White; FTC noise is likelihood.variance.
   if(kern.getNumKerns()==0)
   {
     CKern* defaultKern = new CRbfKern(X);
     kern.addKern(defaultKern);
   }
-  CKern* biasKern = new CBiasKern(X);
-  CKern* whiteKern = new CWhiteKern(X);
-  kern.addKern(biasKern);
-  kern.addKern(whiteKern);
 
   if(approxTypeStr=="ftc") {
     approxType = CGp::FTC;
@@ -383,8 +415,9 @@ void CClgp::learn()
       // still need jitter under poor conditioning, as with DTC.
     }
     else if(approxTypeStr=="fitc") {
+      // FITC works on the spherical Gaussian path (testCGp / StableFactor / LQ).
+      // Prefer -A dtcvar for tutorials; FITC remains available for parity/bench.
       approxType = CGp::FITC;
-      exitError("FITC Approximation currently not working.");
     }
     else if(approxTypeStr=="pitc") {
       approxType = CGp::PITC;
@@ -430,7 +463,9 @@ void CClgp::learn()
     {
       exitError(err.getMessage());
     }
-    if(inducingTypeStr == "whitenoise" && windowWidth > 0.0)
+    if((inducingTypeStr == "whitenoise" || inducingTypeStr == "greens"
+        || inducingTypeStr == "weightspace")
+       && windowWidth > 0.0)
       pmodel->getInducing()->setWindowWidth(windowWidth);
   }
   if(optimiser=="scg")
@@ -443,7 +478,28 @@ void CClgp::learn()
     pmodel->setDefaultOptimiser(CGp::BFGS);
   else
     exitError("Unrecognised optimiser type: " + optimiser);
-  pmodel->setBetaVal(1); //
+  pmodel->setBetaVal(1); // sparse: β=1 ⇒ likelihood.variance=1 (CIP-0027 sync)
+  if(pmodel->getApproximationType()==CGp::FTC && pmodel->isGaussianNoise())
+    pmodel->setLikelihoodVariance(1.0); // GPy-like default observation noise
+  // CIP-0027 Phase C: explicit -k white with free likelihood.variance needs allow,
+  // otherwise fix likelihood variance (legacy White-owned noise).
+  if(allowWhiteAndNoise)
+    pmodel->setAllowWhiteAndLikelihoodNoise(true);
+  else if(pmodel->getApproximationType()==CGp::FTC && pmodel->isGaussianNoise())
+  {
+    try
+    {
+      (void)kern.getByPath("white.variance");
+      pmodel->fixLikelihoodVariance(true);
+      if(getVerbosity()>0)
+        cout << "CIP-0027: White present — fixing likelihood.variance "
+             << "(use --allow-white-and-noise to train both)." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      // no White component
+    }
+  }
   pmodel->setScale(scale);
   pmodel->setBias(bias);
   pmodel->updateM();
@@ -1006,7 +1062,7 @@ void CClgp::helpInfo()
     helpUsage("gp [options] learn example_file [model_file]");
     helpDescriptor("This file is for learning a data set with an GP. By default 1000 iterations of scaled conjugate gradient are used.");
     cout << "Arguments:" << endl;
-    helpArgument("example_file", "File with the training data. The data file is in the format used by SVM light.");
+    helpArgument("example_file", "Training data: dense CSV/TSV (last column = y; CIP-0022) preferred; SVM-light (.svml) still supported. Extension selects the reader.");
     helpArgument("model_file", "File to store the resulting model in. By default this is set to gp_model.");
     cout << endl;
     cout << "Command Options:" << endl;
@@ -1019,8 +1075,8 @@ void CClgp::helpInfo()
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
     helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: lq (LQ of [I,A], CIP-001B, default), stable (whitened C + Murray adjoints), or legacy (explicit invK_uu). Prefer --sparse-linalg over -L (short -L collides with Learn-scales).");
-    helpArgument("--inducing points|whitenoise", "Inducing-variable family (CIP-001C). Default points. whitenoise uses kernel-free K_uu with Gaussian windows.");
-    helpArgument("--window-width float", "Fixed white-noise window width s (only with --inducing whitenoise). Default: median nearest-neighbour spacing of inducing centres.");
+    helpArgument("--inducing points|whitenoise|greens|weightspace", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 MLP/arccos weight-space features.");
+    helpArgument("--window-width float", "Fixed window width s (with --inducing whitenoise, greens, or weightspace). Default: median nearest-neighbour spacing of inducing centres.");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();
@@ -1030,7 +1086,9 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, exp, ratquad, mlp (default rbf). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-000D): coregionalize, indexwhite; plus bias/white/ard/tensor/cmpnd.");
+    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad lengthscale-first; use -P ExpQuad.lengthscale=…), exp, ratquad, mlp, arccos (CIP-0028; default rbf only — CIP-0027: Bias/White are opt-in via -k bias / -k white; FTC observation noise is likelihood.variance). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-0029): ibrownian; (CIP-000D): coregionalize, indexwhite; plus ard/tensor/cmpnd.");
+    helpArgument("--allow-white-and-noise", "CIP-0027 Phase C: allow trainable White and free likelihood.variance together on FTC. Default refuses dual free noise (legacy -k white fixes likelihood.variance).");
+    helpArgument("--arccos-order int", "Arc-cosine order 0 (angular / infinite-MLP) or 1 (ReLU). Only with -k arccos. Default 0.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
     helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");
     helpArgument("-v, --variance float", "Variance parameter for covariance function.");

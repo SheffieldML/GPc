@@ -1,4 +1,5 @@
 # CIP-002C Phase C: build wheels and optionally publish (TestPyPI / PyPI).
+# CIP-002E tier 4: release / workflow_dispatch only (unchanged).
 # Default workflow_dispatch target is artifacts-only (no PyPI credentials needed).
 # Trusted Publisher (OIDC): configure once on TestPyPI/PyPI for this repo + environment.
 # See python/README.md § Publishing.

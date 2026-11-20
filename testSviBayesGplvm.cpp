@@ -1,4 +1,5 @@
-/* CIP-0030 Phase 1: CSviBayesGplvm gates V1–V3, V5–V7 (points / RBF / Gaussian). */
+/* CIP-0030 Phase 1–2: CSviBayesGplvm gates V1–V3, V5–V7 (points) and V4/V8
+   (inducing families: points / whitenoise / weightspace erf+soft-ReLU / greens). */
 
 #include "CAdam.h"
 #include "CBayesGplvm.h"
@@ -439,6 +440,275 @@ int main()
       cout << "  info: V5 max|gMu-FD|=" << errMu << " max|gLogS-FD|=" << errLS << endl;
       expect(errMu < 5e-4, "V5: analytic ∂ELBO/∂μ matches FD at fixed ε");
       expect(errLS < 5e-4, "V5: analytic ∂ELBO/∂logS matches FD at fixed ε");
+    }
+
+    // ---- Phase 2: V4 FD across inducing families ----
+    auto runV4 = [&](CSviBayesGplvm& m, const string& tag,
+                     double tolLocal, double tolGlobal) {
+      m.setLocalLearningRate(0.0);
+      m.setNatGradGamma(0.0);
+      m.setNumSamples(1);
+      m.setAntithetic(false);
+      const unsigned int Nn = m.getNumData();
+      const unsigned int Qq = m.getLatentDim();
+      CMatrix eps(Nn, Qq);
+      mt19937 rngFd(31);
+      normal_distribution<double> ndFd(0.0, 1.0);
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+          eps.setVal(ndFd(rngFd), i, q);
+      m.setFrozenEps(eps);
+
+      // Warm q(v) a little so grads are non-trivial.
+      for(unsigned int t = 0; t < 3; t++)
+      {
+        CMatrix XB(Nn, Qq);
+        vector<unsigned int> yRows(Nn);
+        for(unsigned int i = 0; i < Nn; i++)
+        {
+          yRows[i] = i;
+          for(unsigned int q = 0; q < Qq; q++)
+          {
+            const double s = exp(0.5 * m.getLogS().getVal(i, q));
+            XB.setVal(m.getMu().getVal(i, q) + s * eps.getVal(i, q), i, q);
+          }
+        }
+        m.getSvgp().naturalGradientStepAt(0.4, XB, yRows, 1.0);
+      }
+
+      // Locals: μ, logS via elboEstimate FD.
+      const double epsFD = 1e-5;
+      CMatrix mu0 = m.getMu();
+      CMatrix logS0 = m.getLogS();
+      CMatrix gMuFd(Nn, Qq), gLogSFd(Nn, Qq);
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          CMatrix muP(mu0), muM(mu0);
+          muP.setVal(mu0.getVal(i, q) + epsFD, i, q);
+          muM.setVal(mu0.getVal(i, q) - epsFD, i, q);
+          m.setMu(muP);
+          const double Lp = m.elboEstimate();
+          m.setMu(muM);
+          const double Lm = m.elboEstimate();
+          m.setMu(mu0);
+          gMuFd.setVal((Lp - Lm) / (2.0 * epsFD), i, q);
+
+          CMatrix lsP(logS0), lsM(logS0);
+          lsP.setVal(logS0.getVal(i, q) + epsFD, i, q);
+          lsM.setVal(logS0.getVal(i, q) - epsFD, i, q);
+          m.setLogS(lsP);
+          const double Lp2 = m.elboEstimate();
+          m.setLogS(lsM);
+          const double Lm2 = m.elboEstimate();
+          m.setLogS(logS0);
+          gLogSFd.setVal((Lp2 - Lm2) / (2.0 * epsFD), i, q);
+        }
+      CMatrix XB(Nn, Qq);
+      vector<unsigned int> yRows(Nn);
+      for(unsigned int i = 0; i < Nn; i++)
+      {
+        yRows[i] = i;
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          const double s = exp(0.5 * logS0.getVal(i, q));
+          XB.setVal(mu0.getVal(i, q) + s * eps.getVal(i, q), i, q);
+        }
+      }
+      CMatrix gK, gZ, gX;
+      double gB = 0.0;
+      m.getSvgp().elboGradAt(gK, gZ, gB, &gX, XB, yRows, 1.0);
+      CMatrix gMu(Nn, Qq), gLogS(Nn, Qq);
+      gMu.zeros();
+      gLogS.zeros();
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          const double gx = gX.getVal(i, q);
+          const double s = exp(0.5 * logS0.getVal(i, q));
+          const double ep = eps.getVal(i, q);
+          const double S = exp(logS0.getVal(i, q));
+          gMu.setVal(gx - mu0.getVal(i, q), i, q);
+          gLogS.setVal(0.5 * s * gx * ep + 0.5 * (1.0 - S), i, q);
+        }
+      const double errMu = maxAbsDiff(gMu, gMuFd);
+      const double errLS = maxAbsDiff(gLogS, gLogSFd);
+      cout << "  info: V4 " << tag << " max|gMu-FD|=" << errMu
+           << " max|gLogS-FD|=" << errLS << endl;
+      expect(errMu < tolLocal, "V4 " + tag + ": ∂ELBO/∂μ matches FD");
+      expect(errLS < tolLocal, "V4 " + tag + ": ∂ELBO/∂logS matches FD");
+
+      // Globals: kern / inducing / beta via objectiveGradBatch.
+      vector<unsigned int> all(Nn);
+      for(unsigned int i = 0; i < Nn; i++)
+        all[i] = i;
+      CMatrix g(1, m.getStochasticNumParams());
+      m.objectiveGradBatch(all, g);
+      CMatrix p0(1, m.getStochasticNumParams());
+      m.getStochasticParams(p0);
+      const double epsG = 1e-6;
+      double maxRel = 0.0;
+      for(unsigned int i = 0; i < m.getStochasticNumParams(); i++)
+      {
+        CMatrix pp(p0), pm(p0);
+        pp.setVal(p0.getVal(i) + epsG, i);
+        pm.setVal(p0.getVal(i) - epsG, i);
+        m.setStochasticParams(pp);
+        const double Lp = m.elboEstimate();
+        m.setStochasticParams(pm);
+        const double Lm = m.elboEstimate();
+        m.setStochasticParams(p0);
+        const double fd = (Lp - Lm) / (2.0 * epsG);
+        const double an = g.getVal(i);
+        const double scale = max(1.0, max(fabs(fd), fabs(an)));
+        maxRel = max(maxRel, fabs(fd - an) / scale);
+      }
+      cout << "  info: V4 " << tag << " global maxRel=" << maxRel << endl;
+      expect(maxRel < tolGlobal, "V4 " + tag + ": global grads match FD");
+    };
+
+    {
+      // points / RBF
+      CCmpndKern kPts(Xdummy);
+      makeRbfKern(kPts, Xdummy);
+      CSviBayesGplvm mPts(&kPts, Y, Q, M, 2.0, 0);
+      mPts.setInducingType("points");
+      runV4(mPts, "points", 5e-4, 2e-3);
+    }
+    {
+      // white-noise RBF (Q=2 ok)
+      CCmpndKern kWn(Xdummy);
+      makeRbfKern(kWn, Xdummy);
+      CSviBayesGplvm mWn(&kWn, Y, Q, M, 2.0, 0);
+      mWn.setInducingType("whitenoise");
+      expect(mWn.getSvgp().getInducing()->typeName() == "whitenoise",
+             "V4: setInducingType whitenoise");
+      runV4(mWn, "whitenoise", 5e-4, 5e-3);
+    }
+    {
+      // weight-space MLP ridge (erf)
+      CMlpKern kMlp(Xdummy);
+      kMlp.setParam(1.0, 0);
+      kMlp.setParam(1.0, 1);
+      kMlp.setParam(1.0, 2);
+      CSviBayesGplvm mWs(&kMlp, Y, Q, M, 2.0, 0);
+      mWs.setInducingType("weightspace");
+      expect(mWs.getSvgp().getInducing()->typeName() == "weightspace",
+             "V4: setInducingType weightspace (erf)");
+      runV4(mWs, "weightspace-erf", 5e-3, 1e-2);
+    }
+    {
+      // weight-space arc-cosine order-1 (soft-ReLU)
+      CArcCosineKern kArc(Xdummy);
+      kArc.setOrder(1);
+      kArc.setInitParam();
+      CSviBayesGplvm mArc(&kArc, Y, Q, M, 2.0, 0);
+      mArc.setInducingType("weightspace");
+      runV4(mArc, "weightspace-softrelu", 5e-3, 1e-2);
+    }
+    {
+      // Green's / Brownian, latent dim 1
+      const unsigned int Q1 = 1;
+      CMatrix X1(N, Q1);
+      X1.zeros();
+      CBrownianKern kGr(X1);
+      kGr.setParam(1.0, 0);
+      CSviBayesGplvm mGr(&kGr, Y, Q1, M, 2.0, 0);
+      mGr.setInducingType("greens");
+      expect(mGr.getSvgp().getInducing()->typeName() == "greens",
+             "V4: setInducingType greens");
+      runV4(mGr, "greens", 5e-4, 5e-3);
+    }
+
+    // ---- Phase 2: V8 end-to-end smoke (demo_bayes_gplvm-sized data) ----
+    {
+      const unsigned int Nd = 20, Dd = 4, Qd = 2, Md = 5;
+      CMatrix Yd(Nd, Dd);
+      for(unsigned int n = 0; n < Nd; n++)
+        for(unsigned int d = 0; d < Dd; d++)
+          Yd.setVal(sin(0.4 * n + 0.9 * d) + 0.05 * n, n, d);
+
+      // Collapsed RBF reference.
+      CMatrix Xd(Nd, Qd);
+      Xd.zeros();
+      CCmpndKern kColl(Xd);
+      makeRbfKern(kColl, Xd);
+      CBayesGplvm collapsed(&kColl, Yd, Qd, Md, 0);
+      collapsed.setBeta(1.0);
+      collapsed.optimise(25);
+      const double Lcoll = collapsed.logLikelihood();
+
+      // SVI at collapsed latents / inducing / beta / kern with q(u)*.
+      CCmpndKern kSvi(Xd);
+      makeRbfKern(kSvi, Xd);
+      {
+        CMatrix kp(1, kColl.getNumParams());
+        kColl.getParams(kp);
+        kSvi.setParams(kp);
+      }
+      CSviBayesGplvm svi(&kSvi, Yd, Qd, Md, collapsed.getBeta(), 0);
+      svi.setMu(collapsed.getMu());
+      svi.setS(collapsed.getS());
+      svi.getSvgp().setInducingCentres(collapsed.getZ());
+      svi.getSvgp().setBeta(collapsed.getBeta());
+      setCollapsedOptimum(svi.getSvgp(), kSvi, svi.getMu(), svi.getS(),
+                          svi.getSvgp().getInducingCentres(), svi.getSvgp().getBeta(),
+                          Yd);
+      const double Lexact = exactUncollapsed(kSvi, Yd, svi.getMu(), svi.getS(),
+                                             svi.getSvgp().getInducingCentres(),
+                                             svi.getSvgp().getBeta(),
+                                             svi.getSvgp().getWhitenedMean(),
+                                             whitenedCovs(svi.getSvgp(), Dd));
+      cout << "  info: V8 exact uncollapsed=" << Lexact
+           << " collapsed=" << Lcoll << " diff=" << fabs(Lexact - Lcoll) << endl;
+      expect(fabs(Lexact - Lcoll) < 1e-4,
+             "V8: exact uncollapsed at q(u)* equals collapsed on demo data");
+      svi.setLocalLearningRate(0.0);
+      svi.setNatGradGamma(0.0);
+      svi.setNumSamples(4);
+      svi.setAntithetic(true);
+      svi.setSeed(17);
+      const unsigned int nMc = 400;
+      double sum = 0.0, sum2 = 0.0;
+      for(unsigned int t = 0; t < nMc; t++)
+      {
+        const double Li = svi.elboEstimate();
+        sum += Li;
+        sum2 += Li * Li;
+      }
+      const double mean = sum / (double)nMc;
+      const double var = sum2 / (double)nMc - mean * mean;
+      const double se = sqrt(max(0.0, var) / (double)nMc);
+      cout << "  info: V8 points MC=" << mean << " collapsed=" << Lcoll
+           << " se=" << se << endl;
+      expect(fabs(mean - Lcoll) < 4.0 * se + 1e-2,
+             "V8: SVI RBF/points MC ELBO matches collapsed (within 4 se)");
+
+      // Weight-space MLP: short Adam, then large-K ELBO estimate.
+      CMlpKern kMlp(Xd);
+      kMlp.setParam(1.0, 0);
+      kMlp.setParam(1.0, 1);
+      kMlp.setParam(1.0, 2);
+      CSviBayesGplvm sviWs(&kMlp, Yd, Qd, Md, 1.0, 0);
+      sviWs.setInducingType("weightspace");
+      sviWs.setSeed(23);
+      sviWs.setNumSamples(1);
+      sviWs.setNatGradGamma(0.15);
+      sviWs.setLocalLearningRate(1e-2);
+      const double L0 = sviWs.elboEstimate();
+      CAdam adam(5e-3);
+      adam.setBatchSize(Nd);
+      adam.setMaxIters(15);
+      adam.setSeed(23);
+      adam.maximise(sviWs);
+      sviWs.setNumSamples(1000);
+      sviWs.setSeed(101);
+      const double L1 = sviWs.elboEstimate();
+      cout << "  info: V8 weightspace MLP L0=" << L0 << " L_K1000=" << L1 << endl;
+      expect(isfinite(L0) && isfinite(L1),
+             "V8: weight-space MLP ELBO finite (K=1000 estimate)");
+      expect(L1 > L0 - 5.0,
+             "V8: weight-space MLP short train does not collapse ELBO");
     }
   }
   catch(ndlexceptions::Error& e)

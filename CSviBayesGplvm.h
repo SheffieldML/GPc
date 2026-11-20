@@ -1,10 +1,13 @@
-/* CIP-0030 Phase 1: uncollapsed Bayesian GP-LVM via sampled q(X) on CSvgp.
+/* CIP-0030 Phase 1–2: uncollapsed Bayesian GP-LVM via sampled q(X) on CSvgp.
 
    q(X) = prod_n N(μ_n, diag S_n), S = exp(logS). Reparameterised samples
    x̃ = μ + s ⊙ ε feed CSvgp's explicit-input core (Phase 0b). No psi statistics.
 
    Stochastic params for CAdam are globals (kern, inducing, beta). Local
-   (μ, logS) use row-sparse Adam updated only on the current minibatch. */
+   (μ, logS) use row-sparse Adam updated only on the current minibatch.
+
+   Phase 2: any CInducing family via setInducingType (points / whitenoise /
+   weightspace / greens) — same contract as CSvgp. */
 
 #ifndef CSVIBAYESGPLVM_H
 #define CSVIBAYESGPLVM_H
@@ -15,6 +18,7 @@
 #include "CStochasticOptimisable.h"
 #include <cstdint>
 #include <random>
+#include <string>
 #include <vector>
 
 class CSviBayesGplvm : public CStochasticOptimisable {
@@ -26,6 +30,8 @@ class CSviBayesGplvm : public CStochasticOptimisable {
 
   void initXpca();
   void initZFromMu();
+  // Owns a new CInducing of the named type (see CSvgp::setInducingType).
+  void setInducingType(const std::string& typeName);
 
   void setNumSamples(unsigned int K);
   unsigned int getNumSamples() const { return numSamples; }

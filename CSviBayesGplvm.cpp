@@ -87,6 +87,16 @@ void CSviBayesGplvm::initZFromMu()
     psvgp->setInducingCentres(Z);
 }
 
+void CSviBayesGplvm::setInducingType(const string& typeName)
+{
+  if(psvgp == 0)
+    throw ndlexceptions::Error("CSviBayesGplvm::setInducingType: no SVGP core");
+  // Keep Z in sync for families that read centres storage (points / WN / greens).
+  if(typeName == "points" || typeName == "whitenoise" || typeName == "greens")
+    initZFromMu();
+  psvgp->setInducingType(typeName);
+}
+
 void CSviBayesGplvm::setNumSamples(unsigned int K)
 {
   if(K == 0)

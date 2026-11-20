@@ -90,7 +90,8 @@ void centreColumns(CMatrix& Y)
 }
 
 CKern* makeKernComponent(const string& type, unsigned int q,
-                         double rbfInvWidth, double variance)
+                         double rbfInvWidth, double variance,
+                         bool allowNonPsi)
 {
   CKern* k = 0;
   if(type == "rbf")
@@ -138,10 +139,32 @@ CKern* makeKernComponent(const string& type, unsigned int q,
       white->setVariance(variance);
     k = white;
   }
+  else if(allowNonPsi && type == "mlp")
+  {
+    CMlpKern* mlp = new CMlpKern(q);
+    mlp->setInitParam();
+    k = mlp;
+  }
+  else if(allowNonPsi && type == "mlpard")
+  {
+    // ARD MLP: per-latent weight scales (CIP-0028 weight-space Σ^{1/2} x̂).
+    CMlpardKern* mlp = new CMlpardKern(q);
+    mlp->setInitParam();
+    k = mlp;
+  }
+  else if(allowNonPsi && (type == "arccos" || type == "arccosine"))
+  {
+    CArcCosineKern* ak = new CArcCosineKern(q);
+    ak->setInitParam();
+    k = ak;
+  }
   else
     throw ndlexceptions::Error(
-      "Unknown or unsupported kernel for Bayesian GPLVM (need psi): " + type
-      + ". Use rbf, rbfard, lin, bias, white.");
+      allowNonPsi
+        ? ("Unknown kernel for SVI Bayesian GPLVM: " + type
+           + ". Use rbf, rbfard, lin, bias, white, mlp, mlpard, arccos.")
+        : ("Unknown or unsupported kernel for Bayesian GPLVM (need psi): " + type
+           + ". Use rbf, rbfard, lin, bias, white."));
   return k;
 }
 
@@ -149,6 +172,22 @@ void writeLatentText(const string& base, const CMatrix& mu, const CMatrix& S)
 {
   mu.toUnheadedFile(base + "_mu.dat");
   S.toUnheadedFile(base + "_S.dat");
+}
+
+string peekModelBaseType(const string& modelFileName)
+{
+  ifstream in(modelFileName.c_str());
+  if(!in.is_open())
+    throw ndlexceptions::FileReadError(modelFileName);
+  try
+  {
+    CStreamInterface::readVersionFromStream(in);
+    return CStreamInterface::getBaseTypeStream(in);
+  }
+  catch(ndlexceptions::StreamFormatError& err)
+  {
+    throw ndlexceptions::FileFormatError(modelFileName, err);
+  }
 }
 
 } // namespace
@@ -163,10 +202,17 @@ void CClbgplvm::learn()
   vector<double> variances;
   vector<bool> selectInputs;
   string optimiser = "scg";
+  string inference = "collapsed";
+  string inducingType = "points";
   bool centreData = true;
   int iters = 100;
   int latentDim = 2;
   int numInducing = -1;
+  int batchSize = -1;
+  int numSamples = 1;
+  double natGradGamma = 0.1;
+  double localLr = 1e-2;
+  double adamLr = 1e-2;
   string modelFileName = "bgplvm_model";
   string latentOutBase = "";
   bool dumpLatent = false;
@@ -199,6 +245,41 @@ void CClbgplvm::learn()
       {
         incrementArgument();
         optimiser = getCurrentArgument();
+      }
+      else if(isCurrentArg("--inference", "--inference"))
+      {
+        incrementArgument();
+        inference = getCurrentArgument();
+      }
+      else if(isCurrentArg("--batch", "--batch"))
+      {
+        incrementArgument();
+        batchSize = getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("--samples", "--samples"))
+      {
+        incrementArgument();
+        numSamples = getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("--inducing", "--inducing"))
+      {
+        incrementArgument();
+        inducingType = getCurrentArgument();
+      }
+      else if(isCurrentArg("--natgrad-gamma", "--natgrad-gamma"))
+      {
+        incrementArgument();
+        natGradGamma = getDoubleFromCurrentArgument();
+      }
+      else if(isCurrentArg("--local-lr", "--local-lr"))
+      {
+        incrementArgument();
+        localLr = getDoubleFromCurrentArgument();
+      }
+      else if(isCurrentArg("--adam-lr", "--adam-lr"))
+      {
+        incrementArgument();
+        adamLr = getDoubleFromCurrentArgument();
       }
       else if(isCurrentArg("-k", "--kernel"))
       {
@@ -262,6 +343,10 @@ void CClbgplvm::learn()
   if((getCurrentArgumentNo() + 1) < argc)
     modelFileName = argv[getCurrentArgumentNo() + 1];
 
+  if(inference != "collapsed" && inference != "svi")
+    exitError("--inference must be collapsed or svi.");
+  const bool useSvi = (inference == "svi");
+
   CMatrix Y;
   CMatrix labs;
   readData(Y, labs, trainDataFileName);
@@ -274,6 +359,10 @@ void CClbgplvm::learn()
     exitError("num-inducing (-M) must be in 1..N.");
   if(latentDim < 1)
     exitError("latent-dim (-x) must be positive.");
+  if(useSvi && numSamples < 1)
+    exitError("--samples must be positive.");
+  if(useSvi && batchSize == 0)
+    exitError("--batch must be positive (or omit for full batch).");
 
   if(kernelTypes.size() == 0)
   {
@@ -294,14 +383,72 @@ void CClbgplvm::learn()
     {
       if(ktype == "rbf")
         ktype = "rbfard";
+      else if(ktype == "mlp")
+      {
+        if(!useSvi)
+          exitError("MLP-ARD needs --inference svi (no psi for mlpard).");
+        ktype = "mlpard";
+      }
       else if(ktype == "lin" || ktype == "linear")
         exitError("Linear-ARD psi is not implemented; use -k rbfard (or -k rbf -i true).");
-      else if(ktype != "rbfard")
-        exitError("Input-select (-i) only applies to rbf (maps to rbfard).");
+      else if(ktype != "rbfard" && ktype != "mlpard")
+        exitError("Input-select (-i) applies to rbf→rbfard or mlp→mlpard (SVI).");
     }
     CKern* comp = makeKernComponent(ktype, (unsigned int)latentDim,
-                                    rbfInvWidths[i], variances[i]);
+                                    rbfInvWidths[i], variances[i], useSvi);
     kern.addKern(comp);
+  }
+
+  string comment = "Run as:";
+  for(int i = 0; i < argc; i++)
+  {
+    comment += " ";
+    comment += argv[i];
+  }
+  comment += " with seed " + ndlstrutil::itoa(getSeed()) + ".";
+  if(getFileFormat() != 0)
+    exitError("bgplvm currently writes only the native text .model format (-f 0).");
+
+  if(useSvi)
+  {
+    CSviBayesGplvm model(&kern, Y, (unsigned int)latentDim,
+                         (unsigned int)numInducing, 1.0, getVerbosity());
+    model.setInducingType(inducingType);
+    model.setNumSamples((unsigned int)numSamples);
+    model.setNatGradGamma(natGradGamma);
+    model.setLocalLearningRate(localLr);
+    model.setSeed((uint64_t)getSeed());
+
+    if(batchSize < 0)
+      batchSize = (int)Y.getRows();
+    if(batchSize < 1 || (unsigned int)batchSize > Y.getRows())
+      exitError("--batch must be in 1..N.");
+
+    CAdam adam(adamLr);
+    adam.setBatchSize((unsigned int)batchSize);
+    adam.setMaxIters((unsigned int)iters);
+    adam.setSeed((uint64_t)getSeed());
+
+    if(getVerbosity() > 0)
+    {
+      cout << "Training SVI Bayesian GPLVM: N=" << Y.getRows()
+           << " D=" << Y.getCols() << " q=" << latentDim
+           << " M=" << numInducing << " inducing=" << inducingType
+           << " batch=" << batchSize << " samples=" << numSamples
+           << " iters=" << iters << endl;
+    }
+    adam.maximise(model);
+    model.toFile(modelFileName, comment);
+
+    if(dumpLatent)
+    {
+      if(latentOutBase.size() == 0)
+        latentOutBase = modelFileName;
+      writeLatentText(latentOutBase, model.getMu(), model.getS());
+    }
+    if(getVerbosity() > 0)
+      model.display(cout);
+    exitNormal();
   }
 
   CBayesGplvm model(&kern, Y, (unsigned int)latentDim,
@@ -344,16 +491,6 @@ void CClbgplvm::learn()
          << " M=" << numInducing << " iters=" << iters << endl;
   }
   model.optimise((unsigned int)iters);
-
-  string comment = "Run as:";
-  for(int i = 0; i < argc; i++)
-  {
-    comment += " ";
-    comment += argv[i];
-  }
-  comment += " with seed " + ndlstrutil::itoa(getSeed()) + ".";
-  if(getFileFormat() != 0)
-    exitError("bgplvm currently writes only the native text .model format (-f 0).");
   model.toFile(modelFileName, comment);
 
   if(dumpLatent)
@@ -391,13 +528,23 @@ void CClbgplvm::display()
   if(getCurrentArgumentNo() >= argc)
     exitError("There are not enough input parameters.");
   string modelFileName = getCurrentArgument();
+  const string baseType = peekModelBaseType(modelFileName);
 
   CMatrix Ytmp(1, 1);
   CRbfKern kernTmp(1);
   kernTmp.setInitParam();
-  CBayesGplvm model(&kernTmp, Ytmp, 1, 1, getVerbosity());
-  model.fromFile(modelFileName);
-  model.display(cout);
+  if(baseType == "svibayesgplvm")
+  {
+    CSviBayesGplvm model(&kernTmp, Ytmp, 1, 1, 1.0, getVerbosity());
+    model.fromFile(modelFileName);
+    model.display(cout);
+  }
+  else
+  {
+    CBayesGplvm model(&kernTmp, Ytmp, 1, 1, getVerbosity());
+    model.fromFile(modelFileName);
+    model.display(cout);
+  }
   exitNormal();
 }
 
@@ -461,9 +608,19 @@ void CClbgplvm::gnuplot()
   CMatrix Ytmp(1, 1);
   CRbfKern kernTmp(1);
   kernTmp.setInitParam();
-  CBayesGplvm model(&kernTmp, Ytmp, 1, 1, getVerbosity());
-  model.fromFile(modelFileName);
-  const unsigned int q = model.getLatentDim();
+  const string baseType = peekModelBaseType(modelFileName);
+  CBayesGplvm collapsed(&kernTmp, Ytmp, 1, 1, getVerbosity());
+  CSviBayesGplvm svi(&kernTmp, Ytmp, 1, 1, 1.0, getVerbosity());
+  const bool isSvi = (baseType == "svibayesgplvm");
+  if(isSvi)
+    svi.fromFile(modelFileName);
+  else
+    collapsed.fromFile(modelFileName);
+
+  const unsigned int q = isSvi ? svi.getLatentDim() : collapsed.getLatentDim();
+  const unsigned int nData = isSvi ? svi.getNumData() : collapsed.getNumData();
+  const unsigned int outDim = isSvi ? svi.getOutputDim() : collapsed.getOutputDim();
+  const CMatrix& Xlat = isSvi ? svi.getMu() : collapsed.getMu();
   if(q < 2)
     exitError("Plotting needs at least 2 latent dimensions.");
   if(!dimsSet && q > 2 && getVerbosity() > 0)
@@ -475,39 +632,51 @@ void CClbgplvm::gnuplot()
   if(plotDim0 == plotDim1)
     exitError("Plot dims (-d) must be distinct.");
 
+  vector<int> plotLabels;
+  bool haveLabels = false;
   if(labelFileName.length() > 0)
   {
     ifstream in(labelFileName.c_str());
     string line;
     if(!in)
       throw ndlexceptions::FileReadError(labelFileName);
-    vector<int> labels;
     while(getline(in, line))
     {
       int index = atol(line.c_str());
       if(index < 0)
         throw ndlexceptions::FileFormatError(labelFileName);
-      labels.push_back(index);
+      plotLabels.push_back(index);
     }
     in.close();
-    if(labels.size() != model.getNumData())
+    if(plotLabels.size() != nData)
       exitError("Incorrect number of labels.");
-    model.setLabels(labels);
+    haveLabels = true;
+  }
+  else if(!isSvi && collapsed.isLabels())
+  {
+    plotLabels.resize(nData);
+    for(unsigned int i = 0; i < nData; i++)
+      plotLabels[i] = collapsed.getLabel(i);
+    haveLabels = true;
   }
 
   vector<bool> labelFileWritten;
   int maxVal = 0;
   int minVal = 0;
-  const CMatrix& Xlat = model.getMu();
-  if(model.isLabels())
+  if(haveLabels)
   {
-    maxVal = model.getMaxLabelVal();
-    minVal = model.getMinLabelVal();
+    maxVal = plotLabels[0];
+    minVal = plotLabels[0];
+    for(unsigned int i = 1; i < plotLabels.size(); i++)
+    {
+      if(plotLabels[i] > maxVal) maxVal = plotLabels[i];
+      if(plotLabels[i] < minVal) minVal = plotLabels[i];
+    }
     for(int j = minVal; j <= maxVal; j++)
     {
       vector<int> storeIndex;
-      for(unsigned int i = 0; i < model.getNumData(); i++)
-        if(model.getLabel(i) == j)
+      for(unsigned int i = 0; i < nData; i++)
+        if(plotLabels[i] == j)
           storeIndex.push_back((int)i);
       if(storeIndex.size() > 0)
       {
@@ -583,9 +752,12 @@ void CClbgplvm::gnuplot()
       matrixOut[i]->setVal(y, j, 1);
     }
   }
-  CMatrix means(Xgrid.getRows(), model.getOutputDim());
-  CMatrix variances(Xgrid.getRows(), model.getOutputDim());
-  model.posteriorMeanVar(means, variances, Xgrid);
+  CMatrix means(Xgrid.getRows(), outDim);
+  CMatrix variances(Xgrid.getRows(), outDim);
+  if(isSvi)
+    svi.getSvgp().posteriorMeanVar(means, variances, Xgrid);
+  else
+    collapsed.posteriorMeanVar(means, variances, Xgrid);
   for(i = 0; i < numy; i++)
     for(j = 0; j < numx; j++)
       matrixOut[i]->setVal(-log(variances.getVal(i * numy + j)), j, 2);
@@ -621,7 +793,7 @@ void CClbgplvm::gnuplot()
     "#c4a000", "#5c3566", "#8f5902", "#2e3436"
   };
   const int nLabelCols = 8;
-  if(model.isLabels())
+  if(haveLabels)
   {
     for(int lab = minVal, idx = 0; lab <= maxVal; lab++, idx++)
       if(labelFileWritten[idx])
@@ -642,7 +814,7 @@ void CClbgplvm::gnuplot()
 void CClbgplvm::helpHeader()
 {
   cout << "Bayesian GP-LVM (bgplvm) Command Line Tool." << endl;
-  cout << "CIP-0017: variational q(X) with psi statistics." << endl;
+  cout << "CIP-0017: collapsed (psi). CIP-0030: --inference svi (sampled q(X))." << endl;
 }
 
 void CClbgplvm::helpInfo()
@@ -667,7 +839,7 @@ void CClbgplvm::helpInfo()
   {
     helpHeader();
     helpUsage("bgplvm [options] learn [command-options] example_file [model_file]");
-    helpDescriptor("Learn a Bayesian GP-LVM (VarDTC + KL). Default optimiser is SCG.");
+    helpDescriptor("Learn a Bayesian GP-LVM. Default is collapsed (psi + SCG). Use --inference svi for CIP-0030.");
     cout << "Arguments:" << endl;
     helpArgument("example_file", "SVM-light training file (observations Y).");
     helpArgument("model_file", "Output model path (default bgplvm_model).");
@@ -676,12 +848,19 @@ void CClbgplvm::helpInfo()
     helpArgument("-?, -h, --help", "This help.");
     helpArgument("-x, --latent-dim int", "Latent dimension q (default 2).");
     helpArgument("-M, --num-inducing int", "Inducing points M (default min(10,N)).");
-    helpArgument("-k, --kernel string", "Add kernel with psi support: rbf, rbfard, lin, bias, white. Repeatable. Default: rbfard (ARD for latent dimension selection).");
-    helpArgument("-i, --input-select bool", "After -k rbf, true maps to rbfard (same as ./gplvm).");
+    helpArgument("-k, --kernel string", "Kernel: rbf, rbfard, lin, bias, white (psi). SVI also: mlp, mlpard, arccos. Repeatable. Default: rbfard.");
+    helpArgument("-i, --input-select bool", "After -k rbf → rbfard; after -k mlp (SVI) → mlpard.");
     helpArgument("-g, --gamma float", "RBF/RBF-ARD gamma as in ./gplvm (inverseWidth=2*gamma). Follows -k.");
     helpArgument("-v, --variance float", "Kernel variance; follows -k.");
     helpArgument("-#, --#iterations int", "Optimiser iterations (default 100).");
-    helpArgument("-O, --optimiser string", "scg (default), conjgrad, quasinew/lbfgs, graddesc.");
+    helpArgument("-O, --optimiser string", "Collapsed only: scg (default), conjgrad, quasinew/lbfgs, graddesc.");
+    helpArgument("--inference collapsed|svi", "collapsed (default, CIP-0017) or svi (CIP-0030 sampled q(X) + Adam).");
+    helpArgument("--batch int", "SVI minibatch size (default N = full batch).");
+    helpArgument("--samples int", "SVI reparameterisation samples K per point (default 1).");
+    helpArgument("--inducing points|whitenoise|weightspace|greens", "SVI inducing family (default points).");
+    helpArgument("--natgrad-gamma float", "SVI CVI natural-gradient step size in [0,1] (default 0.1).");
+    helpArgument("--local-lr float", "SVI Adam learning rate for (mu, logS) (default 1e-2).");
+    helpArgument("--adam-lr float", "SVI Adam learning rate for global params (default 1e-2).");
     helpArgument("-C, --Centre-data bool", "Mean-centre observation columns (default 1).");
     helpArgument("-o, --output-latent string", "Write mu/S to basename_mu.dat and basename_S.dat.");
     helpArgument("-f, --file-format int", "Model format; only 0 (text) supported.");
@@ -690,7 +869,7 @@ void CClbgplvm::helpInfo()
   {
     helpHeader();
     helpUsage("bgplvm [options] display model_file");
-    helpDescriptor("Display parameters and ELBO for a saved Bayesian GP-LVM model.");
+    helpDescriptor("Display parameters for a saved collapsed or SVI Bayesian GP-LVM model.");
   }
   else if(command == "gnuplot")
   {

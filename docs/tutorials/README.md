@@ -22,6 +22,7 @@ Owned outside CIP-0015 Stage 1, but linked here so the tutorial index stays the 
 | Tutorial | Executable | Data | GPy counterpart |
 |---|---|---|---|
 | [Bayesian GPLVM oil 100](./bgplvm_oil100.md) | `bgplvm` | `examples/oilTrain100.svml` | `BayesianGPLVM` |
+| [SVI Bayesian GPLVM](./bgplvm_svi.md) | `bgplvm --inference svi` | `examples/oilTrain100.svml` | uncollapsed / no-psi path ([CIP-0030](../../cip/cip0030.md)) |
 | [MRD two-view smoke](./mrd.md) | `demo_mrd` | synthesised in-process | `MRD` |
 
 ## GPy ↔ GPc checklist (partial)

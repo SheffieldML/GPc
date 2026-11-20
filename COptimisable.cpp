@@ -1,10 +1,16 @@
-#include "COptimisable.h"
-#include <cstdio>
-#include <sstream>
-
+// Windows headers before project headers: rpcndr.h defines `byte`, and several
+// GPc headers use `using namespace std`, which makes `byte` ambiguous with
+// std::byte if windows.h is included afterwards. NOMINMAX stops min/max macros
+// from breaking free-function max(...) calls (e.g. SCG convergence).
 #ifdef _WIN32
-#include <io.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
+#include <io.h>
 #define GPC_ISATTY _isatty
 #define GPC_FILENO _fileno
 #else
@@ -12,6 +18,10 @@
 #define GPC_ISATTY isatty
 #define GPC_FILENO fileno
 #endif
+
+#include "COptimisable.h"
+#include <cstdio>
+#include <sstream>
 
 const double COptimisable::phi=1.618033988749895;
 const double COptimisable::cphi=-0.6180339887498949;
@@ -597,7 +607,8 @@ void COptimisable::scgOptimise()
     
     // 9 Check for convergence       
     notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, SCG, oldObj, lambda));
-    if (success && fabs(p.max()*alpha) < getParamTol() && max(fabs(newObj-oldObj)) < getObjectiveTol())
+    // Parenthesise (max) so a Windows max macro cannot eat the call.
+    if (success && fabs(p.max()*alpha) < getParamTol() && (max)(fabs(newObj-oldObj)) < getObjectiveTol())
       {
 	std::ostringstream msg;
 	msg << "Convergence criterion for parameters and objective met\n"

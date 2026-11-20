@@ -99,6 +99,20 @@ assert m.rows == 2 and m.cols == 2
 np.testing.assert_allclose(m.to_numpy(), X)
 ```
 
+## Interactive help (CIP-002F)
+
+Public constructors and methods carry docstrings for normal Python tooling:
+
+```python
+import gpc
+help(gpc.GPRegression)
+help(gpc.kern.RBF)
+m = gpc.GPRegression(X, Y)  # after you have X, Y
+help(m.optimize)
+```
+
+GPy → `gpc` porting narrative remains in [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md) (markdown, not a substitute for `help()`).
+
 ## FTC `GPRegression`
 
 GPy-shaped form (preferred for porting):

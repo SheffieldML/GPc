@@ -1,10 +1,11 @@
-/* CIP-0030 Phase 1–2: CSviBayesGplvm gates V1–V3, V5–V7 (points) and V4/V8
-   (inducing families: points / whitenoise / weightspace erf+soft-ReLU / greens). */
+/* CIP-0030 Phase 1–3: CSviBayesGplvm gates V1–V8 (points + inducing families)
+   and Phase 3 probit / ordered via Gauss–Hermite. */
 
 #include "CAdam.h"
 #include "CBayesGplvm.h"
 #include "CKern.h"
 #include "CMatrix.h"
+#include "CNoise.h"
 #include "CSviBayesGplvm.h"
 #include "ndlexceptions.h"
 #include "ndlutil.h"
@@ -710,6 +711,242 @@ int main()
       expect(L1 > L0 - 5.0,
              "V8: weight-space MLP short train does not collapse ELBO");
     }
+
+    // ---- Phase 3: probit / ordered ----
+    auto logProbitOrthant2 = [](const CMatrix& K, const CMatrix& y) {
+      // log P(w < 0) for w ~ N(0, I + Diag(y) K Diag(y)), N=2.
+      // Equivalent to Φ₂(0,0;ρ) = 1/4 + asin(ρ)/(2π) after standardising.
+      DIMENSIONMATCH(K.getRows() == 2 && K.getCols() == 2);
+      DIMENSIONMATCH(y.getRows() == 2);
+      const double y0 = y.getVal(0, 0);
+      const double y1 = y.getVal(1, 0);
+      const double s11 = 1.0 + y0 * y0 * K.getVal(0, 0);
+      const double s22 = 1.0 + y1 * y1 * K.getVal(1, 1);
+      const double s12 = y0 * y1 * K.getVal(0, 1);
+      double rho = s12 / sqrt(s11 * s22);
+      if(rho > 1.0) rho = 1.0;
+      if(rho < -1.0) rho = -1.0;
+      const double p = 0.25 + asin(rho) / (2.0 * M_PI);
+      return log(max(p, 1e-300));
+    };
+
+    {
+      // Tiny N=2 binary: S→0 ELBO+KL(X) ≤ exact orthant log marginal at μ.
+      const unsigned int Nb = 2, Qb = 1, Mb = 2;
+      CMatrix Yb(Nb, 1);
+      Yb.setVal(1.0, 0, 0);
+      Yb.setVal(-1.0, 1, 0);
+      CMatrix Xb(Nb, Qb);
+      Xb.setVal(-0.4, 0, 0);
+      Xb.setVal(0.7, 1, 0);
+      CCmpndKern kB(Xb);
+      makeRbfKern(kB, Xb);
+      kB.setParam(1.2, 0); // inverse width
+      kB.setParam(1.0, 1); // variance
+      CSviBayesGplvm mB(&kB, Yb, Qb, Mb, 1.0, 0);
+      mB.setMu(Xb);
+      CMatrix tiny(Nb, Qb);
+      tiny.setVals(1e-16);
+      mB.setS(tiny);
+      mB.getSvgp().setInducingCentres(Xb);
+      CProbitNoise pnoise(&Yb);
+      mB.setLikelihood(&pnoise);
+      mB.setLocalLearningRate(0.0);
+      mB.setNatGradGamma(0.0);
+      for(unsigned int t = 0; t < 25; t++)
+        mB.getSvgp().naturalGradientStep(0.3);
+      CMatrix eps0(Nb, Qb);
+      eps0.zeros();
+      mB.setFrozenEps(eps0);
+      const double Lsvi = mB.elboEstimate();
+      const double Lbound = Lsvi + mB.klX();
+      CMatrix K(Nb, Nb);
+      kB.compute(K, Xb);
+      K.setSymmetric(true);
+      const double Lexact = logProbitOrthant2(K, Yb);
+      cout << "  info: Phase3 orthant ELBO+KL(X)=" << Lbound
+           << " exact=" << Lexact << " gap=" << (Lexact - Lbound) << endl;
+      expect(isfinite(Lbound) && isfinite(Lexact),
+             "Phase3: probit orthant quantities finite");
+      expect(Lbound <= Lexact + 1e-6,
+             "Phase3: probit SVI ELBO+KL(X) ≤ exact orthant log marginal");
+    }
+
+    // V4 for non-Gaussian: FD at prior q(v) (no natgrad warm-up — GH sites
+    // after large steps can make central differences stiff). Same frozen-ε path.
+    auto runV4Prior = [&](CSviBayesGplvm& m, const string& tag,
+                          double tolLocal, double tolGlobal) {
+      m.setLocalLearningRate(0.0);
+      m.setNatGradGamma(0.0);
+      m.setNumSamples(1);
+      m.setAntithetic(false);
+      const unsigned int Nn = m.getNumData();
+      const unsigned int Qq = m.getLatentDim();
+      CMatrix eps(Nn, Qq);
+      mt19937 rngFd(31);
+      normal_distribution<double> ndFd(0.0, 1.0);
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+          eps.setVal(ndFd(rngFd), i, q);
+      m.setFrozenEps(eps);
+
+      const double epsFD = 1e-5;
+      CMatrix mu0 = m.getMu();
+      CMatrix logS0 = m.getLogS();
+      CMatrix gMuFd(Nn, Qq), gLogSFd(Nn, Qq);
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          CMatrix muP(mu0), muM(mu0);
+          muP.setVal(mu0.getVal(i, q) + epsFD, i, q);
+          muM.setVal(mu0.getVal(i, q) - epsFD, i, q);
+          m.setMu(muP);
+          const double Lp = m.elboEstimate();
+          m.setMu(muM);
+          const double Lm = m.elboEstimate();
+          m.setMu(mu0);
+          gMuFd.setVal((Lp - Lm) / (2.0 * epsFD), i, q);
+
+          CMatrix lsP(logS0), lsM(logS0);
+          lsP.setVal(logS0.getVal(i, q) + epsFD, i, q);
+          lsM.setVal(logS0.getVal(i, q) - epsFD, i, q);
+          m.setLogS(lsP);
+          const double Lp2 = m.elboEstimate();
+          m.setLogS(lsM);
+          const double Lm2 = m.elboEstimate();
+          m.setLogS(logS0);
+          gLogSFd.setVal((Lp2 - Lm2) / (2.0 * epsFD), i, q);
+        }
+      CMatrix XB(Nn, Qq);
+      vector<unsigned int> yRows(Nn);
+      for(unsigned int i = 0; i < Nn; i++)
+      {
+        yRows[i] = i;
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          const double s = exp(0.5 * logS0.getVal(i, q));
+          XB.setVal(mu0.getVal(i, q) + s * eps.getVal(i, q), i, q);
+        }
+      }
+      CMatrix gK, gZ, gX;
+      double gB = 0.0;
+      m.getSvgp().elboGradAt(gK, gZ, gB, &gX, XB, yRows, 1.0);
+      CMatrix gMu(Nn, Qq), gLogS(Nn, Qq);
+      gMu.zeros();
+      gLogS.zeros();
+      for(unsigned int i = 0; i < Nn; i++)
+        for(unsigned int q = 0; q < Qq; q++)
+        {
+          const double gx = gX.getVal(i, q);
+          const double s = exp(0.5 * logS0.getVal(i, q));
+          const double ep = eps.getVal(i, q);
+          const double S = exp(logS0.getVal(i, q));
+          gMu.setVal(gx - mu0.getVal(i, q), i, q);
+          gLogS.setVal(0.5 * s * gx * ep + 0.5 * (1.0 - S), i, q);
+        }
+      const double errMu = maxAbsDiff(gMu, gMuFd);
+      const double errLS = maxAbsDiff(gLogS, gLogSFd);
+      cout << "  info: V4 " << tag << " max|gMu-FD|=" << errMu
+           << " max|gLogS-FD|=" << errLS << endl;
+      expect(errMu < tolLocal, "V4 " + tag + ": ∂ELBO/∂μ matches FD");
+      expect(errLS < tolLocal, "V4 " + tag + ": ∂ELBO/∂logS matches FD");
+
+      vector<unsigned int> all(Nn);
+      for(unsigned int i = 0; i < Nn; i++)
+        all[i] = i;
+      CMatrix g(1, m.getStochasticNumParams());
+      m.objectiveGradBatch(all, g);
+      CMatrix p0(1, m.getStochasticNumParams());
+      m.getStochasticParams(p0);
+      const double epsG = 1e-6;
+      double maxRel = 0.0;
+      for(unsigned int i = 0; i < m.getStochasticNumParams(); i++)
+      {
+        CMatrix pp(p0), pm(p0);
+        pp.setVal(p0.getVal(i) + epsG, i);
+        pm.setVal(p0.getVal(i) - epsG, i);
+        m.setStochasticParams(pp);
+        const double Lp = m.elboEstimate();
+        m.setStochasticParams(pm);
+        const double Lm = m.elboEstimate();
+        m.setStochasticParams(p0);
+        const double fd = (Lp - Lm) / (2.0 * epsG);
+        const double an = g.getVal(i);
+        const double scale = max(1.0, max(fabs(fd), fabs(an)));
+        maxRel = max(maxRel, fabs(fd - an) / scale);
+      }
+      cout << "  info: V4 " << tag << " global maxRel=" << maxRel << endl;
+      expect(maxRel < tolGlobal, "V4 " + tag + ": global grads match FD");
+    };
+
+    {
+      const unsigned int Np = 12, Qp = 2, Mp = 4;
+      mt19937 rngP(41);
+      normal_distribution<double> ndP(0.0, 1.0);
+      CMatrix Yp(Np, 1);
+      CMatrix Xp(Np, Qp);
+      for(unsigned int i = 0; i < Np; i++)
+      {
+        for(unsigned int q = 0; q < Qp; q++)
+          Xp.setVal(ndP(rngP), i, q);
+        Yp.setVal(Xp.getVal(i, 0) > 0.0 ? 1.0 : -1.0, i, 0);
+      }
+      CCmpndKern kP(Xp);
+      makeRbfKern(kP, Xp);
+      CSviBayesGplvm mP(&kP, Yp, Qp, Mp, 1.0, 0);
+      CProbitNoise pnoise(&Yp);
+      mP.setLikelihood(&pnoise);
+      {
+        double gMu = 0.0, gVar = 0.0;
+        pnoise.expectedLogLikelihood(1.0, 0.2, 0.4, gMu, gVar);
+        const double e = 1e-6;
+        double t0 = 0.0, t1 = 0.0;
+        const double LpV = pnoise.expectedLogLikelihood(1.0, 0.2, 0.4 + e, t0, t1);
+        const double LmV = pnoise.expectedLogLikelihood(1.0, 0.2, 0.4 - e, t0, t1);
+        expect(fabs(gVar - (LpV - LmV) / (2.0 * e)) < 1e-6,
+               "Phase3: Gauss-Hermite gVar matches FD");
+      }
+      runV4Prior(mP, "probit", 5e-3, 2e-2);
+    }
+
+    {
+      const unsigned int No = 16, Qo = 2, Mo = 5, nCat = 3;
+      mt19937 rngO(43);
+      normal_distribution<double> ndO(0.0, 1.0);
+      CMatrix Yo(No, 1);
+      CMatrix Xo(No, Qo);
+      for(unsigned int i = 0; i < No; i++)
+      {
+        for(unsigned int q = 0; q < Qo; q++)
+          Xo.setVal(ndO(rngO), i, q);
+        const double z = Xo.getVal(i, 0);
+        Yo.setVal(z < -0.3 ? 0.0 : (z < 0.5 ? 1.0 : 2.0), i, 0);
+      }
+      CCmpndKern kO(Xo);
+      makeRbfKern(kO, Xo);
+      CSviBayesGplvm mO(&kO, Yo, Qo, Mo, 1.0, 0);
+      COrderedNoise ono(&Yo, nCat);
+      mO.setLikelihood(&ono);
+      mO.setLocalLearningRate(0.0);
+      mO.setNumSamples(1);
+      const double L0 = mO.elboEstimate();
+      for(unsigned int t = 0; t < 20; t++)
+      {
+        vector<unsigned int> all(No);
+        for(unsigned int i = 0; i < No; i++)
+          all[i] = i;
+        mO.afterBatchStep(all);
+      }
+      const double L1 = mO.elboEstimate();
+      cout << "  info: Phase3 ordered L0=" << L0 << " L1=" << L1 << endl;
+      expect(isfinite(L0) && isfinite(L1) && L1 > L0,
+             "Phase3: ordered GH natgrad increases ELBO");
+      // Fresh model at prior for FD (warmed q is stiff for central differences).
+      CSviBayesGplvm mOfd(&kO, Yo, Qo, Mo, 1.0, 0);
+      COrderedNoise onoFd(&Yo, nCat);
+      mOfd.setLikelihood(&onoFd);
+      runV4Prior(mOfd, "ordered", 5e-3, 2e-2);
+    }
   }
   catch(ndlexceptions::Error& e)
   {
@@ -719,3 +956,4 @@ int main()
   cout << "Number of failures: " << fails << endl;
   return fails > 0 ? 1 : 0;
 }
+// temporary - no

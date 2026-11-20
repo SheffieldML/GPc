@@ -201,6 +201,8 @@ double CSvgp::expectedLogLik(double yv, double mu, double var,
   {
     if(CProbitNoise* pn = dynamic_cast<CProbitNoise*>(pnoise))
       pn->setExpectedLogLikBias(pn->getBiasVal(j));
+    else if(COrderedNoise* on = dynamic_cast<COrderedNoise*>(pnoise))
+      on->setExpectedLogLikBias(on->getBiasVal(j));
     return pnoise->expectedLogLikelihood(yv, mu, var, gMu, gVar);
   }
   const double r = yv - mu;

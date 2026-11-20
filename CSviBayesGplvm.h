@@ -52,6 +52,9 @@ class CSviBayesGplvm : public CStochasticOptimisable {
   const CKern* getKern() const { return pkern; }
   CSvgp& getSvgp() { return *psvgp; }
   const CSvgp& getSvgp() const { return *psvgp; }
+  // Optional non-Gaussian likelihood (not owned); null => Gaussian beta.
+  void setLikelihood(CNoise* noise);
+  CNoise* getLikelihood() const;
 
   const CMatrix& getY() const { return Y; }
   const CMatrix& getMu() const { return mu; }

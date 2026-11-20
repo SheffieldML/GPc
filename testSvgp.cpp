@@ -523,11 +523,9 @@ int main()
               nullptr, dgMu, dgVar);
           } catch(ndlexceptions::Error&) { threw = true; }
           expect(threw, "Phase 4: gaussHermiteExpect rejects negative var");
-          threw = false;
           COrderedNoise ono(&y, 3);
-          try { ono.expectedLogLikelihood(0.0, 0.0, 1.0, dgMu, dgVar); }
-          catch(ndlexceptions::Error&) { threw = true; }
-          expect(threw, "Phase 4: base expectedLogLikelihood throws for ordered");
+          const double oell = ono.expectedLogLikelihood(0.0, 0.0, 1.0, dgMu, dgVar);
+          expect(isfinite(oell), "Phase 4: ordered expectedLogLikelihood finite (GH)");
           threw = false;
           try { CAdam bad(-1.0); } catch(ndlexceptions::Error&) { threw = true; }
           expect(threw, "Phase 3: CAdam rejects non-positive learning rate");

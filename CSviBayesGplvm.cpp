@@ -97,6 +97,18 @@ void CSviBayesGplvm::setInducingType(const string& typeName)
   psvgp->setInducingType(typeName);
 }
 
+void CSviBayesGplvm::setLikelihood(CNoise* noise)
+{
+  if(psvgp == 0)
+    throw ndlexceptions::Error("CSviBayesGplvm::setLikelihood: no SVGP core");
+  psvgp->setLikelihood(noise);
+}
+
+CNoise* CSviBayesGplvm::getLikelihood() const
+{
+  return psvgp == 0 ? 0 : psvgp->getLikelihood();
+}
+
 void CSviBayesGplvm::setNumSamples(unsigned int K)
 {
   if(K == 0)

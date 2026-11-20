@@ -21,7 +21,7 @@ The demo synthesises two small aligned views (\(N=12\)), builds a `CMrd` with pe
 - Objective \(\sum_v \mathcal{L}_{\mathrm{VarDTC}}^{(v)} - \mathrm{KL}(q\|p)\) with the KL counted once.
 - Soft private/shared structure from comparing per-view ARD input scales (GPy `factorize_space` spirit).
 
-Committed GPy ELBO/scale fixtures for CI compare are still outstanding on REQ-000C; `./testMrd` covers ELBO consistency, grads, stream, and factorise helpers without MATLAB.
+`./testMrd` covers ELBO consistency, grads, stream, factorise helpers, and a committed GPy ELBO fixture (`testdata/cip0018/mrd_rbf_tiny.txt`, regenerated with `scripts/gen_cip0018_mrd_fixtures.py`). The fixture uses a single-KL assembly of two GPy `BayesianGPLVM` views (same path as `CMrd`); raw `GPy.models.MRD` MiniBatch VarDTC drifts slightly and is not the gate.
 
 ## Notes
 

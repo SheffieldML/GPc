@@ -1,10 +1,10 @@
 ---
 id: "000C"
 title: "Users can train Manifold Relevance Determination (GPy-parity subset)"
-status: "In Progress"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-20"
 related_tenets: ["compose-through-interfaces", "assert-and-verify", "ecosystem-interoperability", "lapack-owns-linear-algebra"]
 stakeholders: ["maintainers", "modellers"]
 tags: ["gplvm", "bayesian", "mrd", "multi-view", "ard", "variational", "gpy"]
@@ -29,7 +29,7 @@ This builds on the single-view Bayesian GP-LVM delivered by [REQ-000B](./req000B
 - [x] Gradients for shared \(Z,\boldsymbol{\mu},\mathbf{S}\) are sums of per-view contributions; per-view \(\theta_v,\beta_v\) stay local
 - [x] Init supports concat-PCA (and documented alternative) of the views into shared \(\boldsymbol{\mu}\); \(Z\) from subset/permute of \(\boldsymbol{\mu}\)
 - [x] Callers can read per-view ARD scales and classify latent dims as shared / private given a threshold (GPy `factorize_space` spirit)
-- [ ] Verification artefacts compare ELBO and/or ARD scale ranking to a GPy-generated text fixture on a seeded two-view toy, without MATLAB at runtime
+- [x] Verification artefacts compare ELBO to a GPy-generated text fixture on a seeded two-view toy, without MATLAB at runtime (`testdata/cip0018/mrd_rbf_tiny.txt`; single-KL assembly of two `BayesianGPLVM` views — matches `CMrd` / MRD intent)
 - [x] Non-goals are explicit for the first delivery: missing-data VarDTC, non-Gaussian views, minibatch/SVI/MPI, Linear-ARD psi, SSGPLVM, dynamics priors, Matérn/tensor psi, Python bindings
 
 ## Notes (Optional)
@@ -51,3 +51,6 @@ Requirement created from the CIP-0017 vs GPy / MRD assessment. Status Proposed; 
 
 ### 2026-11-16 (docs)
 Tutorial pointer at [docs/tutorials/mrd.md](../docs/tutorials/mrd.md). Status remains In Progress until the GPy fixture acceptance criterion is checked.
+
+### 2026-11-20
+GPy fixture compare landed in `testMrd` (`mrd_rbf_tiny.txt`). Status → Validated; CIP-0018 Closed.

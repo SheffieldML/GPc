@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000C"
-last_updated: "2026-11-15"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0005"]
 related_cips: ["000B"]
@@ -25,7 +25,7 @@ title: "Finish ARD stubs and import StdPeriodic, Cosine, Brownian"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 
 ## Summary
 
@@ -54,7 +54,7 @@ Brownian requires a scalar time-like input (`inputDim == 1`). Multi-dimensional 
 - [x] Brownian + fixture
 - [x] CLI/README type names
 - [x] CI matio path includes new types (`testKern` 0 failures locally)
-- [ ] Closed after PR CI
+- [x] Closed after PR CI
 
 ## Testing Strategy
 

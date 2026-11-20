@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000D"
-last_updated: "2026-11-16"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0006"]
 related_cips: ["000C"]
@@ -26,7 +26,7 @@ title: "Multi-output covariance via Coregionalize"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

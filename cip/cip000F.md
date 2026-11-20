@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-15"
 id: "000F"
-last_updated: "2026-11-15"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["000E"]
@@ -25,7 +25,7 @@ title: "Implement spherical PITC and ship a matio reference fixture"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
@@ -41,7 +41,7 @@ Finish the partially independent training conditional (PITC) approximation on th
 - [x] Add regenerator + `matfiles/testGppitc.mat`
 - [x] Enable `pitc` in `testGp` / matio CI
 - [x] `diagPitc` FD gate green locally
-- [ ] CI green; CIP Closed
+- [x] CI green; CIP Closed
 
 ## Testing Strategy
 

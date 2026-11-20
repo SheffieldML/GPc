@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002A"
-last_updated: "2026-11-19"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0015", "0002", "000F", "0014"]
 related_cips: ["0026", "0027", "0012", "001B", "001C", "001E", "0010"]
@@ -29,7 +29,7 @@ title: "SVGP: explicit q(u) with natural gradients, Adam for hyperparameters, mi
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

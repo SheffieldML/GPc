@@ -1,10 +1,10 @@
 ---
 id: "000B"
 title: "Users can train a Bayesian GP-LVM with psi statistics (GPy-parity subset)"
-status: "Implemented"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-20"
 related_tenets: ["compose-through-interfaces", "assert-and-verify", "flexibility-with-performance", "ecosystem-interoperability", "lapack-owns-linear-algebra"]
 stakeholders: ["maintainers", "modellers"]
 tags: ["gplvm", "bayesian", "psi", "uncertain-inputs", "variational", "gpy"]

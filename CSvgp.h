@@ -1,5 +1,7 @@
 /* CIP-002A: stochastic variational GP (SVGP), Hensman et al. 2013.
    CIP-0030 Phase 0a: K_uu / K_uf (and inducing grads) via owned CInducing*.
+   CIP-0030 Phase 0b: explicit-input core (XB, yRows, c, optional gX) — no
+   KL(q(X)) and no ownership of (μ, log S); those stay in CSviBayesGplvm.
 
    Explicit q(u_j) = N(m_j, S_j) per output column j, shared kernel and inducing
    representation, Gaussian likelihood with scalar precision beta.
@@ -99,10 +101,27 @@ class CSvgp : public CStochasticOptimisable {
 
   // ---- Phase 2: gradients at fixed whitened q ----
   // Fills gKern (1 x nKernParams), gZ (same shape as centres()), gBeta.
+  // Optional gXOrNull (B x q, same rows as the batch inputs) via Phase 0b core.
   // Returns ELBO on batch.
   double elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
-                  const vector<unsigned int>& batch) const;
+                  const vector<unsigned int>& batch,
+                  CMatrix* gXOrNull = 0) const;
   double elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta) const;
+
+  // ---- CIP-0030 Phase 0b: explicit-input core ----
+  // Evaluate / differentiate the data term at caller-supplied inputs XB (B x q).
+  // yRows indexes rows of Y (size B); c is the minibatch weight (typically N/B).
+  // Does not include KL(q(u)), kern prior, or any q(X) terms.
+  double dataTermAt(const CMatrix& XB, const vector<unsigned int>& yRows,
+                    double c) const;
+  // Gradients of (dataTermAt + KL(q(u)) + kern prior) w.r.t. kern / inducing /
+  // beta, and optionally ∂dataTerm/∂XB into gXOrNull (B x q).
+  double elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta, CMatrix* gXOrNull,
+                    const CMatrix& XB, const vector<unsigned int>& yRows,
+                    double c) const;
+  // CVI natural-gradient step using sites at XB (same c scaling as dataTermAt).
+  void naturalGradientStepAt(double gamma, const CMatrix& XB,
+                             const vector<unsigned int>& yRows, double c);
 
   // Packed unconstrained parameters: kern transforms, then inducing params
   // (CInducing::getParams), then betaTransform(beta).
@@ -125,6 +144,7 @@ class CSvgp : public CStochasticOptimisable {
  private:
   void initVariationalPrior();
   void packInducingGrad(CMatrix& gFlat, unsigned int offset, const CMatrix& gZ) const;
+  void gatherXB(const vector<unsigned int>& batch, CMatrix& XB) const;
 
   // Gaussian likelihood: E_q[log N(y|f,1/beta)] and its derivatives w.r.t.
   // the marginal mean and variance of q(f).  Non-Gaussian noise plugs in here.
@@ -137,9 +157,12 @@ class CSvgp : public CStochasticOptimisable {
   bool isFullOrderedBatch(const vector<unsigned int>& batch) const;
   void formAB(const vector<unsigned int>& batch, CMatrix& AB,
               CMatrix& dK, CMatrix& dQ) const;
+  void formABFromX(const CMatrix& XB, CMatrix& AB, CMatrix& dK, CMatrix& dQ) const;
   void fillMarginals(const vector<unsigned int>& batch,
                      CMatrix& muOut, CMatrix& varOut) const;
+  void fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut, CMatrix& varOut) const;
   double dataTerm(const vector<unsigned int>& batch) const;
+  double klPlusPrior() const;
   vector<unsigned int> allIndices() const;
 
   CKern* pkern;

@@ -138,7 +138,7 @@ Add a review rule, and optionally a CI grep, flagging any `getVal`/`setVal` loop
   - hoist the `isDefaultActiveDims()` test out of inner loops.
 - **RBF/stationary gradients from cached workspaces:**
   - \(\partial/\partial\ell\) as one fused pass over \(K \odot r^2 \odot \bar K\);
-  - \(\partial/\partial Z\) for all inducing points as a `gemm`-shaped contraction (e.g. \(\bar K_\odot X - \mathrm{diag}(\bar K_\odot \mathbf 1) Z\)) instead of \(M\) calls to `getGradX` — **coordinate with CIP-0028** (`gradFromKuuKuf` / ridge features); do not reimplement on this branch while 0028 is In Progress.
+  - \(\partial/\partial Z\) for all inducing points as a `gemm`-shaped contraction (e.g. \(\bar K_\odot X - \mathrm{diag}(\bar K_\odot \mathbf 1) Z\)) instead of \(M\) calls to `getGradX` — **coordinate with CIP-0028** (`gradFromKuuKuf` / ridge features); deferred while 0028 was In Progress; unblocked now that [CIP-0028](./cip0028.md) is Closed (see follow-up backlog).
 - **Dot-product kernels** (`CMlpKern`, linear, and CIP-0028 weight-space / directional features): bulk path = one `gemm` plus an element-wise map — **deferred** until 0028 merges (`cip0028-weightspace-inducing` already edits these APIs heavily).
 - Agreement with the element-wise oracle to `MATCHTOL` remains the gate.
 

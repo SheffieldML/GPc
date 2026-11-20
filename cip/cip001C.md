@@ -215,7 +215,7 @@ Add `virtual double spectralDensity(double rho) const` (default throws) to `CSta
 ## Future CIPs (pointers, not scope)
 
 - **Green's-function features (1-D):** → **[CIP-0029](./cip0029.md)** (Proposed). Causal spectral factor instead of \(\sqrt S\); Brownian gives \(\Phi((x-z)/s)\) (erf) units, integrated Brownian gives Gaussian-smoothed ReLU units, causal Matérn-\(\nu\) gives their exponentially tempered versions. \(K_{uu}\) is still \(\langle\psi_m,\psi_n\rangle\).
-- **Weight-space features for dot-product kernels:** → **[CIP-0028](./cip0028.md)** (In Progress). Same white-noise pattern on weight space: \(f=\int\phi\sqrt{p}\,\xi\), \(u_m=\int\psi_m\xi\), so \(K_{uu}=\langle\psi,\psi\rangle\) and \(K_{fu}=\int\phi\sqrt{p}\,\psi\) (Gaussian product shifts window mean/cov by \(\Sigma\); early one-line erf sketch here omitted \(\sqrt{p}\)—see CIP-0028). Arc-cosine (order 1) gives smoothed ReLU ridge units.
+- **Weight-space features for dot-product kernels:** → **[CIP-0028](./cip0028.md)** (Closed). Same white-noise pattern on weight space: \(f=\int\phi\sqrt{p}\,\xi\), \(u_m=\int\psi_m\xi\), so \(K_{uu}=\langle\psi,\psi\rangle\) and \(K_{fu}=\int\phi\sqrt{p}\,\psi\) (shipping design: ridge windows in prior-whitened \(\boldsymbol\omega\); early one-line erf sketch here omitted \(\sqrt{p}\)—see CIP-0028). Arc-cosine (order 1) gives smoothed ReLU ridge units.
 
 ## References
 

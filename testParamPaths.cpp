@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "CKern.h"
+#include "CModelDescription.h"
 #include "ndlexceptions.h"
 
 using namespace std;
@@ -169,6 +170,26 @@ int main()
     expect(mlp.paramPaths()[0]=="weight_variance", "mlp weight_variance path");
     mlp.setByPath("weight_variance", 2.0);
     expectNear(mlp.getByPath("weightVariance"), 2.0, tol, "mlp legacy alias get");
+  }
+
+  // --- CIP-001E describe / display ---
+  {
+    CRbfKern rbf(1);
+    rbf.setByPath("lengthscale", 2.0);
+    rbf.setByPath("variance", 1.5);
+    ModelDescription desc = rbf.describe();
+    expect(desc.params.size() == 2, "RBF describe has two params");
+    expect(desc.params[0].path == "lengthscale", "RBF describe path lengthscale");
+    expectNear(desc.params[0].value, 2.0, tol, "RBF describe lengthscale value");
+    expect(desc.params[1].path == "variance", "RBF describe path variance");
+    expectNear(desc.params[1].value, 1.5, tol, "RBF describe variance value");
+    std::ostringstream oss;
+    rbf.display(oss);
+    const string text = oss.str();
+    // CIP-001E Paramz-style table prints bare paths (no "lengthscale:" labels).
+    expect(text.find("lengthscale") != string::npos, "RBF display contains lengthscale");
+    expect(text.find("variance") != string::npos, "RBF display contains variance");
+    expect(text.find("Parameters:") != string::npos, "RBF display has Parameters header");
   }
 
   if(failures)

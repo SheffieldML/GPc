@@ -2,6 +2,7 @@
 #define CGP_H
 #include "CMltools.h"
 #include "CInducing.h"
+#include "CModelDescription.h"
 
 using namespace std;
 
@@ -138,7 +139,9 @@ public:
   virtual void pointLogLikelihood(const CMatrix& y, const CMatrix& X) const;
   void optimise(unsigned int iters=1000);
   bool equals(const CGp& model, double tol=ndlutil::MATCHTOL) const;
+  ModelDescription describe() const;
   void display(ostream& os) const;
+  virtual std::string progressSnapshot(const OptimiserEvent& event) const;
   
   virtual unsigned int getOptNumParams() const;
   virtual void getOptParams(CMatrix& param) const;

@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001E"
 last_updated: "2026-11-18"
-status: "Accepted"
+status: "Implemented"
 compressed: false
 related_requirements: ["000F", "0008", "000E"]
 related_cips: ["0014", "001D", "0010"]
@@ -26,19 +26,17 @@ title: "Interceptable optimiser events and structured model display"
 
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] In Progress - Actively being implemented (worktree `cip001E-interceptable-display`)
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
 ## Backlog
 
-Backlog tasks are created on the implementation worktree (`cip001E-interceptable-display`):
-
-- Phase A — optimiser observer + migrate prints
-- Phase B — model description + migrate display
-- Phase C — CIP-001D live progress + repr bindings
+- [Phase A — optimiser observer](../backlog/features/2026-11-18_cip001E-phase-a-optimiser-observer.md) (High, Completed)
+- [Phase B — model description](../backlog/features/2026-11-18_cip001E-phase-b-model-description.md) (High, Completed)
+- [Phase C — Python progress + repr](../backlog/features/2026-11-18_cip001E-phase-c-python-progress-repr.md) (High, Completed; also CIP-001D B2)
 
 ## Summary
 
@@ -184,10 +182,10 @@ print(m)
 
 ## Implementation Status
 
-- [ ] Phase A: OptimiserEvent + observer; migrate optimiser prints; testOptimisable event collection; docs/optimisers.md note
-- [ ] Phase B: ModelDescription + text formatter; migrate display; fix CGp stream bug; description/display tests
-- [ ] Phase C: CIP-001D binds messages/callback and __str__/__repr__ (tracked also on CIP-001D)
-- [ ] Close: REQ-000F acceptance criteria checked; compress into docs (optimisers + display/param-paths pointer)
+- [x] Phase A: OptimiserEvent + observer; migrate optimiser prints; testOptimisable event collection; docs/optimisers.md note
+- [x] Phase B: ModelDescription + text formatter; migrate display; fix CGp stream bug; description/display tests
+- [x] Phase C: CIP-001D binds messages/callback and __str__/__repr__ (tracked also on CIP-001D)
+- [ ] Close: REQ-000F acceptance criteria checked; compress into docs (optimisers + display/param-paths pointer); mark Implemented → Closed after review
 
 ## References
 

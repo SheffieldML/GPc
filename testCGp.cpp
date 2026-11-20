@@ -202,10 +202,11 @@ int testOptimiseSmoke()
   toy.model->optimise(5);
   const double ll1 = toy.model->logLikelihood();
   fail += failTrue(ll1 >= ll0 - 1e-8, "optimise did not worsen LL");
-  // Verbosity branches in optimise/display (verbosity>2 prints + checkGradients).
-  ToyGp toyV(CGp::FTC, 0, 3);
-  toyV.model->setVerbosity(3);
+  // Verbosity>3 still runs checkGradients; live progress is in-place table (v>0).
+  ToyGp toyV(CGp::FTC, 0, 4);
+  toyV.model->setVerbosity(4);
   toyV.model->setDefaultOptimiser(CGp::SCG);
+  toyV.model->setDefaultTextProgress(false); // keep test output quiet
   toyV.model->optimise(2);
   ostringstream os;
   ToyGp toyD(CGp::DTC, M_ACTIVE, 3);
@@ -979,6 +980,44 @@ int testModelPaths()
   {
     cout << "setByPath scale OOB throws Error." << endl;
   }
+  // CIP-001E: describe/display writes only to the provided stream.
+  {
+    ToyGp dispToy(CGp::FTC);
+    dispToy.model->setByPath("rbf.lengthscale", 1.5);
+    std::ostringstream oss;
+    dispToy.model->display(oss);
+    const string text = oss.str();
+    fail += failTrue(text.find("GP regression") != string::npos,
+                     "CGp display title on ostream");
+    fail += failTrue(text.find("Name :") != string::npos,
+                     "CGp display paramz Name header");
+    fail += failTrue(text.find("kern.rbf.lengthscale") != string::npos,
+                     "CGp display includes GPy path");
+    fail += failTrue(text.find("Parameters:") != string::npos,
+                     "CGp display Parameters section");
+    ModelDescription desc = dispToy.model->describe();
+    fail += failTrue(desc.params.size() >= 2, "CGp describe has params");
+  }
+  // In-place progress snapshot uses the same paramz table (forced, non-TTY sink).
+  {
+    ToyGp progToy(CGp::FTC);
+    progToy.model->setVerbosity(2);
+    progToy.model->setDefaultTextProgress(true);
+    progToy.model->setInPlaceProgress(0);
+    progToy.model->setDefaultOptimiser(CGp::SCG);
+    std::ostringstream sink;
+    progToy.model->setOptimiserProgressStream(&sink);
+    progToy.model->optimise(3);
+    const string text = sink.str();
+    fail += failTrue(text.find("Iteration:") == string::npos,
+                     "CGp progress has no Iteration: lines");
+    fail += failTrue(text.find("Name : GP regression") != string::npos,
+                     "CGp progress includes paramz table");
+    fail += failTrue(text.find("kern.rbf.lengthscale") != string::npos,
+                     "CGp progress includes kernel path");
+    progToy.model->setOptimiserProgressStream(&cout);
+  }
+
   toy.model->clearFixes(); // hits scaleParamFixed clear loop while learnt
   toy.model->setOutputScaleLearnt(false);
 

@@ -462,14 +462,40 @@ void CComponentKern::constrainNone(const string& path)
   syncTransformsFromComponents();
 }
 
+ModelDescription CKern::describe() const
+{
+  ModelDescription desc;
+  desc.title = getName() + " kernel:";
+  const vector<string> paths = paramPaths();
+  // Flat storage index -> transform type (e.g. exp, sigmoid).
+  vector<string> transformByIndex(getNumParams());
+  for(unsigned int t = 0; t < getNumTransforms(); t++)
+  {
+    const unsigned int idx = getTransformIndex(t);
+    if(idx < transformByIndex.size())
+      transformByIndex[idx] = getTransformType(t);
+  }
+  for(unsigned int i = 0; i < paths.size(); i++)
+  {
+    ParamRow row(paths[i], getByPath(paths[i]));
+    try
+    {
+      const unsigned int idx = paramIndex(paths[i]);
+      if(idx < transformByIndex.size())
+        row.transform = transformByIndex[idx];
+    }
+    catch(...)
+    {
+      // leave transform empty if path resolution fails
+    }
+    desc.params.push_back(row);
+  }
+  return desc;
+}
+
 ostream& CKern::display(ostream& os) const
 {
-  os << getName() << " kernel:" << endl;
-  for(unsigned int i=0; i<nParams; i++)
-  {
-    os << getParamName(i) << ": " << getParam(i) << endl;
-  }
-  return os;
+  return formatModelDescription(describe(), os);
 }
 
 void CKern::writeParamsToStream(ostream& out) const

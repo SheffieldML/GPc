@@ -9,16 +9,22 @@ GPy-shaped entry points::
     k = gpc.kern.RBF(1)  # CIP-0027: Bias/White opt-in; noise is likelihood.variance
     m = gpc.models.GPRegression(X, Y, kernel=k)
 
-String-kernel constructors remain available for the default signal+bias+white
-compound (``gpc.GPRegression(X, Y)`` / ``kernel='rbf'``).
+String-kernel constructors remain available for the CIP-0027 signal-only
+default (``gpc.GPRegression(X, Y)`` / ``kernel='rbf'``; noise is
+``likelihood.variance``).
 """
 
 from __future__ import annotations
 
 from . import kern, models
+from ._display import OptimiserTableProgress, format_model_description
 from ._gpc import (
     GpcError,
     Matrix,
+    ModelDescription,
+    OptimiserEvent,
+    OptimiserPhase,
+    ParamRow,
     matrix_from_numpy,
     matrix_to_numpy,
 )
@@ -29,6 +35,12 @@ __all__ = [
     "SparseGPRegression",
     "Matrix",
     "GpcError",
+    "OptimiserEvent",
+    "OptimiserPhase",
+    "ModelDescription",
+    "ParamRow",
+    "format_model_description",
+    "OptimiserTableProgress",
     "matrix_from_numpy",
     "matrix_to_numpy",
     "kern",

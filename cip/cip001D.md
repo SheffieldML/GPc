@@ -232,13 +232,13 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 
 - [x] Phase A: package scaffold + NumPy/`CMatrix` bridge
 - [x] Phase B: FTC `GPRegression` + kernels + paths + side-by-side doc + pytest vs native
-- [x] Phase B2: **Deferred** — blocked on [CIP-001E](./cip001E.md) C++ landing; not a close blocker for REQ-000E’s first subset. Bind `messages`/`callback` + `__str__`/`__repr__` when 001E is Implemented.
+- [x] Phase B2: CIP-001E `messages`/`callback` + `__str__`/`__repr__` (+ optional HTML) — supplied with [CIP-001E](./cip001E.md)
 - [x] Phase C: sparse DTCVAR façade + pytest (`fitc` / `dtc` also exposed; DTCVAR default)
 - [x] Phase D: subset checklist, negative tests, README install notes
 - [x] Phase E: example notebooks + optional `gpc[plot]`/`gpc[examples]` (pods external)
 - [x] Phase F: MLP / arc-cosine string kernels + notebooks
 - [x] GPy-form API: `gpc.kern` / `gpc.models` / compound `+` / `kernel=` object (string defaults retained)
-- [x] Close: REQ-000E façade acceptance for first subset checked (compound-kernel recipe + side-by-side). Interactive `help()` / docstring richness → [CIP-002F](./cip002F.md). Binary wheels → [CIP-002C](./cip002C.md). Compress markdown into repo `docs/` when convenient (`compressed: false` until then).
+- [x] Close: REQ-000E façade acceptance for first subset checked (compound-kernel recipe + side-by-side). Interactive `help()` / docstring richness → [CIP-002F](./cip002F.md). Binary wheels → [CIP-002C](./cip002C.md).
 
 ## References
 

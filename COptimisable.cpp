@@ -1,10 +1,203 @@
+// Windows headers before project headers: rpcndr.h defines `byte`, and several
+// GPc headers use `using namespace std`, which makes `byte` ambiguous with
+// std::byte if windows.h is included afterwards. NOMINMAX stops min/max macros
+// from breaking free-function max(...) calls (e.g. SCG convergence).
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <io.h>
+#define GPC_ISATTY _isatty
+#define GPC_FILENO _fileno
+#else
+#include <unistd.h>
+#define GPC_ISATTY isatty
+#define GPC_FILENO fileno
+#endif
+
 #include "COptimisable.h"
+#include <cstdio>
+#include <sstream>
 
 const double COptimisable::phi=1.618033988749895;
 const double COptimisable::cphi=-0.6180339887498949;
 const double COptimisable::smallNum=1e-11;
 
+OptimiserEvent COptimisable::makeOptimiserEvent(OptimiserPhase phase,
+                                                int optimiserId,
+                                                double objectiveVal,
+                                                double stepOrScale,
+                                                const std::string& message) const
+{
+  OptimiserEvent e;
+  e.phase = phase;
+  e.optimiser = optimiserId;
+  e.iter = static_cast<int>(iter);
+  e.funcEval = static_cast<int>(funcEval);
+  e.objective = objectiveVal;
+  e.stepOrScale = stepOrScale;
+  e.message = message;
+  return e;
+}
 
+const char* COptimisable::optimiserName(int optimiserId)
+{
+  switch(optimiserId)
+  {
+  case CG: return "cg";
+  case SCG: return "scg";
+  case GD: return "gd";
+  case BFGS: return "bfgs";
+  case LBFGS: return "lbfgs";
+  default: return "optimiser";
+  }
+}
+
+bool COptimisable::shouldUseInPlaceProgress() const
+{
+  if(inPlaceProgressMode == 0)
+    return false;
+  if(inPlaceProgressMode > 0)
+    return true;
+  if(!progressStream)
+    return false;
+  if(progressStream != &std::cout && progressStream != &std::cerr)
+    return false;
+  FILE* fp = (progressStream == &std::cerr) ? stderr : stdout;
+#ifdef _WIN32
+  HANDLE h = GetStdHandle((progressStream == &std::cerr) ? STD_ERROR_HANDLE
+                                                         : STD_OUTPUT_HANDLE);
+  if(h != INVALID_HANDLE_VALUE)
+  {
+    DWORD mode = 0;
+    if(GetConsoleMode(h, &mode))
+      SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+  }
+#endif
+  return GPC_ISATTY(GPC_FILENO(fp)) != 0;
+}
+
+std::string COptimisable::buildProgressBlock(const OptimiserEvent& event) const
+{
+  std::ostringstream status;
+  status << "Running " << optimiserName(event.optimiser)
+         << " · iter " << event.iter;
+  if(std::isfinite(event.objective))
+    status << " · objective " << event.objective;
+  if(std::isfinite(event.stepOrScale))
+    status << " · scale " << event.stepOrScale;
+  status << '\n';
+
+  std::string block = status.str();
+  const std::string snap = progressSnapshot(event);
+  if(!snap.empty())
+    block += snap;
+  if(!snap.empty() && snap[snap.size() - 1] != '\n')
+    block += '\n';
+
+  switch(event.phase)
+  {
+  case OptimiserPhase::MaxIters:
+    block += "Warning: Maximum number of iterations has been exceeded\n";
+    break;
+  case OptimiserPhase::Converged:
+    if(!event.message.empty())
+      block += event.message + "\n";
+    else
+      block += "Optimization converged.\n";
+    break;
+  case OptimiserPhase::Failed:
+    if(!event.message.empty())
+      block += event.message + "\n";
+    else
+      block += "Optimization failed.\n";
+    break;
+  default:
+    break;
+  }
+  return block;
+}
+
+void COptimisable::writeOptimiserLogLine(const OptimiserEvent& event) const
+{
+  if(!logStream)
+    return;
+  std::ostream& out = *logStream;
+  const char* phase = "Iter";
+  switch(event.phase)
+  {
+  case OptimiserPhase::Start: phase = "Start"; break;
+  case OptimiserPhase::Iter: phase = "Iter"; break;
+  case OptimiserPhase::Converged: phase = "Converged"; break;
+  case OptimiserPhase::MaxIters: phase = "MaxIters"; break;
+  case OptimiserPhase::Failed: phase = "Failed"; break;
+  }
+  out << phase << '\t' << optimiserName(event.optimiser)
+      << '\t' << event.iter
+      << '\t' << event.objective;
+  if(std::isfinite(event.stepOrScale))
+    out << '\t' << event.stepOrScale;
+  if(!event.message.empty())
+    out << '\t' << event.message;
+  out << endl;
+}
+
+void COptimisable::writeDefaultOptimiserText(const OptimiserEvent& event) const
+{
+  writeOptimiserLogLine(event);
+
+  if(!progressStream || getVerbosity() <= 0)
+    return;
+
+  std::ostream& out = *progressStream;
+  const bool inPlace = shouldUseInPlaceProgress();
+  const bool terminal =
+      event.phase == OptimiserPhase::Converged
+      || event.phase == OptimiserPhase::MaxIters
+      || event.phase == OptimiserPhase::Failed;
+
+  // Non-TTY (pipes, logs, test sinks): avoid Iteration spam — Start + terminal only.
+  if(!inPlace && event.phase == OptimiserPhase::Iter)
+    return;
+
+  const std::string block = buildProgressBlock(event);
+  if(inPlace)
+  {
+    if(progressLinesPrinted > 0)
+      out << "\033[" << progressLinesPrinted << "A\r";
+    out << block;
+    out << "\033[J" << std::flush;
+    progressLinesPrinted = 0;
+    for(size_t i = 0; i < block.size(); ++i)
+    {
+      if(block[i] == '\n')
+        ++progressLinesPrinted;
+    }
+    if(terminal)
+    {
+      out << '\n' << std::flush;
+      progressLinesPrinted = 0;
+    }
+  }
+  else
+  {
+    out << block << std::flush;
+  }
+}
+
+void COptimisable::notifyOptimiserEvent(const OptimiserEvent& event) const
+{
+  if(defaultTextProgress)
+    writeDefaultOptimiserText(event);
+  else
+    writeOptimiserLogLine(event);
+  for(size_t i = 0; i < optimiserObservers.size(); ++i)
+    optimiserObservers[i](event);
+}
 
 void COptimisable::checkGradients()
 {
@@ -45,10 +238,9 @@ void COptimisable::checkGradients()
 
 void COptimisable::gdOptimise()
 {
-  if(getVerbosity()>2)
-  {
-    cout << "Gradient Descent Optimisation." << endl;
-  }
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Start, GD, 0.0,
+                                          std::numeric_limits<double>::quiet_NaN(),
+                                          "Gradient Descent Optimisation."));
   int nParams = getOptNumParams();
   double objectiveVal = 0.0;
   double oldObjective = 0.0;
@@ -83,32 +275,32 @@ void COptimisable::gdOptimise()
 	  objectiveVal = computeObjectiveVal();
 	  diffObjective = fabs(objectiveVal-oldObjective);
 	}
-      if(getVerbosity()>2)
-	{
-	  cout << "Iteration: " << iter << ", objective function: " << objectiveVal << endl;
-	}
+      notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, GD, objectiveVal));
       diffParam = params.maxAbsDiff(oldParams);
       if(diffObjective<objectiveTol && diffParam<parameterTol)
 	{
-	  cout << "Param difference: " << diffParam << endl;
-	  cout << "Objective difference: " << diffObjective << endl;
-	  cout << "Converged .." << endl;
+	  std::ostringstream msg;
+	  msg << "Param difference: " << diffParam << "\n"
+	      << "Objective difference: " << diffObjective << "\n"
+	      << "Converged ..";
+	  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Converged, GD, objectiveVal,
+	                                          std::numeric_limits<double>::quiet_NaN(),
+	                                          msg.str()));
 	  break;
 	}
       
     } 
-  cout << "Parameters: " << endl;
-  cout << params << endl;
-  /*       if(iter>=getMaxIters()) */
-  /* 	cout << "Maximum iterations exceed in gdOptimise(), objective change, " << diffObjective << ", parameter change, " << diffParam << endl; */
+  if(getVerbosity()>2 && progressStream)
+  {
+    *progressStream << "Parameters: " << endl;
+    *progressStream << params << endl;
+  }
 }
 void COptimisable::gdPullbackOptimise()
 {
-  if(getVerbosity()>2)
-  {
-    cout << "Gradient Descent with pullback Optimisation." << endl;
-  }
-
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Start, GD, 0.0,
+                                          std::numeric_limits<double>::quiet_NaN(),
+                                          "Gradient Descent with pullback Optimisation."));
 
   int nParams = getOptNumParams();
   double objectiveVal = 0.0;
@@ -139,8 +331,8 @@ void COptimisable::gdPullbackOptimise()
 	learnRate = learnRate/2;
 	objectiveVal=oldObjective;
 	setOptParams(params);
-	if(getVerbosity()>2)
-	  cout << "Back tracking, learning rate: " << learnRate << endl;
+	if(getVerbosity()>2 && progressStream)
+	  *progressStream << "Back tracking, learning rate: " << learnRate << endl;
       }
       else
       {
@@ -148,24 +340,26 @@ void COptimisable::gdPullbackOptimise()
 	break;
       }
     }
-    if(getVerbosity()>2)
-    {
-      cout << "Iteration: " << iter << ", objective function: " << objectiveVal << endl;
-    }
+    notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, GD, objectiveVal));
     diffParam = params.maxAbsDiff(oldParams);
     if(diffObjective<objectiveTol && diffParam<parameterTol)
     {
-      cout << "Param difference: " << diffParam << endl;
-      cout << "Objective difference: " << diffObjective << endl;
-      cout << "Converged .." << endl;
+      std::ostringstream msg;
+      msg << "Param difference: " << diffParam << "\n"
+          << "Objective difference: " << diffObjective << "\n"
+          << "Converged ..";
+      notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Converged, GD, objectiveVal,
+                                              std::numeric_limits<double>::quiet_NaN(),
+                                              msg.str()));
       break;
     }
     
   } 
-  cout << "Parameters: " << endl;
-  cout << params << endl;
-  /*       if(iter>=getMaxIters()) */
-  /* 	cout << "Maximum iterations exceed in gdOptimise(), objective change, " << diffObjective << ", parameter change, " << diffParam << endl; */
+  if(getVerbosity()>2 && progressStream)
+  {
+    *progressStream << "Parameters: " << endl;
+    *progressStream << params << endl;
+  }
 }
 double COptimisable::oneDObjectiveVal(const double val)
 {
@@ -184,10 +378,9 @@ double COptimisable::oneDObjectiveVal(const double val)
 }
 void COptimisable::lbfgsOptimise()
 {
-  if(getVerbosity()>2)
-  {
-    cout << "Limited Memory BFGS Optimisation." << endl;
-  }
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Start, BFGS, 0.0,
+                                          std::numeric_limits<double>::quiet_NaN(),
+                                          "Limited Memory BFGS Optimisation."));
   int nParams = getOptNumParams();
   int iflag = 0;
   int memSize = 10;
@@ -223,7 +416,9 @@ void COptimisable::lbfgsOptimise()
     {
       if(iflag==-1)
       {
-	cout << "Warning: lbfgsOptimise: linesearch failed." << endl;
+	notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Failed, BFGS, f,
+	                                        std::numeric_limits<double>::quiet_NaN(),
+	                                        "Warning: lbfgsOptimise: linesearch failed."));
 	break;
       }
       else if(iflag == -2)
@@ -243,6 +438,7 @@ void COptimisable::lbfgsOptimise()
     {
       X.fromArray(&Xvals[0]);
       setOptParams(X);
+      notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Converged, BFGS, f));
       break;
     }
     else if(iflag==1)
@@ -250,16 +446,21 @@ void COptimisable::lbfgsOptimise()
       X.fromArray(&Xvals[0]);
       setOptParams(X);
       iter++;
+      notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, BFGS, f));
       // GPy-aligned budget: stop on algorithm steps or function evaluations.
       if(iter >= budget || funcEval >= budget)
       {
-	if(getVerbosity()>1)
+	std::string msg;
+	if(iter >= budget)
+	  msg = "Warning: Maximum number of iterations has been exceeded";
+	if(funcEval >= budget)
 	{
-	  if(iter >= budget)
-	    cout << "Warning: Maximum number of iterations has been exceeded" << endl;
-	  if(funcEval >= budget)
-	    cout << "Warning: Maximum number of function evaluations has been exceeded" << endl;
+	  if(!msg.empty()) msg += "\n";
+	  msg += "Warning: Maximum number of function evaluations has been exceeded";
 	}
+	notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::MaxIters, BFGS, f,
+	                                        std::numeric_limits<double>::quiet_NaN(),
+	                                        msg));
 	break;
       }
     }
@@ -272,10 +473,9 @@ void COptimisable::lbfgsOptimise()
 void COptimisable::scgOptimise()
 {
   // taken from the paper by Martin Moller: "A scaled conjugate gradient algorithm for fast supervised learning".
-  if(getVerbosity()>2)
-  {
-    cout << "Scaled Conjugate Gradient Optimisation." << endl;
-  }
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Start, SCG, 0.0,
+                                          std::numeric_limits<double>::quiet_NaN(),
+                                          "Scaled Conjugate Gradient Optimisation."));
   int nParams = getOptNumParams();
   //double objectiveVal = 0.0;
   //double oldObjective = 0.0;
@@ -406,26 +606,25 @@ void COptimisable::scgOptimise()
     if(Delta < 0.25) lambda *= 4.0;
     
     // 9 Check for convergence       
-    if(getVerbosity()>2)
-      cout << "Iteration: " << iter << " Error: " << oldObj << " Scale: " << lambda << endl;
-    if (success && fabs(p.max()*alpha) < getParamTol() && max(fabs(newObj-oldObj)) < getObjectiveTol())
+    notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, SCG, oldObj, lambda));
+    // Parenthesise (max) so a Windows max macro cannot eat the call.
+    if (success && fabs(p.max()*alpha) < getParamTol() && (max)(fabs(newObj-oldObj)) < getObjectiveTol())
       {
-	if(getVerbosity()>2)
-	{
-	  cout << "Convergence criterion for parameters and objective met" << endl;
-	  cout << "Largest tolerance " << fabs(newObj - oldObj) << endl;
-	}
+	std::ostringstream msg;
+	msg << "Convergence criterion for parameters and objective met\n"
+	    << "Largest tolerance " << fabs(newObj - oldObj);
+	notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Converged, SCG, oldObj, lambda, msg.str()));
 	return;
       }
   }
-  cout << "Warning: Maximum number of iterations has been exceeded" << endl;
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::MaxIters, SCG, oldObj, lambda,
+                                          "Warning: Maximum number of iterations has been exceeded"));
 }
 void COptimisable::cgOptimise()
 {
-  if(getVerbosity()>2)
-  {
-    cout << "Conjugate Gradient Optimisation." << endl;
-  }
+  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Start, CG, 0.0,
+                                          std::numeric_limits<double>::quiet_NaN(),
+                                          "Conjugate Gradient Optimisation."));
   
   // a C++ translation of Carl Rasmussen's minimize function
   int nParams = getOptNumParams();
@@ -543,7 +742,9 @@ void COptimisable::cgOptimise()
 	}
 	if(!success) // if any of these errors have occured, pull back and retry.
 	{
-	  cout << "Pulling back by half." << endl;
+	  notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Failed, CG, f0,
+	                                          std::numeric_limits<double>::quiet_NaN(),
+	                                          "Pulling back by half."));
 	  x3 = (x2 + x3)/2; 
 	}
       }
@@ -615,8 +816,7 @@ void COptimisable::cgOptimise()
       X.deepCopy(wPlus);
       f0 = f3;
       fX.push_back(f0);
-      if(getVerbosity()>2)
-        cout << "Iteration: " << iter << " Error: " << f0  << endl;
+      notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::Iter, CG, f0));
       // Polack-Ribiere CG direction.
       s.scale((df3.norm2Row(0) - df0.dotRowRow(0, df3, 0))/df0.norm2Row(0));
       s.axpy(df3, -1.0); 
@@ -654,13 +854,15 @@ void COptimisable::cgOptimise()
   }
   if(isIterTerminate() && iter >= getMaxIters())
   {
-    // max iters exceeded.
-    cout << "cgOptimise: Warning: Maximum number of iterations has been exceeded" << endl;
+    notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::MaxIters, CG, f0,
+                                            std::numeric_limits<double>::quiet_NaN(),
+                                            "cgOptimise: Warning: Maximum number of iterations has been exceeded"));
   }
   if(isFuncEvalTerminate() && funcEval >= getMaxFuncEvals())
   {
-    // max func evaluations exceeded.
-    cout << "cgOptimise: Warning: Maximum number of function evalutaions has been exceeded" << endl;
+    notifyOptimiserEvent(makeOptimiserEvent(OptimiserPhase::MaxIters, CG, f0,
+                                            std::numeric_limits<double>::quiet_NaN(),
+                                            "cgOptimise: Warning: Maximum number of function evalutaions has been exceeded"));
   }
   
 }

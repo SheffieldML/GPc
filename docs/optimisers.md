@@ -33,8 +33,23 @@ Making SCG treat `-#` as function evaluations is easy mechanically (`funcEval` +
 
 If a hard **function-evaluation** cap is needed for SCG later, expose it explicitly (e.g. enable `setFuncEvalTerminate(true)` / `setMaxFuncEvals`) rather than overloading `-#`.
 
+## Progress observers (CIP-001E)
+
+Optimiser drivers emit typed `OptimiserEvent` values at **outer-iteration** and terminal boundaries via `notifyOptimiserEvent`. Callers can register `addOptimiserObserver(...)`.
+
+**Live display** (when `setDefaultTextProgress(true)` and verbosity > 0):
+
+- On a TTY (`stdout`/`stderr`), the default observer **rewrites a paramz-style model table in place** (ANSI cursor-up; Windows enables virtual terminal processing). `CGp` supplies the table via `progressSnapshot()` / `describe()`.
+- On non-TTY sinks (pipes, files, test stringstreams), only **Start** and **terminal** frames are printed — no scrolling `Iteration:` spam.
+- Force behaviour with `setInPlaceProgress(-1|0|1)` (auto / off / on).
+
+**Durable log** (optional): `setOptimiserLogStream(&os)` appends one tab-separated line per event (`phase`, optimiser, iter, objective, …), independent of the live redraw. Use this when you need a record; keep the console for in-place display.
+
+Events are **not** fired from inside `computeObjectiveVal` / `computeObjectiveGradParams`. Verbosity 0 keeps the live path silent (the log stream still records if set). Python `messages=` / `callback=` (CIP-001D Phase B2) bind the same observer and own their own in-place renderer.
+
 ## Related
 
 - Implementation: `COptimisable::{scgOptimise,lbfgsOptimise,cgOptimise,gdOptimise}`
 - Fortran: `ndlfortran.f` `SUBROUTINE LBFGS` (Nocedal)
 - GPy entry: `GPy.core.GP.optimize` → `paramz.optimization.opt_lbfgsb` / `opt_SCG`
+- CIP-001E / REQ-000F

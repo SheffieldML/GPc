@@ -2,9 +2,9 @@
 author: "Neil Lawrence"
 created: "2026-11-17"
 id: "001A"
-last_updated: "2026-11-17"
+last_updated: "2026-11-20"
 status: "Closed"
-compressed: false
+compressed: true
 related_requirements: ["0002"]
 related_cips: ["0019", "0013"]
 tags:

@@ -4,7 +4,7 @@ created: "2026-11-18"
 id: "001D"
 last_updated: "2026-11-20"
 status: "Closed"
-compressed: false
+compressed: true
 related_requirements: ["000E", "0008", "0005", "0009", "000F"]
 related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E", "0028", "002F"]
 tags:

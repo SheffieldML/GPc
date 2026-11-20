@@ -86,6 +86,10 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // (i.e. kern(X_row_i,X_row_i) should always be taken from the same matrix X.
   // Not to imply that I understand why we need X and X2 in getGradX, really.
   virtual void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const=0;
+  // CIP-002D follow-up: accumulate ∂L/∂Z for point inducing from cotangents
+  // gKuu (M×M) and gKuf (M×N). Default loops getGradX; RBF/Lin override with GEMM.
+  virtual void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuu, const CMatrix& gKuf) const;
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -682,6 +686,8 @@ class CCmpndKern: public CComponentKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
+  void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuu, const CMatrix& gKuf) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double psi0(const CMatrix& mu, const CMatrix& S) const;
@@ -993,6 +999,8 @@ class CRbfKern: public CStationaryKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuu, const CMatrix& gKuf) const;
   double getWhite() const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
@@ -1283,6 +1291,8 @@ class CLinKern: public CKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
+  void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuu, const CMatrix& gKuf) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;
@@ -1330,6 +1340,10 @@ class CMlpKern: public CKern {
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;
+  // CIP-002D follow-up: gemm inner products + element-wise asin map.
+  void compute(CMatrix& K, const CMatrix& X) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;

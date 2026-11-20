@@ -99,7 +99,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testDiagGradParams
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testDiagGradParams testInducingGradZ
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -108,7 +108,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testMrd is CIP-0018.
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -118,6 +118,7 @@ run-matio-tests: matio-tests
 	./testNoise
 	./testKern
 	./testDiagGradParams
+	./testInducingGradZ
 	./testMatrix
 	./testOptimisable
 	./testParamPaths
@@ -259,6 +260,13 @@ testDiagGradParams: testDiagGradParams.o CMatrix.o ndlfortran.o CKern.o CTransfo
 
 testDiagGradParams.o: testDiagGradParams.cpp CKern.h CDist.h CTransform.h CMatrix.h
 	$(CC) -c testDiagGradParams.cpp -o testDiagGradParams.o $(CCFLAGS)
+
+# CIP-002D follow-up: batched inducingGradZ + MLP bulk compute.
+testInducingGradZ: testInducingGradZ.o CInducing.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testInducingGradZ testInducingGradZ.o CInducing.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS)
+
+testInducingGradZ.o: testInducingGradZ.cpp CKern.h CInducing.h CMatrix.h
+	$(CC) -c testInducingGradZ.cpp -o testInducingGradZ.o $(CCFLAGS)
 
 # CIP-0017 Phase 1: psi statistics (MC + finite differences).
 testPsi: testPsi.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o

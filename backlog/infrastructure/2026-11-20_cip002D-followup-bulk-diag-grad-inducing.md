@@ -1,7 +1,7 @@
 ---
 id: "2026-11-20_cip002D-followup-bulk-diag-grad-inducing"
 title: "CIP-002D follow-up: bulk diag gradients, inducing ∂Z batching, MLP bulk path"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-20"
 last_updated: "2026-11-20"
@@ -34,8 +34,8 @@ Post-merge re-measurement of CIP-002D on `main` (2026-11-20) confirmed the Phase
 - [x] Bulk `getDiagGradParams` (or equivalent) removes the per-point \(1\times1\) loop; stationary kernels use the closed form
 - [x] `regularise=true` applies the prior once, not \(N\) times (regression test)
 - [x] Allocation gate: `CMatrix::totalAlloc` per sparse evaluation is \(O(1)\) in \(N\) (or a documented small constant), pinned by a test or `benchGPc` check
-- [ ] Inducing \(\partial Z\) uses a batched `getGradX` / GEMM-friendly path (no per-inducing `getGradX` in the hot loop)
-- [ ] MLP (and CIP-0028 directional/weight-space features as applicable) have a bulk path exercised by existing or new tests
+- [x] Inducing \(\partial Z\) uses a batched `getGradX` / GEMM-friendly path (no per-inducing `getGradX` in the hot loop)
+- [x] MLP (and CIP-0028 directional/weight-space features as applicable) have a bulk path exercised by existing or new tests
 - [ ] Likelihoods unchanged to printed / `MATCHTOL` digits on the CIP-002D timing cases; suites green under `CHECKS=full` and `RELEASE=1`
 
 ## Implementation Notes
@@ -70,4 +70,10 @@ Bulk `getDiagGradParams` landed on branch `cip002D-bulk-diag-grad`:
 - `regularise` applied once; pinned by `testDiagGradParams`
 - Alloc pin: compound rbf+bias+white reports `totalAlloc=3` at both \(N=128\) and \(N=2048\)
 
-Items 2–3 (inducing \(\partial Z\), MLP bulk) still open.
+### 2026-11-20 (items 2–3)
+
+- `CKern::inducingGradZ` with RBF/Lin GEMM overrides; `CCmpndKern` sums components; wired from `CInducingPoints::gradFromKuuKuf`
+- `CMlpKern::compute` bulk: `syrk`/`gemm` + asin map (element oracle retained)
+- Pinned by `testInducingGradZ` (bulk vs per-inducing `getGradX`; MLP compute vs `computeElement`; inducing wire)
+
+CIP-002D timing re-measure / `RELEASE=1` soak remains the last open acceptance tick.

@@ -12,6 +12,7 @@
 #define CKERN_H
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -558,16 +559,24 @@ class CComponentKern : public CKern
   CComponentKern() : CKern() {}
   CComponentKern(unsigned int inDim) : CKern(inDim) {}
   CComponentKern(const CMatrix& X) : CKern(X) {}
-  CComponentKern(const CComponentKern& kern) : CKern(kern), components(kern.components) {}
+  // Components are unique_ptr-owned; shallow copy would share ownership incorrectly.
+  CComponentKern(const CComponentKern&) = delete;
+  CComponentKern& operator=(const CComponentKern&) = delete;
+  // Clone the argument into an owned component (caller retains kern).
   virtual unsigned int addKern(const CKern* kern)
   {
-    components.push_back(kern->clone());
+    return addKern(std::unique_ptr<CKern>(kern->clone()));
+  }
+  // Take ownership of kern (no clone). Prefer for factories that allocate.
+  virtual unsigned int addKern(std::unique_ptr<CKern> kern)
+  {
     unsigned int oldNParams = nParams;
     nParams+=kern->getNumParams();
     for(size_t i=0; i<kern->getNumTransforms(); i++)
-      addTransform(kern->getTransform(i), kern->getTransformIndex(i)+oldNParams);      
+      addTransform(kern->getTransform(i), kern->getTransformIndex(i)+oldNParams);
     setStationary(isStationary() && kern->isStationary());
-    return components.size()-1;
+    components.push_back(std::move(kern));
+    return static_cast<unsigned int>(components.size()-1);
   }
   virtual void setParam(double val, unsigned int paramNo)
   {
@@ -647,8 +656,8 @@ class CComponentKern : public CKern
   virtual void extractParamFromMxArray(const mxArray* matlabArray); 
 #endif
  protected:
-  // this is a heterogeneous container.
-  vector<CKern*> components;
+  // Heterogeneous owned components (CIP-000A).
+  vector<std::unique_ptr<CKern> > components;
   
 };
 // Compound Kernel --- This kernel combines other kernels additively together.
@@ -657,7 +666,7 @@ class CCmpndKern: public CComponentKern {
   CCmpndKern();
   CCmpndKern(unsigned int inDim);
   CCmpndKern(const CMatrix& X);
-  ~CCmpndKern();
+  ~CCmpndKern() = default;
   CCmpndKern(const CCmpndKern&);
   CCmpndKern* clone() const
   {
@@ -747,7 +756,7 @@ class CTensorKern: public CComponentKern {
   CTensorKern();
   CTensorKern(unsigned int inDim);
   CTensorKern(const CMatrix& X);
-  ~CTensorKern();
+  ~CTensorKern() = default;
   CTensorKern(const CTensorKern&);
   CTensorKern* clone() const
   {
@@ -783,6 +792,7 @@ class CTensorKern: public CComponentKern {
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   unsigned int addKern(const CKern* kern);
+  unsigned int addKern(std::unique_ptr<CKern> kern);
 private:
   void _init();
 };

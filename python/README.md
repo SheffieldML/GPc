@@ -101,19 +101,23 @@ np.testing.assert_allclose(m.to_numpy(), X)
 
 ## FTC `GPRegression`
 
+GPy-shaped form (preferred for porting):
+
 ```python
 import numpy as np
 import gpc
 
 X = np.linspace(0, 1, 20)[:, None]
 Y = np.sin(2 * np.pi * X) + 0.05 * np.random.randn(20, 1)
-m = gpc.GPRegression(X, Y)
+
+k = gpc.kern.RBF(1) + gpc.kern.Bias(1) + gpc.kern.White(1)
+m = gpc.models.GPRegression(X, Y, kernel=k)
 m.set_by_path("rbf.lengthscale", 0.2)
 m.optimize(iters=50)
 mu, var = m.predict(X)
 ```
 
-Default kernel is compound RBF + bias + white. Prefer **noisy** observations: noiseless \(Y\) drives `white.variance` → 0. `objective()` is **−log-likelihood** (SCG minimises it).
+Shorthand (string kernel still builds signal + bias + white): `gpc.GPRegression(X, Y)` or `kernel="rbf"` / `"eq"` / `"mlp"` / `"arccos"`. Prefer **noisy** observations: noiseless \(Y\) drives `white.variance` → 0. `objective()` is **−log-likelihood** (SCG minimises it).
 
 - GPy porting fragment: [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md)
 - Tutorial map: [`docs/subset_checklist.md`](docs/subset_checklist.md)

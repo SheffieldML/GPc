@@ -1,10 +1,10 @@
 ---
 id: "000F"
 title: "Callers can intercept optimiser progress and render structured model descriptions"
-status: "Implemented"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-20"
 related_tenets: ["compose-through-interfaces", "ecosystem-interoperability", "flexibility-with-performance", "assert-and-verify"]
 stakeholders: ["maintainers", "modellers", "GPy users", "teachers"]
 tags: ["optimiser", "display", "observer", "paramz", "api", "python", "notebook"]
@@ -24,19 +24,19 @@ The Python façade ([REQ-000E](./req000E_gpy-facing-python-facade.md)) may attac
 
 ## Acceptance Criteria
 
-- [ ] Optimiser drivers expose typed progress events at outer-iteration and terminal boundaries (not inside objective/gradient evaluation, kernel `compute`, or BLAS)
-- [ ] Callers can register an observer / callback for those events; with no observer (or verbosity/messages off), runs produce no progress traffic
-- [ ] Default text progress reproduces today’s useful CLI lines (iteration, objective, and driver-specific scale/step where already shown) via a default observer, not hard-coded `cout` scattered as the only path
-- [ ] Models (at least GP, kernel, noise used by the CLI) expose a structured description built from GPy-canonical paths/units consistent with [REQ-0008](./req0008_gpy-like-parameter-access.md), plus documented header fields (model class, approx, sizes, optimiser name, log-likelihood when cheap/safe)
-- [ ] Text display (`display(ostream&)`, CLI `display`) is a formatter over that description and writes only to the provided stream (no mixed `cout` leakage)
-- [ ] `.model` / stream I/O field names and semantics are unchanged
-- [ ] Automated checks cover: event fields on a tiny optimisable; structured description paths/values for a known kernel/GP; text formatter smoke (or golden) against a fixture; silent run with observers off
-- [ ] The Python façade ([REQ-000E](./req000E_gpy-facing-python-facade.md)) can: attach a live outer-iteration callback (and/or `messages=` text), and render the description via `__str__` / `__repr__`; optional `_repr_html_` is allowed but not required for first close of this requirement’s C++ core
-- [ ] Non-goals are explicit: full GPy/`paramz` `Parameterized` tree; regex parameter indexing; tied-parameter UI; changing optimiser budget semantics ([docs/optimisers.md](../docs/optimisers.md)); putting Python or HTML assembly inside objective/gradient evaluation
+- [x] Optimiser drivers expose typed progress events at outer-iteration and terminal boundaries (not inside objective/gradient evaluation, kernel `compute`, or BLAS)
+- [x] Callers can register an observer / callback for those events; with no observer (or verbosity/messages off), runs produce no progress traffic
+- [x] Default text progress reproduces today’s useful CLI lines (iteration, objective, and driver-specific scale/step where already shown) via a default observer, not hard-coded `cout` scattered as the only path
+- [x] Models (at least GP, kernel, noise used by the CLI) expose a structured description built from GPy-canonical paths/units consistent with [REQ-0008](./req0008_gpy-like-parameter-access.md), plus documented header fields (model class, approx, sizes, optimiser name, log-likelihood when cheap/safe)
+- [x] Text display (`display(ostream&)`, CLI `display`) is a formatter over that description and writes only to the provided stream (no mixed `cout` leakage)
+- [x] `.model` / stream I/O field names and semantics are unchanged
+- [x] Automated checks cover: event fields on a tiny optimisable; structured description paths/values for a known kernel/GP; text formatter smoke (or golden) against a fixture; silent run with observers off
+- [x] The Python façade ([REQ-000E](./req000E_gpy-facing-python-facade.md)) can: attach a live outer-iteration callback (and/or `messages=` text), and render the description via `__str__` / `__repr__`; optional `_repr_html_` is allowed but not required for first close of this requirement’s C++ core
+- [x] Non-goals are explicit: full GPy/`paramz` `Parameterized` tree; regex parameter indexing; tied-parameter UI; changing optimiser budget semantics ([docs/optimisers.md](../docs/optimisers.md)); putting Python or HTML assembly inside objective/gradient evaluation
 
 ## Notes (Optional)
 
-HOW is [CIP-001E](../cip/cip001E.md) (Implemented). Extends [REQ-0008](./req0008_gpy-like-parameter-access.md) for display paths/units and feeds [REQ-000E](./req000E_gpy-facing-python-facade.md) / [CIP-001D](../cip/cip001D.md) for live progress and rich repr. Orthogonal to [REQ-000A](./req000A_shared-model-interchange.md) (file interchange ≠ live display).
+HOW is [CIP-001E](../cip/cip001E.md) (**Closed**). Extends [REQ-0008](./req0008_gpy-like-parameter-access.md) for display paths/units and feeds [REQ-000E](./req000E_gpy-facing-python-facade.md) / [CIP-001D](../cip/cip001D.md) for live progress and rich repr. Orthogonal to [REQ-000A](./req000A_shared-model-interchange.md) (file interchange ≠ live display).
 
 ## References
 
@@ -53,3 +53,6 @@ CIP-001E Accepted; requirement moved to Ready pending backlog + implementation o
 
 ### 2026-11-18 (implemented)
 CIP-001E Phases A–C landed on `cip001E-interceptable-display`: C++ observer + ModelDescription, Python `messages`/`callback` and `__str__`. Requirement → Implemented; await Close after review.
+
+### 2026-11-20 (validated)
+CIP-001E Closed on `main` via #109 + #110. Acceptance criteria checked against landed surfaces (observer, ModelDescription, CLI default text, Python façade). Requirement → Validated. Formal doc compression deferred with the CIP.

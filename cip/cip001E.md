@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001E"
-last_updated: "2026-11-18"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["000F", "0008", "000E"]
 related_cips: ["0014", "001D", "0010"]
@@ -28,7 +28,7 @@ title: "Interceptable optimiser events and structured model display"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented (worktree `cip001E-interceptable-display`)
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
@@ -185,7 +185,8 @@ print(m)
 - [x] Phase A: OptimiserEvent + observer; migrate optimiser prints; testOptimisable event collection; docs/optimisers.md note
 - [x] Phase B: ModelDescription + text formatter; migrate display; fix CGp stream bug; description/display tests
 - [x] Phase C: CIP-001D binds messages/callback and __str__/__repr__ (tracked also on CIP-001D)
-- [ ] Close: REQ-000F acceptance criteria checked; compress into docs (optimisers + display/param-paths pointer); mark Implemented → Closed after review
+- [x] Verified on `main`: #109 + CLI progress follow-up #110 (SCG non-TTY + SVI Adam in-place); REQ-000F → Validated
+- [ ] Compress into docs (optimisers + display/param-paths pointer) — deferred (`compressed: false`)
 
 ## References
 

@@ -1,7 +1,7 @@
 ---
 id: "0014"
 title: "Gaussian observation noise lives on the likelihood; no default White or Bias"
-status: "Proposed"
+status: "In Progress"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-20"
@@ -58,3 +58,6 @@ Write-up: White-in-\(K\) ≢ scaled probit; `computeElement` always 0 for White 
 
 ### 2026-11-20 (architecture amendment)
 Canonical path becomes `likelihood.variance` with `Gaussian_noise.variance` as GPy1 alias; CIP-0027 Phase 0 adds batched likelihood API (no new state); `CNoise` data/site strip deferred to follow-on CIP.
+
+### 2026-11-20 (CIP accepted)
+CIP-0027 Accepted; requirement moved to In Progress on branch `cip0027-likelihood-owned-noise`.

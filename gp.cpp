@@ -194,9 +194,11 @@ void CClgp::learn()
         incrementArgument(); 
         if(kernelTypes.size()==0)
           exitError("Inverse width specification must come after covariance function type is specified.");
-        if(kernelTypes[kernelTypes.size()-1]!="rbf" && kernelTypes[kernelTypes.size()-1]!="eq"
-           && kernelTypes[kernelTypes.size()-1]!="exp" && kernelTypes[kernelTypes.size()-1]!="ratquad")
-          exitError("Inverse width parameter only valid for RBF/EQ, exponential and rational quadratic covariance function.");
+        const string& kt = kernelTypes[kernelTypes.size()-1];
+        if(kt!="rbf" && kt!="rbfard" && kt!="eq" && kt!="exp" && kt!="ratquad" && kt!="ratquadard"
+           && kt!="matern32" && kt!="matern52" && kt!="matern32ard" && kt!="matern52ard"
+           && kt!="stdperiodic" && kt!="cosine")
+          exitError("Inverse width / lengthscale (-g) only valid for RBF/EQ/exp/ratquad/Matérn/stdperiodic/cosine (and ARD variants).");
         rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if (isCurrentArg("-d", "--degree")) {
@@ -304,8 +306,8 @@ void CClgp::learn()
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
     }
-    else if(kernelTypes[i]=="rbf") {
-      if(selectInputs[i])
+    else if(kernelTypes[i]=="rbf" || kernelTypes[i]=="rbfard") {
+      if(selectInputs[i] || kernelTypes[i]=="rbfard")
         kernels.push_back(new CRbfardKern(*M));
       else
         kernels.push_back(new CRbfKern(*M));
@@ -333,15 +335,67 @@ void CClgp::learn()
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
 	}
-    else if(kernelTypes[i]=="ratquad") {
-      if(selectInputs[i])
-        exitError("Rational quadratic covariance function not available with input selection yet.");
+    else if(kernelTypes[i]=="ratquad" || kernelTypes[i]=="ratquadard") {
+      if(selectInputs[i] || kernelTypes[i]=="ratquadard")
+        kernels.push_back(new CRatQuadardKern(*M));
       else
         kernels.push_back(new CRatQuadKern(*M));
       if(ratQuadAlphas[i]!=-1.0)
         kernels[i]->setByPath("power", ratQuadAlphas[i]);
 	  if(rbfInvWidths[i]!=-1.0)
         kernels[i]->setByPath("lengthscale", 1/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="matern32" || kernelTypes[i]=="matern32ard") {
+      if(selectInputs[i] || kernelTypes[i]=="matern32ard")
+        kernels.push_back(new CMatern32ardKern(*M));
+      else
+        kernels.push_back(new CMatern32Kern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="matern52" || kernelTypes[i]=="matern52ard") {
+      if(selectInputs[i] || kernelTypes[i]=="matern52ard")
+        kernels.push_back(new CMatern52ardKern(*M));
+      else
+        kernels.push_back(new CMatern52Kern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="stdperiodic") {
+      if(selectInputs[i])
+        exitError("stdperiodic does not map to ARD via -i.");
+      kernels.push_back(new CStdPeriodicKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="cosine") {
+      if(selectInputs[i])
+        exitError("cosine does not map to ARD via -i.");
+      kernels.push_back(new CCosineKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="brownian") {
+      if(selectInputs[i])
+        exitError("brownian does not map to ARD via -i.");
+      kernels.push_back(new CBrownianKern(*M));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="ibrownian" || kernelTypes[i]=="integratedbrownian") {
+      if(selectInputs[i])
+        exitError("ibrownian does not map to ARD via -i.");
+      kernels.push_back(new CIntegratedBrownianKern(*M));
       if(variances[i]!=-1.0)
         kernels[i]->setByPath("variance", variances[i]);
     }
@@ -1086,16 +1140,16 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad lengthscale-first; use -P ExpQuad.lengthscale=…), exp, ratquad, mlp, arccos (CIP-0028; default rbf only — CIP-0027: Bias/White are opt-in via -k bias / -k white; FTC observation noise is likelihood.variance). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-0029): ibrownian; (CIP-000D): coregionalize, indexwhite; plus ard/tensor/cmpnd.");
+    helpArgument("-k, --kernel string", "Covariance type (repeatable compound). Learn path: lin, poly, rbf, rbfard, eq/ExpQuad, exp, ratquad, ratquadard, matern32, matern52, matern32ard, matern52ard, stdperiodic, cosine, brownian, ibrownian, mlp, arccos (CIP-0028). Default: rbf only (CIP-0027: Bias/White opt-in via -k bias / -k white; FTC noise is likelihood.variance). Multi-output ICM/LCM + indexwhite: API demo (docs/tutorials/coregionalization_toy.md), not -k. Prefer -A dtcvar over FITC for sparse tutorials.");
     helpArgument("--allow-white-and-noise", "CIP-0027 Phase C: allow trainable White and free likelihood.variance together on FTC. Default refuses dual free noise (legacy -k white fixes likelihood.variance).");
     helpArgument("--arccos-order int", "Arc-cosine order 0 (angular / infinite-MLP) or 1 (ReLU). Only with -k arccos. Default 0.");
-    helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
-    helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");
+    helpArgument("-g, --gamma float", "Lengthscale control: sets inverseWidth for RBF/EQ/exp, or lengthscale=1/sqrt(2γ) for ratquad/Matérn/stdperiodic/cosine (and ARD variants). Prefer -P …lengthscale=… when matching GPy.");
+    helpArgument("-@, --alpha float", "Alpha / power parameter for rational quadratic (prefer -P RatQuad.power=…).");
     helpArgument("-v, --variance float", "Variance parameter for covariance function.");
     helpArgument("-w, --weight float", "Weight parameter for polynomial and MLP covariance function.");
     helpArgument("-b, --bias float", "Bias parameter for polynomial and MLP covariance function.");
     helpArgument("-d, --degree int", "Degree parameter for polynomial covariance function.");
-    helpArgument("-P, --set path=value", "Also listed under learn: GPy-style path set after model construction (rbf.variance, lengthscale, beta, scale.j).");
+    helpArgument("-P, --set path=value", "Also listed under learn: GPy-style path set after model construction (rbf.variance, Mat32.lengthscale, ExpQuad.lengthscale, beta, scale.j).");
   }    
   else if(command=="display") {
     helpHeader();

@@ -20,9 +20,23 @@ Train error stayed high on this short budget (classification is hard with M=50 a
 2. **Drop auto Bias on IVM.** RBF+White matches status quo LL and nearly matches the active set (Jaccard 0.92); kernel Bias is redundant with probit bias. Explicit `-k bias` remains available.
 3. **Trainable probit \(\sigma^2\) spike:** not run in this pass; still deferred to the follow-on likelihood / inference CIP (`ivm_softener.md` Option B).
 
+## Longer-budget confirmation (2026-11-20)
+
+Protocol: M=80, `optimise(4, 50, 15)`, same seed. Gated in `./testIvmSoftener`.
+
+| Config | Jaccard vs (1) | |LL − LL₍₁₎| |
+|--------|----------------|---------------|
+| RBF only | ≈ 0.09 | ≈ 3.7 |
+| RBF + White | 1.00 | ≈ 5×10⁻⁴ |
+
+Selection divergence sharpens with budget; RBF+White remains interchangeable with status quo. Crescent labelled (N=37) is too easy for softener discrimination (all configs perfect) — unitsquare stays the gate.
+
+Additional unit gates in `testIvmSoftener`: `getWhite()` matches `white.variance`; probit σ² fixed at 10⁻⁶ after optimise; White changes `selectPoints` vs RBF-only; stream round-trip preserves active set (full `equals` still blocked by stream omitting `inactiveSet`).
+
 ## Reproduce
 
 ```sh
-make diagIvmSoftener
-./diagIvmSoftener
+make diagIvmSoftener && ./diagIvmSoftener
+make testIvmSoftener && ./testIvmSoftener
 ```
+

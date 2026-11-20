@@ -4,7 +4,7 @@ title: "CIP-0028: Python gpc weight-space API + illustrative notebook"
 status: "Completed"
 priority: "High"
 created: "2026-11-19"
-last_updated: "2026-11-19"
+last_updated: "2026-11-20"
 category: "features"
 related_cips: ["0028", "001D"]
 owner: "Neil Lawrence"
@@ -61,3 +61,6 @@ Task created (Proposed) for a follow-on after the CIP-0028 C++ PR; tracked on ma
 
 ### 2026-11-19 (later)
 Moved to In Progress on `cip001D-phase-f-mlp-weightspace` with CIP-001D Phase F (`kernel="mlp"` / `"arccos"` on FTC). Extends `SparseGPRegression` with `inducing="weightspace"`, `window_width`, and `weightspace_ridge_1d.ipynb`.
+
+### 2026-11-20
+Completed on main with CIP-001D close; CIP-0028 Closed.

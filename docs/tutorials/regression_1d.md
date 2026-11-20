@@ -27,6 +27,8 @@ gnuplot sinc_plot.gp
 
 Explicit prior Bias/White remain available: `-k rbf -k bias -k white`. With `-k white`, the CLI fixes `likelihood.variance` (legacy White-owned noise). To train both, pass `--allow-white-and-noise` (CIP-0027 Phase C).
 
+Other learn-path kernels (CIP-0015 Phase D): `-k matern32`, `-k matern52`, `-k eq`, `-k stdperiodic`, … — see `gp learn --help` and [compound_paths](./compound_paths.md).
+
 Legacy SVM-light still works: `examples/sinc.svml` (CIP-0022).
 
 ## API demo (optional)

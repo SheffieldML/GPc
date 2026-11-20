@@ -277,6 +277,9 @@ int main(int argc, char** argv)
     return 2;
   }
   model->setVerbosity(0);
+  // CIP-0027 Phase C: bench compounds include White as observation noise.
+  if(kind == "ftc")
+    model->fixLikelihoodVariance(true);
   if(kind != "ftc")
   {
     model->setActiveSet(Xu);

@@ -24,6 +24,7 @@ def test_kern_add_flattens():
 
 
 def test_gp_regression_with_kern_object():
+    """Explicit White in kern object uses legacy White-owned noise (CIP-0027)."""
     X, Y = _toy()
     k = gpc.kern.RBF(1, lengthscale=0.5, variance=1.0) + gpc.kern.Bias(1, variance=0.1) + gpc.kern.White(
         1, variance=0.05

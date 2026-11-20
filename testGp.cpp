@@ -93,6 +93,8 @@ int testCacheInvalidation()
     noise.setBiasVal(0.0, i);
 
   CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+  // CIP-0027 Phase C: White owns observation noise on this fixture path.
+  model.fixLikelihoodVariance(true);
   model.setBetaVal(1.0);
 
   const double ll0 = model.logLikelihood();
@@ -155,6 +157,9 @@ int testGaussian(string type)
   }
   
   CGp modelInit(&kernInit, &noiseInit, &X, approxType, numActive, 2);
+  // CIP-0027 Phase C: FTC fixtures use White; fix likelihood.variance (legacy).
+  if(approxType == CGp::FTC)
+    modelInit.fixLikelihoodVariance(true);
   modelInit.setScale(scale);
   modelInit.setBias(bias);
 
@@ -261,6 +266,8 @@ int testGaussian(string type)
   for(int i=0; i<noiseReload.getOutputDim(); i++)
     noiseReload.setBiasVal(0.0, i);
   CGp modelReload(&kernReload, &noiseReload, &X, approxType, numActive, 2);
+  if(approxType == CGp::FTC)
+    modelReload.fixLikelihoodVariance(true);
   modelReload.setScale(scale);
   modelReload.setBias(bias);
   model.toFile("crap_gp");

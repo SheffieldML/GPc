@@ -538,6 +538,12 @@ static void testCoregFactorySmoke()
   CCmpndKern* k = createCoregionalizedKern(spatial, 2, 1, true);
   expect(k->getNumKerns()==2, "coreg kern ICM+indexwhite");
   expect(k->getInputDim()==2, "coreg kern inputDim q+1");
+  // Nested ICM+indexwhite: `tensor` is a child label, not an own-type prefix.
+  k->setByPath("tensor.rbf.lengthscale", 1.5);
+  expect(fabs(k->getByPath("tensor.rbf.lengthscale") - 1.5) < 1e-12,
+         "nested tensor.rbf.lengthscale path");
+  expect(fabs(k->getByPath("indexwhite.variance_0") - 0.1) < 1e-12,
+         "indexwhite.variance_0 path");
   delete k;
 
   CCoregionalizedRegression model(Xs, Ys, spatial, 1, true, 0);
@@ -546,6 +552,10 @@ static void testCoregFactorySmoke()
   expect(model.getSlices().size()==2, "factory slices");
   const double L = model.getModel().logLikelihood();
   expect(!(std::isnan(L) || std::isinf(L)), "factory ELBO finite");
+  // describe()/display must resolve nested kern.* paths (verbosity>=1 SCG).
+  model.getModel().describe();
+  model.getModel().optimise(3);
+  expect(!(std::isnan(model.getModel().computeObjectiveVal())), "factory optimise finite");
   CMatrix mu(2, 1);
   CMatrix var(2, 1);
   CMatrix Xstar(2, 2);

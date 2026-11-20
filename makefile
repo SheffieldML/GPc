@@ -30,8 +30,8 @@ benchGPc: bench/benchGPc.o CGp.o CSvgp.o CInducing.o CCholAdjoint.o CLQAdjoint.o
 bench/benchGPc.o: bench/benchGPc.cpp CGp.h CSvgp.h CKern.h CNoise.h
 	$(CC) -c bench/benchGPc.cpp -o bench/benchGPc.o $(CCFLAGS)
 
-# CIP-0015 Stage 1 API demos (docs/tutorials/)
-demos: demo_regression_1d demo_sparse_dtcvar demo_bayes_gplvm demo_mrd
+# CIP-0015 API demos (docs/tutorials/) — Stage 1 + Phase B
+demos: demo_regression_1d demo_sparse_dtcvar demo_compound_paths demo_coregionalization_toy demo_bayes_gplvm demo_mrd
 
 demo_regression_1d: demo_regression_1d.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o demo_regression_1d demo_regression_1d.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
@@ -44,6 +44,18 @@ demo_sparse_dtcvar: demo_sparse_dtcvar.o CClctrl.o CGp.o CInducing.o CCholAdjoin
 
 demo_sparse_dtcvar.o: examples/demo_sparse_dtcvar.cpp CGp.h CKern.h CNoise.h CClctrl.h
 	$(CC) -c examples/demo_sparse_dtcvar.cpp -o demo_sparse_dtcvar.o $(CCFLAGS)
+
+demo_compound_paths: demo_compound_paths.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_compound_paths demo_compound_paths.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+
+demo_compound_paths.o: examples/demo_compound_paths.cpp CGp.h CKern.h CNoise.h CClctrl.h
+	$(CC) -c examples/demo_compound_paths.cpp -o demo_compound_paths.o $(CCFLAGS)
+
+demo_coregionalization_toy: demo_coregionalization_toy.o CMultioutput.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o demo_coregionalization_toy demo_coregionalization_toy.o CMultioutput.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+
+demo_coregionalization_toy.o: examples/demo_coregionalization_toy.cpp CMultioutput.h CGp.h CKern.h CNoise.h
+	$(CC) -c examples/demo_coregionalization_toy.cpp -o demo_coregionalization_toy.o $(CCFLAGS)
 
 # CIP-0017 Phase 2: Bayesian GP-LVM demo.
 demo_bayes_gplvm: demo_bayes_gplvm.o CBayesGplvm.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
@@ -532,7 +544,7 @@ ndlfortran.o: ndlfortran.f
 clean:
 	rm -f *.o *.gcda *.gcno *.gcov coverage.info
 	rm -f tools/*.o tools/*.gcda tools/*.gcno
-	rm -f demo_regression_1d demo_sparse_dtcvar
+	rm -f demo_regression_1d demo_sparse_dtcvar demo_compound_paths demo_coregionalization_toy
 	rm -rf coverage-html
 
 diagLqVsStable: tools/diagLqVsStable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o

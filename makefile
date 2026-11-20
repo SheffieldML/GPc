@@ -385,6 +385,13 @@ diagWeightSpaceRidge: tools/diagWeightSpaceRidge.o CGp.o CInducing.o CCholAdjoin
 tools/diagWeightSpaceRidge.o: tools/diagWeightSpaceRidge.cpp CGp.h CKern.h CNoise.h
 	$(CC) -c tools/diagWeightSpaceRidge.cpp -o tools/diagWeightSpaceRidge.o $(CCFLAGS)
 
+# CIP-0027 Phase B′: IVM White softener composition matrix (unitsquare).
+diagIvmSoftener: tools/diagIvmSoftener.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o diagIvmSoftener tools/diagIvmSoftener.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+tools/diagIvmSoftener.o: tools/diagIvmSoftener.cpp CIvm.h CKern.h CNoise.h CClctrl.h
+	$(CC) -c tools/diagIvmSoftener.cpp -o tools/diagIvmSoftener.o $(CCFLAGS)
+
 testMltools: testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testMltools  testMltools.o CMltools.o CMatrix.o ndlfortran.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CClctrl.o ndlassert.o $(LDFLAGS)
 

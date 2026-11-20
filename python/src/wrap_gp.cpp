@@ -530,7 +530,13 @@ double PySparseGPRegression::window_width() const
 
 void bind_gp(py::module_& m)
 {
-  py::class_<PyGPRegression>(m, "GPRegression")
+  py::class_<PyGPRegression>(
+      m,
+      "GPRegression",
+      "Full / FTC Gaussian process regression (CIP-001D).\n\n"
+      "Prefer gpc.models.GPRegression(X, Y, kernel=...) for GPy-shaped construction.\n"
+      "Parameters use CIP-0014 GPy-natural units via set_by_path / get_by_path.\n"
+      "Does not claim API identity with GPy.")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::object,
@@ -541,21 +547,46 @@ void bind_gp(py::module_& m)
            py::arg("kernel") = py::str("rbf"),
            py::arg("verbosity") = 0,
            py::arg("arccos_order") = 0,
-           "FTC Gaussian GP. kernel is a string name (default signal+bias+white) "
-           "or a parts list from gpc.kern compounds.")
-      .def("set_by_path", &PyGPRegression::set_by_path, py::arg("path"), py::arg("value"))
-      .def("get_by_path", &PyGPRegression::get_by_path, py::arg("path"))
-      .def("param_paths", &PyGPRegression::param_paths)
-      .def("optimize", &PyGPRegression::optimize, py::arg("iters") = 100)
-      .def("objective", &PyGPRegression::objective)
-      .def("predict", &PyGPRegression::predict, py::arg("Xtest"))
-      .def_property_readonly("n", &PyGPRegression::n)
-      .def_property_readonly("input_dim", &PyGPRegression::input_dim)
-      .def_property_readonly("output_dim", &PyGPRegression::output_dim)
-      .def_property_readonly("kernel_type", &PyGPRegression::kernel_type)
-      .def_property_readonly("approx", &PyGPRegression::approx);
+           "Construct FTC Gaussian GP.\n\n"
+           "kernel: string name ('rbf', 'eq'/'ExpQuad', 'mlp', 'arccos') builds the\n"
+           "default signal+bias+white compound, or a parts list from gpc.kern compounds.")
+      .def("set_by_path",
+           &PyGPRegression::set_by_path,
+           py::arg("path"),
+           py::arg("value"),
+           "Set a parameter by GPy-like path (e.g. 'rbf.lengthscale') in natural units.")
+      .def("get_by_path",
+           &PyGPRegression::get_by_path,
+           py::arg("path"),
+           "Get a parameter by GPy-like path in natural units.")
+      .def("param_paths",
+           &PyGPRegression::param_paths,
+           "List trainable parameter paths for this model.")
+      .def("optimize",
+           &PyGPRegression::optimize,
+           py::arg("iters") = 100,
+           "Run SCG for iters iterations (minimises -log-likelihood).")
+      .def("objective",
+           &PyGPRegression::objective,
+           "Return the SCG objective (-log-likelihood).")
+      .def("predict",
+           &PyGPRegression::predict,
+           py::arg("Xtest"),
+           "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+      .def_property_readonly("n", &PyGPRegression::n, "Number of training points.")
+      .def_property_readonly("input_dim", &PyGPRegression::input_dim, "Input dimension q.")
+      .def_property_readonly("output_dim", &PyGPRegression::output_dim, "Output dimension d.")
+      .def_property_readonly("kernel_type",
+                             &PyGPRegression::kernel_type,
+                             "Kernel label (string name or compound part summary).")
+      .def_property_readonly("approx", &PyGPRegression::approx, "Approximation type ('ftc').");
 
-  py::class_<PySparseGPRegression>(m, "SparseGPRegression")
+  py::class_<PySparseGPRegression>(
+      m,
+      "SparseGPRegression",
+      "Sparse Gaussian process regression (DTCVAR / FITC / DTC; CIP-001D).\n\n"
+      "Prefer gpc.models.SparseGPRegression(X, Y, Z, kernel=...) for GPy-shaped construction.\n"
+      "Does not claim API identity with GPy.")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
@@ -576,22 +607,54 @@ void bind_gp(py::module_& m)
            py::arg("inducing") = "points",
            py::arg("window_width") = -1.0,
            py::arg("arccos_order") = 0,
-           "Sparse Gaussian GP. kernel string or gpc.kern parts list "
-           "(parts list requires inducing='points').")
-      .def("set_by_path", &PySparseGPRegression::set_by_path, py::arg("path"), py::arg("value"))
-      .def("get_by_path", &PySparseGPRegression::get_by_path, py::arg("path"))
-      .def("param_paths", &PySparseGPRegression::param_paths)
-      .def("optimize", &PySparseGPRegression::optimize, py::arg("iters") = 100)
-      .def("objective", &PySparseGPRegression::objective)
-      .def("predict", &PySparseGPRegression::predict, py::arg("Xtest"))
-      .def("inducing_inputs", &PySparseGPRegression::inducing_inputs)
-      .def_property_readonly("n", &PySparseGPRegression::n)
-      .def_property_readonly("input_dim", &PySparseGPRegression::input_dim)
-      .def_property_readonly("output_dim", &PySparseGPRegression::output_dim)
-      .def_property_readonly("num_inducing", &PySparseGPRegression::num_inducing)
-      .def_property_readonly("approx", &PySparseGPRegression::approx)
-      .def_property_readonly("kernel_type", &PySparseGPRegression::kernel_type)
-      .def_property_readonly("inducing_type", &PySparseGPRegression::inducing_type)
-      .def_property_readonly("inducing_fixed", &PySparseGPRegression::inducing_fixed)
-      .def_property_readonly("window_width", &PySparseGPRegression::window_width);
+           "Construct sparse Gaussian GP with inducing inputs Z.\n\n"
+           "approx: 'dtcvar' (default), 'fitc', or 'dtc'.\n"
+           "kernel: string name or gpc.kern parts list (parts list needs inducing='points').\n"
+           "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).")
+      .def("set_by_path",
+           &PySparseGPRegression::set_by_path,
+           py::arg("path"),
+           py::arg("value"),
+           "Set a parameter by GPy-like path in natural units.")
+      .def("get_by_path",
+           &PySparseGPRegression::get_by_path,
+           py::arg("path"),
+           "Get a parameter by GPy-like path in natural units.")
+      .def("param_paths",
+           &PySparseGPRegression::param_paths,
+           "List trainable parameter paths for this model.")
+      .def("optimize",
+           &PySparseGPRegression::optimize,
+           py::arg("iters") = 100,
+           "Run SCG for iters iterations (minimises -log-likelihood).")
+      .def("objective",
+           &PySparseGPRegression::objective,
+           "Return the SCG objective (-log-likelihood).")
+      .def("predict",
+           &PySparseGPRegression::predict,
+           py::arg("Xtest"),
+           "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+      .def("inducing_inputs",
+           &PySparseGPRegression::inducing_inputs,
+           "Return inducing input locations Z as a NumPy array.")
+      .def_property_readonly("n", &PySparseGPRegression::n, "Number of training points.")
+      .def_property_readonly(
+          "input_dim", &PySparseGPRegression::input_dim, "Input dimension q.")
+      .def_property_readonly(
+          "output_dim", &PySparseGPRegression::output_dim, "Output dimension d.")
+      .def_property_readonly(
+          "num_inducing", &PySparseGPRegression::num_inducing, "Number of inducing points M.")
+      .def_property_readonly("approx", &PySparseGPRegression::approx, "Sparse approximation name.")
+      .def_property_readonly(
+          "kernel_type", &PySparseGPRegression::kernel_type, "Kernel label / compound summary.")
+      .def_property_readonly(
+          "inducing_type", &PySparseGPRegression::inducing_type, "'points' or 'weightspace'.")
+      .def_property_readonly(
+          "inducing_fixed",
+          &PySparseGPRegression::inducing_fixed,
+          "True if inducing inputs are held fixed during optimise.")
+      .def_property_readonly(
+          "window_width",
+          &PySparseGPRegression::window_width,
+          "Weight-space ridge window width (0 if unused).");
 }

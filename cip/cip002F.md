@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-20"
 id: "002F"
 last_updated: "2026-11-20"
-status: "Proposed"
+status: "Closed"
 compressed: false
 related_requirements: ["0017", "000E"]
 related_cips: ["001D"]
@@ -24,12 +24,16 @@ title: "Python-compatible help and docstrings for the gpc façade"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
+- [x] Implemented - Work complete, awaiting verification
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
+
+## Backlog
+
+- [Python help/docstrings](../backlog/features/2026-11-20_cip002F-python-help-docstrings.md) (High, Completed)
 
 ## Summary
 
@@ -84,10 +88,10 @@ CIP-001D closed with markdown porting guides and a GPy-shaped API (`gpc.kern`, `
 
 ## Implementation Status
 
-- [ ] Inventory + docstring pass
-- [ ] `__doc__` smoke tests
-- [ ] README pointer
-- [ ] Close after review
+- [x] Inventory + docstring pass (pybind model methods + `gpc.kern` / `gpc.models`)
+- [x] `__doc__` smoke tests (`python/tests/test_help_docstrings.py`)
+- [x] README pointer
+- [x] Close after local pytest green (`compressed: false` until formal doc compression)
 
 ## References
 

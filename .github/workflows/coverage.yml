@@ -1,10 +1,11 @@
+# CIP-002E tier 3: main push + workflow_dispatch (not every PR).
+# Overlaps Reference tests under gcov; PR correctness stays on reference-tests.yml.
 name: Coverage
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   coverage:

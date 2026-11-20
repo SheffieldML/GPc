@@ -22,11 +22,11 @@ GPc can express intrinsic/linear coregionalization for multiple outputs: a coreg
 
 ## Acceptance Criteria
 
-- [ ] A documented coregionalization covariance is available through the kernel interface and can be composed with an existing spatial kernel
-- [ ] Output index handling and parameterisation (`W`, `kappa` / B) are documented and stream-persistent
-- [ ] Reference tests cover kernel values and parameter gradients against a known-good generator (e.g. GPy)
-- [ ] At least one end-to-end path (CLI or documented API example) trains or evaluates a multi-output model using that covariance
-- [ ] Non-goals are explicit: SDE multi-output, ODE/LFM, IndependentOutputs/Hierarchical wrappers, and derivative multi-output kernels may follow in later work
+- [x] A documented coregionalization covariance is available through the kernel interface and can be composed with an existing spatial kernel
+- [x] Output index handling and parameterisation (`W`, `kappa` / B) are documented and stream-persistent
+- [x] Reference tests cover kernel values and parameter gradients against a known-good generator (e.g. GPy)
+- [x] At least one end-to-end path (CLI or documented API example) trains or evaluates a multi-output model using that covariance
+- [x] Non-goals are explicit: SDE multi-output, ODE/LFM, IndependentOutputs/Hierarchical wrappers, and derivative multi-output kernels may follow in later work
 
 ## Notes (Optional)
 
@@ -49,3 +49,6 @@ CIP-000D’s open stacking and composition choices were replaced by GPy’s `bui
 
 ### 2026-11-16
 CIP-000D implemented: `activeDims`, `coregionalize`, `indexwhite`, ICM/LCM helpers, `testCoregionalize`. Status → Implemented (validate/close after CI).
+
+### 2026-11-21
+End-to-end API demo via CIP-0015 (`demo_coregionalization_toy` / `CCoregionalizedRegression`). Acceptance criteria ticked; status remains Validated.

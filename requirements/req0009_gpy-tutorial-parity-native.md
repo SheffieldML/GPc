@@ -1,10 +1,10 @@
 ---
 id: "0009"
 title: "Users can recreate the documented GPy-tutorial subset via native C++ demos and markdown"
-status: "In Progress"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-16"
-last_updated: "2026-11-18"
+last_updated: "2026-11-21"
 related_tenets: ["ecosystem-interoperability", "compose-through-interfaces", "assert-and-verify", "flexibility-with-performance"]
 stakeholders: ["maintainers", "modellers", "teachers"]
 tags: ["gpy", "tutorials", "demos", "documentation", "multioutput"]
@@ -24,14 +24,14 @@ The first subset is the **easy and close** surface already enabled by the kernel
 
 ## Acceptance Criteria
 
-- [ ] A published checklist maps each in-scope GPy tutorial/example to a GPc demo and/or markdown section (or an explicit “not in subset” note)
-- [ ] Multi-output helpers exist so callers need not hand-stack designs: at least `build_XY` (and slice helpers comparable to GPy `get_slices` / `index_to_slices`)
-- [ ] A thin factory assembles ICM or LCM plus per-output noise (`indexwhite`) into a trainable `CGp` (or documented equivalent) without a new approximation type
-- [ ] At least one compiled demo each for: 1D full GP regression, sparse DTCVAR regression, coregionalization toy, and compound kernel with path get/set
-- [ ] Markdown tutorials invoke demos or `./gp` / related CLIs and show how to produce plots (gnuplot path is sufficient)
-- [ ] CLI exposes kernel type strings needed by those demos where the types already exist in the stream/factory (e.g. Matérn / stdperiodic), without resurrecting broken FITC as a tutorial default
-- [ ] Demos fail loudly on shape/index misuse (dimension and bound checks), consistent with project asserts
-- [ ] Non-goals are explicit: Python bindings / Jupyter as the share format (owned by [REQ-000E](./req000E_gpy-facing-python-facade.md)), EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, SVI / HMC, integral kernels, FITC-as-default sparse tutorial. Bayesian GPLVM is owned by [REQ-000B](./req000B_bayesian-gplvm-psi.md) / [CIP-0017](../cip/cip0017.md); MRD by [REQ-000C](./req000C_manifold-relevance-determination.md) / [CIP-0018](../cip/cip0018.md) — not this tutorial subset.
+- [x] A published checklist maps each in-scope GPy tutorial/example to a GPc demo and/or markdown section (or an explicit “not in subset” note)
+- [x] Multi-output helpers exist so callers need not hand-stack designs: at least `build_XY` (and slice helpers comparable to GPy `get_slices` / `index_to_slices`)
+- [x] A thin factory assembles ICM or LCM plus per-output noise (`indexwhite`) into a trainable `CGp` (or documented equivalent) without a new approximation type
+- [x] At least one compiled demo each for: 1D full GP regression, sparse DTCVAR regression, coregionalization toy, and compound kernel with path get/set
+- [x] Markdown tutorials invoke demos or `./gp` / related CLIs and show how to produce plots (gnuplot path is sufficient)
+- [x] CLI exposes kernel type strings needed by those demos where the types already exist in the stream/factory (e.g. Matérn / stdperiodic), without resurrecting broken FITC as a tutorial default
+- [x] Demos fail loudly on shape/index misuse (dimension and bound checks), consistent with project asserts
+- [x] Non-goals are explicit: Python bindings / Jupyter as the share format (owned by [REQ-000E](./req000E_gpy-facing-python-facade.md)), EP/Laplace classification in `CGp`, Poisson / Student-t / heteroscedastic / warped GPs, mean functions, SVI / HMC, integral kernels, FITC-as-default sparse tutorial. Bayesian GPLVM is owned by [REQ-000B](./req000B_bayesian-gplvm-psi.md) / [CIP-0017](../cip/cip0017.md); MRD by [REQ-000C](./req000C_manifold-relevance-determination.md) / [CIP-0018](../cip/cip0018.md) — not this tutorial subset.
 
 ## Notes (Optional)
 
@@ -52,3 +52,6 @@ CIP-0015 Accepted → In Progress. First delivery cut: redo current README/`exam
 
 ### 2026-11-18
 Python-bindings non-goal now points at [REQ-000E](./req000E_gpy-facing-python-facade.md) (Proposed) instead of an unowned “future CIP”.
+
+### 2026-11-21
+CIP-0015 Phases C/D complete: checklist in [docs/tutorials/README.md](../docs/tutorials/README.md); `gp learn -k` covers Matérn / periodic / Brownian / ARD aliases. Status → Validated.

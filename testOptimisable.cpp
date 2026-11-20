@@ -276,7 +276,8 @@ int testOptimiserEvents()
     cout << "verbosity 0 produces no default progress text." << endl;
   model.setOptimiserProgressStream(&cout);
 
-  // Non-TTY sink: no Iteration: spam; optional log stream records events.
+  // Non-TTY sink: scrolling "Running scg · iter ..." lines (not legacy Iteration:);
+  // optional log stream records events.
   {
     CQuadOptimisable m2;
     m2.setParamsTo(0.0, 0.0, 0.0);
@@ -305,6 +306,14 @@ int testOptimiserEvents()
       cout << "FAILURE: expected Running scg in progress sink." << endl;
       fail++;
     }
+    // CLI parity: verbosity > 0 must show outer Iter lines even when not a TTY.
+    if(prog.find("· iter ") == string::npos)
+    {
+      cout << "FAILURE: non-TTY progress missing · iter lines." << endl;
+      fail++;
+    }
+    else
+      cout << "non-TTY progress includes · iter lines." << endl;
     if(logText.find("Start") == string::npos || logText.find("Iter") == string::npos)
     {
       cout << "FAILURE: optimiser log stream missing Start/Iter lines." << endl;

@@ -10,6 +10,8 @@
 
 #include "CMatrix.h"
 #include <functional>
+#include <iostream>
+#include <string>
 #include <vector>
 
 struct StochasticOptimiserEvent {
@@ -43,6 +45,12 @@ class CStochasticOptimisable {
     if(progressObserver)
       progressObserver(ev);
   }
+
+  /// CIP-001E-style progress: in-place rewrite on TTY, scrolling lines otherwise.
+  /// Optional snapshot() appends a multi-line model block (e.g. display/describe).
+  void installDefaultTextProgress(std::ostream& os, int verbosity,
+                                  const std::string& optimiserName = "adam",
+                                  std::function<std::string()> snapshot = {});
 
  private:
   std::function<void(const StochasticOptimiserEvent&)> progressObserver;

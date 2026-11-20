@@ -1,4 +1,5 @@
 #include "bgplvm.h"
+#include <sstream>
 
 using namespace std;
 
@@ -437,7 +438,16 @@ void CClbgplvm::learn()
            << " batch=" << batchSize << " samples=" << numSamples
            << " iters=" << iters << endl;
     }
+    // CAdam emits StochasticOptimiserEvent; CIP-001E-style in-place rewrite on TTY
+    // (status + model display snapshot), scrolling lines when not a TTY.
+    model.installDefaultTextProgress(
+        cout, getVerbosity(), "adam", [&model]() {
+          std::ostringstream oss;
+          model.display(oss);
+          return oss.str();
+        });
     adam.maximise(model);
+    model.clearProgressObserver();
     model.toFile(modelFileName, comment);
 
     if(dumpLatent)

@@ -261,15 +261,21 @@ public:
     BOUNDCHECK(j<beta.getCols());
     beta.setVal(val, i, j);
     setADupToDate(false);
+    if(isGaussianNoise())
+      syncLikelihoodVarianceFromSparseBeta();
   }
   void setBetaVals(double val) {
     beta.setVals(val);
     setADupToDate(false);
+    if(isGaussianNoise())
+      syncLikelihoodVarianceFromSparseBeta();
   }
   void setBeta(const CMatrix& bet) {
     DIMENSIONMATCH(bet.dimensionsMatch(beta));
     beta.deepCopy(bet);
     setADupToDate(false);
+    if(isGaussianNoise())
+      syncLikelihoodVarianceFromSparseBeta();
   }
   int getApproximationType() const {
     return approximationType;

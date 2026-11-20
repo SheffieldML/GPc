@@ -26,9 +26,10 @@ def GPRegression(
         Training inputs/outputs (NumPy arrays).
     kernel
         String name (``'rbf'``, ``'eq'`` / ``'ExpQuad'``, ``'mlp'``, ``'arccos'``)
-        for the default signal+bias+white compound, or a ``gpc.kern`` object /
-        compound (built exactly as specified — add ``White`` / ``Bias`` yourself
-        for GPy-style recipes).
+        for the default signal-only kernel (CIP-0027: no auto ``Bias``/``White``;
+        observation noise is ``likelihood.variance``), or a ``gpc.kern`` object /
+        compound built exactly as specified (add ``White`` / ``Bias`` yourself if
+        wanted).
     """
     spec = kern_mod.normalize_kernel_arg(kernel)
     if isinstance(spec, str):

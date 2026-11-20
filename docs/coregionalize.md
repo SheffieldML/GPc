@@ -46,6 +46,14 @@ stampOutputIndex(Xstar, /* output */ 0);
 model.getModel().posteriorMeanVar(mu, var, Xstar);
 ```
 
+## Demo
+
+```bash
+make demo_coregionalization_toy && ./demo_coregionalization_toy
+```
+
+Tutorial: [docs/tutorials/coregionalization_toy.md](./tutorials/coregionalization_toy.md).
+
 ## Checks
 
 ```bash

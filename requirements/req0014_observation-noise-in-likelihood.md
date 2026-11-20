@@ -1,7 +1,7 @@
 ---
 id: "0014"
 title: "Gaussian observation noise lives on the likelihood; no default White or Bias"
-status: "Implemented"
+status: "Validated"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-20"
@@ -64,3 +64,6 @@ CIP-0027 Accepted; requirement moved to In Progress on branch `cip0027-likelihoo
 
 ### 2026-11-20 (CIP-0027 Implemented)
 Phases 0–C landed: likelihood-owned σ², default flip, IVM White exception, Phase C harden + `testCip0027Perf` algorithm gates. Requirement → Implemented; Validated on CIP close.
+
+### 2026-11-20 (CIP-0027 Closed)
+Verified on `main` via #106 (feature) and #107 (CGp Coverage gate). Requirement → Validated.

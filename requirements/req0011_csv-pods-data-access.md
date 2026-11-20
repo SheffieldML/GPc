@@ -4,7 +4,7 @@ title: "Users can load tutorial and modelling data via CSV and pods, with SVM-li
 status: "In Progress"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-20"
 related_tenets: ["ecosystem-interoperability", "flexibility-with-performance", "assert-and-verify"]
 stakeholders: ["maintainers", "modellers", "GPy users", "CLI users"]
 tags: ["interop", "data", "csv", "pods", "svml", "tutorials", "cli"]
@@ -24,13 +24,13 @@ This requirement is about **observation matrices**, not model serialisation. Mod
 
 ## Acceptance Criteria
 
-- [ ] Native CLI / `CClctrl` (or equivalent) can load dense **CSV/TSV** into `X` and `y` with a documented layout (e.g. last column = target, or paired `*.X.csv` / `*.y.csv`)
-- [ ] File-format selection prefers CSV for new docs; SVM-light and (where compiled) MATLAB `.mat` remain selectable or auto-detected by extension
-- [ ] At least one primary tutorial dataset (e.g. sinc or olympic marathon) is available as CSV under `examples/` and documented as the preferred CLI input
-- [ ] Existing `.svml` files under `examples/` still load; README / tutorials that still cite `.svml` either keep working or are updated to CSV with a one-line SVML compatibility note
-- [ ] Python examples / notebooks that need third-party data use **`pods`** as an optional extra (`gpc[examples]` or documented `pip install pods`), not a core `gpc` dependency — consistent with [REQ-000E](./req000E_gpy-facing-python-facade.md) / CIP-001D Phase E
-- [ ] Loaders assert dimension consistency (`X` rows == `y` rows; non-empty) and raise typed file/format errors on malformed input — no silent truncation
-- [ ] Non-goals for first delivery: OpenML/Parquet as a native C++ dependency; replacing `.model` streams; putting CSV/`pods` I/O in the SCG inner loop; mandating HDF5 for tutorials (optional later via existing `_HDF5` paths)
+- [x] Native CLI / `CClctrl` (or equivalent) can load dense **CSV/TSV** into `X` and `y` with a documented layout (e.g. last column = target, or paired `*.X.csv` / `*.y.csv`)
+- [x] File-format selection prefers CSV for new docs; SVM-light and (where compiled) MATLAB `.mat` remain selectable or auto-detected by extension
+- [x] At least one primary tutorial dataset (e.g. sinc or olympic marathon) is available as CSV under `examples/` and documented as the preferred CLI input
+- [x] Existing `.svml` files under `examples/` still load; README / tutorials that still cite `.svml` either keep working or are updated to CSV with a one-line SVML compatibility note
+- [ ] Python examples / notebooks that need third-party data use **`pods`** as an optional extra (`gpc[examples]` or documented `pip install pods`), not a core `gpc` dependency — consistent with [REQ-000E](./req000E_gpy-facing-python-facade.md) / CIP-001D Phase E (backlog `2026-11-20_cip0022-pods-csv-helper`)
+- [x] Loaders assert dimension consistency (`X` rows == `y` rows; non-empty) and raise typed file/format errors on malformed input — no silent truncation
+- [x] Non-goals for first delivery: OpenML/Parquet as a native C++ dependency; replacing `.model` streams; putting CSV/`pods` I/O in the SCG inner loop; mandating HDF5 for tutorials (optional later via existing `_HDF5` paths)
 
 ## Notes (Optional)
 
@@ -48,3 +48,6 @@ Requirement created after agreeing CSV + pods as the preferred data path; SVM-li
 
 ### 2026-11-18 (implementation)
 CIP-0022 accepted and in progress on `cip0022-csv-pods-data`: `readCsvDataFile`, extension auto-detect, example CSVs, `testClctrl` parity.
+
+### 2026-11-20
+CIP-0022 → Implemented (CSV core). Remaining pods AC tracked by backlog `2026-11-20_cip0022-pods-csv-helper`; requirement stays In Progress until that lands.

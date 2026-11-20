@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001B"
-last_updated: "2026-11-18"
-status: "Accepted"
+last_updated: "2026-11-20"
+status: "Implemented"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0012", "000E", "0013", "0019", "001A"]
@@ -356,8 +356,10 @@ The same identity in the **whitened** form is \(\|A\|_F^2=\|L\|_F^2-M\); it save
 - [x] CLI mode + docs (`--sparse-linalg lq`, `docs/numerics.md`)
 - [x] Ill-conditioned \(K_{uf}K_{fu}\) gate (`testLQAdjoint`): large-\(N\) clustered \(X\), OK \(K_{uu}\); LQ logdet beats Gram+chol vs SVD
 - [x] Default promoted to LQ (`CGp` init + CLI `lq`)
-- [ ] Stress / mpmath soak on GP LL/grad for the large-\(N\) clustered cell
-- [ ] Crowded-\(Z\) remains \(K_{mm}\)-limited (LQ ≡ StableFactor there) — not the Seeger/C-side regime
+- [ ] Stress / mpmath soak on GP LL/grad for the large-\(N\) clustered cell — backlog `2026-11-20_cip001B-stress-mpmath-soak`
+- [ ] Crowded-\(Z\) remains \(K_{mm}\)-limited (LQ ≡ StableFactor there) — not the Seeger/C-side regime — same backlog
+
+**Status (2026-11-20):** frontmatter → Implemented (core LQ path shipped); close after soak backlog.
 
 **Accept notes (2026-11-18):** introduce `SparseLinalgLQ` (`--sparse-linalg lq`); GPc stores the LQ \(L\) as upper \(R=L^\top\) in `LcholC` for prediction reuse; PITC stays on the StableFactor Gram path under `lq` in v1. **Land notes:** LQ is the default sparse linalg mode; StableFactor stays available for dual-path soak.
 

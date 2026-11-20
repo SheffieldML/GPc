@@ -8,8 +8,8 @@
 
 CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Zin,
              double betaVal, int verbos)
-  : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), beta(betaVal), verbosity(verbos),
-    betaTransform(CTransform::defaultPositive()), natGradGamma(0.0)
+  : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
+    verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -20,8 +20,19 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
   nData = X->getRows();
   numInducing = Zin.getRows();
   outputDim = y->getCols();
+  pInducing = new CInducingPoints(&Z);
   updateKernelMatrices();
-  // q(u) starts at the prior: q(v) = N(0, I).
+  initVariationalPrior();
+}
+
+CSvgp::~CSvgp()
+{
+  delete pInducing;
+  delete betaTransform;
+}
+
+void CSvgp::initVariationalPrior()
+{
   qMean.resize(numInducing, outputDim);
   qMean.zeros();
   CMatrix I(numInducing, numInducing, 0.0);
@@ -30,9 +41,50 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
   qCov.assign(outputDim, I);
 }
 
-CSvgp::~CSvgp()
+void CSvgp::setInducing(CInducing* pInd)
 {
-  delete betaTransform;
+  if(pInd == 0)
+    throw ndlexceptions::Error("CSvgp::setInducing requires a non-null inducing object");
+  delete pInducing;
+  pInducing = pInd;
+  const unsigned int Mnew = pInducing->numInducing();
+  if(Mnew != numInducing)
+  {
+    numInducing = Mnew;
+    initVariationalPrior();
+  }
+  updateKernelMatrices();
+}
+
+void CSvgp::setInducingType(const string& typeName)
+{
+  if(typeName == "points")
+  {
+    setInducing(new CInducingPoints(&Z));
+  }
+  else if(typeName == "whitenoise")
+  {
+    double s0 = CInducingWhiteNoise::medianSpacing(Z);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    setInducing(new CInducingWhiteNoise(&Z, s0, false));
+  }
+  else if(typeName == "greens")
+  {
+    double s0 = CInducingWhiteNoise::medianSpacing(Z);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    setInducing(new CInducingGreens(&Z, s0, false));
+  }
+  else if(typeName == "weightspace")
+  {
+    CMatrix W;
+    const unsigned int d = getInputDim();
+    const double s0 = CInducingWeightSpace::makeRidgeInit(W, numInducing, d, 7u);
+    setInducing(new CInducingWeightSpace(W, s0, false, true));
+  }
+  else
+    throw ndlexceptions::Error("CSvgp::setInducingType: unknown type \"" + typeName + "\"");
 }
 
 void CSvgp::setBeta(double val)
@@ -47,7 +99,7 @@ void CSvgp::updateKernelMatrices()
   const unsigned int M = numInducing;
   const unsigned int N = nData;
   Kuu.resize(M, M);
-  pkern->compute(Kuu, Z);
+  pInducing->computeKuu(Kuu, *pkern);
   Kuu.setSymmetric(true);
   cholKuu.resize(M, M);
   const double jit = cholKuu.jitChol(Kuu);  // as CGp::_updateInvK: modifies Kuu on jitter
@@ -55,7 +107,7 @@ void CSvgp::updateKernelMatrices()
     cout << "Warning: jitter of " << jit << " added to K_uu in CSvgp." << endl;
 
   Kuf.resize(M, N);
-  pkern->compute(Kuf, Z, *pX);
+  pInducing->computeKuf(Kuf, *pkern, *pX);
   A.deepCopy(Kuf);
   A.trsm(cholKuu, 1.0, "L", "U", "T", "N");  // A = U^{-T} K_uf = L^{-1} K_uf
 
@@ -68,11 +120,21 @@ void CSvgp::updateKernelMatrices()
   }
 }
 
-void CSvgp::setInducing(const CMatrix& Znew)
+void CSvgp::setInducingCentres(const CMatrix& Znew)
 {
-  if(Znew.getRows() != numInducing || Znew.getCols() != Z.getCols())
-    throw ndlexceptions::Error("CSvgp::setInducing: dimension mismatch");
-  Z.deepCopy(Znew);
+  pInducing->setCentres(Znew);
+  if(pInducing->typeName() != "weightspace")
+  {
+    // Points / WN / greens share member Z via non-owned pointer.
+    if(Znew.getRows() != Z.getRows() || Znew.getCols() != Z.getCols())
+      Z.resize(Znew.getRows(), Znew.getCols());
+    Z.deepCopy(Znew);
+  }
+  if(pInducing->numInducing() != numInducing)
+  {
+    numInducing = pInducing->numInducing();
+    initVariationalPrior();
+  }
   updateKernelMatrices();
 }
 
@@ -139,6 +201,8 @@ double CSvgp::expectedLogLik(double yv, double mu, double var,
   {
     if(CProbitNoise* pn = dynamic_cast<CProbitNoise*>(pnoise))
       pn->setExpectedLogLikBias(pn->getBiasVal(j));
+    else if(COrderedNoise* on = dynamic_cast<COrderedNoise*>(pnoise))
+      on->setExpectedLogLikBias(on->getBiasVal(j));
     return pnoise->expectedLogLikelihood(yv, mu, var, gMu, gVar);
   }
   const double r = yv - mu;
@@ -165,6 +229,36 @@ bool CSvgp::isFullOrderedBatch(const vector<unsigned int>& batch) const
   return true;
 }
 
+void CSvgp::gatherXB(const vector<unsigned int>& batch, CMatrix& XB) const
+{
+  const unsigned int B = batch.size();
+  const unsigned int q = getInputDim();
+  XB.resize(B, q);
+  for(unsigned int k = 0; k < B; k++)
+  {
+    const unsigned int i = batch[k];
+    for(unsigned int d = 0; d < q; d++)
+      XB.setVal(pX->getVal(i, d), k, d);
+  }
+}
+
+void CSvgp::formABFromX(const CMatrix& XB, CMatrix& AB, CMatrix& dK,
+                        CMatrix& dQ) const
+{
+  const unsigned int M = numInducing;
+  const unsigned int B = XB.getRows();
+  AB.resize(M, B);
+  dK.resize(B, 1);
+  dQ.resize(B, 1);
+  pInducing->computeKuf(AB, *pkern, XB);
+  AB.trsm(cholKuu, 1.0, "L", "U", "T", "N");
+  for(unsigned int k = 0; k < B; k++)
+  {
+    dK.setVal(pkern->diagComputeElement(XB, k), k);
+    dQ.setVal(AB.dotColCol(k, AB, k), k);
+  }
+}
+
 void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
                    CMatrix& dK, CMatrix& dQ) const
 {
@@ -177,19 +271,8 @@ void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
   // Small minibatch: form K_uB and trsm rather than gathering from full A (CIP-002D QW6).
   if(B * 4 < nData)
   {
-    const unsigned int q = getInputDim();
-    wsXB.resize(B, q);
-    for(unsigned int k = 0; k < B; k++)
-    {
-      const unsigned int i = batch[k];
-      for(unsigned int d = 0; d < q; d++)
-        wsXB.setVal(pX->getVal(i, d), k, d);
-      dK.setVal(pkern->diagComputeElement(*pX, i), k);
-    }
-    pkern->compute(AB, Z, wsXB);
-    AB.trsm(cholKuu, 1.0, "L", "U", "T", "N");
-    for(unsigned int k = 0; k < B; k++)
-      dQ.setVal(AB.dotColCol(k, AB, k), k);
+    gatherXB(batch, wsXB);
+    formABFromX(wsXB, AB, dK, dQ);
     return;
   }
 
@@ -199,6 +282,29 @@ void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
     AB.copyColCol(k, A, i);
     dK.setVal(diagK.getVal(i), k);
     dQ.setVal(diagQ.getVal(i), k);
+  }
+}
+
+void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
+                               CMatrix& varOut) const
+{
+  const unsigned int M = numInducing;
+  const unsigned int B = XB.getRows();
+  formABFromX(XB, wsAB, wsDK, wsDQ);
+  muOut.resize(B, outputDim);
+  varOut.resize(B, outputDim);
+  muOut.gemm(wsAB, qMean, 1.0, 0.0, "t", "n");
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    wsSAB.resize(M, B);
+    wsSAB.symm(qCov[j], wsAB, 1.0, 0.0, "u", "l");
+    for(unsigned int k = 0; k < B; k++)
+    {
+      double v = wsDK.getVal(k) - wsDQ.getVal(k) + wsAB.dotColCol(k, wsSAB, k);
+      if(v < 0.0)
+        v = 0.0;
+      varOut.setVal(v, k, j);
+    }
   }
 }
 
@@ -267,22 +373,58 @@ double CSvgp::klDivergence(unsigned int j) const
   return 0.5 * (S.trace() + qMean.dotColCol(j, qMean, j) - (double)M - logDetS);
 }
 
+double CSvgp::dataTermAt(const CMatrix& XB, const vector<unsigned int>& yRows,
+                         double c) const
+{
+  if(yRows.empty() || XB.getRows() != yRows.size())
+    throw ndlexceptions::Error("CSvgp::dataTermAt: XB rows must match yRows");
+  if(!(c > 0.0))
+    throw ndlexceptions::Error("CSvgp::dataTermAt: c must be positive");
+  fillMarginalsFromX(XB, wsMu, wsVar);
+  double L = 0.0;
+  double gMu = 0.0, gVar = 0.0;
+  for(unsigned int j = 0; j < outputDim; j++)
+    for(unsigned int k = 0; k < yRows.size(); k++)
+    {
+      const unsigned int i = yRows[k];
+      L += c * expectedLogLik(py->getVal(i, j),
+                              wsMu.getVal(k, j), wsVar.getVal(k, j),
+                              gMu, gVar, j);
+    }
+  return L;
+}
+
 double CSvgp::dataTerm(const vector<unsigned int>& batch) const
 {
   if(batch.empty())
     throw ndlexceptions::Error("CSvgp: empty batch");
   const double c = (double)nData / (double)batch.size();
-  fillMarginals(batch, wsMu, wsVar);
+  // Fast path via cached A when full batch; otherwise equivalent to dataTermAt.
+  if(isFullOrderedBatch(batch))
+  {
+    fillMarginals(batch, wsMu, wsVar);
+    double L = 0.0;
+    double gMu = 0.0, gVar = 0.0;
+    for(unsigned int j = 0; j < outputDim; j++)
+      for(unsigned int k = 0; k < batch.size(); k++)
+      {
+        const unsigned int i = batch[k];
+        L += c * expectedLogLik(py->getVal(i, j),
+                                wsMu.getVal(k, j), wsVar.getVal(k, j),
+                                gMu, gVar, j);
+      }
+    return L;
+  }
+  gatherXB(batch, wsXB);
+  return dataTermAt(wsXB, batch, c);
+}
+
+double CSvgp::klPlusPrior() const
+{
   double L = 0.0;
-  double gMu = 0.0, gVar = 0.0;
   for(unsigned int j = 0; j < outputDim; j++)
-    for(unsigned int k = 0; k < batch.size(); k++)
-    {
-      const unsigned int i = batch[k];
-      L += c * expectedLogLik(py->getVal(i, j),
-                              wsMu.getVal(k, j), wsVar.getVal(k, j),
-                              gMu, gVar, j);
-    }
+    L -= klDivergence(j);
+  L += pkern->priorLogProb();
   return L;
 }
 
@@ -293,11 +435,7 @@ double CSvgp::elbo() const
 
 double CSvgp::elbo(const vector<unsigned int>& batch) const
 {
-  double L = dataTerm(batch);
-  for(unsigned int j = 0; j < outputDim; j++)
-    L -= klDivergence(j);
-  L += pkern->priorLogProb();
-  return L;
+  return dataTerm(batch) + klPlusPrior();
 }
 
 void CSvgp::naturalGradientStep(double gamma)
@@ -422,7 +560,7 @@ void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) 
   const unsigned int M = numInducing;
   const unsigned int Ns = Xs.getRows();
   CMatrix Kus(M, Ns);
-  pkern->compute(Kus, Z, Xs);
+  pInducing->computeKux(Kus, *pkern, Xs);
   CMatrix As(Kus);
   As.trsm(cholKuu, 1.0, "L", "U", "T", "N");  // L^{-1} K_us
   mu.resize(Ns, outputDim);
@@ -444,21 +582,122 @@ void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) 
 
 double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta) const
 {
-  return elboGrad(gKern, gZ, gBeta, allIndices());
+  return elboGrad(gKern, gZ, gBeta, allIndices(), 0);
+}
+
+// CIP-0030 Phase 0b: gradients at explicit inputs XB (B x q).
+double CSvgp::elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta,
+                         CMatrix* gXOrNull, const CMatrix& XB,
+                         const vector<unsigned int>& yRows, double c) const
+{
+  if(yRows.empty() || XB.getRows() != yRows.size())
+    throw ndlexceptions::Error("CSvgp::elboGradAt: XB rows must match yRows");
+  if(!(c > 0.0))
+    throw ndlexceptions::Error("CSvgp::elboGradAt: c must be positive");
+  const unsigned int M = numInducing;
+  const unsigned int B = yRows.size();
+  const unsigned int q = getInputDim();
+  const unsigned int nKern = pkern->getNumParams();
+  DIMENSIONMATCH(XB.getCols() == q);
+
+  fillMarginalsFromX(XB, wsMu, wsVar);
+  // A_B already in wsAB from fillMarginalsFromX.
+  CMatrix Abar(M, B);
+  Abar.zeros();
+  CMatrix gLambda(B, 1);
+  gLambda.zeros();
+  gBeta = 0.0;
+
+  CMatrix mj(M, 1);
+  double gMu = 0.0, gVar = 0.0;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    mj.copyColCol(0, qMean, j);
+    wsSAB.resize(M, B);
+    wsSAB.symm(qCov[j], wsAB, 1.0, 0.0, "u", "l");
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const unsigned int i = yRows[k];
+      const double yv = py->getVal(i, j);
+      const double mu = wsMu.getVal(k, j);
+      const double var = wsVar.getVal(k, j);
+      expectedLogLik(yv, mu, var, gMu, gVar, j);
+      gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
+      gLambda.addVal(c * gVar, k);
+      for(unsigned int r = 0; r < M; r++)
+      {
+        const double da = c * gMu * mj.getVal(r)
+          + 2.0 * c * gVar * (wsSAB.getVal(r, k) - wsAB.getVal(r, k));
+        Abar.setVal(Abar.getVal(r, k) + da, r, k);
+      }
+    }
+  }
+
+  CMatrix KufBar, Ubar;
+  trsmAdjointUT(KufBar, Ubar, cholKuu, wsAB, Abar);
+  CMatrix KuuBar;
+  cholAdjointUpperBlocked(KuuBar, cholKuu, Ubar);
+  for(unsigned int i = 0; i < M; i++)
+    for(unsigned int jj = 0; jj < i; jj++)
+    {
+      const double v = 0.5 * KuuBar.getVal(i, jj);
+      KuuBar.setVal(v, i, jj);
+      KuuBar.setVal(v, jj, i);
+    }
+  KuuBar.setSymmetric(true);
+
+  gKern.resize(1, nKern);
+  gKern.zeros();
+  gZ.resize(pInducing->centres().getRows(), pInducing->centres().getCols());
+  gZ.zeros();
+  const bool wantX = (gXOrNull != 0);
+  if(wantX)
+  {
+    gXOrNull->resize(B, q);
+    gXOrNull->zeros();
+  }
+  pInducing->gradFromKuuKuf(gKern, gZ, gXOrNull, *pkern, XB, KuuBar, KufBar,
+                            wantX, true);
+
+  CMatrix tempG(1, nKern);
+  pkern->getDiagGradTransParams(tempG, XB, gLambda, false);
+  for(unsigned int i = 0; i < nKern; i++)
+    gKern.addVal(tempG.getVal(i), i);
+
+  if(wantX)
+  {
+    // ∂k(x,x)/∂x contribution (zero for stationary kernels; needed for MLP).
+    CMatrix dgX(B, q);
+    pkern->getDiagGradX(dgX, XB, false);
+    for(unsigned int k = 0; k < B; k++)
+      for(unsigned int d = 0; d < q; d++)
+        gXOrNull->addVal(gLambda.getVal(k) * dgX.getVal(k, d), k, d);
+  }
+
+  gBeta *= betaTransform->gradfact(beta);
+  return dataTermAt(XB, yRows, c) + klPlusPrior();
 }
 
 // Gradients of the ELBO w.r.t. kernel params, Z and beta at fixed whitened q(v).
-// A = U^{-T} K_uf; mu = a^T m~; var = k_ii - ||a||^2 + a^T S~ a.
+// When gXOrNull is non-null, routes through elboGradAt (Phase 0b). Otherwise
+// keeps the cached full-A path for bit-stable point-inducing fixtures.
 double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
-                       const vector<unsigned int>& batch) const
+                       const vector<unsigned int>& batch,
+                       CMatrix* gXOrNull) const
 {
   if(batch.empty())
     throw ndlexceptions::Error("CSvgp: empty batch");
+  const double c = (double)nData / (double)batch.size();
+  if(gXOrNull != 0)
+  {
+    gatherXB(batch, wsXB);
+    return elboGradAt(gKern, gZ, gBeta, gXOrNull, wsXB, batch, c);
+  }
+
   const unsigned int M = numInducing;
   const unsigned int N = nData;
   const unsigned int B = batch.size();
   const unsigned int nKern = pkern->getNumParams();
-  const double c = (double)N / (double)B;
 
   fillMarginals(batch, wsMu, wsVar);
   const CMatrix* pA = &A;
@@ -516,9 +755,9 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
 
   gKern.resize(1, nKern);
   gKern.zeros();
-  // Point inducing routing (same as CGp sparse updateG).
-  CInducingPoints inducing(const_cast<CMatrix*>(&Z));
-  inducing.gradFromKuuKuf(gKern, gZ, 0, *pkern, *pX, KuuBar, KufBar, false, true);
+  gZ.resize(pInducing->centres().getRows(), pInducing->centres().getCols());
+  gZ.zeros();
+  pInducing->gradFromKuuKuf(gKern, gZ, 0, *pkern, *pX, KuuBar, KufBar, false, true);
 
   CMatrix tempG(1, nKern);
   pkern->getDiagGradTransParams(tempG, *pX, gLambda, false);
@@ -531,9 +770,102 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
   return elbo(batch);
 }
 
+void CSvgp::naturalGradientStepAt(double gamma, const CMatrix& XB,
+                                  const vector<unsigned int>& yRows, double c)
+{
+  if(!(gamma > 0.0 && gamma <= 1.0))
+    throw ndlexceptions::Error("CSvgp::naturalGradientStepAt: gamma must be in (0, 1]");
+  if(yRows.empty() || XB.getRows() != yRows.size())
+    throw ndlexceptions::Error("CSvgp::naturalGradientStepAt: XB rows must match yRows");
+  if(!(c > 0.0))
+    throw ndlexceptions::Error("CSvgp::naturalGradientStepAt: c must be positive");
+  const unsigned int M = numInducing;
+  const unsigned int B = yRows.size();
+
+  fillMarginalsFromX(XB, wsMu, wsVar);
+  const CMatrix& AB = wsAB;
+
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    CMatrix Scopy(qCov[j]);
+    Scopy.setSymmetric(true);
+    CMatrix cholS(Scopy);
+    cholS.chol();
+    CMatrix P(M, M);
+    P.setSymmetric(true);
+    P.pdinv(cholS);
+    CMatrix theta1(M, 1);
+    theta1.gemvColCol(0, P, qMean, j, 1.0, 0.0, "n");
+
+    CMatrix Pstar(M, M, 0.0);
+    Pstar.setSymmetric(true);
+    wsCoeffs.resize(B, 1);
+    CMatrix alphas(B, 1);
+    double gMu = 0.0, gVar = 0.0;
+    bool allNonNeg = true;
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const unsigned int i = yRows[k];
+      const double mu = wsMu.getVal(k, j);
+      expectedLogLik(py->getVal(i, j), mu, wsVar.getVal(k, j), gMu, gVar, j);
+      wsCoeffs.setVal(c * (gMu - 2.0 * gVar * mu), k);
+      const double alpha = -2.0 * c * gVar;
+      alphas.setVal(alpha, k);
+      if(alpha < 0.0)
+        allNonNeg = false;
+    }
+    if(allNonNeg)
+    {
+      wsABS.deepCopy(AB);
+      for(unsigned int k = 0; k < B; k++)
+        wsABS.scaleCol(k, sqrt(alphas.getVal(k)));
+      Pstar.syrk(wsABS, 1.0, 0.0, "u", "n");
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s < r; s++)
+          Pstar.setVal(Pstar.getVal(s, r), r, s);
+      Pstar.setSymmetric(true);
+      Pstar.addDiag(1.0);
+    }
+    else
+    {
+      Pstar.addDiag(1.0);
+      CMatrix a(M, 1);
+      for(unsigned int k = 0; k < B; k++)
+      {
+        a.copyColCol(0, AB, k);
+        Pstar.ger(a, a, alphas.getVal(k));
+      }
+    }
+    CMatrix theta1star(M, 1);
+    theta1star.gemv(AB, wsCoeffs, 1.0, 0.0, "n");
+
+    P.scale(1.0 - gamma);
+    P.axpy(Pstar, gamma);
+    theta1.scale(1.0 - gamma);
+    theta1.axpy(theta1star, gamma);
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int s = 0; s < r; s++)
+      {
+        const double v = 0.5 * (P.getVal(r, s) + P.getVal(s, r));
+        P.setVal(v, r, s);
+        P.setVal(v, s, r);
+      }
+    P.setSymmetric(true);
+    CMatrix cholP(P);
+    cholP.chol();
+    CMatrix Snew(M, M);
+    Snew.setSymmetric(true);
+    Snew.pdinv(cholP);
+    CMatrix mNew(M, 1);
+    mNew.gemv(Snew, theta1, 1.0, 0.0, "n");
+    qCov[j] = Snew;
+    qMean.copyColCol(j, mNew, 0);
+  }
+}
+
 unsigned int CSvgp::getOptNumParams() const
 {
-  return pkern->getNumParams() + numInducing * getInputDim() + 1;
+  return pkern->getNumParams() + pInducing->getNumParams() + 1;
 }
 
 void CSvgp::getOptParams(CMatrix& param) const
@@ -543,9 +875,8 @@ void CSvgp::getOptParams(CMatrix& param) const
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     param.setVal(pkern->getTransParam(i), counter++);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      param.setVal(Z.getVal(i, j), counter++);
+  pInducing->getParams(param, counter);
+  counter += pInducing->getNumParams();
   param.setVal(betaTransform->xtoa(beta), counter++);
 }
 
@@ -555,26 +886,39 @@ void CSvgp::setOptParams(const CMatrix& param)
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     pkern->setTransParam(param.getVal(counter++), i);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      Z.setVal(param.getVal(counter++), i, j);
+  pInducing->setParams(param, counter);
+  counter += pInducing->getNumParams();
   beta = betaTransform->atox(param.getVal(counter++));
   updateKernelMatrices();
+}
+
+void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
+                             const CMatrix& gZ) const
+{
+  // Match CInducing::getParams layout: column-major over centres(), then optional s.
+  // learnS gradient is not yet returned by gradFromKuuKuf; leave those slots 0.
+  unsigned int counter = offset;
+  const unsigned int M = gZ.getRows();
+  const unsigned int d = gZ.getCols();
+  for(unsigned int j = 0; j < d; j++)
+    for(unsigned int i = 0; i < M; i++)
+      gFlat.setVal(gZ.getVal(i, j), counter++);
+  while(counter < offset + pInducing->getNumParams())
+    gFlat.setVal(0.0, counter++);
 }
 
 double CSvgp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g)
 {
   CMatrix gKern(1, pkern->getNumParams());
-  CMatrix gZ(numInducing, getInputDim());
+  CMatrix gZ;
   double gBeta = 0.0;
   const double L = elboGrad(gKern, gZ, gBeta, batch);
   g.resize(1, getOptNumParams());
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     g.setVal(gKern.getVal(i), counter++);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      g.setVal(gZ.getVal(i, j), counter++);
+  packInducingGrad(g, counter, gZ);
+  counter += pInducing->getNumParams();
   g.setVal(gBeta, counter++);
   return L;
 }

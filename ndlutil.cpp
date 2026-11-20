@@ -445,9 +445,9 @@ namespace ndlutil {
       E += wi * g(fi, ctx);
       const double gp = gPrime(fi, ctx);
       gMu += wi * gp;
-      // ∂fi/∂var = x_i / √(2 var) = x_i / scale when scale>0
+      // f = μ + √(2 var) x_i;  ∂f/∂var = x_i / √(2 var) = x_i / scale.
       if(scale > 0.0)
-        gVar += wi * gp * (0.5 * x[i] / scale);
+        gVar += wi * gp * (x[i] / scale);
     }
     return E;
   }

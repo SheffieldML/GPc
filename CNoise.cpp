@@ -51,6 +51,86 @@ double CProbitNoise::expectedLogLikelihood(double y, double muVal, double var,
                                      &ctx, gMu, gVar);
 }
 
+namespace {
+struct OrderedEllCtx {
+  int targ;
+  double bias;
+  double sigma2;
+  unsigned int numCats;
+  const CMatrix* widths;
+};
+// log p(y|f) for ordered categorical (observation noise sigma2; thresholds via widths).
+double orderedLogLik(double f, void* vctx)
+{
+  const OrderedEllCtx* c = static_cast<const OrderedEllCtx*>(vctx);
+  if(isnan((double)c->targ))
+    return 0.0;
+  const double s = 1.0 / sqrt(c->sigma2);
+  double muAdj = f + c->bias;
+  if(c->targ == 0)
+    return ndlutil::lnCumGaussian(-muAdj * s);
+  if(c->targ > 0 && (unsigned int)c->targ < c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    const double u = muAdj * s;
+    const double uprime = (muAdj - c->widths->getVal(0, (unsigned int)c->targ - 1)) * s;
+    return ndlutil::lnDiffCumGaussian(u, uprime);
+  }
+  if((unsigned int)c->targ == c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    return ndlutil::lnCumGaussian(muAdj * s);
+  }
+  throw ndlexceptions::Error("orderedLogLik: invalid category");
+}
+double orderedLogLikPrime(double f, void* vctx)
+{
+  // ∂ log p(y|f) / ∂f — same as getGradInputs gmu at varSigma=0.
+  const OrderedEllCtx* c = static_cast<const OrderedEllCtx*>(vctx);
+  if(isnan((double)c->targ))
+    return 0.0;
+  const double s = 1.0 / sqrt(c->sigma2);
+  double muAdj = f + c->bias;
+  if(c->targ == 0)
+  {
+    const double z = -muAdj * s;
+    return -s * ndlutil::gradLnCumGaussian(z);
+  }
+  if(c->targ > 0 && (unsigned int)c->targ < c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    const double u = muAdj * s;
+    const double uprime = (muAdj - c->widths->getVal(0, (unsigned int)c->targ - 1)) * s;
+    const double B1 = ndlutil::gaussOverDiffCumGaussian(u, uprime, 1);
+    const double B2 = ndlutil::gaussOverDiffCumGaussian(u, uprime, 2);
+    return s * (B1 - B2);
+  }
+  if((unsigned int)c->targ == c->numCats - 1)
+  {
+    for(unsigned int k = 0; k < (unsigned int)c->targ - 1; k++)
+      muAdj -= c->widths->getVal(0, k);
+    return s * ndlutil::gradLnCumGaussian(muAdj * s);
+  }
+  throw ndlexceptions::Error("orderedLogLikPrime: invalid category");
+}
+}
+
+double COrderedNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                            double& gMu, double& gVar) const
+{
+  OrderedEllCtx ctx;
+  ctx.targ = (int)y;
+  ctx.bias = ellBias;
+  ctx.sigma2 = sigma2;
+  ctx.numCats = numCats;
+  ctx.widths = &widths;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, orderedLogLik, orderedLogLikPrime,
+                                     &ctx, gMu, gVar);
+}
+
 void CNoise::getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const
 {
   DIMENSIONMATCH(g.dimensionsMatch(nu));
@@ -1495,6 +1575,7 @@ void COrderedNoise::_init()
 {
   setType("ordered");
   setName("Ordered Categorical");
+  ellBias = 0.0;
 }
 void COrderedNoise::initNames()
 {

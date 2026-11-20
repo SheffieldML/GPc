@@ -4,7 +4,7 @@ title: "CIP-002C Phase C: docs + TestPyPI / PyPI publish path"
 status: "Completed"
 priority: "Medium"
 created: "2026-11-19"
-last_updated: "2026-11-19"
+last_updated: "2026-11-20"
 category: "infrastructure"
 related_cips: ["002C"]
 owner: "Neil Lawrence"
@@ -35,7 +35,7 @@ Lock the PyPI distribution name (`gpc` vs `sheffieldml-gpc`), document user `pip
 
 Import name stays `gpc` even if the distribution name differs. Do not bundle `pods` / matplotlib into the core wheel.
 
-Locked **`gpc`** (PyPI/TestPyPI 404 on 2026-11-19). Workflow: `.github/workflows/publish-wheels.yml`. Maintainer still needs one-time Trusted Publisher + GitHub Environments before the first TestPyPI/PyPI upload.
+Locked **`gpc`**. Workflow: `.github/workflows/publish-wheels.yml`. Trusted Publisher + `testpypi` environment are live; TestPyPI has `0.1.0a1` and `0.1.0a2`. PyPI upload still needs maintainer sign-off. After republishing a new alpha, document `--no-cache-dir` for Colab/pip (stale simple-index cache).
 
 ## Related
 
@@ -51,3 +51,7 @@ Task created Ready on CIP-002C Accept.
 ### 2026-11-19 (Phase C)
 
 Implemented on `cip002C-binary-wheels`: name lock, publish workflow, smoke script, docs.
+
+### 2026-11-20
+
+TestPyPI `gpc==0.1.0a2` published (mlp + GPy-form façade). README notes `--no-cache-dir` + real-PyPI `--extra-index-url` for Colab.

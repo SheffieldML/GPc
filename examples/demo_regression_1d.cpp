@@ -26,10 +26,9 @@ int main(int argc, char** argv)
   CMatrix y(1, 1);
   ctrl.readData(X, y, "examples/sinc.csv");
 
+  // CIP-0027: RBF only; observation noise on likelihood.variance (no auto Bias/White).
   CCmpndKern kern(X);
   kern.addKern(new CRbfKern(X));
-  kern.addKern(new CBiasKern(X));
-  kern.addKern(new CWhiteKern(X));
   kern.setByPath("rbf.lengthscale", 1.0);
   kern.setByPath("rbf.variance", 1.0);
 
@@ -37,7 +36,7 @@ int main(int argc, char** argv)
   noise.setBias(0.0);
 
   CGp model(&kern, &noise, &X, CGp::FTC, 0, ctrl.getVerbosity());
-  model.setBetaVal(1.0);
+  model.setLikelihoodVariance(1.0);
   model.optimise(25);
 
   cout << "demo_regression_1d: N=" << X.getRows()

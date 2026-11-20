@@ -131,7 +131,7 @@ import gpc
 X = np.linspace(0, 1, 20)[:, None]
 Y = np.sin(2 * np.pi * X) + 0.05 * np.random.randn(20, 1)
 
-k = gpc.kern.RBF(1) + gpc.kern.Bias(1) + gpc.kern.White(1)
+k = gpc.kern.RBF(1)  # CIP-0027: add Bias/White yourself if wanted; noise is likelihood.variance
 m = gpc.models.GPRegression(X, Y, kernel=k)
 m.set_by_path("rbf.lengthscale", 0.2)
 m.optimize(iters=50)

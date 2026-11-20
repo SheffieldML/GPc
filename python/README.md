@@ -1,6 +1,6 @@
 # `gpc` — Python façade for GPc (CIP-001D)
 
-Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay in C++; this package is an ease-of-use boundary for GPy users ([REQ-000E](../requirements/req000E_gpy-facing-python-facade.md)).
+Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay in C++; this package is an ease-of-use boundary for GPy users ([REQ-000E](../requirements/req000E_gpy-facing-python-facade.md)). Maintainer design notes: [docs/python-facade.md](../docs/python-facade.md) ([CIP-001D](../cip/cip001D.md) / [CIP-002F](../cip/cip002F.md)).
 
 ## Install / build
 

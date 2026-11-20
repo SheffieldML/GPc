@@ -1,13 +1,16 @@
 ---
-id: "2026-11-20_cip002F-python-help-docstrings"
-title: "CIP-002F: Python-compatible help/docstrings for gpc"
-status: "Completed"
-completed: "2026-11-20"
-priority: "High"
-created: "2026-11-20"
-owner: "Neil Lawrence"
-related_cips: ["002F"]
+category: features
+completed: '2026-11-20'
+created: '2026-11-20'
 dependencies: []
+id: 2026-11-20_cip002F-python-help-docstrings
+last_updated: '2026-11-20'
+owner: Neil Lawrence
+priority: High
+related_cips:
+- 002F
+status: Completed
+title: 'CIP-002F: Python-compatible help/docstrings for gpc'
 ---
 
 # Task: CIP-002F Python help and docstrings

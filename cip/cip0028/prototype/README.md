@@ -13,7 +13,7 @@ Source archive: `deepws_experiment.zip` (unpacked as `deepws/`).
 | `dim_sweep.py`, `ridge_sweep.py`, `budget_sweep.py` | Variance-captured tables under \(\kappa(K_{uu})\le10^4\) |
 | `deep.py`, `ws_deep.py`, `tied_*.py` | Jacobian-spread / deep design notes (non-goal of this CIP) |
 | `*.json`, `deep_ws_jacobians.png` | Cached results and figure |
-| `cip0028_update.md` | Draft section appended to the CIP |
+| `update-2026-11-19-ridge.md` | Draft section appended to the CIP (sibling of `cip/cip0028/update-2026-11-19-ridge.md`) |
 
 ## Reproduce
 

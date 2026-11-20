@@ -15,6 +15,7 @@ How planning artefacts relate to day-to-day work on GPc.
 | DOCUMENT | `docs/` + [README](../README.md) | Compressed outcomes for maintainers and users |
 | TUTORIALS | [`docs/tutorials/`](tutorials/) | Native CLI/demo tutorials (CIP-0015 Stage 1 + BGPLVM/MRD links) |
 | OPTIMISERS | [`docs/optimisers.md`](optimisers.md) | `-#` / max_iters vs GPy L-BFGS and SCG |
+| PYTHON | [`docs/python-facade.md`](python-facade.md) · [`python/README.md`](../python/README.md) | `gpc` façade decisions ([CIP-001D](../cip/cip001D.md) / [CIP-002F](../cip/cip002F.md)); install recipes |
 | BGPLVM | [`docs/tutorials/bgplvm_oil100.md`](tutorials/bgplvm_oil100.md) | `./bgplvm` oil-100 recipe ([CIP-0017](../cip/cip0017.md)) |
 | MRD | [`docs/tutorials/mrd.md`](tutorials/mrd.md) | `demo_mrd` / `CMrd` ([CIP-0018](../cip/cip0018.md)) |
 

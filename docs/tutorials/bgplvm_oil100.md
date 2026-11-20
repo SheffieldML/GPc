@@ -32,4 +32,5 @@ Optimiser budget `-#` is algorithm iterations for SCG (default). See [optimisers
 ## Notes
 
 - Full oil set: `examples/oilTrain.svml` (longer run).
+- Uncollapsed SVI path (no psi / large \(N\)): [bgplvm_svi](./bgplvm_svi.md) (`--inference svi`).
 - Multi-view extension: [mrd](./mrd.md) (`CMrd` / `demo_mrd`).

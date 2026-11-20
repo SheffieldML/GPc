@@ -15,15 +15,18 @@
 #include "CSvgp.h"
 #include "CKern.h"
 #include "CMatrix.h"
+#include "CNdlInterfaces.h"
 #include "CStochasticOptimisable.h"
 #include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
 
-class CSviBayesGplvm : public CStochasticOptimisable {
+const std::string SVIBAYESGPLVMVERSION = "0.1";
+
+class CSviBayesGplvm : public CStochasticOptimisable, public CStreamInterface {
  public:
-  // Owns a copy of Y. Borrows kernel. Point inducing on latent μ by default.
+  // Owns a copy of Y. Borrows kernel unless readParamsFromStream replaces it.
   CSviBayesGplvm(CKern* kernel, const CMatrix& Yin, unsigned int latDim,
                  unsigned int numInducing, double beta = 1.0, int verbosity = 0);
   virtual ~CSviBayesGplvm();
@@ -32,6 +35,10 @@ class CSviBayesGplvm : public CStochasticOptimisable {
   void initZFromMu();
   // Owns a new CInducing of the named type (see CSvgp::setInducingType).
   void setInducingType(const std::string& typeName);
+  std::string getInducingType() const;
+
+  void setOwnKern(bool val) { ownKern = val; }
+  bool isOwnKern() const { return ownKern; }
 
   void setNumSamples(unsigned int K);
   unsigned int getNumSamples() const { return numSamples; }
@@ -55,6 +62,10 @@ class CSviBayesGplvm : public CStochasticOptimisable {
   // Optional non-Gaussian likelihood (not owned); null => Gaussian beta.
   void setLikelihood(CNoise* noise);
   CNoise* getLikelihood() const;
+
+  void display(std::ostream& os) const;
+  void writeParamsToStream(std::ostream& os) const;
+  void readParamsFromStream(std::istream& is);
 
   const CMatrix& getY() const { return Y; }
   const CMatrix& getMu() const { return mu; }
@@ -95,12 +106,14 @@ class CSviBayesGplvm : public CStochasticOptimisable {
   void localAdamStep(const std::vector<unsigned int>& batch,
                      const CMatrix& gMu, const CMatrix& gLogS);
 
-  CKern* pkern;       // not owned
+  CKern* pkern;
+  bool ownKern;
   CMatrix Y;          // N x D
   CMatrix mu;         // N x Q
   CMatrix logS;       // N x Q
   CMatrix Z;          // M x Q (centres storage for point inducing)
   CSvgp* psvgp;       // owned; pX points at mu, py at Y
+  int verbosity;
 
   unsigned int nData;
   unsigned int outputDim;

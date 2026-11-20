@@ -160,10 +160,9 @@ void COptimisable::writeDefaultOptimiserText(const OptimiserEvent& event) const
       || event.phase == OptimiserPhase::MaxIters
       || event.phase == OptimiserPhase::Failed;
 
-  // Non-TTY (pipes, logs, test sinks): avoid Iteration spam — Start + terminal only.
-  if(!inPlace && event.phase == OptimiserPhase::Iter)
-    return;
-
+  // TTY: in-place rewrite of the live block. Non-TTY (pipes, redirected CLI):
+  // still emit every outer Iter as a scrolling line when verbosity > 0 so
+  // tools like bgplvm/gp show optimisation by default (CIP-001E CLI parity).
   const std::string block = buildProgressBlock(event);
   if(inPlace)
   {

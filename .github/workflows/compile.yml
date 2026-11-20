@@ -1,10 +1,31 @@
+# CIP-002E tier 1: hard merge gate (build + CLI smoke).
+# paths-ignore: skip pure governance/docs PRs. Windows soft job rides along
+# when this workflow runs (job-level path filter deferred).
 name: Compile
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'cip/**'
+      - 'backlog/**'
+      - 'tenets/**'
+      - 'coe/**'
+      - 'requirements/**'
+      - '*.md'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'cip/**'
+      - 'backlog/**'
+      - 'tenets/**'
+      - 'coe/**'
+      - 'requirements/**'
+      - '*.md'
+      - '**/*.md'
 
 jobs:
   build:

@@ -11,13 +11,15 @@ Thin NumPy-facing wrapper around the C++ GPc core. Optimisation and kernels stay
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install gpc                  # from PyPI once published
-# or, until the first PyPI release:
-#   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ gpc
+# or, until the first PyPI release (pin a version that includes the features you need):
+#   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "gpc==0.1.0a2"
 export OPENBLAS_NUM_THREADS=1
-python -c "import gpc; print(gpc.__file__)"
+python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 # optional clean-venv checklist (from a repo checkout):
 #   python python/scripts/smoke_installed_gpc.py
 ```
+
+**Colab / TestPyPI:** keep `--extra-index-url https://pypi.org/simple/` so NumPy and other deps resolve from real PyPI. `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface.
 
 macOS wheels from CI currently require a recent macOS (deployment target follows Homebrew bottle `minOS` on `macos-15`). Linux wheels are manylinux.
 

@@ -22,7 +22,7 @@ class PyGPRegression
 public:
   PyGPRegression(py::array_t<double, py::array::c_style | py::array::forcecast> X,
                  py::array_t<double, py::array::c_style | py::array::forcecast> Y,
-                 const std::string& kernel = "rbf",
+                 py::object kernel = py::str("rbf"),
                  int verbosity = 0,
                  unsigned int arccos_order = 0);
 
@@ -62,7 +62,7 @@ public:
       const std::string& approx = "dtcvar",
       bool inducing_fixed = true,
       int verbosity = 0,
-      const std::string& kernel = "rbf",
+      py::object kernel = py::str("rbf"),
       const std::string& inducing = "points",
       double window_width = -1.0,
       unsigned int arccos_order = 0);

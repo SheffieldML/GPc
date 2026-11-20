@@ -24,7 +24,7 @@ Date: 2026-11-18. Branch experiment before accepting CIP-0026.
 
 1. **M-step / E-step mean really are GP regression on \(\langle f\rangle\) with noise \(1/\beta\).** Wiring `setTargetVals` → `optimise` / `posteriorMean` is enough for the iteration when the approximation is honest.
 
-2. **`CGp::FTC` is not PPA’s M-step.** FTC never adds \(\beta^{-1}I\) to the Gram (noise is expected in a white kernel component). PPA always adds site noise \(1/\beta\) on top of `kern.compute`. Prototype maps “FTC” requests to **DTC with \(M=N\), \(X_u=X\)**.
+2. **`CGp::FTC` is not PPA’s M-step.** Historically FTC expected noise in a white kernel component; **CIP-0027 Phase A** adds `likelihood.variance` on the FTC Gram (and predictive variance), so the old “strip White for M=N / FTC never adds β⁻¹I” carve-out is obsolete for the Gaussian path. PPA still adds site noise \(1/\beta\) on top of `kern.compute`. Prototype maps “FTC” requests to **DTC with \(M=N\), \(X_u=X\)**.
 
 3. **White kernel breaks DTC \(M=N\) recovery.** `CWhiteKern::compute(X, X2)` is identically zero, so \(K_{uf}\) omits white while \(K_{uu}\) includes it. Even with \(X_u=X\), the sparse path ≠ dense Gram+noise. Phase-0 fixtures use white → cannot be the M=N oracle. Use RBF+Bias and keep observation noise in \(\beta\).
 

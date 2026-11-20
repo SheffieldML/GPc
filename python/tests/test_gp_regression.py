@@ -90,8 +90,7 @@ def test_objective_matches_native_ref():
     m = gpc.GPRegression(X, Y)
     m.set_by_path("rbf.lengthscale", 0.5)
     m.set_by_path("rbf.variance", 1.0)
-    m.set_by_path("bias.variance", 0.1)
-    m.set_by_path("white.variance", 0.05)
+    m.set_by_path("likelihood.variance", 0.05)
     assert m.objective() == pytest.approx(native, rel=0.0, abs=1e-12)
 
 

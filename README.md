@@ -19,7 +19,7 @@ Gaussian process code in C++ including some implementations of GP-LVM and IVM.
 
 **Release:** there is no numbered product release and no git tag yet. Treat `main` as the living source of truth; the Status badges above reflect CI on that branch.
 
-Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/).
+Maintainer notes (build/CI rationale, numerics policy, planning workflow) live under [`docs/`](docs/). The target architecture shared with a future JAX-based GPy2 is in [`docs/target-architecture.md`](docs/target-architecture.md).
 
 **Tutorials:** step-by-step CLI recipes for the shipped `examples/*.svml` workflows (CIP-0015 Stage 1), plus Bayesian GPLVM / MRD pointers (CIP-0017 / CIP-0018), live under [`docs/tutorials/`](docs/tutorials/). Start at [`docs/tutorials/README.md`](docs/tutorials/README.md).
 

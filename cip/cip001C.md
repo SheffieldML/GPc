@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001C"
-last_updated: "2026-11-18"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["000D", "0002", "0005"]
 related_cips: ["0012", "001B", "0013", "0017", "0019", "001A"]
@@ -31,7 +31,7 @@ title: "White-noise inducing features for stationary kernels (kernel-free K_uu)"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented (Phase 1–2 on `cip001C-wn-pilot`)
 - [x] Implemented - Phases 1–4 delivered (Hankel + stability cells); awaiting Close after PR/CI
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

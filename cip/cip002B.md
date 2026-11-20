@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002B"
-last_updated: "2026-11-19"
-status: "Implemented"
+last_updated: "2026-11-20"
+status: "Closed"
 compressed: false
 related_requirements: ["0001", "0007"]
 related_cips: ["0006", "0020", "0021"]
@@ -28,7 +28,7 @@ title: "Windows MSVC CMake compile smoke on GitHub Actions"
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
 - [x] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 

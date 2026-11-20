@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-13"
 id: "000A"
 last_updated: "2026-11-20"
-status: "Implemented"
+status: "Closed"
 compressed: false
 related_requirements: ["0004"]
 related_cips: ["0003", "0008", "0009"]
@@ -24,7 +24,7 @@ title: "Own compound kernels with unique_ptr"
 - [x] Accepted
 - [x] In Progress - worktree `cip000A-unique-ptr-kern` / branch `cip000A-unique-ptr-kern`
 - [x] Implemented
-- [ ] Closed
+- [x] Closed
 
 ## Backlog
 
@@ -93,7 +93,7 @@ This continues [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md) beyon
 - [x] Phase 3: stream/MATLAB take-ownership paths (done with Phase 2)
 - [x] Full matio Reference suite green (`USE_MATIO=1 CHECKS=full run-matio-tests`)
 - [ ] Remaining model-level owning sites (`CGp::pkern`, etc.) — deferred (out of scope)
-- [ ] Close + docs ownership note
+- [x] Close + docs ownership note
 
 ## Testing Strategy
 

@@ -325,6 +325,17 @@ PyGPRegression::PyGPRegression(
 
   model = std::make_unique<CGp>(kern.get(), noise.get(), &X, CGp::FTC, 0, verbosity);
   model->setLikelihoodVariance(1.0);
+  // CIP-0027 Phase C: explicit White in a kern object → legacy White-owned
+  // observation noise (matches ./gp learn -k white). Likelihood-owned noise
+  // is the string-kernel default (no White).
+  try
+  {
+    (void)kern->getByPath("white.variance");
+    model->fixLikelihoodVariance(true);
+  }
+  catch(ndlexceptions::Error&)
+  {
+  }
 }
 
 void PyGPRegression::set_by_path(const std::string& path, double val)

@@ -6,7 +6,7 @@ last_updated: "2026-11-19"
 status: "In Progress"
 compressed: false
 related_requirements: ["000E", "0008", "0005", "0009", "000F"]
-related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E"]
+related_cips: ["0014", "0015", "0016", "000C", "000D", "000E", "001E", "0028"]
 tags:
 - cip
 - python
@@ -26,7 +26,7 @@ title: "Light Python façade over GPc for GPy users"
 
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
-- [x] In Progress - Actively being implemented (worktree `cip001D-python-facade`)
+- [x] In Progress - Actively being implemented (worktree `cip001D-phase-f-mlp-weightspace`)
 - [ ] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
@@ -39,6 +39,8 @@ title: "Light Python façade over GPc for GPy users"
 - [Phase C — sparse DTCVAR façade](../backlog/features/2026-11-18_cip001D-phase-c-sparse.md) (High, Completed)
 - [Phase D — subset checklist + polish](../backlog/features/2026-11-18_cip001D-phase-d-polish.md) (Medium, Completed)
 - [Phase E — notebooks / pods / thin plot extras](../backlog/features/2026-11-18_cip001D-phase-e-notebooks.md) (Medium, Completed)
+- [Phase F — MLP / arc-cosine kernels + olympic notebook](../backlog/features/2026-11-19_cip001D-phase-f-mlp-kernels.md) (High, Completed)
+- Sibling (CIP-0028): [Python weight-space inducing + ridge notebook](../backlog/features/2026-11-19_cip0028-python-weightspace-notebook.md) (High, Completed)
 
 ## Summary
 

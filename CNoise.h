@@ -739,6 +739,11 @@ class COrderedNoise : public CNoise {
   {
     return logLikelihood(mu, varSigma, *py);
   }
+  // CIP-0030 Phase 3 / CIP-002A: E_q[log p(y|f)] via Gauss–Hermite.
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+  void setExpectedLogLikBias(double b) const { ellBias = b; }
+  double getBiasVal(unsigned int index) const { return bias.getVal(0, index); }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
   inline double getMu(unsigned int i, unsigned int j) const
@@ -776,6 +781,7 @@ class COrderedNoise : public CNoise {
   CMatrix widths;
   double sigma2;
   CMatrix bias;
+  mutable double ellBias;
   
   mutable CMatrix gwidth;
 };

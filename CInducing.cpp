@@ -65,23 +65,8 @@ void CInducingPoints::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix*
     gKernParams.addVal(tempG2.getVal(i), i);
   }
 
-  gZ.resize(M, d);
-  gZ.zeros();
-  dgKX.resize(M, d);
-  gKX.resize(M, d);
-  gKX_uf.resize(N, d);
-  kern.getDiagGradX(dgKX, *pZ);
-  for(unsigned int i = 0; i < M; i++)
-  {
-    kern.getGradX(gKX_uf, *pZ, i, X);
-    kern.getGradX(gKX, *pZ, i, *pZ);
-    gKX.scale(2.0);
-    gKX.copyRowRow(i, dgKX, i);
-    for(unsigned int j = 0; j < d; j++)
-      gZ.setVal(gKX.dotColCol(j, gKuu, i), i, j);
-    for(unsigned int j = 0; j < d; j++)
-      gZ.addVal(gKX_uf.dotColRow(j, gKuf, i), i, j);
-  }
+  // CIP-002D follow-up: batched ∂Z (RBF/Lin GEMM; default per-inducing getGradX).
+  kern.inducingGradZ(gZ, *pZ, X, gKuu, gKuf);
 
   if(wantX && gXOrNull != 0)
   {

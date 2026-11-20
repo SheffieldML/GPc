@@ -12,6 +12,7 @@ Path get/set is a façade over indexed `setParam` / `getParam`. Canonical leaf a
 | `inv_lengthscale` / `inverseWidth` | atomic RBF/EQ/Exp | set/get in GPc storage units (no conversion) |
 | `ExpQuad.lengthscale`, `ExpQuad.variance` | `CEqKern` / compound | GPy ExpQuad lengthscale-first SE (CIP-0024); stream type `eq`; same maths as RBF |
 | `rbf.variance`, `rbf_1.…` | `CCmpndKern` | GPy component labels; `_k` for duplicates |
+| `tensor.rbf.…`, `indexwhite.…` | ICM + `indexwhite` cmpnd | Nested child labels; own-type prefixes (`cmpnd.` / `tensor.`) strip only on that root type |
 | `weight_variance` / `bias_variance` | MLP / Poly | GPy spelling; legacy camelCase aliases accepted |
 | `power` | RatQuad | alias of stored `alpha` |
 

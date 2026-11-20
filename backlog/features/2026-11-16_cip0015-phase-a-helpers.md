@@ -43,7 +43,7 @@ Does **not** block [Stage 1](../documentation/2026-11-16_cip0015-stage1-current-
 
 - CIP: 0015
 - Also: 000D / REQ-0006 end-to-end path
-- Blocked demos: `demo_coregionalization_toy` (Phase B)
+- Unblocked demos: `demo_coregionalization_toy` (Phase B completed)
 
 ## Progress Updates
 

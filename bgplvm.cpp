@@ -437,7 +437,10 @@ void CClbgplvm::learn()
            << " batch=" << batchSize << " samples=" << numSamples
            << " iters=" << iters << endl;
     }
+    // CAdam already emits StochasticOptimiserEvent; wire default text for CLI.
+    model.installDefaultTextProgress(cout, getVerbosity(), "adam");
     adam.maximise(model);
+    model.clearProgressObserver();
     model.toFile(modelFileName, comment);
 
     if(dumpLatent)

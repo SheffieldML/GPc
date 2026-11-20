@@ -10,6 +10,8 @@
 
 #include "CMatrix.h"
 #include <functional>
+#include <iostream>
+#include <string>
 #include <vector>
 
 struct StochasticOptimiserEvent {
@@ -42,6 +44,28 @@ class CStochasticOptimisable {
   {
     if(progressObserver)
       progressObserver(ev);
+  }
+
+  /// CIP-001E / CIP-0030: scrolling Adam progress for CLI (verbosity-gated).
+  void installDefaultTextProgress(std::ostream& os, int verbosity,
+                                  const std::string& optimiserName = "adam")
+  {
+    if(verbosity <= 0)
+    {
+      clearProgressObserver();
+      return;
+    }
+    setProgressObserver(
+        [&os, verbosity, optimiserName](const StochasticOptimiserEvent& ev) {
+          if(verbosity <= 0)
+            return;
+          os << "Running " << optimiserName << " · iter " << ev.iteration
+             << " · objective " << ev.objectiveEstimate
+             << " · batch " << ev.batchSize << std::endl;
+          if(ev.terminal)
+            os << "Warning: Maximum number of iterations has been exceeded"
+               << std::endl;
+        });
   }
 
  private:

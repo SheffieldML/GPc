@@ -2,9 +2,9 @@
 author: "Neil Lawrence"
 created: "2026-11-18"
 id: "001E"
-last_updated: "2026-11-20"
+last_updated: "2026-11-21"
 status: "Closed"
-compressed: false
+compressed: true
 related_requirements: ["000F", "0008", "000E"]
 related_cips: ["0014", "001D", "0010"]
 tags:
@@ -186,7 +186,7 @@ print(m)
 - [x] Phase B: ModelDescription + text formatter; migrate display; fix CGp stream bug; description/display tests
 - [x] Phase C: CIP-001D binds messages/callback and __str__/__repr__ (tracked also on CIP-001D)
 - [x] Verified on `main`: #109 + CLI progress follow-up #110 (SCG non-TTY + SVI Adam in-place); REQ-000F → Validated
-- [ ] Compress into docs (optimisers + display/param-paths pointer) — deferred (`compressed: false`)
+- [x] Compress into docs (optimisers + display/param-paths pointer)
 
 ## References
 

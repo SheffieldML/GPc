@@ -76,7 +76,7 @@ FITC shares the common `-(d N/2) log 2π` tail in `CGp::logLikelihood` with DTC/
 | Family | CLI | \(K_{uu}\) | When to use |
 |---|---|---|---|
 | **points** (default) | `points` | \(k(Z,Z)\) | General case; inducing centres in input space |
-| **whitenoise** | `whitenoise` | window Gram \(\langle\psi_m,\psi_n\rangle\) (kernel-free) | Stationary kernels (RBF, Matérn, …) in any \(d\); lengthscale-driven \(\kappa(K_{uu})\) blow-up ([CIP-001C](../cip/cip001C.md)) |
+| **whitenoise** | `whitenoise` | window Gram \(\langle\psi_m,\psi_n\rangle\) (kernel-free) | Stationary kernels (RBF, Matérn, …) in any \(d\); lengthscale-driven \(\kappa(K_{uu})\) blow-up ([CIP-001C](../cip/cip001C.md)). At window width \(s=\ell/\sqrt2\) (RBF) this reduces to point inducing (equivalence gate); fix \(s\) (default: median NN spacing of centres) to keep \(K_{uu}\) kernel-free |
 | **greens** | `greens` | same window Gram as WN | **1-D** causal / Markov kernels (Brownian, integrated Brownian, Exp / Matérn-\(\nu=p+\tfrac12\)); erf / smoothed-ramp \(K_{fu}\) ([CIP-0029](../cip/cip0029.md)) |
 | **weightspace** | `weightspace` | ridge Gram in whitened \(\boldsymbol\omega\) (kernel-free; \(\mathrm{diag}=1\)) | Dot-product kernels: **MLP** (finite \(\Sigma\), learn \(w,b\)) or **arccos** order 0 (infinite / angular) / order 1 (soft-ReLU); [CIP-0028](../cip/cip0028.md) |
 

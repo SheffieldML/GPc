@@ -1,10 +1,10 @@
 ---
 id: "0012"
 title: "Squared-exponential covariance exposes GPy ExpQuad lengthscale-first parameterisation"
-status: "In Progress"
+status: "Validated"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-21"
 related_tenets: ["compose-through-interfaces", "ecosystem-interoperability", "assert-and-verify"]
 stakeholders: ["maintainers", "modellers", "GPy users"]
 tags: ["kernels", "gpy", "covariance", "parameterisation"]
@@ -29,11 +29,11 @@ That surface is available under GPy-facing names **EQ** / **ExpQuad** (stream/CL
 
 ## Acceptance Criteria
 
-- [ ] Callers can construct / select an EQ / ExpQuad covariance whose **canonical GPy-facing parameters** are `lengthscale` and `variance` (units and meaning as in GPy `ExpQuad`)
-- [ ] Setting `lengthscale`=\(\ell\) yields the same \(K\) as GPy ExpQuad / as GPc RBF with `inverseWidth`=\(1/\ell^2\) within `ndlutil::MATCHTOL`
-- [ ] Stable stream / CLI type exists (canonical: `eq`); read aliases such as `ExpQuad` / `expquad` are accepted where types are parsed; write preserves `eq` (does not silently rewrite as `rbf`)
-- [ ] Parameter paths use GPy component name `ExpQuad` (e.g. `ExpQuad.lengthscale`); `inv_lengthscale` / `inverseWidth` remain available as the GPy/GPc storage-aligned aliases where already defined for RBF
-- [ ] Non-goals are explicit: no second numerical `K_of_r` implementation; no requirement to change `rbf` indexed/`setParam` storage away from `inverseWidth`; no `ExpQuadCosine` / `EQ_ODE*`; no deprecation of `rbf` / `rbfard`; no `eqard` in the first delivery
+- [x] Callers can construct / select an EQ / ExpQuad covariance whose **canonical GPy-facing parameters** are `lengthscale` and `variance` (units and meaning as in GPy `ExpQuad`)
+- [x] Setting `lengthscale`=\(\ell\) yields the same \(K\) as GPy ExpQuad / as GPc RBF with `inverseWidth`=\(1/\ell^2\) within `ndlutil::MATCHTOL`
+- [x] Stable stream / CLI type exists (canonical: `eq`); read aliases such as `ExpQuad` / `expquad` are accepted where types are parsed; write preserves `eq` (does not silently rewrite as `rbf`)
+- [x] Parameter paths use GPy component name `ExpQuad` (e.g. `ExpQuad.lengthscale`); `inv_lengthscale` / `inverseWidth` remain available as the GPy/GPc storage-aligned aliases where already defined for RBF
+- [x] Non-goals are explicit: no second numerical `K_of_r` implementation; no requirement to change `rbf` indexed/`setParam` storage away from `inverseWidth`; no `ExpQuadCosine` / `EQ_ODE*`; no deprecation of `rbf` / `rbfard`; no `eqard` in the first delivery
 
 ## Notes (Optional)
 
@@ -57,3 +57,6 @@ Drafted as REQ-0011 alongside an early CIP-0022 sketch; renumbered to **REQ-0012
 
 ### 2026-11-18 (later)
 PPA integrated on main; CIP-0024 → In Progress on `cip0024-eq-expquad`.
+
+### 2026-11-21
+CIP-0024 Closed. Status → Validated.

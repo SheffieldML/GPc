@@ -4,7 +4,7 @@ created: "2026-11-20"
 id: "002F"
 last_updated: "2026-11-20"
 status: "Closed"
-compressed: false
+compressed: true
 related_requirements: ["0017", "000E"]
 related_cips: ["001D"]
 tags:

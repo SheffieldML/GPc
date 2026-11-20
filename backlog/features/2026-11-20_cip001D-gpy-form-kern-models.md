@@ -1,13 +1,17 @@
 ---
-id: "2026-11-20_cip001D-gpy-form-kern-models"
-title: "CIP-001D: gpc.kern / models / compound + API shape"
-status: "Completed"
-priority: "High"
-created: "2026-11-20"
-completed: "2026-11-20"
-owner: "Neil Lawrence"
-related_cips: ["001D"]
-dependencies: ["2026-11-18_cip001D-phase-b-gp"]
+category: features
+completed: '2026-11-20'
+created: '2026-11-20'
+dependencies:
+- 2026-11-18_cip001D-phase-b-gp
+id: 2026-11-20_cip001D-gpy-form-kern-models
+last_updated: '2026-11-20'
+owner: Neil Lawrence
+priority: High
+related_cips:
+- 001D
+status: Completed
+title: 'CIP-001D: gpc.kern / models / compound + API shape'
 ---
 
 # Task: CIP-001D GPy-form kern / models API

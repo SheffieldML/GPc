@@ -49,11 +49,15 @@ jobs:
       - name: Collect lcov report
         run: |
           # lcov 2.x treats unused exclude patterns and inconsistent gcov
-          # counts as hard errors unless ignored.
-          lcov --ignore-errors inconsistent,empty \
+          # counts as hard errors unless ignored. Keep the same ignore set on
+          # capture, remove, and list — remove previously only ignored unused,
+          # so a lambda/line mismatch in bgplvm.cpp (CIP-001E progress) aborted
+          # Collect after a successful capture (main Coverage red since #110).
+          LCOV_IGNORE=inconsistent,empty,unused,mismatch
+          lcov --ignore-errors "${LCOV_IGNORE}" \
             --capture --directory . --output-file coverage.info
           # Drop system headers, test drivers, and local fixture helpers.
-          lcov --ignore-errors unused \
+          lcov --ignore-errors "${LCOV_IGNORE}" \
             --remove coverage.info \
             '/usr/*' \
             '*/test*.cpp' \
@@ -62,12 +66,12 @@ jobs:
             '*/tools/diagPitc.cpp' \
             '*/tools/genTestGpPitc.cpp' \
             --output-file coverage.info
-          if lcov --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|NoiseBatched|NoiseInLikelihood|Cip0027Perf|IvmSoftener|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
+          if lcov --ignore-errors "${LCOV_IGNORE}" --list coverage.info | grep -E '(^|/)test(Matrix|Kern|Noise|NoiseBatched|NoiseInLikelihood|Cip0027Perf|IvmSoftener|Dist|Transform|Ndlutil|Gp|Ivm|CGp|Optimisable)\.cpp'; then
             echo "ERROR: test drivers still present in coverage.info" >&2
-            lcov --list coverage.info
+            lcov --ignore-errors "${LCOV_IGNORE}" --list coverage.info
             exit 1
           fi
-          lcov --list coverage.info
+          lcov --ignore-errors "${LCOV_IGNORE}" --list coverage.info
 
       - name: Enforce CGp.cpp line-rate gate (CIP-0011)
         run: |

@@ -1610,43 +1610,64 @@ int testWeightSpaceInducingPhase0()
     }
   }
 
-  // weightCentres row count mismatch ⇒ StreamFormatError.
+  // weightCentres shape mismatches ⇒ StreamFormatError (rows; cols neither ridge nor iso).
   {
     ToyGp toy(CGp::DTC);
     toy.model->setInducingType("weightspace");
     ostringstream out;
     writeGpToStream(*toy.model, out);
-    string bad = out.str();
+    const string blob = out.str();
     const string needle = "weightCentres=";
-    const size_t cpos = bad.find(needle);
-    fail += failTrue(cpos != string::npos, "blob has weightCentres for row-mismatch");
+    const size_t cpos = blob.find(needle);
+    fail += failTrue(cpos != string::npos, "blob has weightCentres for shape-mismatch");
     if(cpos != string::npos)
     {
-      bad = bad.substr(0, cpos + needle.size()) + "\n";
-      {
-        ostringstream mat;
-        CMatrix wrongRows(M_ACTIVE + 1, Q + 2);
-        wrongRows.zeros();
-        wrongRows.toStream(mat);
-        bad += mat.str();
-      }
-      try
-      {
-        istringstream in(bad);
-        CGp* round = readGpFromStream(in);
-        delete round;
-        cout << "FAILURE: bad weightCentres rows should throw." << endl;
-        fail += 1;
-      }
-      catch(ndlexceptions::StreamFormatError&)
-      {
-        cout << "bad weightCentres rows throws StreamFormatError." << endl;
-      }
-      catch(ndlexceptions::Error&)
-      {
-        cout << "bad weightCentres rows throws Error." << endl;
-      }
+      auto injectAndExpectThrow = [&](const CMatrix& Wbad, const string& label) {
+        string bad = blob.substr(0, cpos + needle.size()) + "\n";
+        {
+          ostringstream mat;
+          Wbad.toStream(mat);
+          bad += mat.str();
+        }
+        try
+        {
+          istringstream in(bad);
+          CGp* round = readGpFromStream(in);
+          delete round;
+          cout << "FAILURE: " << label << " should throw." << endl;
+          fail += 1;
+        }
+        catch(ndlexceptions::StreamFormatError&)
+        {
+          cout << label << " throws StreamFormatError." << endl;
+        }
+        catch(ndlexceptions::Error&)
+        {
+          cout << label << " throws Error." << endl;
+        }
+      };
+
+      CMatrix wrongRows(M_ACTIVE + 1, Q + 2);
+      wrongRows.zeros();
+      injectAndExpectThrow(wrongRows, "bad weightCentres rows");
+
+      // Rows match numActive but cols ≠ d+2 and ≠ d+1 → column-format Error.
+      CMatrix wrongCols(M_ACTIVE, Q + 3);
+      wrongCols.zeros();
+      injectAndExpectThrow(wrongCols, "bad weightCentres cols");
     }
+  }
+
+  // Free points / greens: setInducingType resizes gX_u — CIP-0011 CGp.cpp gate.
+  {
+    ToyGp toy(CGp::DTCVAR);
+    toy.model->setInducingFixed(false);
+    toy.model->setInducingType("points");
+    fail += failTrue(toy.model->getInducingType() == "points",
+                     "free inducing setInducingType points");
+    toy.model->setInducingType("greens");
+    fail += failTrue(toy.model->getInducingType() == "greens",
+                     "free inducing setInducingType greens");
   }
 
   // Points / WN still selectable after weightspace (regression smoke).

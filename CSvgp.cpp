@@ -8,8 +8,8 @@
 
 CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Zin,
              double betaVal, int verbos)
-  : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), beta(betaVal), verbosity(verbos),
-    betaTransform(CTransform::defaultPositive()), natGradGamma(0.0)
+  : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
+    verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -20,8 +20,19 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
   nData = X->getRows();
   numInducing = Zin.getRows();
   outputDim = y->getCols();
+  pInducing = new CInducingPoints(&Z);
   updateKernelMatrices();
-  // q(u) starts at the prior: q(v) = N(0, I).
+  initVariationalPrior();
+}
+
+CSvgp::~CSvgp()
+{
+  delete pInducing;
+  delete betaTransform;
+}
+
+void CSvgp::initVariationalPrior()
+{
   qMean.resize(numInducing, outputDim);
   qMean.zeros();
   CMatrix I(numInducing, numInducing, 0.0);
@@ -30,9 +41,50 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
   qCov.assign(outputDim, I);
 }
 
-CSvgp::~CSvgp()
+void CSvgp::setInducing(CInducing* pInd)
 {
-  delete betaTransform;
+  if(pInd == 0)
+    throw ndlexceptions::Error("CSvgp::setInducing requires a non-null inducing object");
+  delete pInducing;
+  pInducing = pInd;
+  const unsigned int Mnew = pInducing->numInducing();
+  if(Mnew != numInducing)
+  {
+    numInducing = Mnew;
+    initVariationalPrior();
+  }
+  updateKernelMatrices();
+}
+
+void CSvgp::setInducingType(const string& typeName)
+{
+  if(typeName == "points")
+  {
+    setInducing(new CInducingPoints(&Z));
+  }
+  else if(typeName == "whitenoise")
+  {
+    double s0 = CInducingWhiteNoise::medianSpacing(Z);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    setInducing(new CInducingWhiteNoise(&Z, s0, false));
+  }
+  else if(typeName == "greens")
+  {
+    double s0 = CInducingWhiteNoise::medianSpacing(Z);
+    if(!(s0 > 0.0) || !isfinite(s0))
+      s0 = 1.0;
+    setInducing(new CInducingGreens(&Z, s0, false));
+  }
+  else if(typeName == "weightspace")
+  {
+    CMatrix W;
+    const unsigned int d = getInputDim();
+    const double s0 = CInducingWeightSpace::makeRidgeInit(W, numInducing, d, 7u);
+    setInducing(new CInducingWeightSpace(W, s0, false, true));
+  }
+  else
+    throw ndlexceptions::Error("CSvgp::setInducingType: unknown type \"" + typeName + "\"");
 }
 
 void CSvgp::setBeta(double val)
@@ -47,7 +99,7 @@ void CSvgp::updateKernelMatrices()
   const unsigned int M = numInducing;
   const unsigned int N = nData;
   Kuu.resize(M, M);
-  pkern->compute(Kuu, Z);
+  pInducing->computeKuu(Kuu, *pkern);
   Kuu.setSymmetric(true);
   cholKuu.resize(M, M);
   const double jit = cholKuu.jitChol(Kuu);  // as CGp::_updateInvK: modifies Kuu on jitter
@@ -55,7 +107,7 @@ void CSvgp::updateKernelMatrices()
     cout << "Warning: jitter of " << jit << " added to K_uu in CSvgp." << endl;
 
   Kuf.resize(M, N);
-  pkern->compute(Kuf, Z, *pX);
+  pInducing->computeKuf(Kuf, *pkern, *pX);
   A.deepCopy(Kuf);
   A.trsm(cholKuu, 1.0, "L", "U", "T", "N");  // A = U^{-T} K_uf = L^{-1} K_uf
 
@@ -68,11 +120,21 @@ void CSvgp::updateKernelMatrices()
   }
 }
 
-void CSvgp::setInducing(const CMatrix& Znew)
+void CSvgp::setInducingCentres(const CMatrix& Znew)
 {
-  if(Znew.getRows() != numInducing || Znew.getCols() != Z.getCols())
-    throw ndlexceptions::Error("CSvgp::setInducing: dimension mismatch");
-  Z.deepCopy(Znew);
+  pInducing->setCentres(Znew);
+  if(pInducing->typeName() != "weightspace")
+  {
+    // Points / WN / greens share member Z via non-owned pointer.
+    if(Znew.getRows() != Z.getRows() || Znew.getCols() != Z.getCols())
+      Z.resize(Znew.getRows(), Znew.getCols());
+    Z.deepCopy(Znew);
+  }
+  if(pInducing->numInducing() != numInducing)
+  {
+    numInducing = pInducing->numInducing();
+    initVariationalPrior();
+  }
   updateKernelMatrices();
 }
 
@@ -186,7 +248,7 @@ void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
         wsXB.setVal(pX->getVal(i, d), k, d);
       dK.setVal(pkern->diagComputeElement(*pX, i), k);
     }
-    pkern->compute(AB, Z, wsXB);
+    pInducing->computeKuf(AB, *pkern, wsXB);
     AB.trsm(cholKuu, 1.0, "L", "U", "T", "N");
     for(unsigned int k = 0; k < B; k++)
       dQ.setVal(AB.dotColCol(k, AB, k), k);
@@ -422,7 +484,7 @@ void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) 
   const unsigned int M = numInducing;
   const unsigned int Ns = Xs.getRows();
   CMatrix Kus(M, Ns);
-  pkern->compute(Kus, Z, Xs);
+  pInducing->computeKux(Kus, *pkern, Xs);
   CMatrix As(Kus);
   As.trsm(cholKuu, 1.0, "L", "U", "T", "N");  // L^{-1} K_us
   mu.resize(Ns, outputDim);
@@ -516,9 +578,9 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
 
   gKern.resize(1, nKern);
   gKern.zeros();
-  // Point inducing routing (same as CGp sparse updateG).
-  CInducingPoints inducing(const_cast<CMatrix*>(&Z));
-  inducing.gradFromKuuKuf(gKern, gZ, 0, *pkern, *pX, KuuBar, KufBar, false, true);
+  gZ.resize(pInducing->centres().getRows(), pInducing->centres().getCols());
+  gZ.zeros();
+  pInducing->gradFromKuuKuf(gKern, gZ, 0, *pkern, *pX, KuuBar, KufBar, false, true);
 
   CMatrix tempG(1, nKern);
   pkern->getDiagGradTransParams(tempG, *pX, gLambda, false);
@@ -533,7 +595,7 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
 
 unsigned int CSvgp::getOptNumParams() const
 {
-  return pkern->getNumParams() + numInducing * getInputDim() + 1;
+  return pkern->getNumParams() + pInducing->getNumParams() + 1;
 }
 
 void CSvgp::getOptParams(CMatrix& param) const
@@ -543,9 +605,8 @@ void CSvgp::getOptParams(CMatrix& param) const
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     param.setVal(pkern->getTransParam(i), counter++);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      param.setVal(Z.getVal(i, j), counter++);
+  pInducing->getParams(param, counter);
+  counter += pInducing->getNumParams();
   param.setVal(betaTransform->xtoa(beta), counter++);
 }
 
@@ -555,26 +616,39 @@ void CSvgp::setOptParams(const CMatrix& param)
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     pkern->setTransParam(param.getVal(counter++), i);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      Z.setVal(param.getVal(counter++), i, j);
+  pInducing->setParams(param, counter);
+  counter += pInducing->getNumParams();
   beta = betaTransform->atox(param.getVal(counter++));
   updateKernelMatrices();
+}
+
+void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
+                             const CMatrix& gZ) const
+{
+  // Match CInducing::getParams layout: column-major over centres(), then optional s.
+  // learnS gradient is not yet returned by gradFromKuuKuf; leave those slots 0.
+  unsigned int counter = offset;
+  const unsigned int M = gZ.getRows();
+  const unsigned int d = gZ.getCols();
+  for(unsigned int j = 0; j < d; j++)
+    for(unsigned int i = 0; i < M; i++)
+      gFlat.setVal(gZ.getVal(i, j), counter++);
+  while(counter < offset + pInducing->getNumParams())
+    gFlat.setVal(0.0, counter++);
 }
 
 double CSvgp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g)
 {
   CMatrix gKern(1, pkern->getNumParams());
-  CMatrix gZ(numInducing, getInputDim());
+  CMatrix gZ;
   double gBeta = 0.0;
   const double L = elboGrad(gKern, gZ, gBeta, batch);
   g.resize(1, getOptNumParams());
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     g.setVal(gKern.getVal(i), counter++);
-  for(unsigned int j = 0; j < getInputDim(); j++)
-    for(unsigned int i = 0; i < numInducing; i++)
-      g.setVal(gZ.getVal(i, j), counter++);
+  packInducingGrad(g, counter, gZ);
+  counter += pInducing->getNumParams();
   g.setVal(gBeta, counter++);
   return L;
 }

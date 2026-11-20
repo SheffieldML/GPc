@@ -532,6 +532,53 @@ int main()
           try { CAdam bad(-1.0); } catch(ndlexceptions::Error&) { threw = true; }
           expect(threw, "Phase 3: CAdam rejects non-positive learning rate");
         }
+
+        // CIP-0030 Phase 0a: CSvgp via CInducing — white-noise smoke.
+        {
+          const unsigned int Nn = 40, Mm = 10;
+          mt19937 rngWn(11);
+          normal_distribution<double> ndWn(0.0, 1.0);
+          CMatrix Xn(Nn, 1), yn(Nn, 1), Zn(Mm, 1);
+          for(unsigned int i = 0; i < Nn; i++)
+            {
+              const double x = -2.0 + 4.0 * (double)i / (double)(Nn - 1);
+              Xn.setVal(x, i, 0);
+              yn.setVal(sin(x) + 0.1 * ndWn(rngWn), i, 0);
+            }
+          for(unsigned int k = 0; k < Mm; k++)
+            Zn.setVal(-1.8 + 3.6 * (double)k / (double)(Mm - 1), k, 0);
+          // White-noise inducing rejects Bias; RBF (+ optional White) only.
+          CCmpndKern kernWn(Xn);
+          CRbfKern* prbfWn = new CRbfKern(Xn);
+          prbfWn->setParam(1.0, 0);
+          prbfWn->setParam(1.0, 1);
+          kernWn.addKern(prbfWn);
+          CWhiteKern* pwhWn = new CWhiteKern(Xn);
+          pwhWn->setParam(1e-4, 0);
+          kernWn.addKern(pwhWn);
+          CSvgp svWn(&kernWn, &Xn, &yn, Zn, 10.0, 0);
+          expect(svWn.getInducing()->typeName() == "points",
+                 "Phase 0a: default inducing type is points");
+          const double Lpts = svWn.elbo();
+          svWn.setInducingType("whitenoise");
+          expect(svWn.getInducing()->typeName() == "whitenoise",
+                 "Phase 0a: setInducingType whitenoise");
+          const double L0 = svWn.elbo();
+          expect(isfinite(L0), "Phase 0a: white-noise ELBO finite at prior");
+          for(unsigned int t = 0; t < 20; t++)
+            svWn.naturalGradientStep(0.5);
+          const double L1 = svWn.elbo();
+          cout << "  info: Phase 0a WN ELBO prior=" << L0 << " after natgrad=" << L1
+               << " (points prior was " << Lpts << ")" << endl;
+          expect(isfinite(L1) && L1 > L0,
+                 "Phase 0a: white-noise natgrad increases finite ELBO");
+          CMatrix gK, gZ;
+          double gB = 0.0;
+          const double Lg = svWn.elboGrad(gK, gZ, gB);
+          expect(isfinite(Lg) && gK.getCols() == kernWn.getNumParams()
+                 && gZ.getRows() == Mm && gZ.getCols() == 1,
+                 "Phase 0a: white-noise elboGrad shapes");
+        }
       }
     }
   catch(ndlexceptions::Error& e)

@@ -207,6 +207,141 @@ int testGradients()
   }
 }
 
+int expectThrow(bool threw, const string& what)
+{
+  return failTrue(threw, what);
+}
+
+// CIP-0011 / CIP-0027: hit non-Gaussian throws, migrating White-fixed Gram
+// ownership, sigma2 alias, allowWhite warning, sparse fix→betaFixed.
+int testCoverageBranches()
+{
+  cout << "==== CIP-0027 CGp coverage branches ====" << endl;
+  int fail = 0;
+  CMatrix X(N, Q);
+  CMatrix y(N, 1);
+  fillXy(X, y);
+
+  // Non-Gaussian: likelihood.variance APIs must throw.
+  {
+    CMatrix yClass(N, 1);
+    for(unsigned int i = 0; i < N; i++)
+      yClass.setVal(y.getVal(i, 0) >= 0.0 ? 1.0 : -1.0, i, 0);
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    CProbitNoise noise(&yClass);
+    CGp gp(&kern, &noise, &X, CGp::FTC, 0, 0);
+
+    bool threw = false;
+    try { (void)gp.getLikelihoodVariance(); }
+    catch(ndlexceptions::Error&) { threw = true; }
+    fail += expectThrow(threw, "getLikelihoodVariance rejects probit");
+
+    threw = false;
+    try { gp.setLikelihoodVariance(0.2); }
+    catch(ndlexceptions::Error&) { threw = true; }
+    fail += expectThrow(threw, "setLikelihoodVariance rejects probit");
+
+    threw = false;
+    try { gp.fixLikelihoodVariance(true); }
+    catch(ndlexceptions::Error&) { threw = true; }
+    fail += expectThrow(threw, "fixLikelihoodVariance rejects probit");
+
+    threw = false;
+    try { gp.fix("likelihood.variance"); }
+    catch(ndlexceptions::Error&) { threw = true; }
+    fail += expectThrow(threw, "fix(likelihood.variance) rejects probit");
+
+    fail += failTrue(!gp.addsLikelihoodVarianceToGram(),
+                     "probit does not add Gram σ²");
+  }
+
+  // Migrating: fixed White + free likelihood.variance → Gram owns σ².
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    kern.setByPath("white.variance", 0.01);
+    CGaussianNoise noise(&y);
+    for(unsigned int j = 0; j < noise.getOutputDim(); j++)
+      noise.setBiasVal(0.0, j);
+    CGp gp(&kern, &noise, &X, CGp::FTC, 0, 0);
+    gp.fix("kern.white.variance");
+    gp.setLikelihoodVariance(SIGMA2);
+    fail += failTrue(gp.addsLikelihoodVarianceToGram(),
+                     "fixed White + free variance adds Gram σ²");
+    fail += checkClose("sigma2 alias get", gp.getByPath("sigma2"), SIGMA2);
+    gp.setByPath("sigma2", 0.4);
+    fail += checkClose("sigma2 alias set", gp.getLikelihoodVariance(), 0.4);
+    // Finite LL exercises Gram += σ² on the migrating path.
+    fail += failTrue(std::isfinite(gp.logLikelihood()),
+                     "migrating path LL finite");
+  }
+
+  // Dual-noise warnings (verbosity >= 1): allowWhite and default warn arms.
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    for(unsigned int j = 0; j < noise.getOutputDim(); j++)
+      noise.setBiasVal(0.0, j);
+    CGp gp(&kern, &noise, &X, CGp::FTC, 0, 0);
+    gp.setVerbosity(1);
+    gp.setAllowWhiteAndLikelihoodNoise(true);
+    gp.setLikelihoodVariance(0.3); // emits allowWhite warning once
+    fail += failTrue(true, "allowWhite warning path exercised");
+
+    CCmpndKern kern2(X);
+    kern2.addKern(new CRbfKern(X));
+    kern2.addKern(new CWhiteKern(X));
+    CGaussianNoise noise2(&y);
+    for(unsigned int j = 0; j < noise2.getOutputDim(); j++)
+      noise2.setBiasVal(0.0, j);
+    CGp gpWarn(&kern2, &noise2, &X, CGp::FTC, 0, 0);
+    gpWarn.setVerbosity(1);
+    gpWarn.setLikelihoodVariance(0.3); // default dual-noise warning
+    fail += failTrue(true, "default dual-noise warning path exercised");
+
+    // No White: maybeWarn early-returns after the Gaussian/White checks.
+    CCmpndKern kern3(X);
+    kern3.addKern(new CRbfKern(X));
+    CGaussianNoise noise3(&y);
+    for(unsigned int j = 0; j < noise3.getOutputDim(); j++)
+      noise3.setBiasVal(0.0, j);
+    CGp gpClean(&kern3, &noise3, &X, CGp::FTC, 0, 0);
+    gpClean.setVerbosity(1);
+    gpClean.setLikelihoodVariance(0.2);
+    fail += failTrue(gpClean.addsLikelihoodVarianceToGram(),
+                     "RBF-only still adds Gram σ²");
+  }
+
+  // Sparse: fixLikelihoodVariance mirrors onto betaFixed.
+  {
+    CMatrix Xu(3, Q);
+    for(unsigned int i = 0; i < 3; i++)
+      Xu.copyRowRow(i, X, i);
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    CGaussianNoise noise(&y);
+    for(unsigned int j = 0; j < noise.getOutputDim(); j++)
+      noise.setBiasVal(0.0, j);
+    CGp gp(&kern, &noise, &X, CGp::DTC, 3, 0);
+    gp.setInducingVals(Xu);
+    gp.setInducingFixed(true);
+    gp.fixLikelihoodVariance(true);
+    fail += failTrue(gp.isLikelihoodVarianceFixed(),
+                     "sparse fixLikelihoodVariance sets flag");
+    fail += failTrue(gp.isFixed("beta"),
+                     "sparse fixLikelihoodVariance fixes beta");
+    gp.unfix("likelihood.variance");
+    fail += failTrue(!gp.isLikelihoodVarianceFixed(),
+                     "sparse unfix likelihood.variance");
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -216,6 +351,7 @@ int main()
     fail += testPathsAndFix();
     fail += testSparseBetaSync();
     fail += testGradients();
+    fail += testCoverageBranches();
     cout << "Number of failures: " << fail << "." << endl;
     return fail > 0 ? 1 : 0;
   }

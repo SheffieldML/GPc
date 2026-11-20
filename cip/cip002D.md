@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002D"
-last_updated: "2026-11-19"
+last_updated: "2026-11-20"
 status: "Implemented"
 compressed: false
 related_requirements: ["0013", "0007", "0010", "0015", "0002", "0016"]
@@ -239,10 +239,24 @@ Compute \(K_{uB}\) per minibatch rather than \(K_{uf}\) for all \(N\); this is r
 
 - [x] Evidence gathered (E1–E5) and `lqAdjoint` `gemm` prototype measured
 - [x] CIP accepted
-- [x] Phase 1: QW1–QW3 (code + docs; `testLQAdjoint` / `testCGp` green under `CHECKS=full` and `RELEASE=1`; E1/E2 re-measure still open)
+- [x] Phase 1: QW1–QW3 (code + docs; `testLQAdjoint` / `testCGp` green under `CHECKS=full` and `RELEASE=1`; **E1/E2 re-measured 2026-11-20** — see follow-up note)
 - [x] Phase 2: QW4–QW5 stationary (MLP/0028 bulk deferred; `testCGp` / `testKern` / `testLQAdjoint` green)
 - [x] Phase 3: QW6–QW7 (`CSvgp` batched marginals/sites; workspaces; `CMatrix::totalAlloc` + `benchGPc --kind svgp`; `CSparsePpa` skipped — no analogous per-point marginal hot path)
 - [x] Phase 4: QW8 (`--kern mlp`; `bench/run_timing_cases.py` + `compare_timing.py`; warn-only `.github/workflows/bench-timing.yml`) and [REQ-0016](../requirements/req0016_gpu-training-decision.md) Proposed from Part B
+- [ ] Follow-up (not blocking Implemented): bulk diag grads / inducing ∂Z / MLP bulk — [backlog](../backlog/infrastructure/2026-11-20_cip002D-followup-bulk-diag-grad-inducing.md)
+
+### Post-merge re-measurement (2026-11-20)
+
+Same machine protocol as E1 (`OPENBLAS_NUM_THREADS=1`, \(q=2\), RBF+White). Log-likelihoods unchanged; suites green under exhaustive checks.
+
+| Case | E1 default | E1 release | Now default | Now release |
+| --- | --- | --- | --- | --- |
+| FTC, \(N=1000\) | 15.7 | 3.2 | 2.9 | 3.3 |
+| DTCVAR, \(N=5000, M=100\) | 2097 | 152 | 67 | 63 |
+| FITC, \(N=5000, M=100\) | 1765 | 141 | 36 | 45 |
+| DTCVAR, \(N=20000, M=200\) | — | 6761\* | 522 | 526 |
+
+\*E2-era release figure for the large case. Default build is now ≈ release; release is ~2.4× (N=5k) to ~13× (N=20k) vs prior release. Allocations still ≈ \(2N\)/eval — addressed in the follow-up backlog item.
 
 ## References
 

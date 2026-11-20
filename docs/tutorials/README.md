@@ -10,6 +10,8 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 |---|---|---|---|
 | [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.csv` (`.svml` legacy) | `basic_gp` / `toy_rbf_1d` |
 | [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.csv` (`.svml` legacy) | `sparse_gp_regression` |
+| [Compound + paths](./compound_paths.md) | `demo_compound_paths` (+ `gp -k`) | `examples/sinc.csv` | `basic_kernels` / `models_basic` |
+| [Coregionalization toy](./coregionalization_toy.md) | `demo_coregionalization_toy` | synthesised in-process | `coregionalization_toy` |
 | [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | EP classification → **IVM substitute** |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |
@@ -30,14 +32,14 @@ Owned outside CIP-0015 Stage 1, but linked here so the tutorial index stays the 
 | GPy tutorial / example | Status in GPc |
 |---|---|
 | `basic_gp` / `toy_rbf_1d` | Stage 1 — [regression_1d](./regression_1d.md) |
-| `basic_kernels` | Planned (compound + CIP-000C types) |
-| `models_basic` (constrain/fix) | Partial — CIP-0014 paths; demos use `setByPath` |
+| `basic_kernels` | Phase B — [compound_paths](./compound_paths.md) |
+| `models_basic` (constrain/fix) | Phase B — [compound_paths](./compound_paths.md) (CIP-0014 paths) |
 | `sparse_gp_regression` | Stage 1 — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR default; FITC/DTC available) |
 | `basic_classification` (EP) | IVM substitute — [ivm_unitsquare](./ivm_unitsquare.md) |
-| Coregionalization tutorials | Phase A helpers + later demo |
+| Coregionalization tutorials | Phase B — [coregionalization_toy](./coregionalization_toy.md) |
 | `gplvm_oil_100` | Stage 1 — [gplvm_oil100](./gplvm_oil100.md) |
 | `BayesianGPLVM` (oil-style) | [bgplvm_oil100](./bgplvm_oil100.md) ([CIP-0017](../../cip/cip0017.md)) |
-| `MRD` | [mrd](./mrd.md) ([CIP-0018](../../cip/cip0018.md); GPy fixture gate still open) |
+| `MRD` | [mrd](./mrd.md) ([CIP-0018](../../cip/cip0018.md)) |
 | Poisson / hetero / SVI / HMC | Out of scope (CIP-0015 non-goals) |
 
 Swagger/BVH mocap remains deferred (MATLAB visualisation path).
@@ -49,4 +51,4 @@ Swagger/BVH mocap remains deferred (MATLAB visualisation path).
 - MRD: [CIP-0018](../../cip/cip0018.md) · [REQ-000C](../../requirements/req000C_manifold-relevance-determination.md)
 - Parameter paths: [param-paths.md](../param-paths.md)
 - Optimiser budgets: [optimisers.md](../optimisers.md)
-- Multi-output layout (later): [coregionalize.md](../coregionalize.md)
+- Multi-output layout: [coregionalize.md](../coregionalize.md)

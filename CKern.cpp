@@ -351,14 +351,25 @@ vector<string> CComponentKern::paramPaths() const
 
 namespace {
 
-void stripCompoundPrefix(string& path)
+// Strip a redundant own-type prefix only (GPy `sum.rbf…` on a cmpnd root,
+// `tensor.rbf…` on a tensor root). Do not strip when `tensor` / `cmpnd` is a
+// child component label of a parent compound — e.g. ICM+indexwhite paths
+// `tensor.rbf.lengthscale` on the outer cmpnd.
+void stripOwnCompoundPrefix(const CComponentKern& self, string& path)
 {
-  if(path.compare(0, 4, "sum.")==0)
-    path=path.substr(4);
-  else if(path.compare(0, 6, "cmpnd.")==0)
-    path=path.substr(6);
-  else if(path.compare(0, 7, "tensor.")==0)
-    path=path.substr(7);
+  const string t = self.getType();
+  if(t=="cmpnd" || t=="sum")
+  {
+    if(path.compare(0, 4, "sum.")==0)
+      path = path.substr(4);
+    else if(path.compare(0, 6, "cmpnd.")==0)
+      path = path.substr(6);
+  }
+  else if(t=="tensor")
+  {
+    if(path.compare(0, 7, "tensor.")==0)
+      path = path.substr(7);
+  }
 }
 
 } // namespace
@@ -397,7 +408,7 @@ unsigned int CComponentKern::findComponent(const string& comp) const
 void CComponentKern::splitComponentPath(const string& path, unsigned int& componentIndex, string& leaf) const
 {
   string p=path;
-  stripCompoundPrefix(p);
+  stripOwnCompoundPrefix(*this, p);
   const size_t dot=p.find('.');
   if(dot==string::npos || dot+1>=p.size())
     throw ndlexceptions::Error("Compound kernel path '"+path+"' must be component.leaf.");

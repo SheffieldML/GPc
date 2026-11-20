@@ -1,10 +1,10 @@
 ---
 id: "000E"
 title: "GPy users can drive a documented GPc subset from Python with familiar ergonomics"
-status: "In Progress"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-18"
-last_updated: "2026-11-18"
+last_updated: "2026-11-20"
 related_tenets: ["ecosystem-interoperability", "compose-through-interfaces", "flexibility-with-performance", "assert-and-verify"]
 stakeholders: ["GPy users", "modellers", "teachers", "maintainers"]
 tags: ["gpy", "python", "facade", "interop", "api", "ease-of-use"]
@@ -24,19 +24,19 @@ The façade is an **ease-of-use and sharing surface**, not a second modelling en
 
 ## Acceptance Criteria
 
-- [ ] A documented, installable Python package imports under a stable name and exposes a first modelling subset without requiring callers to write C++ or edit makefiles for ordinary use
-- [ ] Callers can pass training and test inputs/outputs as NumPy arrays (or documented array-protocol equivalents) and receive predictions as NumPy arrays
-- [ ] For the first subset, callers can at least: build a Gaussian regression GP (full / FTC) with a compound RBF-style kernel, set and read parameters by **GPy-like paths and units** consistent with [REQ-0008](./req0008_gpy-like-parameter-access.md), train (optimise), and predict mean/variance
-- [ ] The documented subset maps explicitly to the native tutorial checklist of [REQ-0009](./req0009_gpy-tutorial-parity-native.md) (or states “not yet in Python subset”); at least one sparse DTCVAR-style and one path-based compound-kernel recipe are included when those exist natively
-- [ ] Training and likelihood evaluation run in the C++ core; the façade does not reimplement kernels, noise, or the optimiser loop in Python
-- [ ] Ambiguous or missing parameter paths, and shape mismatches, fail loudly with clear errors; no silent truncation of arrays or parameter vectors
-- [ ] Automated checks compare façade results to the native GPc path and/or GPy-generated fixtures within documented tolerances (objective and/or predictions on a tiny seeded problem)
-- [ ] Documentation shows a short “GPy → GPc façade” side-by-side for the first subset so a GPy user can port a basic script in an afternoon
-- [ ] Non-goals for the first delivery are explicit: full GPy/`paramz` object graph and `__setattr__` tree; regex parameter indexing; replacing native demos/CLI as the primary share format for [REQ-0009](./req0009_gpy-tutorial-parity-native.md); file interchange (owned by [REQ-000A](./req000A_shared-model-interchange.md)); EP/Laplace, SVGP/SVI, HMC, Poisson/Student-t/warped GPs, mean functions; putting Python allocations or interpreters *inside* objective/gradient evaluation or kernel `compute`; claiming API identity with GPy. (Outer-iteration live progress is owned with [REQ-000F](./req000F_interceptable-optimiser-model-display.md), not forbidden.)
+- [x] A documented, installable Python package imports under a stable name and exposes a first modelling subset without requiring callers to write C++ or edit makefiles for ordinary use *(editable / makefile / scikit-build paths landed; binary wheels for no-toolchain users owned by [CIP-002C](../cip/cip002C.md))*
+- [x] Callers can pass training and test inputs/outputs as NumPy arrays (or documented array-protocol equivalents) and receive predictions as NumPy arrays
+- [x] For the first subset, callers can at least: build a Gaussian regression GP (full / FTC) with a compound RBF-style kernel, set and read parameters by **GPy-like paths and units** consistent with [REQ-0008](./req0008_gpy-like-parameter-access.md), train (optimise), and predict mean/variance
+- [x] The documented subset maps explicitly to the native tutorial checklist of [REQ-0009](./req0009_gpy-tutorial-parity-native.md) (or states “not yet in Python subset”); at least one sparse DTCVAR-style and one path-based compound-kernel recipe are included when those exist natively
+- [x] Training and likelihood evaluation run in the C++ core; the façade does not reimplement kernels, noise, or the optimiser loop in Python
+- [x] Ambiguous or missing parameter paths, and shape mismatches, fail loudly with clear errors; no silent truncation of arrays or parameter vectors
+- [x] Automated checks compare façade results to the native GPc path and/or GPy-generated fixtures within documented tolerances (objective and/or predictions on a tiny seeded problem)
+- [x] Documentation shows a short “GPy → GPc façade” side-by-side for the first subset so a GPy user can port a basic script in an afternoon
+- [x] Non-goals for the first delivery are explicit: full GPy/`paramz` object graph and `__setattr__` tree; regex parameter indexing; replacing native demos/CLI as the primary share format for [REQ-0009](./req0009_gpy-tutorial-parity-native.md); file interchange (owned by [REQ-000A](./req000A_shared-model-interchange.md)); EP/Laplace, SVGP/SVI, HMC, Poisson/Student-t/warped GPs, mean functions; putting Python allocations or interpreters *inside* objective/gradient evaluation or kernel `compute`; claiming API identity with GPy. (Outer-iteration live progress is owned with [REQ-000F](./req000F_interceptable-optimiser-model-display.md), not forbidden.)
 
 ## Notes (Optional)
 
-HOW is [CIP-001D](../cip/cip001D.md) (In Progress). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Live progress and structured repr consume [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11).
+HOW is [CIP-001D](../cip/cip001D.md) (**Closed**). Builds on [REQ-0005](./req0005_gpy-aligned-kernel-coverage.md), [REQ-0008](./req0008_gpy-like-parameter-access.md), and the native subset of [REQ-0009](./req0009_gpy-tutorial-parity-native.md). Live progress and structured repr consume [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md) (CIP-001D Phase B2 deferred until 001E lands). Distinct from [REQ-000A](./req000A_shared-model-interchange.md) (model files, not a live API). Binding technology locked in CIP-001D (pybind11). Interactive Python `help()` / docstring discoverability is [REQ-0017](./req0017_python-facade-help-docstrings.md) / [CIP-002F](../cip/cip002F.md).
 
 ## References
 
@@ -60,3 +60,6 @@ Phase A green; Phase B `GPRegression` smoke green. Locked: notebooks/`pods`/matp
 
 ### 2026-11-18 (display / progress)
 Clarified non-goals: outer-iteration live progress and structured model repr are in scope via [REQ-000F](./req000F_interceptable-optimiser-model-display.md) / [CIP-001E](../cip/cip001E.md); CIP-001D Phase B2 binds them.
+
+### 2026-11-20 (close CIP-001D)
+GPy-form `gpc.kern` / `gpc.models` / compound `+` landed; side-by-side and subset checklist updated. CIP-001D Closed; Phase B2 deferred on CIP-001E. Requirement → Implemented. Interactive help/docstrings → REQ-0017 / CIP-002F (Proposed). Wheels remain CIP-002C.

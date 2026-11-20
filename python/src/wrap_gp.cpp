@@ -1,5 +1,7 @@
 #include "wrap_gp.h"
 
+#include <sstream>
+
 #include <pybind11/stl.h>
 
 #include "matrix_numpy.h"
@@ -26,6 +28,16 @@ bool isArccosKernelName(const std::string& kernel)
 {
   return kernel == "arccos" || kernel == "arccosine" || kernel == "ArcCosine"
       || kernel == "ARCCOS";
+}
+
+bool isWhiteKernelName(const std::string& kernel)
+{
+  return kernel == "white" || kernel == "White" || kernel == "WHITE";
+}
+
+bool isBiasKernelName(const std::string& kernel)
+{
+  return kernel == "bias" || kernel == "Bias" || kernel == "BIAS";
 }
 
 enum class SignalKind
@@ -81,7 +93,7 @@ void addOptionalWhite(CCmpndKern& kern, const CMatrix& X)
   kern.addKern(&white);
 }
 
-// FTC / point-inducing compound: signal + bias + white (GPy-familiar).
+// FTC / point-inducing compound: signal + bias + white (GPy-familiar default).
 void addFtcStyleCompound(CCmpndKern& kern,
                          const CMatrix& X,
                          SignalKind kind,
@@ -164,6 +176,108 @@ void addWeightSpaceCompound(CCmpndKern& kern,
   }
 }
 
+double dictGet(const py::dict& d, const char* key, double fallback)
+{
+  if(!d.contains(key))
+    return fallback;
+  return py::cast<double>(d[key]);
+}
+
+unsigned int dictGetUInt(const py::dict& d, const char* key, unsigned int fallback)
+{
+  if(!d.contains(key))
+    return fallback;
+  return static_cast<unsigned int>(py::cast<double>(d[key]));
+}
+
+std::string partType(const py::dict& d)
+{
+  if(!d.contains("type"))
+    throw ndlexceptions::Error("kernel part dict missing 'type'");
+  return py::cast<std::string>(d["type"]);
+}
+
+// Build exactly the listed components (GPy-style; no auto Bias/White).
+std::string addPartsCompound(CCmpndKern& kern, const CMatrix& X, const py::list& parts)
+{
+  if(parts.size() < 1)
+    throw ndlexceptions::Error("kernel parts list must be non-empty");
+
+  std::ostringstream label;
+  bool first = true;
+  for(py::handle h : parts)
+  {
+    py::dict d = py::reinterpret_borrow<py::dict>(h);
+    const std::string type = partType(d);
+    if(!first)
+      label << "+";
+    first = false;
+
+    if(isRbfKernelName(type))
+    {
+      CRbfKern rbf(X);
+      kern.addKern(&rbf);
+      kern.setByPath("rbf.lengthscale", dictGet(d, "lengthscale", 1.0));
+      kern.setByPath("rbf.variance", dictGet(d, "variance", 1.0));
+      label << "rbf";
+    }
+    else if(isEqKernelName(type))
+    {
+      CEqKern eq(X);
+      kern.addKern(&eq);
+      kern.setByPath("ExpQuad.lengthscale", dictGet(d, "lengthscale", 1.0));
+      kern.setByPath("ExpQuad.variance", dictGet(d, "variance", 1.0));
+      label << "eq";
+    }
+    else if(isWhiteKernelName(type))
+    {
+      CWhiteKern white(X);
+      kern.addKern(&white);
+      kern.setByPath("white.variance", dictGet(d, "variance", 1.0));
+      label << "white";
+    }
+    else if(isBiasKernelName(type))
+    {
+      CBiasKern bias(X);
+      kern.addKern(&bias);
+      kern.setByPath("bias.variance", dictGet(d, "variance", 1.0));
+      label << "bias";
+    }
+    else if(isMlpKernelName(type))
+    {
+      CMlpKern mlp(X);
+      kern.addKern(&mlp);
+      kern.setByPath("mlp.weightVariance", dictGet(d, "weight_variance", 10.0));
+      kern.setByPath("mlp.biasVariance", dictGet(d, "bias_variance", 10.0));
+      kern.setByPath("mlp.variance", dictGet(d, "variance", 1.0));
+      label << "mlp";
+    }
+    else if(isArccosKernelName(type))
+    {
+      CArcCosineKern ac(X);
+      const unsigned int order = dictGetUInt(d, "order", 0);
+      if(order > 1)
+        throw ndlexceptions::Error("arccos order must be 0 or 1");
+      ac.setOrder(order);
+      kern.addKern(&ac);
+      kern.setByPath("arccos.variance", dictGet(d, "variance", 1.0));
+      label << "arccos";
+    }
+    else
+    {
+      throw ndlexceptions::Error(
+          "Unknown kernel part type '" + type
+          + "'. Use rbf, eq/ExpQuad, white, bias, mlp, or arccos.");
+    }
+  }
+  return label.str();
+}
+
+bool kernelIsPartsList(const py::object& kernel)
+{
+  return py::isinstance<py::list>(kernel) || py::isinstance<py::tuple>(kernel);
+}
+
 void checkXY(const CMatrix& X, const CMatrix& Y)
 {
   if(X.getRows() != Y.getRows())
@@ -193,20 +307,28 @@ std::pair<py::array_t<double>, py::array_t<double>> predictImpl(
 PyGPRegression::PyGPRegression(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
     py::array_t<double, py::array::c_style | py::array::forcecast> Yin,
-    const std::string& kernel,
+    py::object kernel,
     int verbosity,
     unsigned int arccos_order)
-    : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)), kernelType(kernel)
+    : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin))
 {
   checkXY(X, Y);
   if(arccos_order > 1)
     throw ndlexceptions::Error("arccos_order must be 0 or 1");
 
-  const SignalKind kind = parseSignalKind(kernel);
-  kernelType = signalKindLabel(kind);
-
   kern = std::make_unique<CCmpndKern>(X);
-  addFtcStyleCompound(*kern, X, kind, arccos_order);
+  if(kernelIsPartsList(kernel))
+  {
+    py::list parts = py::reinterpret_borrow<py::list>(kernel);
+    kernelType = addPartsCompound(*kern, X, parts);
+  }
+  else
+  {
+    const std::string kernelName = py::cast<std::string>(kernel);
+    const SignalKind kind = parseSignalKind(kernelName);
+    kernelType = signalKindLabel(kind);
+    addFtcStyleCompound(*kern, X, kind, arccos_order);
+  }
 
   noise = std::make_unique<CGaussianNoise>(&Y);
   for(unsigned int j = 0; j < Y.getCols(); ++j)
@@ -254,7 +376,7 @@ PySparseGPRegression::PySparseGPRegression(
     const std::string& approx,
     bool inducing_fixed,
     int verbosity,
-    const std::string& kernel,
+    py::object kernel,
     const std::string& inducing,
     double window_width,
     unsigned int arccos_order)
@@ -300,9 +422,6 @@ PySparseGPRegression::PySparseGPRegression(
 
   numActive = Z.getRows();
 
-  const SignalKind kind = parseSignalKind(kernel);
-  kernelType = signalKindLabel(kind);
-
   bool weightSpace = false;
   if(inducing == "points" || inducing == "point")
   {
@@ -322,10 +441,25 @@ PySparseGPRegression::PySparseGPRegression(
   }
 
   kern = std::make_unique<CCmpndKern>(X);
-  if(weightSpace)
-    addWeightSpaceCompound(*kern, X, kind, arccos_order);
+  if(kernelIsPartsList(kernel))
+  {
+    if(weightSpace)
+      throw ndlexceptions::Error(
+          "Custom gpc.kern compounds are not supported with inducing='weightspace'; "
+          "use kernel='mlp' or 'arccos' string names.");
+    py::list parts = py::reinterpret_borrow<py::list>(kernel);
+    kernelType = addPartsCompound(*kern, X, parts);
+  }
   else
-    addFtcStyleCompound(*kern, X, kind, arccos_order);
+  {
+    const std::string kernelName = py::cast<std::string>(kernel);
+    const SignalKind kind = parseSignalKind(kernelName);
+    kernelType = signalKindLabel(kind);
+    if(weightSpace)
+      addWeightSpaceCompound(*kern, X, kind, arccos_order);
+    else
+      addFtcStyleCompound(*kern, X, kind, arccos_order);
+  }
 
   noise = std::make_unique<CGaussianNoise>(&Y);
   for(unsigned int j = 0; j < Y.getCols(); ++j)
@@ -399,17 +533,16 @@ void bind_gp(py::module_& m)
   py::class_<PyGPRegression>(m, "GPRegression")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
-                    const std::string&,
+                    py::object,
                     int,
                     unsigned int>(),
            py::arg("X"),
            py::arg("Y"),
-           py::arg("kernel") = "rbf",
+           py::arg("kernel") = py::str("rbf"),
            py::arg("verbosity") = 0,
            py::arg("arccos_order") = 0,
-           "FTC Gaussian GP with compound signal + bias + white. "
-           "kernel='rbf' (default), 'eq' / 'ExpQuad', 'mlp' (Williams arcsin), "
-           "or 'arccos' / 'arccosine' (order via arccos_order=0|1).")
+           "FTC Gaussian GP. kernel is a string name (default signal+bias+white) "
+           "or a parts list from gpc.kern compounds.")
       .def("set_by_path", &PyGPRegression::set_by_path, py::arg("path"), py::arg("value"))
       .def("get_by_path", &PyGPRegression::get_by_path, py::arg("path"))
       .def("param_paths", &PyGPRegression::param_paths)
@@ -429,7 +562,7 @@ void bind_gp(py::module_& m)
                     const std::string&,
                     bool,
                     int,
-                    const std::string&,
+                    py::object,
                     const std::string&,
                     double,
                     unsigned int>(),
@@ -439,14 +572,12 @@ void bind_gp(py::module_& m)
            py::arg("approx") = "dtcvar",
            py::arg("inducing_fixed") = true,
            py::arg("verbosity") = 0,
-           py::arg("kernel") = "rbf",
+           py::arg("kernel") = py::str("rbf"),
            py::arg("inducing") = "points",
            py::arg("window_width") = -1.0,
            py::arg("arccos_order") = 0,
-           "Sparse Gaussian GP. approx='dtcvar'|'fitc'|'dtc'. "
-           "kernel='rbf'|'eq'|'mlp'|'arccos'. "
-           "inducing='points' (default) or 'weightspace' (CIP-0028; needs mlp/arccos). "
-           "For weight-space, Z rows set M; optional window_width overrides ridge s.")
+           "Sparse Gaussian GP. kernel string or gpc.kern parts list "
+           "(parts list requires inducing='points').")
       .def("set_by_path", &PySparseGPRegression::set_by_path, py::arg("path"), py::arg("value"))
       .def("get_by_path", &PySparseGPRegression::get_by_path, py::arg("path"))
       .def("param_paths", &PySparseGPRegression::param_paths)

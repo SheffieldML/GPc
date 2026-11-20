@@ -25,7 +25,7 @@ gnuplot sinc_plot.gp
 ./gp -v 3 learn -# 50 -P rbf.lengthscale=1.0 -P likelihood.variance=0.1 examples/sinc.csv sinc.model
 ```
 
-Explicit prior Bias/White remain available: `-k rbf -k bias -k white`.
+Explicit prior Bias/White remain available: `-k rbf -k bias -k white`. With `-k white`, the CLI fixes `likelihood.variance` (legacy White-owned noise). To train both, pass `--allow-white-and-noise` (CIP-0027 Phase C).
 
 Legacy SVM-light still works: `examples/sinc.svml` (CIP-0022).
 

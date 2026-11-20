@@ -117,6 +117,7 @@ void CClgp::learn()
   string sparseLinalgStr = "lq";
   string inducingTypeStr = "points";
   double windowWidth = -1.0;
+  bool allowWhiteAndNoise = false;
   bool labelsProvided = true;
   double signalVariance = 0.0;
   vector<int> labels;
@@ -163,6 +164,9 @@ void CClgp::learn()
       else if (isCurrentArg("--window-width", "--window-width")) {
         incrementArgument();
         windowWidth = getDoubleFromCurrentArgument();
+      }
+      else if (isCurrentArg("--allow-white-and-noise", "--allow-white-and-noise")) {
+        allowWhiteAndNoise=true;
       }
       else if (isCurrentArg("-k", "--kernel")) {
         incrementArgument(); 
@@ -477,6 +481,25 @@ void CClgp::learn()
   pmodel->setBetaVal(1); // sparse: β=1 ⇒ likelihood.variance=1 (CIP-0027 sync)
   if(pmodel->getApproximationType()==CGp::FTC && pmodel->isGaussianNoise())
     pmodel->setLikelihoodVariance(1.0); // GPy-like default observation noise
+  // CIP-0027 Phase C: explicit -k white with free likelihood.variance needs allow,
+  // otherwise fix likelihood variance (legacy White-owned noise).
+  if(allowWhiteAndNoise)
+    pmodel->setAllowWhiteAndLikelihoodNoise(true);
+  else if(pmodel->getApproximationType()==CGp::FTC && pmodel->isGaussianNoise())
+  {
+    try
+    {
+      (void)kern.getByPath("white.variance");
+      pmodel->fixLikelihoodVariance(true);
+      if(getVerbosity()>0)
+        cout << "CIP-0027: White present — fixing likelihood.variance "
+             << "(use --allow-white-and-noise to train both)." << endl;
+    }
+    catch(ndlexceptions::Error&)
+    {
+      // no White component
+    }
+  }
   pmodel->setScale(scale);
   pmodel->setBias(bias);
   pmodel->updateM();
@@ -1064,6 +1087,7 @@ void CClgp::helpInfo()
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
     helpArgument("-k, --kernel string", "Type of covariance function. CLI learn path: lin, poly, rbf, eq (GPy ExpQuad lengthscale-first; use -P ExpQuad.lengthscale=…), exp, ratquad, mlp, arccos (CIP-0028; default rbf only — CIP-0027: Bias/White are opt-in via -k bias / -k white; FTC observation noise is likelihood.variance). Additional stream/testKern types (CIP-000C): matern32, matern52, matern32ard, matern52ard, ratquadard, stdperiodic, cosine, brownian; (CIP-0029): ibrownian; (CIP-000D): coregionalize, indexwhite; plus ard/tensor/cmpnd.");
+    helpArgument("--allow-white-and-noise", "CIP-0027 Phase C: allow trainable White and free likelihood.variance together on FTC. Default refuses dual free noise (legacy -k white fixes likelihood.variance).");
     helpArgument("--arccos-order int", "Arc-cosine order 0 (angular / infinite-MLP) or 1 (ReLU). Only with -k arccos. Default 0.");
     helpArgument("-g, --gamma float", "Inverse width parameter in RBF, exponential and rational quadratic covariance function.");
     helpArgument("-@, --alpha float", "Alpha parameter in rational quadratic covariance function.");

@@ -1,7 +1,7 @@
 ---
 id: "0014"
 title: "Gaussian observation noise lives on the likelihood; no default White or Bias"
-status: "In Progress"
+status: "Implemented"
 priority: "High"
 created: "2026-11-18"
 last_updated: "2026-11-20"
@@ -24,16 +24,16 @@ For Gaussian-process regression and for PPA’s Gaussian site layer, **observati
 
 ## Acceptance Criteria
 
-- [ ] FTC Gaussian regression trains and predicts with observation noise from `CGaussianNoise` at canonical path `likelihood.variance` (alias `Gaussian_noise.variance`; sparse algebra may keep internal \(\beta = 1/\sigma^2\))
-- [ ] Every model that already exposes Gaussian observation noise / precision converges on that likelihood-owned parameter (not FTC-only)
-- [ ] Default CLI / Python / demo constructions for Gaussian regression and PPA **do not** auto-append White or Bias
-- [ ] When both a trainable White component and trainable likelihood variance are present, the library emits a clear deprecation or double-counting warning
-- [ ] Dense and sparse PPA keep observation / site noise in \(\beta\) + `CNoise`; they do not depend on default White or Bias for correctness
-- [ ] DTC \(M=N\), \(X_u=X\), signal kernel only matches dense PPA / FTC-with-noise-on-Gram without a White-kernel carve-out
-- [ ] Old `.model` streams that embed White (and/or Bias) as part of the trained prior still load; migration / deprecation path is documented
-- [ ] IVM: composition write-up confirms whether White remains the default softener; **preferred outcome is keep White**, with the exception documented in IVM tutorials / CLI help
-- [ ] `CWhiteKern` / `CWhitefixedKern` / `CIndexWhiteKern` / `CBiasKern` and CIP-001C white-noise **inducing** features remain available; non-goals do not delete those types
-- [ ] Non-goals: shipping trainable probit \(\sigma^2\) as the IVM softener; EP/Laplace/`CGp` classification parity; forced CIP-001C rename; silent drop of IVM White without the composition write-up
+- [x] FTC Gaussian regression trains and predicts with observation noise from `CGaussianNoise` at canonical path `likelihood.variance` (alias `Gaussian_noise.variance`; sparse algebra may keep internal \(\beta = 1/\sigma^2\))
+- [x] Every model that already exposes Gaussian observation noise / precision converges on that likelihood-owned parameter (not FTC-only)
+- [x] Default CLI / Python / demo constructions for Gaussian regression and PPA **do not** auto-append White or Bias
+- [x] When both a trainable White component and trainable likelihood variance are present, the library emits a clear deprecation or double-counting warning
+- [x] Dense and sparse PPA keep observation / site noise in \(\beta\) + `CNoise`; they do not depend on default White or Bias for correctness
+- [x] DTC \(M=N\), \(X_u=X\), signal kernel only matches dense PPA / FTC-with-noise-on-Gram without a White-kernel carve-out
+- [x] Old `.model` streams that embed White (and/or Bias) as part of the trained prior still load; migration / deprecation path is documented
+- [x] IVM: composition write-up confirms whether White remains the default softener; **preferred outcome is keep White**, with the exception documented in IVM tutorials / CLI help
+- [x] `CWhiteKern` / `CWhitefixedKern` / `CIndexWhiteKern` / `CBiasKern` and CIP-001C white-noise **inducing** features remain available; non-goals do not delete those types
+- [x] Non-goals: shipping trainable probit \(\sigma^2\) as the IVM softener; EP/Laplace/`CGp` classification parity; forced CIP-001C rename; silent drop of IVM White without the composition write-up
 
 ## Notes (Optional)
 
@@ -61,3 +61,6 @@ Canonical path becomes `likelihood.variance` with `Gaussian_noise.variance` as G
 
 ### 2026-11-20 (CIP accepted)
 CIP-0027 Accepted; requirement moved to In Progress on branch `cip0027-likelihood-owned-noise`.
+
+### 2026-11-20 (CIP-0027 Implemented)
+Phases 0–C landed: likelihood-owned σ², default flip, IVM White exception, Phase C harden + `testCip0027Perf` algorithm gates. Requirement → Implemented; Validated on CIP close.

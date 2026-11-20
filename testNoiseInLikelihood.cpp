@@ -81,7 +81,8 @@ int testFtcEquivalence()
   for(unsigned int j = 0; j < noiseWhite.getOutputDim(); j++)
     noiseWhite.setBiasVal(0.0, j);
   CGp gpWhite(&kernWhite, &noiseWhite, &X, CGp::FTC, 0, 0);
-  // Legacy: White owns noise; tiny free variance must not be added on the Gram.
+  gpWhite.fixLikelihoodVariance(true); // CIP-0027 Phase C: legacy White-owned path
+  // Legacy: White owns noise; fixed variance must not be added on the Gram.
   fail += failTrue(!gpWhite.addsLikelihoodVarianceToGram(),
                    "legacy White model skips Gram σ²");
   fail += failTrue(gpLik.addsLikelihoodVarianceToGram(),

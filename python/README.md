@@ -141,7 +141,7 @@ mu_f, var_f = m.predict_noiseless(X)  # f_* (CIP-0031)
 
 Shorthand (CIP-0027): string kernels build **signal-only** compounds; observation noise is `likelihood.variance` (alias `Gaussian_noise.variance`). Bias/White are opt-in. Prefer **noisy** observations. `objective()` is **−log-likelihood** (SCG minimises it). `plot_1d(..., noiseless=True)` draws the latent band.
 
-`optimize(messages=True)` refreshes the paramz-style parameter table **in place**: Jupyter updates one `display_id` cell; terminal / terminal IPython uses ANSI cursor rewrite (not `clear_output`, which stacks in terminal IPython). It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks.
+`optimize(messages=True)` shows a paramz-style live view **in place**: with `ipywidgets` (notebook / Colab) a progress bar + status + model HTML update like GPy; without widgets, a single Jupyter `display_id` cell; in a plain terminal, ANSI cursor rewrite. It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks. Install widgets via `pip install ipywidgets` or `gpc[examples]`.
 
 - GPy porting fragment: [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md)
 - Tutorial map: [`docs/subset_checklist.md`](docs/subset_checklist.md)
@@ -168,7 +168,7 @@ m = gpc.GPRegression(X, Y, kernel="mlp")       # mlp.weight_variance, bias_varia
 m = gpc.GPRegression(X, Y, kernel="arccos", arccos_order=0)  # or 1
 ```
 
-Side-by-side olympic demo: [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb).
+Defaults match GPy (`weight_variance=bias_variance=variance=1`). Large-magnitude inputs need an explicit scale (or standardised `X`); see [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb).
 
 ## Sparse `SparseGPRegression`
 
@@ -193,15 +193,18 @@ from gpc.plot import plot_1d  # requires matplotlib
 plot_1d(m, X, Y)
 ```
 
-Examples:
+Examples (GPy-tutorial inspired where noted):
 
-- [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb)
+- [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb) — basic GP + `predict` / `predict_noiseless`
+- [`examples/sparse_gp_regression_1d.ipynb`](examples/sparse_gp_regression_1d.ipynb) — GPy `sparse_GP_regression_1D`
+- [`examples/basic_kernels_compound.ipynb`](examples/basic_kernels_compound.ipynb) — `kern.*` compounds (CIP-0027 noise note)
+- [`examples/expquad_regression.ipynb`](examples/expquad_regression.ipynb) — GPy `ExpQuad` path names
 - [`examples/olympic_marathon.ipynb`](examples/olympic_marathon.ipynb) — needs `pods`
 - [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb) — RBF vs MLP (Phase F)
 - [`examples/weightspace_ridge_1d.ipynb`](examples/weightspace_ridge_1d.ipynb) — points vs ridges (CIP-0028)
 
 Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md)). Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
 
-## Later
+## Later / not in the Python notebook subset yet
 
-CIP-001E live progress / repr, custom kernel factories, coreg / GPLVM façades — follow-ups, not close blockers for the first subset. SVI Bayesian GPLVM (`CSviBayesGplvm`, CIP-0030) is CLI-first for now (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.
+GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, EP classification / IVM, GPLVM / Bayesian GPLVM / MRD, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). Use the native tutorials until those façade follow-ons land. SVI Bayesian GPLVM is CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.

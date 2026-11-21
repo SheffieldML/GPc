@@ -41,7 +41,7 @@ Linked here so the tutorial index stays the discovery surface.
 | `BayesianGPLVM` | Owned by [CIP-0017](../../cip/cip0017.md) — [bgplvm_oil100](./bgplvm_oil100.md) |
 | `MRD` | Owned by [CIP-0018](../../cip/cip0018.md) — [mrd](./mrd.md) |
 | EP/Laplace in `CGp`, Poisson, Student-t, hetero, warped, mean functions, SVI/HMC, integral kernels, FITC-as-default | **Not in subset** (CIP-0015 non-goals) |
-| Python / Jupyter share format | **Not in subset** — [CIP-001D](../../cip/cip001D.md) / [REQ-000E](../../requirements/req000E_gpy-facing-python-facade.md) |
+| Python / Jupyter share format | Optional ease-of-use only — [CIP-001D](../../cip/cip001D.md) / [REQ-000E](../../requirements/req000E_gpy-facing-python-facade.md); which GPy tutorials have `gpc` notebooks vs deferred façades: [`python/docs/subset_checklist.md`](../../python/docs/subset_checklist.md) |
 
 Swagger/BVH mocap remains deferred (MATLAB visualisation path).
 

@@ -19,10 +19,15 @@ def _build_callback(
     messages: bool,
     callback: Callable[[OptimiserEvent], Any] | None,
     display_name: str,
+    max_iters: int,
 ) -> Callable[[OptimiserEvent], Any] | None:
     observers: list[Callable[[OptimiserEvent], Any]] = []
     if messages:
-        observers.append(OptimiserTableProgress(model, name=display_name))
+        observers.append(
+            OptimiserTableProgress(
+                model, name=display_name, max_iters=max_iters
+            )
+        )
     if callback is not None:
         observers.append(callback)
     if not observers:
@@ -61,6 +66,15 @@ class GPRegression(_GPRegression):
     def __repr__(self) -> str:  # noqa: D105
         return self.__str__()
 
+    def _repr_html_(self) -> str:
+        from ._display import format_model_description_html
+
+        return format_model_description_html(
+            self.describe(),
+            name="GP regression",
+            objective=self.objective(),
+        )
+
     def optimize(
         self,
         iters: int = 100,
@@ -69,9 +83,10 @@ class GPRegression(_GPRegression):
     ) -> None:
         """Run the C++ optimiser.
 
-        ``messages=True`` refreshes the paramz-style parameter table in place
-        (Jupyter ``display_id`` / ANSI rewrite in a plain terminal). It does
-        **not** stream C++ ``Iteration:`` / gradient-check dumps.
+        ``messages=True`` shows a paramz-style live table: ``ipywidgets`` in
+        notebooks when available, else a single ``display_id`` cell, else ANSI
+        rewrite in a plain terminal. It does **not** stream C++ ``Iteration:``
+        / gradient-check dumps.
         """
         # C++ CLI progress / verbosity stay off; Python owns messaging.
         _GPRegression.optimize(
@@ -83,6 +98,7 @@ class GPRegression(_GPRegression):
                 messages=messages,
                 callback=callback,
                 display_name="GP regression",
+                max_iters=iters,
             ),
         )
 
@@ -129,6 +145,15 @@ class SparseGPRegression(_SparseGPRegression):
     def __repr__(self) -> str:  # noqa: D105
         return self.__str__()
 
+    def _repr_html_(self) -> str:
+        from ._display import format_model_description_html
+
+        return format_model_description_html(
+            self.describe(),
+            name="Sparse GP regression",
+            objective=self.objective(),
+        )
+
     def optimize(
         self,
         iters: int = 100,
@@ -145,6 +170,7 @@ class SparseGPRegression(_SparseGPRegression):
                 messages=messages,
                 callback=callback,
                 display_name="Sparse GP regression",
+                max_iters=iters,
             ),
         )
 

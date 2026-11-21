@@ -141,7 +141,7 @@ class Bias(_Atomic):
 
 
 class MLP(_Atomic):
-    """Williams infinite-MLP (arcsin) covariance."""
+    """Williams infinite-MLP (arcsin) covariance (GPy ``kern.MLP`` defaults)."""
 
     _type = "mlp"
 
@@ -149,10 +149,15 @@ class MLP(_Atomic):
         self,
         input_dim: int,
         variance: float = 1.0,
-        weight_variance: float = 10.0,
-        bias_variance: float = 10.0,
+        weight_variance: float = 1.0,
+        bias_variance: float = 1.0,
     ) -> None:
-        """Create an MLP kernel descriptor (``mlp.*`` paths / aliases)."""
+        """Create an MLP kernel descriptor (``mlp.*`` paths / aliases).
+
+        Defaults match GPy: ``variance=weight_variance=bias_variance=1``.
+        Large-magnitude inputs need an explicit ``weight_variance`` (e.g.
+        ``1/Var(X)``) or standardised ``X`` — see ``mlp_olympic.ipynb``.
+        """
         super().__init__(
             input_dim,
             variance=variance,

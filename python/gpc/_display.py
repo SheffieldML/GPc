@@ -83,6 +83,21 @@ def format_model_description(
     return "\n".join(lines) + "\n"
 
 
+def format_model_description_html(
+    desc: Any,
+    *,
+    name: str | None = None,
+    objective: float | None = None,
+) -> str:
+    """HTML twin of :func:`format_model_description` for notebook widgets."""
+    text = format_model_description(desc, name=name, objective=objective)
+    return (
+        "<pre style='line-height:1.35;margin:0;font-family:Menlo,Consolas,"
+        "monospace;font-size:12px'>"
+        f"{html.escape(text)}</pre>"
+    )
+
+
 def _jupyter_zmq_shell() -> Any | None:
     """Return the IPython shell only when running under Jupyter (ZMQ).
 
@@ -101,21 +116,77 @@ def _jupyter_zmq_shell() -> Any | None:
     return None
 
 
+def _format_runtime(seconds: float) -> str:
+    if seconds < 60:
+        ms = (seconds % 1) * 100
+        return f"{int(seconds):02d}s{int(ms):02d}"
+    m, s = divmod(seconds, 60)
+    if m > 59:
+        h, m = divmod(m, 60)
+        if h > 23:
+            d, h = divmod(h, 24)
+            return f"{int(d):02d}d{int(h):02d}h{int(m):02d}"
+        return f"{int(h):02d}h{int(m):02d}m{int(s):02d}"
+    ms = (seconds % 1) * 100
+    return f"{int(m):02d}m{int(s):02d}s{int(ms):02d}"
+
+
 class OptimiserTableProgress:
     """Refresh the paramz-style model table in place during ``optimize``.
 
-    Jupyter (ZMQ): update a single ``display_id`` HTML ``<pre>`` cell.
-    Terminal / terminal IPython: ANSI cursor-up rewrite of the same block.
+    Prefer paramz's notebook path: ``ipywidgets`` progress + status HTML +
+    live model HTML. Fall back to a single ``display_id`` cell in ZMQ Jupyter
+    without widgets, then ANSI cursor-up rewrite in a plain terminal.
     """
 
-    def __init__(self, model: Any, *, name: str = "GP regression") -> None:
+    def __init__(
+        self,
+        model: Any,
+        *,
+        name: str = "GP regression",
+        max_iters: int = 100,
+    ) -> None:
         self.model = model
         self.name = name
+        self.max_iters = max(1, int(max_iters))
         self._start = time.time()
+        self._last_draw = 0.0
         self._lines = 0
-        self._jupyter = _jupyter_zmq_shell() is not None
         self._handle: Any | None = None
         self._finished = False
+        self._mode = "ansi"
+        self._progress: Any | None = None
+        self._status_html: Any | None = None
+        self._model_html: Any | None = None
+        self._box: Any | None = None
+        self._setup_backend()
+
+    def _setup_backend(self) -> None:
+        # Match paramz: try widgets under any IPython first.
+        try:
+            from IPython import get_ipython
+            from IPython.display import display
+            from ipywidgets import HTML, HBox, IntProgress, VBox
+
+            if get_ipython() is None:
+                raise RuntimeError("not under IPython")
+
+            self._status_html = HTML(value="")
+            self._progress = IntProgress(min=0, max=self.max_iters, value=0)
+            self._model_html = HTML(value="")
+            left = VBox(children=[self._progress, self._status_html])
+            self._box = HBox(children=[left, self._model_html])
+            display(self._box)
+            self._mode = "widgets"
+            return
+        except Exception:
+            pass
+
+        if _jupyter_zmq_shell() is not None:
+            self._mode = "display_id"
+            return
+
+        self._mode = "ansi"
 
     def __call__(self, event: Any) -> None:
         if self._finished:
@@ -126,7 +197,36 @@ class OptimiserTableProgress:
         it = int(getattr(event, "iter", 0))
         obj = float(getattr(event, "objective", float("nan")))
         scale = float(getattr(event, "step_or_scale", float("nan")))
+        grad = float(getattr(event, "grad_norm", float("nan")))
         elapsed = time.time() - self._start
+
+        phase_name = getattr(phase, "name", str(phase))
+        status = "running"
+        footer = ""
+        if phase_name == "MaxIters":
+            status = "maxiters"
+            footer = "Warning: Maximum number of iterations has been exceeded\n"
+        elif phase_name == "Converged":
+            status = "converged"
+            footer = "Optimization converged.\n"
+        elif phase_name == "Failed":
+            status = "failed"
+            msg = getattr(event, "message", "") or "Optimization failed."
+            footer = f"{msg}\n"
+        elif phase_name == "Start":
+            status = "start"
+
+        # Throttle mid-run redraws like paramz: always in the first 0.2s,
+        # then ~1 Hz; always show start/terminal frames.
+        now = time.time()
+        terminal = phase_name in ("Start", "Converged", "MaxIters", "Failed")
+        if (
+            not terminal
+            and elapsed >= 0.2
+            and (now - self._last_draw) < 1.0
+        ):
+            return
+        self._last_draw = now
 
         obj_for_table = obj if math.isfinite(obj) else None
         table = format_model_description(
@@ -134,40 +234,95 @@ class OptimiserTableProgress:
             name=self.name,
             objective=obj_for_table,
         )
+        table_html = format_model_description_html(
+            self.model.describe(),
+            name=self.name,
+            objective=obj_for_table,
+        )
 
-        status_bits = [f"Running {opt}", f"iter {it}", f"{elapsed:.2f}s"]
-        if math.isfinite(obj):
-            status_bits.append(f"objective {obj:.6g}")
-        if math.isfinite(scale):
-            status_bits.append(f"scale {scale:.6g}")
-        status = " · ".join(status_bits)
+        if self._mode == "widgets":
+            self._render_widgets(
+                opt=opt,
+                it=it,
+                obj=obj,
+                grad=grad,
+                elapsed=elapsed,
+                status=status,
+                table_html=table_html,
+                terminal=terminal,
+            )
+        else:
+            status_bits = [f"Running {opt}", f"iter {it}", f"{elapsed:.2f}s"]
+            if math.isfinite(obj):
+                status_bits.append(f"objective {obj:.6g}")
+            if math.isfinite(scale):
+                status_bits.append(f"scale {scale:.6g}")
+            block = f"{' · '.join(status_bits)}\n{table}{footer}"
+            self._render_text(block)
 
-        footer = ""
-        phase_name = getattr(phase, "name", str(phase))
-        if phase_name == "MaxIters":
-            footer = "Warning: Maximum number of iterations has been exceeded\n"
-        elif phase_name == "Converged":
-            footer = "Optimization converged.\n"
-        elif phase_name == "Failed":
-            msg = getattr(event, "message", "") or "Optimization failed."
-            footer = f"{msg}\n"
-
-        block = f"{status}\n{table}{footer}"
-        self._render(block)
-
-        if phase_name in ("Converged", "MaxIters", "Failed"):
+        if terminal and phase_name != "Start":
             self._finished = True
-            if not self._jupyter and self._lines:
+            if self._mode == "ansi" and self._lines:
                 sys.stdout.write("\n")
                 sys.stdout.flush()
                 self._lines = 0
 
-    def _render(self, block: str) -> None:
-        if self._jupyter:
+    def _render_widgets(
+        self,
+        *,
+        opt: str,
+        it: int,
+        obj: float,
+        grad: float,
+        elapsed: float,
+        status: str,
+        table_html: str,
+        terminal: bool,
+    ) -> None:
+        assert self._progress is not None
+        assert self._status_html is not None
+        assert self._model_html is not None
+
+        rows = [
+            ("optimizer", opt),
+            ("runtime", _format_runtime(elapsed)),
+            ("iteration", f"{it}/{self.max_iters}"),
+            (
+                "objective",
+                f"{obj: .6E}" if math.isfinite(obj) else "n/a",
+            ),
+            (
+                "||gradient||",
+                f"{grad: .6E}" if math.isfinite(grad) else "n/a",
+            ),
+            ("status", status),
+        ]
+        body = "".join(
+            "<tr>"
+            f"<td style='padding:2px 6px;font-weight:bold'>{html.escape(k)}</td>"
+            f"<td style='padding:2px 6px;font-family:monospace'>{html.escape(v)}</td>"
+            "</tr>"
+            for k, v in rows
+        )
+        self._status_html.value = (
+            "<table style='border-collapse:collapse;font-size:12px'>"
+            f"{body}</table>"
+        )
+        self._progress.value = min(it + (1 if terminal else 0), self.max_iters)
+        if status == "converged":
+            self._progress.bar_style = "success"
+        elif status == "maxiters":
+            self._progress.bar_style = "warning"
+        elif status == "failed":
+            self._progress.bar_style = "danger"
+        self._model_html.value = table_html
+
+    def _render_text(self, block: str) -> None:
+        if self._mode == "display_id":
             try:
                 from IPython.display import HTML, display
             except ImportError:
-                self._jupyter = False
+                self._mode = "ansi"
             else:
                 payload = HTML(
                     "<pre style='line-height:1.3;margin:0'>"

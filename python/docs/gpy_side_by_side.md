@@ -52,7 +52,7 @@ Install / build: see [`../README.md`](../README.md).
 | Parameter access | `m["rbf.lengthscale"]` / paramz | `set_by_path` / `get_by_path` / `param_paths` (CIP-0014 units) |
 | Objective | log-likelihood (maximise) | `objective()` is **−log-likelihood** (minimise) |
 | Noise | `likelihood.variance` / `Gaussian_noise.variance` | Same paths (CIP-0027); sparse algebra may keep internal \(\beta\) |
-| Predict | `predict` / `predict_noiseless` | Same names (CIP-0031): `y_*` vs `f_*` |
+| Predict | `predict` / `predict_noiseless` | Same names (CIP-0031): `y_*` vs `f_*`; see [`examples/toy_1d_regression.ipynb`](../examples/toy_1d_regression.ipynb) |
 | Sparse | `SparseGPRegression` / VarDTC | `gpc.models.SparseGPRegression(..., Z=Z, kernel=k)` → default `dtcvar`; also `approx="fitc"` / `"dtc"` |
 
 ## CLI twin

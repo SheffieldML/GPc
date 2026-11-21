@@ -68,7 +68,10 @@ class CSvgp : public CStochasticOptimisable {
   void naturalGradientStep(double gamma);
   void naturalGradientStep(double gamma, const vector<unsigned int>& batch);
 
-  // Predictive latent mean / variance (no observation noise) at Xs.
+  // CIP-0031: latent = p(f_*); predictive adds 1/β for Gaussian observation noise.
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
 
   // KL(q(u_j) || p(u)).

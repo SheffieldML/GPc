@@ -51,11 +51,12 @@ def test_bound_model_method_docstrings():
         "optimize",
         "objective",
         "predict",
+        "predict_noiseless",
     ):
         assert _nonempty(getattr(m, name).__doc__), name
 
     Z = np.linspace(0.1, 0.9, 3)[:, None]
     s = gpc.SparseGPRegression(X, Y, Z)
     assert _nonempty(type(s).__doc__)
-    for name in ("optimize", "predict", "inducing_inputs", "param_paths"):
+    for name in ("optimize", "predict", "predict_noiseless", "inducing_inputs", "param_paths"):
         assert _nonempty(getattr(s, name).__doc__), name

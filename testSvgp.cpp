@@ -165,18 +165,20 @@ static void runCase(bool withWhite)
   for(unsigned int i = 0; i < Ns; i++)
     Xs.setVal(-3.5 + 7.0 * (double)i / (double)(Ns - 1), i, 0);
   CMatrix muG(Ns, D), varG(Ns, D), muS, varS;
-  gp.posteriorMeanVar(muG, varG, Xs);
-  sv.posteriorMeanVar(muS, varS, Xs);
-  // CGp::posteriorMeanVar adds observation noise 1/beta (_posteriorVar); SVGP returns latent variance.
-  // Backlog 2026-11-19_latent-vs-predictive-meanvar splits these into latentMeanVar / predictiveMeanVar.
-  for(unsigned int i = 0; i < Ns; i++)
-    for(unsigned int j = 0; j < D; j++)
-      varG.setVal(varG.getVal(i, j) - 1.0 / beta, i, j);
+  // CIP-0031: compare latent variances directly (no manual 1/β correction).
+  gp.latentMeanVar(muG, varG, Xs);
+  sv.latentMeanVar(muS, varS, Xs);
   const double dMu = maxAbsDiff(muG, muS);
   const double dVar = maxAbsDiff(varG, varS);
   cout << "  info: max|mean diff|=" << dMu << " max|var diff|=" << dVar << endl;
-  expect(dMu < 1e-8, "predictive mean matches CGp DTCVAR" + tag);
-  expect(dVar < 1e-8, "predictive latent variance matches CGp DTCVAR" + tag);
+  expect(dMu < 1e-8, "latent mean matches CGp DTCVAR" + tag);
+  expect(dVar < 1e-8, "latent variance matches CGp DTCVAR" + tag);
+  CMatrix muGp(Ns, D), varGp(Ns, D), muSp, varSp;
+  gp.predictiveMeanVar(muGp, varGp, Xs);
+  sv.predictiveMeanVar(muSp, varSp, Xs);
+  expect(maxAbsDiff(varGp, varSp) < 1e-8, "predictive variance matches CGp DTCVAR" + tag);
+  expect(fabs(varSp.getVal(0) - varS.getVal(0) - 1.0 / beta) < 1e-12,
+         "SVGP predictive − latent = 1/β" + tag);
 
   // 2. gamma < 1: monotone increase, converges to the bound.
   {
@@ -1130,7 +1132,7 @@ int main()
           {
             sv.naturalGradientStep(1.0);
             CMatrix mu, var;
-            sv.posteriorMeanVar(mu, var, X);
+            sv.latentMeanVar(mu, var, X);
             for(unsigned int i = 0; i < N; i++)
               if(!(isfinite(mu.getVal(i, 0)) && isfinite(var.getVal(i, 0))
                    && var.getVal(i, 0) >= 0.0))

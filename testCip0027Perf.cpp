@@ -81,7 +81,7 @@ double rmsePred(CGp& gp, const CMatrix& Xte, const CMatrix& yte)
 {
   CMatrix mu(yte.getRows(), 1);
   CMatrix var(yte.getRows(), 1);
-  gp.posteriorMeanVar(mu, var, Xte);
+  gp.predictiveMeanVar(mu, var, Xte);
   double sse = 0.0;
   for(unsigned int i = 0; i < yte.getRows(); i++)
   {

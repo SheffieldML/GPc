@@ -562,7 +562,7 @@ static void testCoregFactorySmoke()
   Xstar.setVal(0.25, 0, 0);
   Xstar.setVal(0.75, 1, 0);
   stampOutputIndex(Xstar, 0);
-  model.getModel().posteriorMeanVar(mu, var, Xstar);
+  model.getModel().predictiveMeanVar(mu, var, Xstar);
   expect(!(std::isnan(mu.getVal(0)) || std::isnan(var.getVal(0))), "factory predict finite");
 }
 

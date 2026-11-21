@@ -41,6 +41,11 @@ public:
 
   void out(CMatrix& yPred, const CMatrix& inData) const;
   void out(CMatrix& yPred, CMatrix& probPred, const CMatrix& inData) const;
+  // CIP-0031: MAP GPLVM has no separate observation-noise term in prediction;
+  // latent and predictive are identical (FTC-style signal posterior).
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  [[deprecated("CIP-0031: use latentMeanVar / predictiveMeanVar (identical on MAP GPLVM)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   // Gradient routines
   void updateCovGradient(int index, CMatrix &work_invK_Y) const;

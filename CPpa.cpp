@@ -60,7 +60,7 @@ void CPpa::test(const CMatrix& ytest, const CMatrix& Xin) const
   assert(ytest.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), numTarget);
   CMatrix varSigmaOut(Xin.getRows(), numTarget);
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   noise.test(muout, varSigmaOut, ytest);
 }
 void CPpa::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
@@ -70,7 +70,7 @@ void CPpa::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
   assert(yTest.dimensionsMatch(pout));
   CMatrix muout(Xin.getRows(), numTarget);
   CMatrix varSigmaOut(Xin.getRows(), numTarget);
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   noise.likelihoods(pout, muout, varSigmaOut, yTest);
 }
 double CPpa::logLikelihood() const
@@ -160,7 +160,7 @@ double CPpa::logLikelihood(const CMatrix& yTest, const CMatrix& Xin) const
   assert(getNumProcesses()==yTest.getCols());
   CMatrix muout(Xin.getRows(), numTarget);
   CMatrix varSigmaOut(Xin.getRows(), numTarget);
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   return noise.logLikelihood(muout, varSigmaOut, yTest)+kern.priorLogProb();
 }
 void CPpa::out(CMatrix& yout, const CMatrix& Xin) const
@@ -169,7 +169,8 @@ void CPpa::out(CMatrix& yout, const CMatrix& Xin) const
   assert(yout.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), numTarget);
   CMatrix varSigmaOut(Xin.getRows(), numTarget);
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  // CIP-0031: latent into noise.out so observation noise is counted once.
+  latentMeanVar(muout, varSigmaOut, Xin);
   noise.out(yout, muout, varSigmaOut);
 }
 void CPpa::out(CMatrix& yout, CMatrix& probout, const CMatrix& Xin) const
@@ -178,12 +179,13 @@ void CPpa::out(CMatrix& yout, CMatrix& probout, const CMatrix& Xin) const
   assert(yout.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), numTarget);
   CMatrix varSigmaOut(Xin.getRows(), numTarget);
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   noise.out(yout, probout, muout, varSigmaOut);
 }
-void CPpa::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+void CPpa::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
 {
   // MATLAB ppaPosteriorMeanVar: invSigma = inv(diag(1/B)+K), mu = k(X)' invSigma fBar.
+  // Returns Var[fBar_*] (latent), not y_*.
   assert(mu.getCols()==numTarget);
   assert(varSigma.getCols()==numTarget);
   DIMENSIONMATCH(mu.getRows()==Xin.getRows());
@@ -222,6 +224,25 @@ void CPpa::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) 
       for(int n=0; n<Xin.getRows(); n++)
         mu.setVal(muCol.getVal(n, 0), n, j);
     }
+}
+
+void CPpa::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  latentMeanVar(mu, varSigma, Xin);
+  const double b0 = beta.getVal(0, 0);
+  for(int j=0; j<numTarget; j++)
+  {
+    const double b = (beta.getCols()==1) ? b0 : beta.getVal(0, j);
+    const double noise = 1.0 / b;
+    for(int n=0; n<Xin.getRows(); n++)
+      varSigma.setVal(varSigma.getVal(n, j) + noise, n, j);
+  }
+}
+
+void CPpa::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  // CIP-0031: deprecated alias — dense PPA historically returned latent fBar variance.
+  latentMeanVar(mu, varSigma, Xin);
 }
 void CPpa::initStoreage()
 {
@@ -653,7 +674,7 @@ CPpa::CPpa(const CMatrix& inData,
     }
   CMatrix mu(numData, numTarget);
   CMatrix varSigma(numData, numTarget);
-  posteriorMeanVar(mu, varSigma, X);
+  latentMeanVar(mu, varSigma, X);
   noise.setMus(mu);
   noise.setVarSigmas(varSigma);
   updateNuG();

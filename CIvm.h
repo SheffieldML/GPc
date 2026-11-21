@@ -83,6 +83,11 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   double outGradParams(CMatrix& g, const CMatrix& Xin, unsigned int pointNo, unsigned int outputNo) const;
   double outGradX(CMatrix& g, const CMatrix& Xin, unsigned int pointNo, unsigned int outputNo) const;
 
+  // CIP-0031: latent = Var[f_*] (IVM active-set posterior); predictive adds
+  // Gaussian σ² when the noise model is Gaussian, else equals latent.
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for Gaussian y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   string getNoiseName() const
   {

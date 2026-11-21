@@ -1,7 +1,7 @@
 ---
 id: "001A"
 title: "Deep Gaussian processes can be trained on minibatches with any inducing family per layer"
-status: "Proposed"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -43,3 +43,6 @@ HOW is [CIP-0035](../cip/cip0035.md). Builds on [REQ-0015](./req0015_stochastic-
 
 ### 2026-11-21
 Requirement drafted as Proposed alongside CIP-0035.
+
+### 2026-11-21 (accept)
+CIP-0035 Accepted → In Progress; Phase 0c ridge layout split to CIP-0037; implementation worktree `GPc-cip0035`.

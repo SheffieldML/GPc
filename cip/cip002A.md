@@ -162,7 +162,7 @@ Note: `CGp::posteriorMeanVar` returns variance **including** observation noise \
 - [x] Phase 4: expectedLogLikelihood + Gauss–Hermite probit
 - [x] Phase 5: tutorial `docs/tutorials/svgp.md` (CLI/stream/Python façade deferred to follow-up)
 ### 2026-11-19 (implementation)
-Phases 2–4 landed on `cip002A-svgp` with `testSvgp` green (FD grads, Adam seed parity, probit GH). Tutorial under `docs/tutorials/svgp.md`. CLI/stream/Python façade remain as a light follow-up under the Phase 5 backlog task.
+Phases 2–4 landed on `cip002A-svgp` with `testSvgp` green (FD grads, Adam seed parity, probit GH). Tutorial under `docs/tutorials/svgp.md`. CLI/stream/Python façade remain as a light follow-up under the Phase 5 backlog task. No `gpc` SVGP notebook yet — listed under “Not yet in the Python subset” in [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md).
 
 ### Follow-on (Proposed)
 - Route `CSvgp` \(K_{uu}/K_{uf}\) through `CInducing` so white-noise / Green’s / weight-space inducing work under SVGP — backlog [`2026-11-19_cip002A-inducing-interface`](../backlog/features/2026-11-19_cip002A-inducing-interface.md) (from CIP-0028 review).

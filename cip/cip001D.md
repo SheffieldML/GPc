@@ -203,9 +203,17 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
    - Does **not** make Jupyter the primary share format (CIP-0015 remains native-first).
 
 7. **Follow-ups (not this CIP’s close criteria)**
-   - Coreg / `build_XY` once CIP-0015 Phase A helpers exist.
-   - Bayesian GPLVM / MRD façades.
+
+   GPy-online / CIP-0015 checklist items **without** a `gpc` notebook yet are tracked in [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md) (“Not yet in the Python subset”). Owning surfaces:
+
+   - Coreg / `build_XY` / ICM — native [CIP-0015](./cip0015.md); façade wrap still open.
+   - Classification (EP) — native IVM substitute; no EP/`gpc` classifier (deferred with IVM wrap).
+   - GPLVM / Bayesian GPLVM / MRD — native [CIP-0017](./cip0017.md) / [CIP-0018](./cip0018.md); Python still follow-on.
+   - SVI Bayesian GPLVM — [CIP-0030](./cip0030.md); backlog `2026-11-20_cip0030-phase4b-python-facade`.
+   - SVGP — [CIP-002A](./cip002A.md); Phase 5 backlog `2026-11-19_cip002A-phase5-surfaces` (Python hook remaining).
+   - Path `fix` / sparse `likelihood.variance` teaching — ready backlog under 001D / 0027.
    - CIP-0016 load/save helpers on the Python object.
+   - Poisson / hetero / HMC / mean functions / full paramz graph — REQ-000E **non-goals**.
 
 ## Backward Compatibility
 
@@ -239,6 +247,12 @@ Exact directory names can move under `bindings/python/` if that keeps the repo r
 - [x] Phase F: MLP / arc-cosine string kernels + notebooks
 - [x] GPy-form API: `gpc.kern` / `gpc.models` / compound `+` / `kernel=` object (string defaults retained)
 - [x] Close: REQ-000E façade acceptance for first subset checked (compound-kernel recipe + side-by-side). Interactive `help()` / docstring richness → [CIP-002F](./cip002F.md). Binary wheels → [CIP-002C](./cip002C.md).
+
+## Progress Updates
+
+### 2026-11-21
+
+GPy-tutorial-inspired notebooks expanded under `python/examples/` (sparse 1-D, kern compounds, ExpQuad, plus existing toy/olympic/MLP/weight-space). Skipped checklist rows (coreg, classification/IVM, GPLVM family, SVGP, SVI BGPLVM, non-goals) documented in [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md) with owning CIP / backlog links; follow-ups section above refreshed.
 
 ## References
 

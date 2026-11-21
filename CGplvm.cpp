@@ -343,7 +343,7 @@ void CGplvm::out(CMatrix& yPred, CMatrix& probPred, const CMatrix& inData) const
 {
 }
 
-void CGplvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+void CGplvm::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
 {
   DIMENSIONMATCH(mu.getCols()==dataDim);
   DIMENSIONMATCH(varSigma.getCols()==dataDim);
@@ -363,6 +363,17 @@ void CGplvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin
   // solve U * tmp = kX (equiv. L^T * tmp = kX)
   kX.trsm(LcholK, 1.0, "L", "U", "N", "N"); // now it is invK * K
   mu.gemm(kX, m, 1.0, 0.0, "T", "N");
+}
+
+void CGplvm::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  // MAP GPLVM: no likelihood.variance term in this prediction path.
+  latentMeanVar(mu, varSigma, Xin);
+}
+
+void CGplvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  latentMeanVar(mu, varSigma, Xin);
 }
 
 

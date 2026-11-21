@@ -284,7 +284,7 @@ void CBayesGplvm::setLatents(const CMatrix& muIn, const CMatrix& SIn, const CMat
   setKupToDate(false);
 }
 
-void CBayesGplvm::posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
+void CBayesGplvm::latentMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
 {
   updateCaches();
   DIMENSIONMATCH(Xstar.getCols() == latentDim);
@@ -317,15 +317,29 @@ void CBayesGplvm::posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix&
 
   CMatrix Wk(numActive, nStar);
   Wk.symm(woodburyInv, kX, 1.0, 0.0, "u", "l");
-  const double noise = 1.0 / beta;
   for(unsigned int i = 0; i < nStar; i++)
   {
-    double vs = pkern->diagComputeElement(Xstar, i) - kX.dotColCol(i, Wk, i) + noise;
+    double vs = pkern->diagComputeElement(Xstar, i) - kX.dotColCol(i, Wk, i);
     if(vs < 0.0)
       vs = 0.0;
     for(unsigned int d = 0; d < outputDim; d++)
       vars.setVal(vs, i, d);
   }
+}
+
+void CBayesGplvm::predictiveMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
+{
+  latentMeanVar(means, vars, Xstar);
+  const double noise = 1.0 / beta;
+  for(unsigned int i = 0; i < vars.getRows(); i++)
+    for(unsigned int d = 0; d < vars.getCols(); d++)
+      vars.setVal(vars.getVal(i, d) + noise, i, d);
+}
+
+void CBayesGplvm::posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const
+{
+  // CIP-0031: deprecated alias — Bayes GPLVM historically added 1/β.
+  predictiveMeanVar(means, vars, Xstar);
 }
 
 void CBayesGplvm::setLabels(const vector<int>& labs)

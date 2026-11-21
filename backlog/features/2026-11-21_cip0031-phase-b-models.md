@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0031-phase-b-models"
 title: "CIP-0031 Phase B: latent/predictive on remaining models"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -25,10 +25,10 @@ Add `latentMeanVar` / `predictiveMeanVar` on `CPpa`, `CSparsePpa`, `CIvm`, `CBay
 
 ## Acceptance Criteria
 
-- [ ] Pair exists on each scoped class with documented semantics
-- [ ] Dense vs sparse PPA predictive input agree at \(M=N\) (no White); semantics documented
-- [ ] `CSvgp::latentMeanVar` matches `CGp::latentMeanVar` at matched DTCVAR without manual \(1/\beta\) correction
-- [ ] Tests in the relevant binaries
+- [x] Pair exists on each scoped class with documented semantics
+- [x] Dense vs sparse PPA predictive input agree at \(M=N\) (no White); semantics documented
+- [x] `CSvgp::latentMeanVar` matches `CGp::latentMeanVar` at matched DTCVAR without manual \(1/\beta\) correction
+- [x] Tests in the relevant binaries
 
 ## Related
 
@@ -40,3 +40,7 @@ Add `latentMeanVar` / `predictiveMeanVar` on `CPpa`, `CSparsePpa`, `CIvm`, `CBay
 ### 2026-11-21
 
 Task created Ready on CIP Accept.
+
+### 2026-11-21 (complete)
+
+API + `out` latent routing landed. Alias table: SVGP/dense PPA/IVM/MAP GPLVM `posteriorMeanVar`→latent; Bayes GPLVM/sparse PPA→predictive. Gates in `testSvgp` and `testSparsePpa`.

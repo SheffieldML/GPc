@@ -220,18 +220,33 @@ double CSparsePpa::ppaBound() const
   return L;
 }
 
+void CSparsePpa::latentMeanVar(CMatrix& mu, CMatrix& varSigma,
+                               const CMatrix& Xin) const
+{
+  const_cast<CSparsePpa*>(this)->syncGpTargets();
+  pGp->latentMeanVar(mu, varSigma, Xin);
+}
+
+void CSparsePpa::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma,
+                                   const CMatrix& Xin) const
+{
+  const_cast<CSparsePpa*>(this)->syncGpTargets();
+  pGp->predictiveMeanVar(mu, varSigma, Xin);
+}
+
 void CSparsePpa::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma,
                                   const CMatrix& Xin) const
 {
-  const_cast<CSparsePpa*>(this)->syncGpTargets();
-  pGp->posteriorMeanVar(mu, varSigma, Xin);
+  // CIP-0031: deprecated alias — sparse PPA via CGp historically returned predictive.
+  predictiveMeanVar(mu, varSigma, Xin);
 }
 
 void CSparsePpa::out(CMatrix& yPred, const CMatrix& Xin) const
 {
   CMatrix mu(Xin.getRows(), numTarget);
   CMatrix vs(Xin.getRows(), numTarget);
-  posteriorMeanVar(mu, vs, Xin);
+  // CIP-0031: latent into outer noise so observation noise is counted once.
+  latentMeanVar(mu, vs, Xin);
   outerNoise.out(yPred, mu, vs);
 }
 

@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0035-python-facade-deepgp"
 title: "Python façade for CDeepGp (gpc.models.DeepGP)"
-status: "Proposed"
+status: "Completed"
 priority: "Low"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -24,18 +24,21 @@ Expose [CIP-0035](../../cip/cip0035.md) `CDeepGp` through the `gpc` Python packa
 
 ## Acceptance Criteria
 
-- [ ] `gpc.models.DeepGP` constructs from numpy `X`, `Y`, layer widths, and inducing counts
-- [ ] Adam training and ELBO accessible from Python
-- [ ] Optional probit / ordered final likelihood
-- [ ] Round-trip `.model` load/save via the `deepgp` stream type
-- [ ] Short notebook or doctest using the composite / sinc toy
+- [x] `gpc.models.DeepGP` constructs from numpy `X`, `Y`, layer widths, and inducing counts
+- [x] Adam training and ELBO accessible from Python
+- [x] Optional probit / ordered final likelihood
+- [x] Round-trip `.model` load/save via the `deepgp` stream type
+- [x] Short notebook or doctest using the composite / sinc toy
 
 ## Related
 
 - CIP: 0035, 001D
 - Tutorial: [docs/tutorials/deepgp.md](../../docs/tutorials/deepgp.md)
+- Example: [python/examples/deepgp_sinc.py](../../python/examples/deepgp_sinc.py)
 
 ## Progress Updates
 
 ### 2026-11-21
 Task created (Proposed) after CIP-0035 Phase 4 landed the C++ surfaces.
+
+Completed: `wrap_deepgp` + `gpc.models.DeepGP`; SVGP/Adam/`CDeepGp` in `libgp`; pytest `test_deepgp.py`; sinc example; docs.

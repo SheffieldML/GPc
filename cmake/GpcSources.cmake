@@ -29,6 +29,11 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CGplvm.cpp
   ${GPC_ROOT}/CBayesGplvm.cpp
   ${GPC_ROOT}/CMrd.cpp
+  # CIP-0035 / CIP-002A: SVGP stack + Adam (needed by gpc.models.DeepGP).
+  ${GPC_ROOT}/CSvgp.cpp
+  ${GPC_ROOT}/CAdam.cpp
+  ${GPC_ROOT}/CStochasticOptimisable.cpp
+  ${GPC_ROOT}/CDeepGp.cpp
 )
 
 set(GPC_LIBGP_FORTRAN_SOURCES
@@ -36,14 +41,11 @@ set(GPC_LIBGP_FORTRAN_SOURCES
 )
 
 set(GPC_IVM_EXTRA_SOURCES ${GPC_ROOT}/CIvm.cpp)
-# CGplvm / CBayesGplvm / CMltools live in gpc_lib (Python façade + CLIs).
+# CGplvm / CBayesGplvm / CMltools / SVGP / Adam / CDeepGp live in gpc_lib.
 set(GPC_GPLVM_EXTRA_SOURCES)
-# SVI (CIP-0030) extras only — collapsed Bayes GPLVM is in gpc_lib.
+# SVI Bayesian GPLVM only — collapsed Bayes GPLVM and SVGP/Adam are in gpc_lib.
 set(GPC_BGPLVM_EXTRA_SOURCES
   ${GPC_ROOT}/CSviBayesGplvm.cpp
-  ${GPC_ROOT}/CSvgp.cpp
-  ${GPC_ROOT}/CAdam.cpp
-  ${GPC_ROOT}/CStochasticOptimisable.cpp
 )
 # Match makefile ppa link line: CPpa + CSparsePpa (CMltools is in gpc_lib).
 set(GPC_PPA_EXTRA_SOURCES

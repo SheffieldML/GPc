@@ -63,7 +63,18 @@ With `--residual off`, each layer’s predictive variance omits the Nyström lef
 
 `CDeepGp::jacobianSpread` reports the median log singular-value spread of the prior map under identity mean maps. With \(\chi=1/L\) on every layer the spread stays \(O(1)\) in depth (CIP-0035 table; `testDeepGp` Phase 4 V7).
 
+## Python façade
+
+```python
+import gpc
+m = gpc.models.DeepGP(X, Y, layers=2, hidden=1, num_inducing=10, chi=0.5)
+m.optimize(iters=100, adam_lr=1e-2, seed=1)
+mu, var = m.predict(X)
+m.save("sinc_deep.model")
+```
+
+See [`python/examples/deepgp_sinc.py`](../../python/examples/deepgp_sinc.py) and `python/tests/test_deepgp.py`. Probit / ordered finals: `likelihood='probit'` or `'ordered'`.
+
 ## Notes
 
-- Python façade (`gpc.models.DeepGP`) is a follow-on backlog item; use the CLI or `testDeepGp` for now.
-- Non-Gaussian finals (probit / ordered) are available on `CDeepGp::setLikelihood` in C++; the CLI currently trains Gaussian observation noise.
+- Non-Gaussian finals on the CLI still need a follow-on; use the Python façade or `CDeepGp::setLikelihood` in C++.

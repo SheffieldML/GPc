@@ -12,7 +12,8 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 | [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.csv` (`.svml` legacy) | `sparse_gp_regression` |
 | [Compound + paths](./compound_paths.md) | `demo_compound_paths` (+ `gp -k`) | `examples/sinc.csv` | `basic_kernels` / `models_basic` |
 | [Coregionalization toy](./coregionalization_toy.md) | `demo_coregionalization_toy` | synthesised in-process | `coregionalization_toy` |
-| [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | EP classification → **IVM substitute** |
+| [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | Sparse classification (active set) |
+| [CGp EP classification](./cgp_ep_classification.md) | `testEp` | fixture in `cip/cip0033/` | Dense EP on `CGp` FTC (CIP-0033) |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |
 | [GPLVM oil 100](./gplvm_oil100.md) | `gplvm` | `examples/oilTrain100.svml` | `gplvm_oil_100` |
@@ -36,7 +37,7 @@ Linked here so the tutorial index stays the discovery surface.
 | `models_basic` (constrain / fix) | Done — [compound_paths](./compound_paths.md) (CIP-0014 paths) |
 | `sparse_gp_regression` / `sparse_GP_regression_1D` | Done — [sparse_regression_1d](./sparse_regression_1d.md) (DTCVAR default; FITC not tutorial default) |
 | `coregionalized_regression_tutorial` / `coregionalization_toy` / multiple outputs | Done — [coregionalization_toy](./coregionalization_toy.md) + [coregionalize.md](../coregionalize.md) |
-| `basic_classification` (EP) | Done as **IVM substitute** — [ivm_unitsquare](./ivm_unitsquare.md) |
+| `basic_classification` (EP) | Dense EP — [cgp_ep_classification](./cgp_ep_classification.md); sparse — [ivm_unitsquare](./ivm_unitsquare.md) |
 | `gplvm_oil_100` | Done — [gplvm_oil100](./gplvm_oil100.md) |
 | `BayesianGPLVM` | Owned by [CIP-0017](../../cip/cip0017.md) — [bgplvm_oil100](./bgplvm_oil100.md) |
 | `MRD` | Owned by [CIP-0018](../../cip/cip0018.md) — [mrd](./mrd.md) |

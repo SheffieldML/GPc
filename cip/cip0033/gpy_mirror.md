@@ -68,6 +68,18 @@ V=L^{-1}(S^{1/2}K),\quad
 | Sparse EP | `EPDTC` exists | **Out of v1** (FTC-first Accept lock) |
 | Laplace | separate inference class | Phase C on same likelihood primitives |
 
+## Approximate marginal (GPy `_ep_marginal`)
+
+After site convergence, with \(\log|B|\) from the Cholesky of \(B\) and \(\log\tilde Z\) from the last cavity/site sweep:
+
+\[
+\log Z \approx \tfrac12\big(-N\log 2\pi - \log|B| + \tilde\nu^\top\Sigma\tilde\nu\big) + \log\tilde Z
+\]
+
+(mean-zero prior; mean terms as in GPy when \(m_0\neq 0\)). Kernel gradients use \(\partial\log Z/\partial K = \tfrac12(\alpha\alpha^\top - W)\) with \(W=S^{1/2}B^{-1}S^{1/2}\).
+
+Frozen FTC twin: [`ep_ftc_fixture.txt`](ep_ftc_fixture.txt) (regenerate with [`gen_ep_fixture.py`](gen_ep_fixture.py)).
+
 ## Not mirrored (on purpose)
 
 - `paramz` / mutable attribute tree

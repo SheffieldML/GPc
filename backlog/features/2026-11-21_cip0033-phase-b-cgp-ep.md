@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0033-phase-b-cgp-ep"
 title: "CIP-0033 Phase B: wire EP into CGp FTC + GPy fixture"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -24,10 +24,10 @@ Wire `CEpInference` into dense `CGp` so hyperparameter optimisation uses the GPy
 
 ## Acceptance Criteria
 
-- [ ] `CGp` FTC path can run EP with probit/Bernoulli labels
-- [ ] Kernel hypers move under SCG (or existing optimiser) with finite grads
-- [ ] Fixture vs GPy `GPClassification` (or frozen numpy twin) within documented tol
-- [ ] Tutorial note: EP path vs IVM substitute
+- [x] `CGp` FTC path can run EP with probit/Bernoulli labels (`setEpInference(true)`)
+- [x] Kernel hypers move under SCG with finite grads (FD vs analytic in `testEp`)
+- [x] Fixture vs frozen numpy twin (`cip/cip0033/ep_ftc_fixture.txt`) within 1e-10
+- [x] Tutorial note: [cgp_ep_classification.md](../../docs/tutorials/cgp_ep_classification.md); IVM cross-link updated
 
 ## Related
 
@@ -39,3 +39,7 @@ Wire `CEpInference` into dense `CGp` so hyperparameter optimisation uses the GPy
 ### 2026-11-21
 
 Task created after Phase A `testEp` green.
+
+### 2026-11-21 (later)
+
+Phase B landed: `epLogLikelihood` / `updateG` EP branch / `invalidateCache` clears `epUpToDate`; makefile links `CEpInference` into `testEp` / `testCGp` / `gp` / `libgp`; fixture + tutorial.

@@ -26,11 +26,12 @@ class CEpInference
   void setEta(double e) { eta = e; }
   void setDelta(double d) { delta = d; }
   void setTol(double t) { tol = t; }
+  void setJitter(double j) { jitter = j; }
 
-  // Run EP on Gram K (N×N), labels Y (N×1 in {0,1} or {-1,1}).
+  // Run EP on prior Gram K (N×N), labels Y (N×1 in {0,1} or {-1,1}).
   // Optional prior mean m0 (N×1); if null, zero mean.
-  // Fills sites, posterior mean mu, posterior diag variance varDiag.
-  // Returns approx site log-mass sum (Σ log Ẑ_i) for diagnostics.
+  // Fills sites, posterior mean mu, diag variance varDiag.
+  // Returns GPy _ep_marginal log Z (approximate log marginal likelihood).
   double run(const CMatrix& K,
              const CMatrix& Y,
              CEpSites& sites,
@@ -38,8 +39,15 @@ class CEpInference
              CMatrix& varDiag,
              const CMatrix* m0OrNull = 0);
 
+  // After a successful run: dL/dK = ½(ααᵀ − W) with W=(K+Σ̃)^{-1} (GPy).
+  // Out must be N×N; written symmetric.
+  void fillDLDK(CMatrix& dLdK) const;
+
+  double lastLogMarginal() const { return logMarginal; }
+  double lastLogZTilde() const { return logZTilde; }
   unsigned int lastIters() const { return itersUsed; }
   bool converged() const { return didConverge; }
+  const CMatrix& lastAlpha() const { return alpha; }
 
  private:
   void recomputePosterior(const CMatrix& K,
@@ -47,14 +55,23 @@ class CEpInference
                           const CMatrix& m0,
                           CMatrix& mu,
                           CMatrix& Sigma,
-                          CMatrix& varDiag);
+                          CMatrix& varDiag,
+                          double& logDetB);
 
   unsigned int maxIters;
   double eta;
   double delta;
   double tol;
+  double jitter;
   unsigned int itersUsed;
   bool didConverge;
+  double logMarginal;
+  double logZTilde;
+
+  // Cached for dL/dK after run (mean-zero prior).
+  mutable CMatrix alpha;
+  mutable CMatrix Wi; // (K + Σ̃)^{-1}
+  mutable bool haveGradCache;
 };
 
 #endif /* CEPINFERENCE_H */

@@ -144,6 +144,35 @@ void CGp::_init()
   setApproximationType(FTC);
   numActive = 0;
   pInducing = 0;
+  epInference = false;
+  epUpToDate = false;
+  epLogMarginalCache = 0.0;
+}
+
+void CGp::setEpInference(bool on)
+{
+  if(on)
+  {
+    if(isSparseApproximation() || getApproximationType() != FTC)
+      throw ndlexceptions::Error(
+          "CGp::setEpInference: CIP-0033 EP requires FTC (dense) approximation.");
+    if(getOutputDim() != 1)
+      throw ndlexceptions::Error(
+          "CGp::setEpInference: EP currently supports a single output.");
+  }
+  epInference = on;
+  epUpToDate = false;
+  setKupToDate(false);
+}
+
+double CGp::epLogLikelihood() const
+{
+  const unsigned int n = getNumData();
+  CMatrix Kep(n, n);
+  pkern->compute(Kep, *pX);
+  epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
+  epUpToDate = true;
+  return epLogMarginalCache + pkern->priorLogProb();
 }
 
 CGp::~CGp()
@@ -403,6 +432,7 @@ void CGp::invalidateCache()
   // Clears K and M; each cascades Alpha and AD via the flag setters.
   setKupToDate(false);
   setMupToDate(false);
+  epUpToDate = false;
 }
 
 void CGp::updateX()
@@ -1949,6 +1979,9 @@ void CGp::_updateInvK(unsigned int dim) const
 // compute the approximation to the log likelihood.
 double CGp::logLikelihood() const
 {
+  if(epInference)
+    return epLogLikelihood();
+
   ensureMUpToDate();
   ensureKUpToDate();
   ensureADUpToDate();
@@ -2137,7 +2170,9 @@ double CGp::sparsePpaElboGpTerms() const
 double CGp::logLikelihoodGradient(CMatrix& g) const
 {
   enforceObservationNoisePolicy();
-  ensureMUpToDate();
+  // EP does not use scaled targets m (CIP-0033).
+  if(!epInference)
+    ensureMUpToDate();
   updateG();
   g.zeros();
   int counter = 0;
@@ -2232,6 +2267,22 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
 }
 void CGp::updateG() const 
 {
+  if(epInference)
+  {
+    // CIP-0033: dL/dK from GPy EP; map to kernel grads. No beta / scale path.
+    if(!epUpToDate)
+      (void)epLogLikelihood();
+    const unsigned int numKernParams = pkern->getNumParams();
+    CMatrix tempG(1, numKernParams);
+    CMatrix dLdK(getNumData(), getNumData());
+    epEngine.fillDLDK(dLdK);
+    g_param.zeros();
+    pkern->getGradTransParams(tempG, *pX, dLdK, true);
+    for(unsigned int i = 0; i < numKernParams; i++)
+      g_param.setVal(tempG.getVal(i), i);
+    return;
+  }
+
   if(!isMupToDate())
     throw ndlexceptions::Error("updateG() called when M is not updated.");
   unsigned int numKernParams = pkern->getNumParams();

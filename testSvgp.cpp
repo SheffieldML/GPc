@@ -1,24 +1,24 @@
-/* CIP-002A Phase 1: SVGP q(u) natural gradients, full batch, Gaussian noise.
+/* CIP-002A: SVGP q(u) natural gradients + numerics soak.
 
-   Checks:
-   - one gamma = 1 natural-gradient step from the prior reaches the Titsias
-     optimum: ELBO == CGp DTCVAR logLikelihood, predictions agree;
-   - gamma < 1 steps increase the ELBO monotonically and converge to the bound;
-   - M = N, Z = X (no white kernel): optimum ELBO == exact log N(y|0, K + I/beta)
-     when K_uu is well conditioned, and stays a lower bound (agreeing with CGp's
-     stable path) when K_uu is numerically singular;
-   - minibatch estimates of the ELBO and of the natural-parameter step average
-     to the full-batch values over a partition of the data.
-   Each check runs with and without CWhiteKern (zero cross-covariance) and d = 2. */
+   Phase 1–4 / 0a–0b gates (existing) plus numerics soak (backlog
+   2026-11-19_cip002A-numerics-soak):
+   - hyperparameter grads at q* vs CGp DTCVAR (envelope theorem)
+   - probit CVI natgrad vs FD on expectation parameters
+   - N=2 probit orthant: ELBO ≤ exact; SVGP vs sparse PPA note
+   - nested inducing sets ELBO(Z′) ≥ ELBO(Z)
+   - marginal() clamp asserts near-nonnegativity
+*/
 
 #include "CAdam.h"
 #include "CGp.h"
 #include "CKern.h"
 #include "CMatrix.h"
 #include "CNoise.h"
+#include "CSparsePpa.h"
 #include "CSvgp.h"
 #include "ndlexceptions.h"
 #include <cmath>
+#include <exception>
 #include <iostream>
 #include <random>
 #include <string>
@@ -772,6 +772,379 @@ int main()
             expect(err < 5e-4, "Phase 0b: Green's gX matches FD");
           }
         }
+      }
+
+      // =====================================================================
+      // Numerics soak (backlog 2026-11-19_cip002A-numerics-soak)
+      // =====================================================================
+      cout << "---- CIP-002A numerics soak ----" << endl;
+
+      // 9. Hyperparameter gradients at q*: envelope theorem vs CGp DTCVAR.
+      // CGp packing (inducing free, no scale learn): Z, kern, beta.
+      // CSvgp packing: kern, Z, beta. Compare after remapping.
+      {
+        const unsigned int N = 24, M = 6, D = 1;
+        const double beta = 12.0;
+        mt19937 rng(41);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-2.0, 2.0);
+        CMatrix X(N, 1), y(N, D), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(ud(rng), i, 0);
+            y.setVal(sin(X.getVal(i, 0)) + 0.15 * nd(rng), i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.8 + 3.6 * (double)k / (double)(M - 1), k, 0);
+
+        CCmpndKern kernG(X);
+        makeKern(kernG, X, false);
+        CMatrix Xg(X), yg(y);
+        CGaussianNoise gnoise(&yg);
+        gnoise.setBiasVal(0.0, 0);
+        CGp gp(1, D, &Xg, &yg, &kernG, &gnoise, CGp::DTCVAR, M, 0);
+        gp.setActiveSet(Z);
+        gp.setBiasVal(0.0, 0);
+        gp.setScaleVal(1.0, 0);
+        gp.setInducingFixed(false);
+        gp.setBetaVal(beta);
+        gp.invalidateCache();
+
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CSvgp sv(&kern, &X, &y, Z, beta, 0);
+        sv.naturalGradientStep(1.0);
+        expect(fabs(sv.elbo() - gp.logLikelihood()) < 1e-8 * max(1.0, fabs(gp.logLikelihood())),
+               "Soak: ELBO at q* matches CGp DTCVAR");
+
+        CMatrix gSv(1, sv.getOptNumParams());
+        vector<unsigned int> all(N);
+        for(unsigned int i = 0; i < N; i++) all[i] = i;
+        sv.objectiveGradBatch(all, gSv);
+
+        CMatrix gGp(1, gp.getOptNumParams());
+        gp.logLikelihoodGradient(gGp);
+        expect(gSv.getCols() == gGp.getCols(),
+               "Soak: SVGP and CGp opt-param counts match (kern+Z+beta)");
+
+        const unsigned int nK = kern.getNumParams();
+        const unsigned int nZ = M; // 1-D centres
+        // Remap: CGp [Z | kern | beta] vs CSvgp [kern | Z | beta]
+        double maxRel = 0.0;
+        for(unsigned int i = 0; i < nK; i++)
+          {
+            const double a = gSv.getVal(i);
+            const double b = gGp.getVal(nZ + i);
+            const double scale = max(1.0, max(fabs(a), fabs(b)));
+            maxRel = max(maxRel, fabs(a - b) / scale);
+          }
+        for(unsigned int i = 0; i < nZ; i++)
+          {
+            const double a = gSv.getVal(nK + i);
+            const double b = gGp.getVal(i);
+            const double scale = max(1.0, max(fabs(a), fabs(b)));
+            maxRel = max(maxRel, fabs(a - b) / scale);
+          }
+        {
+          const double a = gSv.getVal(nK + nZ);
+          const double b = gGp.getVal(nZ + nK);
+          const double scale = max(1.0, max(fabs(a), fabs(b)));
+          maxRel = max(maxRel, fabs(a - b) / scale);
+        }
+        cout << "  info: soak q* max rel grad SVGP vs CGp=" << maxRel << endl;
+        expect(maxRel < 5e-5, "Soak: grads at q* match CGp DTCVAR (envelope)");
+      }
+
+      // 10. Probit natgrad: θ* − θ equals FD ∇_η ELBO on (m, S+mm^T).
+      {
+        const unsigned int N = 16, M = 4;
+        mt19937 rng(55);
+        uniform_real_distribution<double> ud(-1.5, 1.5);
+        CMatrix X(N, 1), y(N, 1), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            const double x = ud(rng);
+            X.setVal(x, i, 0);
+            y.setVal(x > 0.0 ? 1.0 : -1.0, i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.4 + 2.8 * (double)k / (double)(M - 1), k, 0);
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CProbitNoise pnoise(&y);
+        CSvgp sv(&kern, &X, &y, Z, 1.0, 0);
+        sv.setLikelihood(&pnoise);
+        // Warm off the prior so λ_lik is nontrivial, then freeze q for FD.
+        for(unsigned int t = 0; t < 8; t++)
+          sv.naturalGradientStep(0.25);
+
+        CMatrix m0 = sv.getQMean();
+        CMatrix S0 = sv.getQCov(0);
+        auto natFromQS = [](const CMatrix& m, const CMatrix& S) {
+          CMatrix Sc(S);
+          Sc.setSymmetric(true);
+          CMatrix U(Sc);
+          U.chol();
+          CMatrix P(S.getRows(), S.getCols());
+          P.setSymmetric(true);
+          P.pdinv(U);
+          CMatrix theta1(S.getRows(), 1);
+          theta1.gemvColCol(0, P, m, 0, 1.0, 0.0, "n");
+          return make_pair(theta1, P);
+        };
+        auto cur = natFromQS(m0, S0);
+        CMatrix mStar(m0), Sstar(S0);
+        {
+          // gamma=1 step yields θ* then restore.
+          sv.naturalGradientStep(1.0);
+          mStar = sv.getQMean();
+          Sstar = sv.getQCov(0);
+          vector<CMatrix> covs(1, S0);
+          sv.setQ(m0, covs);
+        }
+        auto star = natFromQS(mStar, Sstar);
+        CMatrix dTheta1(M, 1);
+        for(unsigned int i = 0; i < M; i++)
+          dTheta1.setVal(star.first.getVal(i) - cur.first.getVal(i), i);
+        CMatrix dP(M, M);
+        for(unsigned int i = 0; i < M; i++)
+          for(unsigned int j = 0; j < M; j++)
+            dP.setVal(star.second.getVal(i, j) - cur.second.getVal(i, j), i, j);
+
+        // Expectation params η1=m, η2=S+mm^T. FD ∇_η L.
+        CMatrix eta2(M, M);
+        eta2.deepCopy(S0);
+        eta2.setSymmetric(true);
+        for(unsigned int i = 0; i < M; i++)
+          for(unsigned int j = 0; j < M; j++)
+            eta2.setVal(eta2.getVal(i, j) + m0.getVal(i) * m0.getVal(j), i, j);
+
+        const double eps = 1e-5;
+        CMatrix gEta1(M, 1);
+        for(unsigned int i = 0; i < M; i++)
+          {
+            CMatrix mp(m0), mm(m0);
+            mp.setVal(m0.getVal(i) + eps, i);
+            mm.setVal(m0.getVal(i) - eps, i);
+            // Hold η2 fixed: S = η2 − mm^T
+            auto Sfrom = [&](const CMatrix& m) {
+              CMatrix S(eta2);
+              for(unsigned int a = 0; a < M; a++)
+                for(unsigned int b = 0; b < M; b++)
+                  S.setVal(eta2.getVal(a, b) - m.getVal(a) * m.getVal(b), a, b);
+              S.setSymmetric(true);
+              return S;
+            };
+            vector<CMatrix> cp(1, Sfrom(mp)), cm(1, Sfrom(mm));
+            sv.setQ(mp, cp);
+            const double Lp = sv.elbo();
+            sv.setQ(mm, cm);
+            const double Lm = sv.elbo();
+            gEta1.setVal((Lp - Lm) / (2.0 * eps), i);
+          }
+        CMatrix gEta2(M, M, 0.0);
+        for(unsigned int i = 0; i < M; i++)
+          for(unsigned int j = i; j < M; j++)
+            {
+              CMatrix ep(eta2), em(eta2);
+              ep.setVal(eta2.getVal(i, j) + eps, i, j);
+              ep.setVal(eta2.getVal(i, j) + eps, j, i);
+              em.setVal(eta2.getVal(i, j) - eps, i, j);
+              em.setVal(eta2.getVal(i, j) - eps, j, i);
+              auto SfromEta = [&](const CMatrix& e2) {
+                CMatrix S(e2);
+                for(unsigned int a = 0; a < M; a++)
+                  for(unsigned int b = 0; b < M; b++)
+                    S.setVal(e2.getVal(a, b) - m0.getVal(a) * m0.getVal(b), a, b);
+                S.setSymmetric(true);
+                return S;
+              };
+              vector<CMatrix> cp(1, SfromEta(ep)), cm(1, SfromEta(em));
+              sv.setQ(m0, cp);
+              const double Lp = sv.elbo();
+              sv.setQ(m0, cm);
+              const double Lm = sv.elbo();
+              const double g = (Lp - Lm) / (2.0 * eps);
+              gEta2.setVal(g, i, j);
+              gEta2.setVal(g, j, i);
+            }
+        vector<CMatrix> c0(1, S0);
+        sv.setQ(m0, c0);
+
+        // Duality for packing (θ1, P=S^{-1}): ∇_η1 L = θ1*−θ1, ∇_η2 L = −½(P*−P)
+        // (symmetric-matrix convention with off-diagonals counted once in the
+        // Frobenius pairing). Compare θ1 closely; precision via −2 ∇_η2.
+        double maxRel1 = 0.0;
+        for(unsigned int i = 0; i < M; i++)
+          {
+            const double a = dTheta1.getVal(i);
+            const double b = gEta1.getVal(i);
+            const double scale = max(1.0, max(fabs(a), fabs(b)));
+            maxRel1 = max(maxRel1, fabs(a - b) / scale);
+          }
+        double maxRel2 = 0.0;
+        for(unsigned int i = 0; i < M; i++)
+          for(unsigned int j = i; j < M; j++)
+            {
+              const double a = -0.5 * dP.getVal(i, j);
+              const double b = gEta2.getVal(i, j);
+              // Off-diagonal FD of a symmetric matrix element is ∂/∂η_ij with
+              // η_ji linked; match the −½ P convention on the upper triangle.
+              const double scale = max(1.0, max(fabs(a), fabs(b)));
+              maxRel2 = max(maxRel2, fabs(a - b) / scale);
+            }
+        cout << "  info: soak probit natgrad maxRel θ1=" << maxRel1
+             << " maxRel (−½ΔP vs ∇η2)=" << maxRel2 << endl;
+        expect(maxRel1 < 5e-3, "Soak: probit natgrad θ1*−θ1 matches FD ∇_η1");
+        expect(maxRel2 < 5e-2, "Soak: probit natgrad −½(P*−P) matches FD ∇_η2");
+      }
+
+      // 11. Exact probit orthant (N=2) + SVGP vs sparse PPA note on shared Gaussian.
+      {
+        auto logProbitOrthant2 = [](const CMatrix& K, const CMatrix& yv) {
+          const double y0 = yv.getVal(0, 0);
+          const double y1 = yv.getVal(1, 0);
+          const double s11 = 1.0 + y0 * y0 * K.getVal(0, 0);
+          const double s22 = 1.0 + y1 * y1 * K.getVal(1, 1);
+          const double s12 = y0 * y1 * K.getVal(0, 1);
+          double rho = s12 / sqrt(s11 * s22);
+          if(rho > 1.0) rho = 1.0;
+          if(rho < -1.0) rho = -1.0;
+          const double p = 0.25 + asin(rho) / (2.0 * M_PI);
+          return log(max(p, 1e-300));
+        };
+        CMatrix Xb(2, 1), Yb(2, 1), Zb(2, 1);
+        Xb.setVal(-0.4, 0, 0);
+        Xb.setVal(0.7, 1, 0);
+        Yb.setVal(1.0, 0, 0);
+        Yb.setVal(-1.0, 1, 0);
+        Zb.deepCopy(Xb);
+        CCmpndKern kB(Xb);
+        makeKern(kB, Xb, false);
+        kB.setParam(1.2, 0);
+        kB.setParam(1.0, 1);
+        CProbitNoise pnoise(&Yb);
+        CSvgp sv(&kB, &Xb, &Yb, Zb, 1.0, 0);
+        sv.setLikelihood(&pnoise);
+        for(unsigned int t = 0; t < 30; t++)
+          sv.naturalGradientStep(0.35);
+        CMatrix K(2, 2);
+        kB.compute(K, Xb);
+        K.setSymmetric(true);
+        const double Lexact = logProbitOrthant2(K, Yb);
+        const double Lsv = sv.elbo();
+        cout << "  info: soak orthant ELBO=" << Lsv << " exact=" << Lexact
+             << " gap=" << (Lexact - Lsv) << endl;
+        expect(isfinite(Lsv) && isfinite(Lexact), "Soak: probit orthant quantities finite");
+        expect(Lsv <= Lexact + 1e-5, "Soak: SVGP-probit ELBO ≤ exact orthant log marginal");
+
+        // Shared Gaussian problem: SVGP at q* vs CSparsePpa DTCVAR ppaBound.
+        const unsigned int Ng = 20, Mg = 6;
+        mt19937 rng(63);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-2.0, 2.0);
+        CMatrix Xg(Ng, 1), yg(Ng, 1), Zg(Mg, 1);
+        for(unsigned int i = 0; i < Ng; i++)
+          {
+            Xg.setVal(ud(rng), i, 0);
+            yg.setVal(0.8 * sin(Xg.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+          }
+        for(unsigned int k = 0; k < Mg; k++)
+          Zg.setVal(-1.8 + 3.6 * (double)k / (double)(Mg - 1), k, 0);
+        CCmpndKern kG(Xg);
+        makeKern(kG, Xg, false);
+        const double betaG = 20.0;
+        CSvgp svg(&kG, &Xg, &yg, Zg, betaG, 0);
+        svg.naturalGradientStep(1.0);
+        const double LsvG = svg.elbo();
+        CCmpndKern kP(Xg);
+        makeKern(kP, Xg, false);
+        CGaussianNoise nP(&yg);
+        nP.setBiasVal(0.0, 0);
+        CSparsePpa sp(Xg, yg, kP, nP, CGp::DTCVAR, Mg, betaG, 0);
+        const double Lppa = sp.ppaBound();
+        cout << "  info: soak shared Gaussian SVGP@q* ELBO=" << LsvG
+             << " sparsePPA DTCVAR ppaBound=" << Lppa
+             << " (probit orthant is SVGP-only; PPA sites are Gaussian)" << endl;
+        expect(isfinite(LsvG) && isfinite(Lppa),
+               "Soak: SVGP vs sparse PPA compare quantities finite");
+      }
+
+      // 12. Nested inducing sets: Z ⊂ Z′ ⇒ ELBO(Z′) ≥ ELBO(Z) at q*.
+      {
+        const unsigned int N = 30;
+        const double beta = 15.0;
+        mt19937 rng(71);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-2.5, 2.5);
+        CMatrix X(N, 1), y(N, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(ud(rng), i, 0);
+            y.setVal(0.6 * X.getVal(i, 0) + 0.12 * nd(rng), i, 0);
+          }
+        CMatrix Z(4, 1);
+        Z.setVal(-2.0, 0, 0);
+        Z.setVal(-0.7, 1, 0);
+        Z.setVal(0.7, 2, 0);
+        Z.setVal(2.0, 3, 0);
+        CMatrix Zp(7, 1);
+        Zp.setVal(-2.0, 0, 0);
+        Zp.setVal(-1.35, 1, 0);
+        Zp.setVal(-0.7, 2, 0);
+        Zp.setVal(0.0, 3, 0);
+        Zp.setVal(0.7, 4, 0);
+        Zp.setVal(1.35, 5, 0);
+        Zp.setVal(2.0, 6, 0);
+        CCmpndKern k1(X), k2(X);
+        makeKern(k1, X, false);
+        makeKern(k2, X, false);
+        CSvgp s1(&k1, &X, &y, Z, beta, 0);
+        CSvgp s2(&k2, &X, &y, Zp, beta, 0);
+        s1.naturalGradientStep(1.0);
+        s2.naturalGradientStep(1.0);
+        const double L1 = s1.elbo();
+        const double L2 = s2.elbo();
+        cout << "  info: soak nested ELBO(Z)=" << L1 << " ELBO(Z')=" << L2
+             << " gap=" << (L2 - L1) << endl;
+        expect(L2 + 1e-6 >= L1, "Soak: nested inducing ELBO(Z') ≥ ELBO(Z)");
+      }
+
+      // 13. marginal() clamp: crowded Z still finite under near-nonneg assert.
+      {
+        const unsigned int N = 40, M = 8;
+        const double beta = 1e5;
+        CMatrix X(N, 1), y(N, 1), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(-2.0 + 4.0 * (double)i / (double)(N - 1), i, 0);
+            y.setVal(sin(X.getVal(i, 0)), i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(1e-8 * (double)(k + 1), k, 0); // collapsed inducing
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CSvgp sv(&kern, &X, &y, Z, beta, 0);
+        bool ok = true;
+        try
+          {
+            sv.naturalGradientStep(1.0);
+            CMatrix mu, var;
+            sv.posteriorMeanVar(mu, var, X);
+            for(unsigned int i = 0; i < N; i++)
+              if(!(isfinite(mu.getVal(i, 0)) && isfinite(var.getVal(i, 0))
+                   && var.getVal(i, 0) >= 0.0))
+                ok = false;
+          }
+        catch(ndlexceptions::Error&)
+          {
+            ok = false;
+          }
+          catch(std::exception&)
+          {
+            ok = false;
+          }
+        expect(ok, "Soak: crowded-Z marginal clamp keeps vars finite/nonneg");
       }
     }
   catch(ndlexceptions::Error& e)

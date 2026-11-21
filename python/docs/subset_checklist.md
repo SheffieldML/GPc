@@ -16,6 +16,13 @@ Native demos/CLI remain the primary share format ([CIP-0015](../../cip/cip0015.m
 
 Install: see [`../README.md`](../README.md).
 
+## Public tutorial notebooks
+
+Teaching / Colab ports of this checklist live in the SheffieldML notebook repo:
+
+- [SheffieldML/notebook `GPc/`](https://github.com/SheffieldML/notebook/tree/main/GPc) ([CIP-0007](https://github.com/SheffieldML/notebook/blob/main/cip/cip0007.md))
+- Package-local smoke notebooks remain under [`../examples/`](../examples/)
+
 ## Not yet in the Python subset (deferred — use native tutorials)
 
 These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gpc` notebooks for now. Native CLI/demos cover them; Python wraps are follow-ons owned by the CIPs below (not close blockers for [CIP-001D](../../cip/cip001D.md) / [REQ-000E](../../requirements/req000E_gpy-facing-python-facade.md)).

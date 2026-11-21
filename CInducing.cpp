@@ -597,7 +597,7 @@ void CInducingGreens::setCentres(const CMatrix& Z)
 
 CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn,
                                            bool ridgeIn)
-  : W(WIn), s(sIn), learnS(learnSIn), ridge(ridgeIn), gScache(0.0)
+  : W(WIn), s(sIn), learnS(learnSIn), untiedS(false), ridge(ridgeIn), gScache(0.0)
 {
   if(W.getRows() == 0 || W.getCols() == 0)
     throw ndlexceptions::Error("CInducingWeightSpace requires non-empty W.");
@@ -608,6 +608,42 @@ CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool 
     throw ndlexceptions::Error("CInducingWeightSpace isotropic requires W M x (d+1).");
   if(!(s > 0.0))
     throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  syncSVecFromScalar();
+}
+
+void CInducingWeightSpace::syncSVecFromScalar()
+{
+  const unsigned int M = W.getRows();
+  sVec.resize(M, 1);
+  for(unsigned int i = 0; i < M; i++)
+    sVec.setVal(s, i, 0);
+}
+
+double CInducingWeightSpace::windowWidthAt(unsigned int m) const
+{
+  BOUNDCHECK(m < sVec.getRows());
+  return sVec.getVal(m, 0);
+}
+
+void CInducingWeightSpace::setWindowWidthUntied(bool untied)
+{
+  untiedS = untied;
+  if(!untiedS)
+    syncSVecFromScalar();
+}
+
+void CInducingWeightSpace::setWindowWidths(const CMatrix& sIn)
+{
+  const unsigned int M = numInducing();
+  DIMENSIONMATCH(sIn.getRows() == M && sIn.getCols() == 1);
+  for(unsigned int i = 0; i < M; i++)
+  {
+    if(!(sIn.getVal(i, 0) > 0.0))
+      throw ndlexceptions::Error("CInducingWeightSpace window widths must be positive.");
+  }
+  sVec.deepCopy(sIn);
+  untiedS = true;
+  s = sVec.getVal(0, 0);
 }
 
 double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
@@ -753,6 +789,14 @@ void CInducingWeightSpace::setWindowWidth(double sIn)
   if(!(sIn > 0.0))
     throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
   s = sIn;
+  // Broadcast to all units (CIP-0032); leaves untiedS unchanged.
+  if(sVec.getRows() != numInducing())
+    syncSVecFromScalar();
+  else
+  {
+    for(unsigned int i = 0; i < numInducing(); i++)
+      sVec.setVal(s, i, 0);
+  }
 }
 
 void CInducingWeightSpace::ridgeFactors(CMatrix& V, CMatrix& aOut) const
@@ -803,16 +847,19 @@ void CInducingWeightSpace::fillKuuIsotropic(CMatrix& Kuu) const
 
 void CInducingWeightSpace::fillKuuRidge(CMatrix& Kuu) const
 {
-  // K_uu[m,n] from 2×2 Woodbury in cosines (CIP-0028 Update 2026-11-19 §3).
+  // K_uu[m,n] from 2×2 Woodbury in cosines.
+  // CIP-0028: tied s. CIP-0032: α_m = 1/s_m² - 1/2 (heterogeneous pair).
   ridgeFactors(Vtmp, atmp);
   const unsigned int M = numInducing();
   const unsigned int Dp = weightDim();
-  const double s2 = s * s;
-  const double alpha = 1.0 / s2 - 0.5;
-  const double lognorm2 = -0.5 * log(M_PI * s2) - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
+  BOUNDCHECK(sVec.getRows() == M);
   Kuu.resize(M, M);
   for(unsigned int i = 0; i < M; i++)
   {
+    const double si = sVec.getVal(i, 0);
+    const double s2i = si * si;
+    const double alphai = 1.0 / s2i - 0.5;
+    const double am = atmp.getVal(i, 0);
     for(unsigned int j = i; j < M; j++)
     {
       double c = 0.0;
@@ -820,20 +867,28 @@ void CInducingWeightSpace::fillKuuRidge(CMatrix& Kuu) const
         c += Vtmp.getVal(i, k) * Vtmp.getVal(j, k);
       if(c > 1.0) c = 1.0;
       if(c < -1.0) c = -1.0;
-      const double am = atmp.getVal(i, 0);
+      const double sj = sVec.getVal(j, 0);
+      const double s2j = sj * sj;
+      const double alphaj = 1.0 / s2j - 0.5;
       const double an = atmp.getVal(j, 0);
-      const double detI = (1.0 + alpha) * (1.0 + alpha) - (alpha * c) * (alpha * c);
+      const double detI = (1.0 + alphai) * (1.0 + alphaj) - alphai * alphaj * c * c;
       BOUNDCHECK(detI > 0.0);
-      const double inv11 = (1.0 + alpha) / detI;
-      const double inv12 = -alpha * c / detI;
-      const double H11 = inv11 + c * inv12;
-      const double H12 = inv12 + c * inv11;
-      const double bm = am / s2;
-      const double bn = an / s2;
-      const double quad = H11 * (bm * bm + bn * bn) + 2.0 * H12 * bm * bn;
-      const double logK = lognorm2 + 0.5 * (double)Dp * log(2.0 * M_PI)
+      const double minv11 = (1.0 + alphaj) / detI;
+      const double minv12 = -alphai * c / detI;
+      const double minv21 = -alphaj * c / detI;
+      const double minv22 = (1.0 + alphai) / detI;
+      const double H11 = minv11 + c * minv21;
+      const double H12 = minv12 + c * minv22;
+      const double H21 = c * minv11 + minv21;
+      const double H22 = c * minv12 + minv22;
+      const double bm = am / s2i;
+      const double bn = an / s2j;
+      const double quad = H11 * bm * bm + H22 * bn * bn + (H12 + H21) * bm * bn;
+      const double lognorm = -0.25 * log(M_PI * s2i) - 0.25 * log(M_PI * s2j)
+                             - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
+      const double logK = lognorm + 0.5 * (double)Dp * log(2.0 * M_PI)
                           - 0.5 * log(detI) + 0.5 * quad
-                          - (am * am + an * an) / (2.0 * s2);
+                          - am * am / (2.0 * s2i) - an * an / (2.0 * s2j);
       const double kij = exp(logK);
       Kuu.setVal(kij, i, j);
       if(j != i)
@@ -899,7 +954,25 @@ void CInducingWeightSpace::computeKuf(CMatrix& Kuf, const CKern& kern, const CMa
   if(ridge)
   {
     ridgeFactors(Vtmp, atmp);
-    kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
+    if(!untiedS)
+      kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
+    else
+    {
+      // CIP-0032: per-unit s_m via single-column calls (scalar kernel API).
+      const unsigned int Dp = weightDim();
+      CMatrix Vm(1, Dp);
+      CMatrix am(1, 1);
+      CMatrix Km(N, 1);
+      for(unsigned int m = 0; m < M; m++)
+      {
+        for(unsigned int k = 0; k < Dp; k++)
+          Vm.setVal(Vtmp.getVal(m, k), 0, k);
+        am.setVal(atmp.getVal(m, 0), 0, 0);
+        kern.wsRidgeCrossCompute(Km, X, Vm, am, sVec.getVal(m, 0));
+        for(unsigned int n = 0; n < N; n++)
+          Kfu.setVal(Km.getVal(n, 0), n, m);
+      }
+    }
   }
   else
     kern.wsCrossCompute(Kfu, X, W, s);
@@ -914,7 +987,24 @@ void CInducingWeightSpace::computeKux(CMatrix& Kux, const CKern& kern, const CMa
   if(ridge)
   {
     ridgeFactors(Vtmp, atmp);
-    kern.wsRidgeCrossCompute(Kfu, Xstar, Vtmp, atmp, s);
+    if(!untiedS)
+      kern.wsRidgeCrossCompute(Kfu, Xstar, Vtmp, atmp, s);
+    else
+    {
+      const unsigned int Dp = weightDim();
+      CMatrix Vm(1, Dp);
+      CMatrix am(1, 1);
+      CMatrix Km(Ns, 1);
+      for(unsigned int m = 0; m < M; m++)
+      {
+        for(unsigned int k = 0; k < Dp; k++)
+          Vm.setVal(Vtmp.getVal(m, k), 0, k);
+        am.setVal(atmp.getVal(m, 0), 0, 0);
+        kern.wsRidgeCrossCompute(Km, Xstar, Vm, am, sVec.getVal(m, 0));
+        for(unsigned int n = 0; n < Ns; n++)
+          Kfu.setVal(Km.getVal(n, 0), n, m);
+      }
+    }
   }
   else
     kern.wsCrossCompute(Kfu, Xstar, W, s);
@@ -924,11 +1014,11 @@ void CInducingWeightSpace::computeKux(CMatrix& Kux, const CKern& kern, const CMa
 void CInducingWeightSpace::gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKuu) const
 {
   // Analytic ∂⟨gKuu, Kuu⟩ through unit directions / offsets, then chain to raw W.
+  // CIP-0032: per-unit s_m (α_i = 1/s_i² - 1/2).
   ridgeFactors(Vtmp, atmp);
   const unsigned int M = numInducing();
   const unsigned int Dp = weightDim();
-  const double s2 = s * s;
-  const double alpha = 1.0 / s2 - 0.5;
+  BOUNDCHECK(sVec.getRows() == M);
   CMatrix gV(M, Dp);
   CMatrix ga(M, 1);
   gV.zeros();
@@ -936,6 +1026,9 @@ void CInducingWeightSpace::gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKu
 
   for(unsigned int i = 0; i < M; i++)
   {
+    const double s2i = sVec.getVal(i, 0) * sVec.getVal(i, 0);
+    const double alphai = 1.0 / s2i - 0.5;
+    const double am = atmp.getVal(i, 0);
     for(unsigned int j = i; j < M; j++)
     {
       double c = 0.0;
@@ -943,42 +1036,51 @@ void CInducingWeightSpace::gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKu
         c += Vtmp.getVal(i, k) * Vtmp.getVal(j, k);
       if(c > 1.0) c = 1.0;
       if(c < -1.0) c = -1.0;
-      const double am = atmp.getVal(i, 0);
+      const double s2j = sVec.getVal(j, 0) * sVec.getVal(j, 0);
+      const double alphaj = 1.0 / s2j - 0.5;
       const double an = atmp.getVal(j, 0);
-      const double detI = (1.0 + alpha) * (1.0 + alpha) - (alpha * c) * (alpha * c);
+      const double detI = (1.0 + alphai) * (1.0 + alphaj) - alphai * alphaj * c * c;
       BOUNDCHECK(detI > 0.0);
-      const double inv11 = (1.0 + alpha) / detI;
-      const double inv12 = -alpha * c / detI;
-      const double H11 = inv11 + c * inv12;
-      const double H12 = inv12 + c * inv11;
-      const double bm = am / s2;
-      const double bn = an / s2;
-      const double quad = H11 * (bm * bm + bn * bn) + 2.0 * H12 * bm * bn;
-      const double lognorm2 = -0.5 * log(M_PI * s2)
-                              - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
-      const double logK = lognorm2 + 0.5 * (double)Dp * log(2.0 * M_PI)
+      const double minv11 = (1.0 + alphaj) / detI;
+      const double minv12 = -alphai * c / detI;
+      const double minv21 = -alphaj * c / detI;
+      const double minv22 = (1.0 + alphai) / detI;
+      const double H11 = minv11 + c * minv21;
+      const double H12 = minv12 + c * minv22;
+      const double H21 = c * minv11 + minv21;
+      const double H22 = c * minv12 + minv22;
+      const double bm = am / s2i;
+      const double bn = an / s2j;
+      const double lognorm = -0.25 * log(M_PI * s2i) - 0.25 * log(M_PI * s2j)
+                             - 0.5 * (double)(Dp - 1) * log(2.0 * M_PI);
+      const double quad = H11 * bm * bm + H22 * bn * bn + (H12 + H21) * bm * bn;
+      const double logK = lognorm + 0.5 * (double)Dp * log(2.0 * M_PI)
                           - 0.5 * log(detI) + 0.5 * quad
-                          - (am * am + an * an) / (2.0 * s2);
+                          - am * am / (2.0 * s2i) - an * an / (2.0 * s2j);
       const double Kij = exp(logK);
       const double gsym = (i == j) ? gKuu.getVal(i, j)
                                    : (gKuu.getVal(i, j) + gKuu.getVal(j, i));
 
-      // ∂logK/∂am, ∂logK/∂an
-      const double dlog_dam = (H11 * bm + H12 * bn) / s2 - am / s2;
-      const double dlog_dan = (H11 * bn + H12 * bm) / s2 - an / s2;
+      const double dlog_dam = (H11 * bm + 0.5 * (H12 + H21) * bn) / s2i - am / s2i;
+      const double dlog_dan = (H22 * bn + 0.5 * (H12 + H21) * bm) / s2j - an / s2j;
       ga.addVal(gsym * Kij * dlog_dam, i, 0);
       if(i != j)
         ga.addVal(gsym * Kij * dlog_dan, j, 0);
 
       if(i != j)
       {
-        const double ddet = -2.0 * alpha * alpha * c;
-        const double dinv11 = -(1.0 + alpha) / (detI * detI) * ddet;
-        const double dinv12 = -alpha / detI
-                              + alpha * c / (detI * detI) * ddet;
-        const double dH11 = dinv11 + inv12 + c * dinv12;
-        const double dH12 = dinv12 + inv11 + c * dinv11;
-        const double dquad = dH11 * (bm * bm + bn * bn) + 2.0 * dH12 * bm * bn;
+        const double ddet = -2.0 * alphai * alphaj * c;
+        // ∂Minv/∂c through det and numerator (α-fixed).
+        const double dminv11 = -(1.0 + alphaj) / (detI * detI) * ddet;
+        const double dminv12 = -alphai / detI + alphai * c / (detI * detI) * ddet;
+        const double dminv21 = -alphaj / detI + alphaj * c / (detI * detI) * ddet;
+        const double dminv22 = -(1.0 + alphai) / (detI * detI) * ddet;
+        const double dH11 = dminv11 + minv21 + c * dminv21;
+        const double dH12 = dminv12 + minv22 + c * dminv22;
+        const double dH21 = minv11 + c * dminv11 + dminv21;
+        const double dH22 = minv12 + c * dminv12 + dminv22;
+        const double dquad = dH11 * bm * bm + dH22 * bn * bn
+                             + (dH12 + dH21) * bm * bn;
         const double dlog_dc = -0.5 / detI * ddet + 0.5 * dquad;
         const double coeff = gsym * Kij * dlog_dc;
         for(unsigned int k = 0; k < Dp; k++)
@@ -1044,29 +1146,65 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
   {
     gradRawFromKuuRidge(gZ, gKuu);
     ridgeFactors(Vtmp, atmp);
-    kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
-    kern.wsRidgeGradParams(tempG, X, Vtmp, atmp, s, gKfu);
-
-    CMatrix gV(M, weightDim());
+    const unsigned int Dp = weightDim();
+    CMatrix gV(M, Dp);
     CMatrix ga(M, 1);
-    kern.wsRidgeGradVA(gV, ga, X, Vtmp, atmp, s, gKfu);
+    gV.zeros();
+    ga.zeros();
+    if(!untiedS)
+    {
+      kern.wsRidgeCrossCompute(Kfu, X, Vtmp, atmp, s);
+      kern.wsRidgeGradParams(tempG, X, Vtmp, atmp, s, gKfu);
+      kern.wsRidgeGradVA(gV, ga, X, Vtmp, atmp, s, gKfu);
+    }
+    else
+    {
+      // CIP-0032: accumulate K_fu grads with per-unit s_m.
+      CMatrix Vm(1, Dp);
+      CMatrix am(1, 1);
+      CMatrix Km(N, 1);
+      CMatrix gKm(N, 1);
+      CMatrix gPiece(1, nParams);
+      CMatrix gVm(1, Dp);
+      CMatrix gam(1, 1);
+      for(unsigned int m = 0; m < M; m++)
+      {
+        for(unsigned int k = 0; k < Dp; k++)
+          Vm.setVal(Vtmp.getVal(m, k), 0, k);
+        am.setVal(atmp.getVal(m, 0), 0, 0);
+        for(unsigned int n = 0; n < N; n++)
+          gKm.setVal(gKfu.getVal(n, m), n, 0);
+        const double sm = sVec.getVal(m, 0);
+        kern.wsRidgeCrossCompute(Km, X, Vm, am, sm);
+        for(unsigned int n = 0; n < N; n++)
+          Kfu.setVal(Km.getVal(n, 0), n, m);
+        gPiece.zeros();
+        kern.wsRidgeGradParams(gPiece, X, Vm, am, sm, gKm);
+        for(unsigned int p = 0; p < nParams; p++)
+          tempG.addVal(gPiece.getVal(p), p);
+        kern.wsRidgeGradVA(gVm, gam, X, Vm, am, sm, gKm);
+        for(unsigned int k = 0; k < Dp; k++)
+          gV.setVal(gVm.getVal(0, k), m, k);
+        ga.setVal(gam.getVal(0, 0), m, 0);
+      }
+    }
     // Chain Kfu grads through normalisation into raw W.
     for(unsigned int i = 0; i < M; i++)
     {
       double nrm = 0.0;
-      for(unsigned int k = 0; k < weightDim(); k++)
+      for(unsigned int k = 0; k < Dp; k++)
         nrm += W.getVal(i, k) * W.getVal(i, k);
       nrm = sqrt(nrm);
       BOUNDCHECK(nrm > 1e-15);
       double gdotv = 0.0;
-      for(unsigned int k = 0; k < weightDim(); k++)
+      for(unsigned int k = 0; k < Dp; k++)
         gdotv += gV.getVal(i, k) * Vtmp.getVal(i, k);
-      for(unsigned int k = 0; k < weightDim(); k++)
+      for(unsigned int k = 0; k < Dp; k++)
       {
         const double gv = gV.getVal(i, k) - gdotv * Vtmp.getVal(i, k);
         gZ.addVal(gv / nrm, i, k);
       }
-      gZ.addVal(ga.getVal(i, 0), i, weightDim());
+      gZ.addVal(ga.getVal(i, 0), i, Dp);
     }
   }
   else
@@ -1101,39 +1239,107 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
     if(ridge)
     {
       ridgeFactors(Vtmp, atmp);
-      kern.wsRidgeGradX(*gXOrNull, X, Vtmp, atmp, s, gKfu);
+      if(!untiedS)
+        kern.wsRidgeGradX(*gXOrNull, X, Vtmp, atmp, s, gKfu);
+      else
+      {
+        const unsigned int Dp = weightDim();
+        CMatrix Vm(1, Dp);
+        CMatrix am(1, 1);
+        CMatrix gKm(N, 1);
+        CMatrix gXm(N, X.getCols());
+        for(unsigned int m = 0; m < M; m++)
+        {
+          for(unsigned int k = 0; k < Dp; k++)
+            Vm.setVal(Vtmp.getVal(m, k), 0, k);
+          am.setVal(atmp.getVal(m, 0), 0, 0);
+          for(unsigned int n = 0; n < N; n++)
+            gKm.setVal(gKfu.getVal(n, m), n, 0);
+          kern.wsRidgeGradX(gXm, X, Vm, am, sVec.getVal(m, 0), gKm);
+          for(unsigned int n = 0; n < N; n++)
+            for(unsigned int j = 0; j < X.getCols(); j++)
+              gXOrNull->addVal(gXm.getVal(n, j), n, j);
+        }
+      }
     }
     else
       kern.wsGradX(*gXOrNull, X, W, s, gKfu);
   }
 
   gScache = 0.0;
+  gSvec.resize(M, 1);
+  gSvec.zeros();
   if(learnS)
   {
-    // ⟨gKuu, ∂Kuu/∂s⟩ via central FD on fillKuu (ridge analytic form is bulky).
-    const double eps = 1e-7 * ((s > 1.0) ? s : 1.0);
-    CMatrix Kup(M, M), Kum(M, M);
-    const double s0 = s;
-    const_cast<CInducingWeightSpace*>(this)->s = s0 + eps;
-    fillKuu(Kup);
-    const_cast<CInducingWeightSpace*>(this)->s = s0 - eps;
-    fillKuu(Kum);
-    const_cast<CInducingWeightSpace*>(this)->s = s0;
-    double gSkuu = 0.0;
-    for(unsigned int i = 0; i < M; i++)
-      for(unsigned int j = 0; j < M; j++)
-        gSkuu += gKuu.getVal(i, j) * (Kup.getVal(i, j) - Kum.getVal(i, j)) / (2.0 * eps);
-
-    CMatrix gSkuf(1, 1);
-    gSkuf.zeros();
-    if(ridge)
+    // ⟨gKuu, ∂Kuu/∂s⟩ via central FD on fillKuu; K_fu via wsRidgeGradS.
+    if(!untiedS)
     {
-      ridgeFactors(Vtmp, atmp);
-      kern.wsRidgeGradS(gSkuf, X, Vtmp, atmp, s, gKfu);
+      const double eps = 1e-7 * ((s > 1.0) ? s : 1.0);
+      CMatrix Kup(M, M), Kum(M, M);
+      const double s0 = s;
+      const_cast<CInducingWeightSpace*>(this)->s = s0 + eps;
+      const_cast<CInducingWeightSpace*>(this)->syncSVecFromScalar();
+      fillKuu(Kup);
+      const_cast<CInducingWeightSpace*>(this)->s = s0 - eps;
+      const_cast<CInducingWeightSpace*>(this)->syncSVecFromScalar();
+      fillKuu(Kum);
+      const_cast<CInducingWeightSpace*>(this)->s = s0;
+      const_cast<CInducingWeightSpace*>(this)->syncSVecFromScalar();
+      double gSkuu = 0.0;
+      for(unsigned int i = 0; i < M; i++)
+        for(unsigned int j = 0; j < M; j++)
+          gSkuu += gKuu.getVal(i, j) * (Kup.getVal(i, j) - Kum.getVal(i, j)) / (2.0 * eps);
+
+      CMatrix gSkuf(1, 1);
+      gSkuf.zeros();
+      if(ridge)
+      {
+        ridgeFactors(Vtmp, atmp);
+        kern.wsRidgeGradS(gSkuf, X, Vtmp, atmp, s, gKfu);
+      }
+      else
+        kern.wsGradS(gSkuf, X, W, s, gKfu);
+      gScache = gSkuu + gSkuf.getVal(0);
+      gSvec.setVal(gScache, 0, 0);
     }
     else
-      kern.wsGradS(gSkuf, X, W, s, gKfu);
-    gScache = gSkuu + gSkuf.getVal(0);
+    {
+      // CIP-0032: one FD / analytic grad per s_m.
+      BOUNDCHECK(ridge);
+      ridgeFactors(Vtmp, atmp);
+      const unsigned int Dp = weightDim();
+      CMatrix Kup(M, M), Kum(M, M);
+      CMatrix Vm(1, Dp);
+      CMatrix am(1, 1);
+      CMatrix gKm(N, 1);
+      CMatrix gSkuf(1, 1);
+      for(unsigned int m = 0; m < M; m++)
+      {
+        const double sm = sVec.getVal(m, 0);
+        const double eps = 1e-7 * ((sm > 1.0) ? sm : 1.0);
+        const_cast<CInducingWeightSpace*>(this)->sVec.setVal(sm + eps, m, 0);
+        fillKuu(Kup);
+        const_cast<CInducingWeightSpace*>(this)->sVec.setVal(sm - eps, m, 0);
+        fillKuu(Kum);
+        const_cast<CInducingWeightSpace*>(this)->sVec.setVal(sm, m, 0);
+        double gSkuu = 0.0;
+        for(unsigned int i = 0; i < M; i++)
+          for(unsigned int j = 0; j < M; j++)
+            gSkuu += gKuu.getVal(i, j) * (Kup.getVal(i, j) - Kum.getVal(i, j)) / (2.0 * eps);
+
+        for(unsigned int k = 0; k < Dp; k++)
+          Vm.setVal(Vtmp.getVal(m, k), 0, k);
+        am.setVal(atmp.getVal(m, 0), 0, 0);
+        for(unsigned int n = 0; n < N; n++)
+          gKm.setVal(gKfu.getVal(n, m), n, 0);
+        gSkuf.zeros();
+        kern.wsRidgeGradS(gSkuf, X, Vm, am, sm, gKm);
+        gSvec.setVal(gSkuu + gSkuf.getVal(0), m, 0);
+      }
+      gScache = 0.0;
+      for(unsigned int m = 0; m < M; m++)
+        gScache += gSvec.getVal(m, 0);
+    }
   }
 }
 
@@ -1141,7 +1347,7 @@ unsigned int CInducingWeightSpace::getNumParams() const
 {
   unsigned int n = numInducing() * domainDim();
   if(learnS)
-    n += 1;
+    n += untiedS ? numInducing() : 1;
   return n;
 }
 
@@ -1158,8 +1364,19 @@ void CInducingWeightSpace::getParams(CMatrix& param, unsigned int offset) const
   }
   if(learnS)
   {
-    param.setVal(s, counter);
-    counter++;
+    if(!untiedS)
+    {
+      param.setVal(s, counter);
+      counter++;
+    }
+    else
+    {
+      for(unsigned int i = 0; i < numInducing(); i++)
+      {
+        param.setVal(sVec.getVal(i, 0), counter);
+        counter++;
+      }
+    }
   }
 }
 
@@ -1176,8 +1393,21 @@ void CInducingWeightSpace::setParams(const CMatrix& param, unsigned int offset)
   }
   if(learnS)
   {
-    setWindowWidth(param.getVal(counter));
-    counter++;
+    if(!untiedS)
+    {
+      setWindowWidth(param.getVal(counter));
+      counter++;
+    }
+    else
+    {
+      CMatrix sIn(numInducing(), 1);
+      for(unsigned int i = 0; i < numInducing(); i++)
+      {
+        sIn.setVal(param.getVal(counter), i, 0);
+        counter++;
+      }
+      setWindowWidths(sIn);
+    }
   }
 }
 

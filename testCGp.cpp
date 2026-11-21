@@ -2158,6 +2158,157 @@ int testWeightSpaceInducingPhase1Ridge()
   return fail;
 }
 
+int testWeightSpaceInducingCip0032()
+{
+  int fail = 0;
+  cout << "==== testCGp weightspace per-unit s_m (CIP-0032) ====" << endl;
+
+  // Tied recovery: untied with equal s_m matches tied K_uu / K_fu.
+  {
+    CMatrix W(3, 3);
+    W.setVal(1.0, 0, 0); W.setVal(0.0, 0, 1); W.setVal(0.4, 0, 2);
+    W.setVal(0.0, 1, 0); W.setVal(1.0, 1, 1); W.setVal(-0.2, 1, 2);
+    W.setVal(0.6, 2, 0); W.setVal(0.8, 2, 1); W.setVal(0.1, 2, 2);
+    const double s = 0.55;
+    CInducingWeightSpace tied(W, s, false, true);
+    CInducingWeightSpace untied(W, s, false, true);
+    CMatrix sVec(3, 1);
+    sVec.setVal(s, 0, 0); sVec.setVal(s, 1, 0); sVec.setVal(s, 2, 0);
+    untied.setWindowWidths(sVec);
+    fail += failTrue(untied.isWindowWidthUntied(), "untied flag set");
+    CMlpKern dummy(1);
+    CMatrix Ktied(3, 3), Kuntied(3, 3);
+    tied.computeKuu(Ktied, dummy);
+    untied.computeKuu(Kuntied, dummy);
+    double maxAbs = 0.0;
+    for(unsigned int i = 0; i < 3; i++)
+      for(unsigned int j = 0; j < 3; j++)
+        maxAbs = max(maxAbs, fabs(Ktied.getVal(i, j) - Kuntied.getVal(i, j)));
+    fail += failTrue(maxAbs < 1e-12, "tied recovery Kuu max|Δ|<1e-12");
+    cout << "  tied recovery Kuu max|Δ|=" << maxAbs << endl;
+
+    CMatrix X(4, 1);
+    for(unsigned int i = 0; i < 4; i++)
+      X.setVal(-1.0 + 2.0 * (double)i / 3.0, i, 0);
+    CMlpKern kern(X);
+    CMatrix Kuft(3, 4), Kufu(3, 4); // M×N
+    tied.computeKuf(Kuft, kern, X);
+    untied.computeKuf(Kufu, kern, X);
+    maxAbs = 0.0;
+    for(unsigned int i = 0; i < 3; i++)
+      for(unsigned int j = 0; j < 4; j++)
+        maxAbs = max(maxAbs, fabs(Kuft.getVal(i, j) - Kufu.getVal(i, j)));
+    fail += failTrue(maxAbs < 1e-12, "tied recovery Kuf max|Δ|<1e-12");
+    cout << "  tied recovery Kuf max|Δ|=" << maxAbs << endl;
+  }
+
+  // Heterogeneous pair vs D'=2 quadrature.
+  {
+    CMatrix W(2, 3);
+    W.setVal(1.0, 0, 0); W.setVal(0.0, 0, 1); W.setVal(0.3, 0, 2);
+    W.setVal(cos(0.4), 1, 0); W.setVal(sin(0.4), 1, 1); W.setVal(-0.7, 1, 2);
+    CInducingWeightSpace ind(W, 0.5, false, true);
+    CMatrix sVec(2, 1);
+    sVec.setVal(0.45, 0, 0);
+    sVec.setVal(0.80, 1, 0);
+    ind.setWindowWidths(sVec);
+    CMatrix Kuu(2, 2);
+    CMlpKern dummy(1);
+    ind.computeKuu(Kuu, dummy);
+    fail += failTrue(fabs(Kuu.getVal(0, 0) - 1.0) < 1e-10, "het Kuu diag0");
+    fail += failTrue(fabs(Kuu.getVal(1, 1) - 1.0) < 1e-10, "het Kuu diag1");
+
+    const unsigned int nq = 501;
+    const double span = 10.0;
+    const double dg = 2.0 * span / (double)(nq - 1);
+    const double dA = dg * dg;
+    auto psi = [&](double w0, double w1, double vx, double vy, double a, double sw) {
+      const double t = w0 * vx + w1 * vy;
+      const double perp = -w0 * vy + w1 * vx;
+      return pow(M_PI * sw * sw, -0.25) * exp(-(t - a) * (t - a) / (2.0 * sw * sw))
+             * pow(2.0 * M_PI, -0.25) * exp(-perp * perp / 4.0);
+    };
+    double quad = 0.0;
+    for(unsigned int i = 0; i < nq; i++)
+    {
+      const double w0 = -span + dg * (double)i;
+      for(unsigned int j = 0; j < nq; j++)
+      {
+        const double w1 = -span + dg * (double)j;
+        quad += psi(w0, w1, 1.0, 0.0, 0.3, 0.45)
+                * psi(w0, w1, cos(0.4), sin(0.4), -0.7, 0.80);
+      }
+    }
+    quad *= dA;
+    const double rel = fabs(Kuu.getVal(0, 1) - quad) / max(1.0, fabs(quad));
+    fail += failTrue(rel < 2e-5, "het Kuu vs 2-D quadrature");
+    cout << "  het Kuu[0,1] closed=" << Kuu.getVal(0, 1) << " quad=" << quad
+         << " rel=" << rel << endl;
+  }
+
+  // Untied learnS: pack M widths; ∂L/∂s_0 matches FD.
+  {
+    const unsigned int n = 12, m = 4;
+    CMatrix X(n, 1), y(n, 1), Xu(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double xv = -1.0 + 2.0 * (double)i / (double)(n - 1);
+      X.setVal(xv, i, 0);
+      y.setVal(sin(2.0 * xv), i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Xu.setVal(-0.8 + 1.6 * (double)i / (double)(m - 1), i, 0);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    noise.setBiasVal(0.0, 0);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, m, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(false);
+    model.setBetaVal(10.0);
+    model.setInducingType("weightspace");
+    CInducingWeightSpace* pWs =
+        dynamic_cast<CInducingWeightSpace*>(model.getInducing());
+    fail += failTrue(pWs != 0, "weightspace inducing cast");
+    if(pWs != 0)
+    {
+      CMatrix s0(m, 1);
+      for(unsigned int i = 0; i < m; i++)
+        s0.setVal(0.45 + 0.05 * (double)i, i, 0);
+      pWs->setWindowWidths(s0);
+      pWs->setLearnWindowWidth(true);
+      fail += failTrue(pWs->numLearnedWindowWidths() == m, "M learned widths");
+      fail += failTrue(pWs->getNumParams() == m * pWs->domainDim() + m,
+                       "params = centres + M widths");
+      const unsigned int nOpt = model.getOptNumParams();
+      CMatrix g(1, nOpt);
+      const double L0 = model.logLikelihoodGradient(g);
+      fail += failTrue(std::isfinite(L0), "untied learnS LL finite");
+      CMatrix p(1, nOpt);
+      model.getOptParams(p);
+      const unsigned int s0Idx = pWs->getNumParams() - m;
+      const double sVal = p.getVal(s0Idx);
+      const double h = 1e-5 * max(1.0, fabs(sVal));
+      CMatrix pp(p), pm(p);
+      pp.setVal(sVal + h, s0Idx);
+      pm.setVal(max(sVal - h, 1e-8), s0Idx);
+      model.setOptParams(pp);
+      const double Lp = model.logLikelihood();
+      model.setOptParams(pm);
+      const double Lm = model.logLikelihood();
+      model.setOptParams(p);
+      const double fd = (Lp - Lm) / (2.0 * h);
+      const double an = g.getVal(s0Idx);
+      const double rel = fabs(fd - an) / max(1.0, fabs(fd));
+      cout << "  untied s0 FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
+      fail += failTrue(rel < 5e-3, "untied ∂L/∂s_0 matches FD");
+    }
+  }
+
+  return fail;
+}
+
 int testWeightSpaceInducingPhase1b()
 {
   int fail = 0;
@@ -3328,6 +3479,7 @@ int main()
     fail += testWeightSpaceInducingPhase0();
     fail += testWeightSpaceInducingPhase1();
     fail += testWeightSpaceInducingPhase1Ridge();
+    fail += testWeightSpaceInducingCip0032();
     fail += testWeightSpaceInducingPhase1b();
     fail += testWeightSpaceInducingPhase2();
     fail += testWeightSpaceInducingPhase2Ridge();

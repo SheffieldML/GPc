@@ -45,6 +45,15 @@ class CInducing
   virtual void setLearnWindowWidth(bool /*learn*/) {}
   // ∂L/∂s from the last gradFromKuuKuf call when learnsWindowWidth(); else 0.
   virtual double windowWidthGrad() const { return 0.0; }
+  // CIP-0032: how many learnable width slots are packed (0, 1, or M).
+  virtual unsigned int numLearnedWindowWidths() const
+  {
+    return learnsWindowWidth() ? 1u : 0u;
+  }
+  virtual double windowWidthGradAt(unsigned int /*i*/) const
+  {
+    return windowWidthGrad();
+  }
 };
 
 // Point inducing: Kuu/Kuf are ordinary kernel evaluations on Z.
@@ -208,11 +217,34 @@ class CInducingWeightSpace : public CInducing
   const CMatrix& centres() const { return W; }
   void setCentres(const CMatrix& Z);
 
+  // Tied scalar (CIP-0028). Broadcasts to all units; does not clear untied mode.
   double getWindowWidth() const { return s; }
   void setWindowWidth(double sIn);
+  // CIP-0032: per-unit widths (M×1). Sets untied mode.
+  const CMatrix& getWindowWidths() const { return sVec; }
+  void setWindowWidths(const CMatrix& sIn);
+  bool isWindowWidthUntied() const { return untiedS; }
+  void setWindowWidthUntied(bool untied);
+  double windowWidthAt(unsigned int m) const;
+
   bool learnsWindowWidth() const { return learnS; }
   void setLearnWindowWidth(bool learn) { learnS = learn; }
+  // Tied: scalar in gScache. Untied: per-unit grads in gSvec (M×1).
   double windowWidthGrad() const { return gScache; }
+  const CMatrix& windowWidthGrads() const { return gSvec; }
+  unsigned int numLearnedWindowWidths() const
+  {
+    if(!learnS)
+      return 0u;
+    return untiedS ? numInducing() : 1u;
+  }
+  double windowWidthGradAt(unsigned int i) const
+  {
+    if(!untiedS)
+      return gScache;
+    BOUNDCHECK(i < gSvec.getRows());
+    return gSvec.getVal(i, 0);
+  }
 
   // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
   void ridgeFactors(CMatrix& V, CMatrix& a) const;
@@ -227,16 +259,20 @@ class CInducingWeightSpace : public CInducing
   void fillKuu(CMatrix& Kuu) const;
   void fillKuuIsotropic(CMatrix& Kuu) const;
   void fillKuuRidge(CMatrix& Kuu) const;
+  void syncSVecFromScalar();
   void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
   void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
   // Analytic ∂⟨gKuu,Kuu⟩/∂(unit V, a); then chain to raw W via normalisation.
   void gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKuu) const;
 
   CMatrix W; // owned; ridge: M×(d+2); isotropic: M×(d+1)
-  double s;
+  double s;          // tied / broadcast mirror (CIP-0028)
+  CMatrix sVec;      // M×1 widths (CIP-0032; always populated)
   bool learnS;
+  bool untiedS;      // false ⇒ treat as one shared s (default)
   bool ridge;
   mutable double gScache;
+  mutable CMatrix gSvec; // M×1 when untied learnS
   mutable CMatrix Kfu;
   mutable CMatrix gKfu;
   mutable CMatrix tempG;

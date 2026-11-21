@@ -1,8 +1,9 @@
-/* CIP-0035 Phase 1: deep GP by doubly stochastic VI on CSvgp layer cores.
+/* CIP-0035: deep GP by doubly stochastic VI on CSvgp layer cores.
 
    Stack of L SVGP layers with fixed mean maps P_ℓ. Hidden layers use
    Cholesky-mode q(v) and marginalsAt / marginalsGradAt; the final layer
-   reuses elboGradAt. Training is minibatch Adam via CStochasticOptimisable. */
+   reuses elboGradAt. Training is minibatch Adam via CStochasticOptimisable.
+   Phase 2: per-layer inducing family (points / weightspace ridges). */
 
 #ifndef CDEEPGP_H
 #define CDEEPGP_H
@@ -49,6 +50,13 @@ class CDeepGp : public CStochasticOptimisable {
 
   void setNatGradGamma(double g) { natGradGamma = g; }
   double getNatGradGamma() const { return natGradGamma; }
+
+  // Per-layer inducing family (default "points"). "weightspace" uses
+  // makeRidgeInit (CIP-0037). Rebuilds stochastic param offsets.
+  void setLayerInducingType(unsigned int ell, const std::string& typeName);
+  // Enable learnable ridge window width(s); sigmoid-mapped into [0.05, 1].
+  void setLayerLearnWindowWidth(unsigned int ell, bool learn,
+                                bool untied = false);
 
   // Unbiased ELBO estimate on a batch (K samples).
   double elboEstimate(const std::vector<unsigned int>& batch);

@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install toolchain (Ubuntu)
         if: runner.os == 'Linux'
@@ -85,8 +85,9 @@ jobs:
     runs-on: windows-2022
     continue-on-error: true
     env:
-      # Do not use VCPKG_ROOT: ilammy/msvc-dev-cmd overwrites it with the
-      # VS-bundled vcpkg under Program Files (clone then fails on non-empty dir).
+      # Do not use VCPKG_ROOT: setup-msvc-dev (and the old ilammy action) can
+      # overwrite it with the VS-bundled vcpkg under Program Files (clone then
+      # fails on a non-empty dir).
       GPC_VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       GPC_VCPKG_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
       VCPKG_DEFAULT_TRIPLET: x64-windows
@@ -95,7 +96,7 @@ jobs:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg-binary-cache,readwrite"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Intel Fortran (ifx)
         uses: fortran-lang/setup-fortran@v1
@@ -104,20 +105,21 @@ jobs:
           compiler: intel
           version: "2025.0"
 
+      # Node 24 fork of abandoned ilammy/msvc-dev-cmd@v1 (still node20 upstream).
       - name: Enable MSVC developer command prompt
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
 
       - name: Install Ninja
         run: choco install ninja -y
 
-      # Split restore/save: actions/cache@v4's implicit post-save only runs when
+      # Split restore/save: actions/cache's implicit post-save only runs when
       # the whole job succeeds, so any Build failure threw away the ~8-12 min
       # OpenBLAS/LAPACK build and every run started cold.
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.GPC_VCPKG_BINARY_CACHE }}
           key: vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-openblas-lapack-ref-ifx2025
@@ -146,7 +148,7 @@ jobs:
 
       - name: Save vcpkg binary cache
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ env.GPC_VCPKG_BINARY_CACHE }}
           key: vcpkg-bin-win-x64-${{ env.GPC_VCPKG_COMMIT }}-openblas-lapack-ref-ifx2025

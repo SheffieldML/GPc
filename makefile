@@ -114,7 +114,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDiagGradParams testInducingGradZ
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -275,6 +275,16 @@ CSviBayesGplvm.o: CSviBayesGplvm.cpp CSviBayesGplvm.h CSvgp.h
 
 CSvgp.o: CSvgp.cpp CSvgp.h CAdam.h CStochasticOptimisable.h CKern.h CMatrix.h CCholAdjoint.h CInducing.h
 	$(CC) -c CSvgp.cpp -o CSvgp.o $(CCFLAGS)
+
+# CIP-0035 Phase 1: deep GP (DSVI on CSvgp layers).
+testDeepGp: testDeepGp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testDeepGp testDeepGp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testDeepGp.o: testDeepGp.cpp CDeepGp.h CSvgp.h CKern.h CMatrix.h
+	$(CC) -c testDeepGp.cpp -o testDeepGp.o $(CCFLAGS)
+
+CDeepGp.o: CDeepGp.cpp CDeepGp.h CSvgp.h
+	$(CC) -c CDeepGp.cpp -o CDeepGp.o $(CCFLAGS)
 
 CAdam.o: CAdam.cpp CAdam.h CStochasticOptimisable.h CMatrix.h
 	$(CC) -c CAdam.cpp -o CAdam.o $(CCFLAGS)

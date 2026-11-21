@@ -1166,6 +1166,57 @@ void CSvgp::dataTermQGrads(const vector<unsigned int>& batch,
   }
 }
 
+void CSvgp::dataTermQGradsAt(const CMatrix& XB, const vector<unsigned int>& yRows,
+                             double c, CMatrix& gM, vector<CMatrix>& gS) const
+{
+  if(yRows.empty() || XB.getRows() != yRows.size())
+    throw ndlexceptions::Error("CSvgp::dataTermQGradsAt: XB rows must match yRows");
+  if(!(c > 0.0))
+    throw ndlexceptions::Error("CSvgp::dataTermQGradsAt: c must be positive");
+  const unsigned int M = numInducing;
+  const unsigned int B = yRows.size();
+  gM.resize(M, outputDim);
+  gM.zeros();
+  gS.assign(outputDim, CMatrix(M, M));
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    gS[j].zeros();
+    gS[j].setSymmetric(true);
+  }
+  fillMarginalsFromX(XB, wsMu, wsVar);
+  double gMu = 0.0, gVar = 0.0;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const unsigned int i = yRows[k];
+      expectedLogLik(py->getVal(i, j), wsMu.getVal(k, j), wsVar.getVal(k, j),
+                     gMu, gVar, j);
+      for(unsigned int r = 0; r < M; r++)
+        gM.setVal(gM.getVal(r, j) + c * gMu * wsAB.getVal(r, k), r, j);
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s <= r; s++)
+        {
+          const double v = c * gVar * wsAB.getVal(r, k) * wsAB.getVal(s, k);
+          gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
+          if(s != r)
+            gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
+        }
+    }
+  }
+}
+
+void CSvgp::qParamsGradAt(CMatrix& gQ, const CMatrix& XB,
+                          const vector<unsigned int>& yRows, double c) const
+{
+  if(qParamMode != QModeCholesky)
+    throw ndlexceptions::Error("CSvgp::qParamsGradAt requires QModeCholesky");
+  CMatrix gM;
+  vector<CMatrix> gS;
+  dataTermQGradsAt(XB, yRows, c, gM, gS);
+  packQGradsFromMS(gQ, gM, gS);
+}
+
 void CSvgp::qParamsGrad(CMatrix& gQ) const
 {
   qParamsGrad(gQ, allIndices());

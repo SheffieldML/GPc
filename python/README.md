@@ -193,9 +193,12 @@ from gpc.plot import plot_1d  # requires matplotlib
 plot_1d(m, X, Y)
 ```
 
-Examples:
+Examples (GPy-tutorial inspired where noted):
 
-- [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb)
+- [`examples/toy_1d_regression.ipynb`](examples/toy_1d_regression.ipynb) — basic GP + `predict` / `predict_noiseless`
+- [`examples/sparse_gp_regression_1d.ipynb`](examples/sparse_gp_regression_1d.ipynb) — GPy `sparse_GP_regression_1D`
+- [`examples/basic_kernels_compound.ipynb`](examples/basic_kernels_compound.ipynb) — `kern.*` compounds (CIP-0027 noise note)
+- [`examples/expquad_regression.ipynb`](examples/expquad_regression.ipynb) — GPy `ExpQuad` path names
 - [`examples/olympic_marathon.ipynb`](examples/olympic_marathon.ipynb) — needs `pods`
 - [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb) — RBF vs MLP (Phase F)
 - [`examples/weightspace_ridge_1d.ipynb`](examples/weightspace_ridge_1d.ipynb) — points vs ridges (CIP-0028)

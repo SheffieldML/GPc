@@ -646,6 +646,18 @@ void CInducingWeightSpace::setWindowWidths(const CMatrix& sIn)
   s = sVec.getVal(0, 0);
 }
 
+void CInducingWeightSpace::setWindowWidthAt(unsigned int m, double sIn)
+{
+  if(!(sIn > 0.0))
+    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  BOUNDCHECK(m < numInducing());
+  if(sVec.getRows() != numInducing())
+    syncSVecFromScalar();
+  sVec.setVal(sIn, m, 0);
+  untiedS = true;
+  s = sVec.getVal(0, 0);
+}
+
 double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
                                            unsigned int inputDim, unsigned int rngSeed)
 {

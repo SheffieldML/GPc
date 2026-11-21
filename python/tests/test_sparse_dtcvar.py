@@ -125,3 +125,48 @@ def test_window_width_fixed_still_visible():
     row = next(p for p in m.describe().params if p.path == "inducing.window_width")
     assert row.fixed is True
     assert row.value == pytest.approx(0.55)
+
+
+def test_per_unit_window_widths_cip0032():
+    X, Y, Z = _toy_sparse()
+    M = Z.shape[0]
+    s_vec = 0.4 + 0.05 * np.arange(M, dtype=float)
+    m = gpc.SparseGPRegression(
+        X,
+        Y,
+        Z,
+        kernel="mlp",
+        inducing="weightspace",
+        window_width=s_vec,
+        learn_window_widths=True,
+    )
+    assert m.learn_window_widths is True
+    assert m.learn_window_width is False
+    assert m.window_widths.shape == (M,)
+    assert np.allclose(m.window_widths, s_vec)
+    paths = m.param_paths()
+    assert all(f"inducing.window_width.{i}" in paths for i in range(M))
+    assert "inducing.window_width" not in paths
+    assert m.get_by_path("inducing.window_width.0") == pytest.approx(s_vec[0])
+    before = m.objective()
+    s0 = m.window_widths.copy()
+    m.optimize(iters=12)
+    assert np.isfinite(m.objective())
+    assert m.objective() <= before + 1e-5
+    assert not np.allclose(m.window_widths, s0) or m.objective() < before
+    text = str(m)
+    assert "inducing.window_width.0" in text
+
+
+def test_learn_window_width_and_widths_mutex():
+    X, Y, Z = _toy_sparse()
+    with pytest.raises(gpc.GpcError, match="only one of"):
+        gpc.SparseGPRegression(
+            X,
+            Y,
+            Z,
+            kernel="mlp",
+            inducing="weightspace",
+            learn_window_width=True,
+            learn_window_widths=True,
+        )

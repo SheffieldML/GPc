@@ -54,6 +54,11 @@ class CInducing
   {
     return windowWidthGrad();
   }
+  // CIP-0032: untied per-unit widths (weight-space). Default: tied / absent.
+  virtual bool isWindowWidthUntied() const { return false; }
+  virtual unsigned int numWindowWidths() const { return 0u; }
+  virtual double getWindowWidthAt(unsigned int /*m*/) const { return getWindowWidth(); }
+  virtual void setWindowWidthAt(unsigned int /*m*/, double sIn) { setWindowWidth(sIn); }
 };
 
 // Point inducing: Kuu/Kuf are ordinary kernel evaluations on Z.
@@ -245,6 +250,9 @@ class CInducingWeightSpace : public CInducing
     BOUNDCHECK(i < gSvec.getRows());
     return gSvec.getVal(i, 0);
   }
+  unsigned int numWindowWidths() const { return numInducing(); }
+  double getWindowWidthAt(unsigned int m) const { return windowWidthAt(m); }
+  void setWindowWidthAt(unsigned int m, double sIn);
 
   // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
   void ridgeFactors(CMatrix& V, CMatrix& a) const;

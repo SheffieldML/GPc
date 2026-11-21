@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_weightspace-per-unit-window-width"
 title: "Per-unit window widths s_m for weight-space ridges (CIP-0032)"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -25,10 +25,10 @@ CIP-0028 ridges use a shared global \(s\). That yields an MLP-shaped mean but no
 
 ## Acceptance Criteria
 
-- [ ] CIP-0032 Accepted after review
-- [ ] Phase A formulae + oracles landed
-- [ ] Phase B C++ inducing / CGp / stream
-- [ ] Phase C Python façade + docs + notebook
+- [x] CIP-0032 Accepted after review
+- [x] Phase A formulae + oracles landed
+- [x] Phase B C++ inducing / CGp / stream
+- [x] Phase C Python façade + docs + notebook
 
 ## Related
 
@@ -41,4 +41,4 @@ CIP-0028 ridges use a shared global \(s\). That yields an MLP-shaped mean but no
 
 Task created with CIP-0032 draft (Proposed).
 
-CIP-0032 Accepted on `main`; implementation on `cip0032-per-unit-window-width`. Phase A oracle + Phase B C++ (heterogeneous \(K_{uu}\), untied pack/grads, `testWeightSpaceInducingCip0032`) green. Phase C (Python) next.
+CIP-0032 Accepted on `main`; implementation on `cip0032-per-unit-window-width`. Phases A–C complete (C++ + Python `learn_window_widths` / array `window_width` + notebook). Awaiting PR verification / Close.

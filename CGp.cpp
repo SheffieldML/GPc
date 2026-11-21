@@ -619,7 +619,16 @@ vector<string> CGp::paramPaths() const
   if(isSparseApproximation()
      && pInducing!=0
      && pInducing->typeName()!="points")
-    paths.push_back("inducing.window_width");
+  {
+    if(pInducing->isWindowWidthUntied())
+    {
+      const unsigned int M = pInducing->numWindowWidths();
+      for(unsigned int m = 0; m < M; m++)
+        paths.push_back(string("inducing.window_width.") + ndlstrutil::itoa(m));
+    }
+    else
+      paths.push_back("inducing.window_width");
+  }
   if(isOutputScaleLearnt())
   {
     for(unsigned int j=0; j<getOutputDim(); j++)
@@ -650,6 +659,15 @@ double CGp::getByPath(const string& path) const
     if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
       throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
     return pInducing->getWindowWidth();
+  }
+  if(p.compare(0, 22, "inducing.window_width.")==0)
+  {
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+      throw ndlexceptions::Error("inducing.window_width.* only valid for non-point inducing.");
+    const unsigned int index=static_cast<unsigned int>(atoi(p.substr(22).c_str()));
+    if(index>=pInducing->numWindowWidths())
+      throw ndlexceptions::Error("inducing.window_width index out of range in path '"+path+"'.");
+    return pInducing->getWindowWidthAt(index);
   }
   if(p.compare(0, 6, "scale.")==0)
   {
@@ -687,6 +705,17 @@ void CGp::setByPath(const string& path, double val)
     if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
       throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
     pInducing->setWindowWidth(val);
+    invalidateCache();
+    return;
+  }
+  if(p.compare(0, 22, "inducing.window_width.")==0)
+  {
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+      throw ndlexceptions::Error("inducing.window_width.* only valid for non-point inducing.");
+    const unsigned int index=static_cast<unsigned int>(atoi(p.substr(22).c_str()));
+    if(pInducing->numWindowWidths()==0 || index>=pInducing->numWindowWidths())
+      throw ndlexceptions::Error("inducing.window_width index out of range in path '"+path+"'.");
+    pInducing->setWindowWidthAt(index, val);
     invalidateCache();
     return;
   }
@@ -3399,11 +3428,37 @@ ModelDescription CGp::describe() const
     desc.params.push_back(beta);
     if(pInducing!=0 && pInducing->typeName()!="points")
     {
-      ParamRow sRow("inducing.window_width", pInducing->getWindowWidth());
-      sRow.transform = "exp";
-      // Centres are omitted from the table; mark s fixed when not learnt.
-      sRow.fixed = !pInducing->learnsWindowWidth();
-      desc.params.push_back(sRow);
+      const bool fixedS = !pInducing->learnsWindowWidth();
+      if(pInducing->isWindowWidthUntied() && pInducing->numWindowWidths()>0)
+      {
+        const unsigned int M = pInducing->numWindowWidths();
+        // Full list when M is small; otherwise summary + first few (CIP-0032).
+        const unsigned int nShow = (M <= 12) ? M : 4;
+        for(unsigned int m = 0; m < nShow; m++)
+        {
+          ParamRow sRow(string("inducing.window_width.") + ndlstrutil::itoa(m),
+                        pInducing->getWindowWidthAt(m));
+          sRow.transform = "exp";
+          sRow.fixed = fixedS;
+          desc.params.push_back(sRow);
+        }
+        if(nShow < M)
+        {
+          ParamRow more(string("inducing.window_width.(+") + ndlstrutil::itoa(M - nShow)
+                            + string(" more)"),
+                        pInducing->getWindowWidthAt(nShow));
+          more.transform = "exp";
+          more.fixed = fixedS;
+          desc.params.push_back(more);
+        }
+      }
+      else
+      {
+        ParamRow sRow("inducing.window_width", pInducing->getWindowWidth());
+        sRow.transform = "exp";
+        sRow.fixed = fixedS;
+        desc.params.push_back(sRow);
+      }
     }
   }
   if(isOutputScaleLearnt())

@@ -3198,12 +3198,114 @@ int testGreensIntegratedBrownianPhase3()
   return fail;
 }
 
+int testLatentPredictive()
+{
+  // CIP-0031 Phase A: latent vs predictive observation noise; out uses latent.
+  int fail = 0;
+  cout << "==== testCGp CIP-0031 latent/predictive ====" << endl;
+
+  CMatrix X(N, Q);
+  CMatrix y(N, 1);
+  fillXy(X, y);
+  CMatrix Xtest(2, Q);
+  Xtest.setVal(0.1, 0, 0);
+  Xtest.setVal(-0.5, 1, 0);
+  const double sigma2 = 0.04;
+
+  // FTC: signal-only RBF; noise on likelihood.variance.
+  {
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+    model.setLikelihoodVariance(sigma2);
+    CMatrix muL(2, 1), varL(2, 1), muP(2, 1), varP(2, 1), muA(2, 1), varA(2, 1);
+    model.latentMeanVar(muL, varL, Xtest);
+    model.predictiveMeanVar(muP, varP, Xtest);
+    model.posteriorMeanVar(muA, varA, Xtest);
+    fail += failTrue(fabs(muL.getVal(0) - muP.getVal(0)) < 1e-14,
+                     "FTC latent/predictive means match");
+    fail += failTrue(fabs(varP.getVal(0) - varL.getVal(0) - sigma2) < 1e-12,
+                     "FTC predictive − latent = likelihood.variance");
+    fail += failTrue(fabs(varA.getVal(0) - varP.getVal(0)) < 1e-14,
+                     "FTC posteriorMeanVar aliases predictive");
+    CMatrix yPred(2, 1), stdPred(2, 1);
+    model.out(yPred, stdPred, Xtest);
+    const double expectStd = sqrt(varL.getVal(0) + sigma2);
+    fail += failTrue(fabs(stdPred.getVal(0) - expectStd) < 1e-12,
+                     "FTC out std uses latent + sigma2 once");
+  }
+
+  // Sparse DTCVAR: same σ² via β = 1/σ².
+  {
+    CMatrix Xu(M_ACTIVE, Q);
+    fillXu(Xu, X);
+    CCmpndKern kern(X);
+    kern.addKern(new CRbfKern(X));
+    CGaussianNoise noise(&y);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, M_ACTIVE, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(true);
+    model.setLikelihoodVariance(sigma2);
+    CMatrix muL(2, 1), varL(2, 1), muP(2, 1), varP(2, 1);
+    model.latentMeanVar(muL, varL, Xtest);
+    model.predictiveMeanVar(muP, varP, Xtest);
+    fail += failTrue(fabs(varP.getVal(0) - varL.getVal(0) - sigma2) < 1e-12,
+                     "DTCVAR predictive − latent = 1/β");
+    CMatrix yPred(2, 1), stdPred(2, 1);
+    model.out(yPred, stdPred, Xtest);
+    const double expectStd = sqrt(varL.getVal(0) + sigma2);
+    fail += failTrue(fabs(stdPred.getVal(0) - expectStd) < 1e-12,
+                     "DTCVAR out std uses latent + sigma2 once");
+  }
+
+  // FTC ↔ DTCVAR latent at M=N, Z=X, signal kernel only.
+  {
+    CMatrix Xu(N, Q);
+    Xu.deepCopy(X);
+    CCmpndKern kernF(X);
+    kernF.addKern(new CRbfKern(X));
+    CCmpndKern kernS(X);
+    kernS.addKern(new CRbfKern(X));
+    CGaussianNoise noiseF(&y);
+    CGaussianNoise noiseS(&y);
+    for(int i = 0; i < noiseF.getOutputDim(); i++)
+    {
+      noiseF.setBiasVal(0.0, i);
+      noiseS.setBiasVal(0.0, i);
+    }
+    CGp ftc(&kernF, &noiseF, &X, CGp::FTC, 0, 0);
+    CGp dtc(&kernS, &noiseS, &X, CGp::DTCVAR, N, 0);
+    dtc.setInducingVals(Xu);
+    dtc.setInducingFixed(true);
+    ftc.setLikelihoodVariance(sigma2);
+    dtc.setLikelihoodVariance(sigma2);
+    CMatrix muF(2, 1), varF(2, 1), muD(2, 1), varD(2, 1);
+    ftc.latentMeanVar(muF, varF, Xtest);
+    dtc.latentMeanVar(muD, varD, Xtest);
+    double diff = 0.0;
+    for(unsigned int i = 0; i < 2; i++)
+    {
+      diff = max(diff, fabs(muF.getVal(i) - muD.getVal(i)));
+      diff = max(diff, fabs(varF.getVal(i) - varD.getVal(i)));
+    }
+    fail += failTrue(diff < 1e-8, "FTC vs DTCVAR latent at M=N Z=X");
+  }
+
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
   try
   {
     fail += testPrediction();
+    fail += testLatentPredictive();
     fail += testScaleLearning();
     fail += testOptimiseX();
     fail += testInducingFree();

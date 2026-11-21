@@ -1116,7 +1116,8 @@ void CGp::out(CMatrix& yPred, const CMatrix& Xin) const
   DIMENSIONMATCH(yPred.getRows()==Xin.getRows());
   CMatrix muTest(yPred.getRows(), yPred.getCols());
   CMatrix varSigmaTest(yPred.getRows(), yPred.getCols());
-  posteriorMeanVar(muTest, varSigmaTest, Xin);
+  // CIP-0031: pass latent variance; noise.out adds observation noise once.
+  latentMeanVar(muTest, varSigmaTest, Xin);
   pnoise->out(yPred, muTest, varSigmaTest);
 }
 
@@ -1124,7 +1125,7 @@ void CGp::out(CMatrix& yPred, CMatrix& probPred, const CMatrix& Xin) const
 {
   CMatrix muTest(yPred.getRows(), yPred.getCols());
   CMatrix varSigmaTest(yPred.getRows(), yPred.getCols());
-  posteriorMeanVar(muTest, varSigmaTest, Xin);
+  latentMeanVar(muTest, varSigmaTest, Xin);
   pnoise->out(yPred, probPred, muTest, varSigmaTest);
 }
 double CGp::outGradParams(CMatrix& g, const CMatrix &Xin, unsigned int pointNo, unsigned int outputNo) const
@@ -1290,13 +1291,24 @@ void CGp::_posteriorMean(CMatrix& mu, const CMatrix& kX) const
     }
   }
 }
-void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) const
+double CGp::_observationNoiseVariance() const
+{
+  if(isSparseApproximation())
+    return 1.0 / getBetaVal();
+  if(addsLikelihoodVarianceToGram())
+    return getLikelihoodVariance();
+  return 0.0;
+}
+
+void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin,
+                        bool includeObservationNoise) const
 {
   updateK();
   updateAD();
   DIMENSIONMATCH(varSigma.getRows()==kX.getCols());
   DIMENSIONMATCH(varSigma.getCols()==getOutputDim());
   // WARNING: destroys kX through in place operations.
+  const double noiseVar = includeObservationNoise ? _observationNoiseVariance() : 0.0;
   if(isSparseApproximation())
   {
     if(isWhitenedSparseLinalg()
@@ -1306,7 +1318,7 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
            || getApproximationType() == FITC
            || getApproximationType() == PITC))
     {
-      // vs = kxx - ||b||^2 + b^T C^{-1} b + β^{-1}, b = U^{-T} k_xu (CIP-0012).
+      // vs = kxx - ||b||^2 + b^T C^{-1} b [+ β^{-1}], b = U^{-T} k_xu (CIP-0012).
       CMatrix bStar(kX);
       bStar.trsm(LcholK, 1.0, "l", "u", "t", "n");
       CMatrix CinvB(bStar);
@@ -1318,7 +1330,7 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
           - bStar.dotColCol(i, bStar, i)
           + bStar.dotColCol(i, CinvB, i);
         CHECKZEROORPOSITIVE(vsVal >= 0);
-        vsVal += 1.0 / getBetaVal();
+        vsVal += noiseVar;
         for(unsigned int j = 0; j < getOutputDim(); j++)
           varSigma.setVal(vsVal, i, j);
       }
@@ -1334,7 +1346,7 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
     {
       double vsVal = pkern->diagComputeElement(Xin, i) - kX.dotColCol(i, store, i);
       CHECKZEROORPOSITIVE(vsVal>=0);
-      vsVal += 1.0/getBetaVal();
+      vsVal += noiseVar;
       for(unsigned int j=0; j<getOutputDim(); j++)
       {
 	varSigma.setVal(vsVal, i, j);
@@ -1349,9 +1361,8 @@ void CGp::_posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) cons
     for(unsigned int i=0; i<kX.getCols(); i++)
     {
       double vsVal = pkern->diagComputeElement(Xin, i) - kX.norm2Col(i);
-      // CIP-0027: match sparse (+1/β) and legacy White-in-diag predictive noise.
-      if(addsLikelihoodVarianceToGram())
-        vsVal += getLikelihoodVariance();
+      // CIP-0027 / CIP-0031: predictive adds likelihood.variance; latent omits it.
+      vsVal += noiseVar;
       CHECKZEROORPOSITIVE(vsVal>=0);
       for(unsigned int j=0; j<getOutputDim(); j++)
       {
@@ -1387,27 +1398,43 @@ void CGp::posteriorMean(CMatrix& mu, const CMatrix& Xin) const
   _testComputeKx(kX, Xin);
   _posteriorMean(mu, kX);
 }
-void CGp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+void CGp::_posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin,
+                            bool includeObservationNoise) const
 {
   DIMENSIONMATCH(mu.getCols()==getOutputDim());
   DIMENSIONMATCH(varSigma.getCols()==getOutputDim());
   DIMENSIONMATCH(mu.getRows()==Xin.getRows());
   DIMENSIONMATCH(varSigma.getRows()==Xin.getRows());
-  
+
   int alRows = 0;
   if(isSparseApproximation())
   {
     alRows = numActive;
   }
   else
-  { 
+  {
     alRows = getNumData();
   }
   CMatrix kX(alRows, Xin.getRows());
   _testComputeKx(kX, Xin);
   _posteriorMean(mu, kX);
-  _posteriorVar(varSigma, kX, Xin); // destroys kX through in place operations.
-  
+  _posteriorVar(varSigma, kX, Xin, includeObservationNoise); // destroys kX
+}
+
+void CGp::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  _posteriorMeanVar(mu, varSigma, Xin, false);
+}
+
+void CGp::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  _posteriorMeanVar(mu, varSigma, Xin, true);
+}
+
+void CGp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  // CIP-0031: deprecated alias — CGp historically returned noisy (predictive) variance.
+  predictiveMeanVar(mu, varSigma, Xin);
 }
 
 // Gradient routines

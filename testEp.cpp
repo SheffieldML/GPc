@@ -257,12 +257,15 @@ static int testCGpLaplaceOptimise()
   return fail;
 }
 
-static int testSiteWorkspaceDualWrite()
+static int testSiteWorkspaceAttach()
 {
+  // CIP-0034: attached workspace is the active site store (inference owns it).
   CMatrix Y(3, 1);
   Y.setVals(1.0);
   CProbitNoise noise(&Y);
   CNoiseSiteWorkspace ws;
+  ws.resize(3, 1);
+  ws.zeros();
   noise.attachSiteWorkspace(&ws);
   CMatrix mu(3, 1), vs(3, 1);
   for(unsigned int i = 0; i < 3; i++)
@@ -273,10 +276,11 @@ static int testSiteWorkspaceDualWrite()
   noise.setMus(mu);
   noise.setVarSigmas(vs);
   int fail = 0;
-  fail += checkClose("site workspace dual-write match",
-                     noise.sitesMatchWorkspace() ? 1.0 : 0.0, 1.0, 0.0);
+  fail += checkClose("using external site workspace",
+                     noise.usingExternalSiteWorkspace() ? 1.0 : 0.0, 1.0, 0.0);
   fail += checkClose("workspace mu[1]", ws.mu.getVal(1, 0), 0.1, 1e-15);
   fail += checkClose("workspace vs[2]", ws.varSigma.getVal(2, 0), 0.7, 1e-15);
+  fail += checkClose("getMu reads workspace", noise.getMu(1, 0), 0.1, 1e-15);
   return fail;
 }
 
@@ -289,7 +293,7 @@ int main()
   fail += testCGpEpOptimise();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
-  fail += testSiteWorkspaceDualWrite();
+  fail += testSiteWorkspaceAttach();
   cout << "Total failures: " << fail << endl;
   return fail;
 }

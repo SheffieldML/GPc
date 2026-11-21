@@ -577,47 +577,38 @@ bool CNoise::equals(const CNoise& noise, double tol) const
     return false;
   return true;
 }
-void CNoise::dualWriteSitesToWorkspace()
+void CNoise::initSiteStoreage()
 {
-  if(pSiteWs == 0)
-    return;
-  pSiteWs->resize(getNumData(), getOutputDim());
-  for(unsigned int i = 0; i < getNumData(); i++)
-  {
-    for(unsigned int j = 0; j < getOutputDim(); j++)
-    {
-      pSiteWs->mu.setVal(getMu(i, j), i, j);
-      pSiteWs->varSigma.setVal(getVarSigma(i, j), i, j);
-    }
-  }
+  activeSites().resize(getNumData(), getOutputDim());
+  activeSites().zeros();
 }
 
-bool CNoise::sitesMatchWorkspace(double tol) const
+void CNoise::setMu(double val, unsigned int i, unsigned int j)
 {
-  if(pSiteWs == 0)
-    return false;
-  if(pSiteWs->mu.getRows() != getNumData()
-     || pSiteWs->mu.getCols() != getOutputDim()
-     || pSiteWs->varSigma.getRows() != getNumData()
-     || pSiteWs->varSigma.getCols() != getOutputDim())
-    return false;
-  for(unsigned int i = 0; i < getNumData(); i++)
-  {
-    for(unsigned int j = 0; j < getOutputDim(); j++)
-    {
-      if(fabs(getMu(i, j) - pSiteWs->mu.getVal(i, j)) > tol)
-        return false;
-      if(fabs(getVarSigma(i, j) - pSiteWs->varSigma.getVal(i, j)) > tol)
-        return false;
-    }
-  }
-  return true;
+  activeSites().mu.setVal(val, i, j);
+}
+
+double CNoise::getMu(unsigned int i, unsigned int j) const
+{
+  return activeSites().mu.getVal(i, j);
+}
+
+void CNoise::setVarSigma(double val, unsigned int i, unsigned int j)
+{
+  SANITYCHECK(!isnan(val));
+  SANITYCHECK(val >= 0);
+  activeSites().varSigma.setVal(val, i, j);
+}
+
+double CNoise::getVarSigma(unsigned int i, unsigned int j) const
+{
+  return activeSites().varSigma.getVal(i, j);
 }
 
 void CNoise::writeParamsToStream(ostream& out) const
 {
   //writeToStream(out, "numData", getNumData());
-  // CIP-0033 Phase D: stream carries parameters only — not py / mu / varSigma.
+  // CIP-0033/0034: stream carries parameters only — not py / site caches.
   writeToStream(out, "baseType", getBaseType());
   writeToStream(out, "type", getType());
   writeToStream(out, "outputDim", getOutputDim());
@@ -653,8 +644,7 @@ CGaussianNoise::~CGaussianNoise()
 void CGaussianNoise::initStoreage()
 {
   setNumParams(getOutputDim()+1);
-  mu.resize(getNumData(), getOutputDim());
-  varSigma.resize(getNumData(), getOutputDim());
+  initSiteStoreage();
   bias.resize(1, getOutputDim());
   clearTransforms();
   // transform sigma2 (the last parameter).
@@ -682,8 +672,7 @@ void CGaussianNoise::initParams()
 }
 void CGaussianNoise::initVals()
 {
-  mu.zeros();
-  varSigma.zeros();
+  activeSites().zeros();
   bias.zeros();
   sigma2 = 1e-6;
 }
@@ -885,8 +874,7 @@ CScaleNoise::~CScaleNoise()
 void CScaleNoise::initStoreage()
 {
   setNumParams(2*getOutputDim());
-  mu.resize(getNumData(), getOutputDim());
-  varSigma.resize(getNumData(), getOutputDim());
+  initSiteStoreage();
   bias.resize(1, getOutputDim());
   scale.resize(1, getOutputDim());
   clearTransforms();
@@ -898,8 +886,7 @@ void CScaleNoise::initStoreage()
 }
 void CScaleNoise::initVals()
 {
-  mu.zeros();
-  varSigma.zeros();
+  activeSites().zeros();
   bias.zeros();
   scale.ones();
 }
@@ -1158,8 +1145,7 @@ CProbitNoise::~CProbitNoise()
 void CProbitNoise::initStoreage()
 {
   setNumParams(getOutputDim());
-  mu.resize(getNumData(), getOutputDim());
-  varSigma.resize(getNumData(), getOutputDim());
+  initSiteStoreage();
   bias.resize(1, getOutputDim());
   clearTransforms();
   sigma2 = 1e-6;
@@ -1170,8 +1156,7 @@ void CProbitNoise::initStoreage()
 }
 void CProbitNoise::initVals()
 {
-  mu.zeros();
-  varSigma.zeros();
+  activeSites().zeros();
   bias.zeros();
 
 }
@@ -1370,8 +1355,7 @@ void CNcnmNoise::initStoreage()
     setNumParams(getOutputDim()+2);
   else
     setNumParams(getOutputDim()+1);
-  mu.resize(getNumData(), getOutputDim());
-  varSigma.resize(getNumData(), getOutputDim());
+  initSiteStoreage();
   bias.resize(1, getOutputDim());
   // sigmoid transforms on gamman and gammap.
   clearTransforms();
@@ -1390,8 +1374,7 @@ void CNcnmNoise::initStoreage()
 }
 void CNcnmNoise::initVals()
 {
-  mu.zeros();
-  varSigma.zeros();
+  activeSites().zeros();
   bias.zeros();
 
 }
@@ -1760,8 +1743,7 @@ COrderedNoise::~COrderedNoise()
 void COrderedNoise::initStoreage()
 {
   setNumParams(getOutputDim()+getNumCategories()-2);
-  mu.resize(getNumData(), getOutputDim());
-  varSigma.resize(getNumData(), getOutputDim());
+  initSiteStoreage();
   bias.resize(1, getOutputDim());
   widths.resize(1, getNumCategories()-2);
   gwidth.resize(1, getNumCategories()-2);
@@ -1779,8 +1761,7 @@ void COrderedNoise::initStoreage()
 }
 void COrderedNoise::initVals()
 {
-  mu.zeros();
-  varSigma.zeros();
+  activeSites().zeros();
   bias.zeros();
   widths.setVals(1/(getNumCategories()-2));
 

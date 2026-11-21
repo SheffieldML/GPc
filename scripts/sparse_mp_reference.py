@@ -28,7 +28,18 @@ def parse_dump(path: Path) -> dict:
             i += 1
             continue
         key = parts[0]
-        if key in {"approx", "N", "q", "d", "M", "inverseWidth", "variance", "beta", "ll"}:
+        if key in {
+            "approx",
+            "N",
+            "q",
+            "d",
+            "M",
+            "inverseWidth",
+            "variance",
+            "white",
+            "beta",
+            "ll",
+        }:
             if key == "approx":
                 data[key] = parts[1]
             elif key in {"N", "q", "d", "M"}:
@@ -71,13 +82,18 @@ def cholesky_jit(mp, A, jitter0=None):
     raise RuntimeError("cholesky_jit failed")
 
 
-def whitened_dtcvar_ll(mp, X, y, Xu, gamma, var, beta):
-    """Whitened DTCVAR LL matching CGp StableFactor (spherical, d=1, no prior)."""
+def whitened_dtcvar_ll(mp, X, y, Xu, gamma, var, beta, white=0):
+    """Whitened DTCVAR LL matching CGp StableFactor (spherical, d=1, no prior).
+
+    ``white`` is the compound CWhiteKern variance (adds to ``Kuu`` diagonal and
+    ``kff``; cross ``Kuf`` stays pure RBF).
+    """
     N, M = len(X), len(Xu)
     q = len(X[0])
     gamma = mp.mpf(gamma)
     var = mp.mpf(var)
     beta = mp.mpf(beta)
+    white = mp.mpf(white)
 
     def rbf(A, B):
         rows = []
@@ -93,8 +109,10 @@ def whitened_dtcvar_ll(mp, X, y, Xu, gamma, var, beta):
         return mp.matrix(rows)
 
     Kuu = rbf(Xu, Xu)
+    for i in range(M):
+        Kuu[i, i] += white
     Kuf = rbf(Xu, X)
-    kff = [var] * N
+    kff = [var + white] * N
     m = [mp.mpf(y[i][0] if isinstance(y[i], list) else y[i]) for i in range(N)]
 
     L = cholesky_jit(mp, Kuu)  # Kuu ≈ L L^T
@@ -147,6 +165,12 @@ def main(argv: list[str] | None = None) -> int:
         default=1e-4,
         help="|ll_dump - ll_mp| gate (LAPACK vs pure-Python chol ~1e-5)",
     )
+    p.add_argument(
+        "--rtol",
+        type=float,
+        default=0.0,
+        help="optional relative gate |Δll| / max(1,|ll_mp|); use on large-|LL| stress cells",
+    )
     args = p.parse_args(argv)
 
     try:
@@ -174,14 +198,23 @@ def main(argv: list[str] | None = None) -> int:
         data["inverseWidth"],
         data["variance"],
         data["beta"],
+        white=data.get("white", 0.0),
     )
     ll_dump = mp.mpf(data["ll"])
     diff = abs(ll_mp - ll_dump)
+    scale = max(mp.mpf(1), abs(ll_mp))
+    rel = diff / scale
     print(f"ll_dump={ll_dump}")
     print(f"ll_mpmath_whitened={ll_mp}")
     print(f"abs_diff={diff}")
-    ok = diff < args.tol
-    print("PASS" if ok else "FAIL", f"(tol={args.tol})")
+    print(f"rel_diff={rel}")
+    ok_abs = diff < args.tol
+    ok_rel = (args.rtol > 0) and (rel < args.rtol)
+    ok = ok_abs or ok_rel
+    gate = f"tol={args.tol}"
+    if args.rtol > 0:
+        gate += f" rtol={args.rtol}"
+    print("PASS" if ok else "FAIL", f"({gate})")
     return 0 if ok else 1
 
 

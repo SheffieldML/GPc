@@ -22,7 +22,8 @@ static void clampLatentVar(double& v, double kxx)
 CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Zin,
              double betaVal, int verbos)
   : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
-    verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0)
+    verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0),
+    qParamMode(QModeCvi)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -52,6 +53,8 @@ void CSvgp::initVariationalPrior()
   I.addDiag(1.0);
   I.setSymmetric(true);
   qCov.assign(outputDim, I);
+  if(qParamMode == QModeCholesky)
+    syncCholFromCov();
 }
 
 void CSvgp::setInducing(CInducing* pInd)
@@ -159,6 +162,8 @@ void CSvgp::setWhitenedQ(const CMatrix& mean, const vector<CMatrix>& cov)
   qCov = cov;
   for(unsigned int j = 0; j < outputDim; j++)
     qCov[j].setSymmetric(true);
+  if(qParamMode == QModeCholesky)
+    syncCholFromCov();
 }
 
 void CSvgp::setQ(const CMatrix& mean, const vector<CMatrix>& cov)
@@ -564,6 +569,8 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
     qCov[j] = Snew;
     qMean.copyColCol(j, mNew, 0);
   }
+  if(qParamMode == QModeCholesky)
+    syncCholFromCov();
 }
 
 void CSvgp::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const
@@ -887,6 +894,8 @@ void CSvgp::naturalGradientStepAt(double gamma, const CMatrix& XB,
     qCov[j] = Snew;
     qMean.copyColCol(j, mNew, 0);
   }
+  if(qParamMode == QModeCholesky)
+    syncCholFromCov();
 }
 
 unsigned int CSvgp::getOptNumParams() const
@@ -939,14 +948,286 @@ double CSvgp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g)
   CMatrix gZ;
   double gBeta = 0.0;
   const double L = elboGrad(gKern, gZ, gBeta, batch);
-  g.resize(1, getOptNumParams());
+  const unsigned int nStoch = getStochasticNumParams();
+  g.resize(1, nStoch);
   unsigned int counter = 0;
   for(unsigned int i = 0; i < pkern->getNumParams(); i++)
     g.setVal(gKern.getVal(i), counter++);
   packInducingGrad(g, counter, gZ);
   counter += pInducing->getNumParams();
   g.setVal(gBeta, counter++);
+  if(qParamMode == QModeCholesky)
+  {
+    CMatrix gQ(1, getQParamNum());
+    qParamsGrad(gQ, batch);
+    for(unsigned int i = 0; i < gQ.getCols(); i++)
+      g.setVal(gQ.getVal(i), counter++);
+  }
   return L;
+}
+
+void CSvgp::getStochasticParams(CMatrix& param) const
+{
+  const unsigned int nOpt = getOptNumParams();
+  const unsigned int nStoch = getStochasticNumParams();
+  param.resize(1, nStoch);
+  CMatrix opt(1, nOpt);
+  getOptParams(opt);
+  for(unsigned int i = 0; i < nOpt; i++)
+    param.setVal(opt.getVal(i), i);
+  if(qParamMode == QModeCholesky)
+    getQParams(param, nOpt);
+}
+
+void CSvgp::setStochasticParams(const CMatrix& param)
+{
+  DIMENSIONMATCH(param.getRows() == 1 && param.getCols() == getStochasticNumParams());
+  const unsigned int nOpt = getOptNumParams();
+  CMatrix opt(1, nOpt);
+  for(unsigned int i = 0; i < nOpt; i++)
+    opt.setVal(param.getVal(i), i);
+  setOptParams(opt);
+  if(qParamMode == QModeCholesky)
+    setQParams(param, nOpt);
+}
+
+unsigned int CSvgp::getStochasticNumParams() const
+{
+  unsigned int n = getOptNumParams();
+  if(qParamMode == QModeCholesky)
+    n += getQParamNum();
+  return n;
+}
+
+void CSvgp::ensureCholStorage()
+{
+  const unsigned int M = numInducing;
+  if(qChol.size() != outputDim)
+    qChol.assign(outputDim, CMatrix(M, M));
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    if(qChol[j].getRows() != M || qChol[j].getCols() != M)
+      qChol[j].resize(M, M);
+  }
+}
+
+void CSvgp::syncCovFromChol()
+{
+  ensureCholStorage();
+  const unsigned int M = numInducing;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    CMatrix& S = qCov[j];
+    S.resize(M, M);
+    S.zeros();
+    // S = L L^T via syrk on lower L (trans = "n" => A A^T).
+    S.syrk(qChol[j], 1.0, 0.0, "l", "n");
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int c = 0; c < r; c++)
+        S.setVal(S.getVal(r, c), c, r);
+    S.setSymmetric(true);
+  }
+}
+
+void CSvgp::syncCholFromCov()
+{
+  ensureCholStorage();
+  const unsigned int M = numInducing;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    CMatrix Scopy(qCov[j]);
+    Scopy.setSymmetric(true);
+    // chol() returns upper by default; request lower.
+    Scopy.chol("L");
+    qChol[j].resize(M, M);
+    qChol[j].zeros();
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int c = 0; c <= r; c++)
+        qChol[j].setVal(Scopy.getVal(r, c), r, c);
+  }
+}
+
+void CSvgp::setQParamMode(QParamMode mode)
+{
+  if(mode == qParamMode)
+    return;
+  qParamMode = mode;
+  if(mode == QModeCholesky)
+    syncCholFromCov();
+}
+
+unsigned int CSvgp::getQParamNum() const
+{
+  const unsigned int M = numInducing;
+  const unsigned int tril = M * (M + 1) / 2;
+  return outputDim * M + outputDim * tril;
+}
+
+void CSvgp::getQParams(CMatrix& param, unsigned int offset) const
+{
+  if(qParamMode != QModeCholesky)
+    throw ndlexceptions::Error("CSvgp::getQParams requires QModeCholesky");
+  const unsigned int nQ = getQParamNum();
+  if(offset == 0)
+    param.resize(1, nQ);
+  else
+    DIMENSIONMATCH(param.getRows() == 1 && param.getCols() >= offset + nQ);
+  const unsigned int M = numInducing;
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    for(unsigned int r = 0; r < M; r++)
+      param.setVal(qMean.getVal(r, j), counter++);
+    for(unsigned int c = 0; c < M; c++)
+      for(unsigned int r = c; r < M; r++)
+      {
+        const double Lrc = qChol[j].getVal(r, c);
+        if(r == c)
+          param.setVal(log(max(Lrc, 1e-300)), counter++);
+        else
+          param.setVal(Lrc, counter++);
+      }
+  }
+}
+
+void CSvgp::setQParams(const CMatrix& param, unsigned int offset)
+{
+  if(qParamMode != QModeCholesky)
+    throw ndlexceptions::Error("CSvgp::setQParams requires QModeCholesky");
+  DIMENSIONMATCH(param.getCols() >= offset + getQParamNum());
+  ensureCholStorage();
+  const unsigned int M = numInducing;
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    for(unsigned int r = 0; r < M; r++)
+      qMean.setVal(param.getVal(counter++), r, j);
+    qChol[j].zeros();
+    for(unsigned int c = 0; c < M; c++)
+      for(unsigned int r = c; r < M; r++)
+      {
+        const double v = param.getVal(counter++);
+        if(r == c)
+          qChol[j].setVal(exp(v), r, c);
+        else
+          qChol[j].setVal(v, r, c);
+      }
+  }
+  syncCovFromChol();
+}
+
+void CSvgp::dataTermQGrads(const vector<unsigned int>& batch,
+                           CMatrix& gM, vector<CMatrix>& gS) const
+{
+  if(batch.empty())
+    throw ndlexceptions::Error("CSvgp::dataTermQGrads: empty batch");
+  const unsigned int M = numInducing;
+  const unsigned int B = batch.size();
+  const double c = (double)nData / (double)B;
+  gM.resize(M, outputDim);
+  gM.zeros();
+  gS.assign(outputDim, CMatrix(M, M));
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    gS[j].zeros();
+    gS[j].setSymmetric(true);
+  }
+
+  fillMarginals(batch, wsMu, wsVar);
+  const CMatrix* pA = &A;
+  if(!isFullOrderedBatch(batch))
+  {
+    formAB(batch, wsAB, wsDK, wsDQ);
+    pA = &wsAB;
+  }
+
+  CMatrix mj(M, 1);
+  double gMu = 0.0, gVar = 0.0;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    mj.copyColCol(0, qMean, j);
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const unsigned int i = batch[k];
+      expectedLogLik(py->getVal(i, j), wsMu.getVal(k, j), wsVar.getVal(k, j),
+                     gMu, gVar, j);
+      for(unsigned int r = 0; r < M; r++)
+        gM.setVal(gM.getVal(r, j) + c * gMu * pA->getVal(r, k), r, j);
+      // ∂E[log p]/∂S = gVar * a a^T  (and data term scaled by c)
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s <= r; s++)
+        {
+          const double v = c * gVar * pA->getVal(r, k) * pA->getVal(s, k);
+          gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
+          if(s != r)
+            gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
+        }
+    }
+  }
+}
+
+void CSvgp::qParamsGrad(CMatrix& gQ) const
+{
+  qParamsGrad(gQ, allIndices());
+}
+
+void CSvgp::qParamsGrad(CMatrix& gQ, const vector<unsigned int>& batch) const
+{
+  if(qParamMode != QModeCholesky)
+    throw ndlexceptions::Error("CSvgp::qParamsGrad requires QModeCholesky");
+  const unsigned int M = numInducing;
+  const unsigned int nQ = getQParamNum();
+  gQ.resize(1, nQ);
+  gQ.zeros();
+
+  CMatrix gM;
+  vector<CMatrix> gS;
+  dataTermQGrads(batch, gM, gS);
+
+  // Subtract KL grads: ∂KL/∂m = m, ∂KL/∂S = 0.5 (I - S^{-1}).
+  unsigned int counter = 0;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    CMatrix Scopy(qCov[j]);
+    Scopy.setSymmetric(true);
+    CMatrix cholS(Scopy);
+    cholS.chol();
+    CMatrix Sinv(M, M);
+    Sinv.setSymmetric(true);
+    Sinv.pdinv(cholS);
+
+    for(unsigned int r = 0; r < M; r++)
+      gM.setVal(gM.getVal(r, j) - qMean.getVal(r, j), r, j);
+
+    CMatrix gSobj(M, M);
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int s = 0; s < M; s++)
+      {
+        const double dkl = 0.5 * ((r == s ? 1.0 : 0.0) - Sinv.getVal(r, s));
+        gSobj.setVal(gS[j].getVal(r, s) - dkl, r, s);
+      }
+
+    // Chain through S = L L^T: <G, dS> = 2 <sym(G) L, dL>.
+    CMatrix Gsym(M, M);
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int s = 0; s < M; s++)
+        Gsym.setVal(0.5 * (gSobj.getVal(r, s) + gSobj.getVal(s, r)), r, s);
+    CMatrix gL(M, M);
+    gL.zeros();
+    // gL = 2 Gsym L
+    gL.gemm(Gsym, qChol[j], 2.0, 0.0, "n", "n");
+
+    for(unsigned int r = 0; r < M; r++)
+      gQ.setVal(gM.getVal(r, j), counter++);
+    for(unsigned int c = 0; c < M; c++)
+      for(unsigned int r = c; r < M; r++)
+      {
+        double g = gL.getVal(r, c);
+        if(r == c)
+          g *= qChol[j].getVal(r, c); // d L_ii / d log = L_ii
+        gQ.setVal(g, counter++);
+      }
+  }
 }
 
 void CSvgp::afterBatchStep(const vector<unsigned int>& batch)

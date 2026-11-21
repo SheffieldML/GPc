@@ -20,19 +20,23 @@ def plot_1d(
     Xtest: Optional[np.ndarray] = None,
     ax: Any = None,
     label: str = "mean",
+    noiseless: bool = False,
 ) -> Tuple[Any, np.ndarray, np.ndarray]:
-    """Plot 1-D data and predictive mean ± 2σ from ``model.predict``.
+    """Plot 1-D data and mean ± 2σ from ``predict`` or ``predict_noiseless``.
 
     Parameters
     ----------
     model
-        Object with ``predict(Xtest) -> (mu, var)``.
+        Object with ``predict`` / ``predict_noiseless`` → ``(mu, var)``.
     X, Y
         Training inputs/targets (N×1).
     Xtest
         Grid for the predictive curve; defaults to a dense span of ``X``.
     ax
         Matplotlib axes; created if omitted.
+    noiseless
+        If False (default), call ``predict`` (\(y_*\), includes observation
+        noise). If True, call ``predict_noiseless`` (\(f_*\); CIP-0031).
     """
     try:
         import matplotlib.pyplot as plt
@@ -50,7 +54,10 @@ def plot_1d(
     else:
         Xtest = np.asarray(Xtest, dtype=float)
 
-    mu, var = model.predict(Xtest)
+    if noiseless:
+        mu, var = model.predict_noiseless(Xtest)
+    else:
+        mu, var = model.predict(Xtest)
     mu = np.asarray(mu).reshape(-1)
     std = np.sqrt(np.maximum(np.asarray(var).reshape(-1), 0.0))
 
@@ -58,12 +65,13 @@ def plot_1d(
         _, ax = plt.subplots()
     ax.plot(X.reshape(-1), Y.reshape(-1), "k.", label="data")
     ax.plot(Xtest.reshape(-1), mu, label=label)
+    band = "±2σ (f_*)" if noiseless else "±2σ (y_*)"
     ax.fill_between(
         Xtest.reshape(-1),
         mu - 2.0 * std,
         mu + 2.0 * std,
         alpha=0.25,
-        label="±2σ",
+        label=band,
     )
     ax.legend(loc="best")
     return ax, mu, var

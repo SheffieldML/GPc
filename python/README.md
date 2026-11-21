@@ -13,7 +13,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install gpc                  # from PyPI once published
 # or, until the first PyPI release (pin a version that includes the features you need):
 #   pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
-#     --extra-index-url https://pypi.org/simple/ "gpc==0.1.0a2"
+#     --extra-index-url https://pypi.org/simple/ "gpc==0.1.0a4"
 export OPENBLAS_NUM_THREADS=1
 python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 # optional clean-venv checklist (from a repo checkout):
@@ -23,8 +23,8 @@ python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 **Colab / TestPyPI:**
 
 - Keep `--extra-index-url https://pypi.org/simple/` so NumPy resolves from real PyPI (do not point both indexes at TestPyPI).
-- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a1` while `0.1.0a2` is already published).
-- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface.
+- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a2` while `0.1.0a4` is already published).
+- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface; `0.1.0a3` reserved; `0.1.0a4` adds CIP-0031 `predict` / `predict_noiseless` and notebook teaching.
 
 macOS wheels from CI currently require a recent macOS (deployment target follows Homebrew bottle `minOS` on `macos-15`). Linux wheels are manylinux.
 
@@ -135,10 +135,11 @@ k = gpc.kern.RBF(1)  # CIP-0027: add Bias/White yourself if wanted; noise is lik
 m = gpc.models.GPRegression(X, Y, kernel=k)
 m.set_by_path("rbf.lengthscale", 0.2)
 m.optimize(iters=50)
-mu, var = m.predict(X)
+mu, var = m.predict(X)                 # y_* (includes observation noise)
+mu_f, var_f = m.predict_noiseless(X)  # f_* (CIP-0031)
 ```
 
-Shorthand (CIP-0027): string kernels build **signal-only** compounds; observation noise is `likelihood.variance` (alias `Gaussian_noise.variance`). Bias/White are opt-in. Prefer **noisy** observations. `objective()` is **−log-likelihood** (SCG minimises it).
+Shorthand (CIP-0027): string kernels build **signal-only** compounds; observation noise is `likelihood.variance` (alias `Gaussian_noise.variance`). Bias/White are opt-in. Prefer **noisy** observations. `objective()` is **−log-likelihood** (SCG minimises it). `plot_1d(..., noiseless=True)` draws the latent band.
 
 `optimize(messages=True)` refreshes the paramz-style parameter table **in place**: Jupyter updates one `display_id` cell; terminal / terminal IPython uses ANSI cursor rewrite (not `clear_output`, which stacks in terminal IPython). It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks.
 

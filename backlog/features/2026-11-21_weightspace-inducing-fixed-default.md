@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_weightspace-inducing-fixed-default"
 title: "Weight-space / sparse façade: inducing_fixed default fights CIP-0028 mean"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -27,9 +27,9 @@ Follow-on after closed CIP-0028 / CIP-001D (not a reopen): façade default polic
 
 ## Acceptance Criteria
 
-- [ ] `inducing="weightspace"` defaults to free centres (`inducing_fixed=False`), or an equally clear opt-in that demos use
-- [ ] `weightspace_ridge_1d.ipynb` and `python/README.md` document free vs fixed centres and fixed \(s\)
-- [ ] Point-inducing callers that relied on fixed \(Z\) remain documented (`inducing_fixed=True` explicit)
+- [x] `inducing="weightspace"` defaults to free centres (`inducing_fixed=False`), or an equally clear opt-in that demos use
+- [x] `weightspace_ridge_1d.ipynb` and `python/README.md` document free vs fixed centres and fixed \(s\)
+- [x] Point-inducing callers that relied on fixed \(Z\) remain documented (`inducing_fixed=True` explicit)
 
 ## Implementation Notes
 
@@ -45,3 +45,5 @@ Prefer: weight-space construction path sets free centres; keep `inducing_fixed=T
 ### 2026-11-21
 
 Task created after reviewing `weightspace_ridge_1d` underfit (centres frozen).
+
+Façade default flipped to `inducing_fixed=False` (matches CGp); notebook and README updated; `test_sparse_dtcvar` asserts the new default.

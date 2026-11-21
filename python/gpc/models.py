@@ -97,11 +97,12 @@ class SparseGPRegression(_SparseGPRegression):
         Z: np.ndarray,
         kernel: Any = "rbf",
         approx: str = "dtcvar",
-        inducing_fixed: bool = True,
+        inducing_fixed: bool = False,
         verbosity: int = 0,
         inducing: str = "points",
         window_width: float = -1.0,
         arccos_order: int = 0,
+        learn_window_width: bool = False,
     ) -> None:
         spec = kern_mod.normalize_kernel_arg(kernel)
         super().__init__(
@@ -115,6 +116,7 @@ class SparseGPRegression(_SparseGPRegression):
             inducing=inducing,
             window_width=window_width,
             arccos_order=arccos_order,
+            learn_window_width=learn_window_width,
         )
 
     def __str__(self) -> str:  # noqa: D105

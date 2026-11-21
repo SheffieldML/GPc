@@ -183,7 +183,7 @@ m = gpc.SparseGPRegression(
 m.optimize(iters=50)
 ```
 
-Inducing inputs `Z` are **fixed** by default (`inducing_fixed=True`). Weight-space compounds are one signal + optional white (no Bias); observation noise stays in β. Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
+Inducing inputs `Z` (and weight-space ridge centres) are **free** by default (`inducing_fixed=False`, matching C++ `CGp`). Pass `inducing_fixed=True` to freeze a grid. For CIP-0028 ridges, free centres let the finite-\(M\) mean behave like a trainable bank of smoothed erf units. Global window width \(s\) defaults fixed; pass `learn_window_width=True` (with free inducing) to optimise softness — conditioning can degrade if \(s\) collapses, so start from a sensible `window_width`. Weight-space compounds are one signal + optional white (no Bias); observation noise stays in \(\beta\). Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
 
 ## Plotting and notebooks
 

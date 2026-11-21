@@ -67,12 +67,13 @@ public:
       py::array_t<double, py::array::c_style | py::array::forcecast> Y,
       py::array_t<double, py::array::c_style | py::array::forcecast> Z,
       const std::string& approx = "dtcvar",
-      bool inducing_fixed = true,
+      bool inducing_fixed = false,
       int verbosity = 0,
       py::object kernel = py::str("rbf"),
       const std::string& inducing = "points",
       double window_width = -1.0,
-      unsigned int arccos_order = 0);
+      unsigned int arccos_order = 0,
+      bool learn_window_width = false);
 
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
@@ -97,6 +98,7 @@ public:
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
   bool inducing_fixed() const { return inducingFixed; }
+  bool learn_window_width() const { return learnWindowWidth; }
   double window_width() const;
   py::array_t<double> inducing_inputs() const;
 
@@ -109,6 +111,7 @@ private:
   std::string kernelType;
   std::string inducingType;
   bool inducingFixed;
+  bool learnWindowWidth;
   std::unique_ptr<CCmpndKern> kern;
   std::unique_ptr<CGaussianNoise> noise;
   std::unique_ptr<CGp> model;

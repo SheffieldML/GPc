@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_weightspace-learn-window-width"
 title: "Wire global learnable window width s (learnS + wsGradS)"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -27,10 +27,10 @@ This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp pa
 
 ## Acceptance Criteria
 
-- [ ] With `learnS=true`, `gradFromKuuKuf` accumulates \(\partial L/\partial s\) from \(K_{uu}\) and \(K_{uf}\) (ridge and isotropic paths)
-- [ ] `CGp` opt-param packing includes \(s\) when inducing params are free and `learnS` is on; analytic grad matches FD
-- [ ] Python can opt in (e.g. `learn_window_width=True`) with `inducing_fixed=False`; document conditioning caution
-- [ ] Per-unit \(s_m\) explicitly deferred (not implemented)
+- [x] With `learnS=true`, `gradFromKuuKuf` accumulates \(\partial L/\partial s\) from \(K_{uu}\) and \(K_{uf}\) (ridge and isotropic paths)
+- [x] `CGp` opt-param packing includes \(s\) when inducing params are free and `learnS` is on; analytic grad matches FD
+- [x] Python can opt in (e.g. `learn_window_width=True`) with `inducing_fixed=False`; document conditioning caution
+- [x] Per-unit \(s_m\) explicitly deferred (not implemented)
 
 ## Implementation Notes
 
@@ -49,3 +49,5 @@ This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp pa
 ### 2026-11-21
 
 Task created; `learnS` packing exists, gradient path voided.
+
+Wired `gScache` via FD on `fillKuu` + `wsGradS`/`wsRidgeGradS`; CGp packs `windowWidthGrad`; Python `learn_window_width`; FD gate in `testWeightSpaceInducingPhase1Ridge`. SVGP learnS slots still zero (out of scope).

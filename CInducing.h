@@ -37,9 +37,14 @@ class CInducing
   virtual const CMatrix& centres() const = 0;
   virtual void setCentres(const CMatrix& Z) = 0;
 
-  // White-noise window width (scalar s). Points inducing ignore these.
+  // White-noise / weight-space window width (scalar s). Points ignore these.
   virtual double getWindowWidth() const { return 0.0; }
   virtual void setWindowWidth(double /*s*/) {}
+  // Global learnable s (CIP-001C/0028 follow-on). Default off.
+  virtual bool learnsWindowWidth() const { return false; }
+  virtual void setLearnWindowWidth(bool /*learn*/) {}
+  // ∂L/∂s from the last gradFromKuuKuf call when learnsWindowWidth(); else 0.
+  virtual double windowWidthGrad() const { return 0.0; }
 };
 
 // Point inducing: Kuu/Kuf are ordinary kernel evaluations on Z.
@@ -205,6 +210,9 @@ class CInducingWeightSpace : public CInducing
 
   double getWindowWidth() const { return s; }
   void setWindowWidth(double sIn);
+  bool learnsWindowWidth() const { return learnS; }
+  void setLearnWindowWidth(bool learn) { learnS = learn; }
+  double windowWidthGrad() const { return gScache; }
 
   // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
   void ridgeFactors(CMatrix& V, CMatrix& a) const;
@@ -228,6 +236,7 @@ class CInducingWeightSpace : public CInducing
   double s;
   bool learnS;
   bool ridge;
+  mutable double gScache;
   mutable CMatrix Kfu;
   mutable CMatrix gKfu;
   mutable CMatrix tempG;

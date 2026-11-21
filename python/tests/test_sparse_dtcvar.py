@@ -21,13 +21,16 @@ def test_construct_dtcvar_and_paths():
     m = gpc.SparseGPRegression(X, Y, Z)
     assert m.approx == "dtcvar"
     assert m.num_inducing == 6
-    assert m.inducing_fixed is True
+    assert m.inducing_fixed is False  # matches CGp; pass True to freeze Z
     assert m.n == 24
     paths = m.param_paths()
     assert any("rbf" in p for p in paths)
     m.set_by_path("rbf.lengthscale", 0.4)
     assert m.get_by_path("rbf.lengthscale") == pytest.approx(0.4)
-    np.testing.assert_allclose(m.inducing_inputs(), Z)
+    # Freeze and check Z stays put under optimise.
+    m_fix = gpc.SparseGPRegression(X, Y, Z, inducing_fixed=True)
+    assert m_fix.inducing_fixed is True
+    np.testing.assert_allclose(m_fix.inducing_inputs(), Z)
 
 
 def test_optimize_and_predict():
@@ -71,3 +74,36 @@ def test_z_shape_mismatch():
         gpc.SparseGPRegression(X, Y, np.zeros((6, 2)))
     with pytest.raises(gpc.GpcError):
         gpc.SparseGPRegression(X, Y, np.linspace(0, 1, 30)[:, None])
+
+
+def test_learn_window_width_opt_in():
+    X, Y, Z = _toy_sparse()
+    m = gpc.SparseGPRegression(
+        X,
+        Y,
+        Z,
+        kernel="mlp",
+        inducing="weightspace",
+        window_width=0.55,
+        learn_window_width=True,
+    )
+    assert m.inducing_fixed is False
+    assert m.learn_window_width is True
+    n0 = len(m.param_paths())
+    before = m.objective()
+    m.optimize(iters=5)
+    assert np.isfinite(m.objective())
+    assert m.objective() <= before + 1e-5
+    assert len(m.param_paths()) == n0
+    with pytest.raises(gpc.GpcError, match="inducing_fixed=False"):
+        gpc.SparseGPRegression(
+            X,
+            Y,
+            Z,
+            kernel="mlp",
+            inducing="weightspace",
+            learn_window_width=True,
+            inducing_fixed=True,
+        )
+    with pytest.raises(gpc.GpcError, match="weightspace"):
+        gpc.SparseGPRegression(X, Y, Z, learn_window_width=True)

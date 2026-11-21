@@ -23,6 +23,14 @@ class CLaplaceInference
   // After run: dL/dK including GPy implicit mode term.
   void fillDLDK(CMatrix& dLdK) const;
 
+  // Posterior at test (GPy Laplace._raw_predict): μ_* = K_*ᵀ α,
+  // v_* = kss − diag(K_*ᵀ (K+W⁻¹)⁻¹ K_*) with α = K⁻¹ f̂.
+  // KtrainTest is N×N_*, kss is N_*×1 prior variances. Requires prior run().
+  void predictiveMeanVar(const CMatrix& KtrainTest,
+                         const CMatrix& kss,
+                         CMatrix& mu,
+                         CMatrix& varDiag) const;
+
   double lastLogMarginal() const { return logMarginal; }
   unsigned int lastIters() const { return itersUsed; }
   bool converged() const { return didConverge; }
@@ -56,6 +64,7 @@ class CLaplaceInference
 
   mutable CMatrix fHat;
   mutable CMatrix KiF;
+  mutable CMatrix KWiICache; // (K + W^{-1})^{-1}; GPy woodbury_inv
   mutable CMatrix dLdKCache;
   mutable bool haveGradCache;
 };

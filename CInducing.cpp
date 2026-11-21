@@ -709,95 +709,97 @@ void CInducingWeightSpace::setWindowWidthAt(unsigned int m, double sIn)
 double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
                                            unsigned int inputDim, unsigned int rngSeed)
 {
-  // Directions live in R^{D'}, D'=d+1. Cap nDir ≤ D' (orthogonal budget); grow
-  // M via n_off. Prefer n_off≈4 when that keeps nDir ≤ D' (CIP-0028 §3).
+  // CIP-0037: directions before offsets once D' is moderate; one-sided offsets.
+  // If M ≤ 4 D' use n_off=1 (one window per direction, nDir may exceed D').
+  // Otherwise n_off = ceil(M/(4 D')) and nDir = M/n_off. Offsets on [1, 2.5]
+  // (a=1.5 when n_off=1). Within each block of ≤ D' directions, Gram–Schmidt;
+  // further blocks are independent random frames (prototype orth_dirs).
   if(M == 0)
     throw ndlexceptions::Error("makeRidgeInit requires M > 0.");
   const unsigned int Dp = inputDim + 1;
-  unsigned int nOff = 4;
-  unsigned int nDir = (M + nOff - 1) / nOff; // ceil(M / nOff)
-  if(nDir > Dp)
+  unsigned int nOff = 1;
+  unsigned int nDir = M;
+  if(M > 4 * Dp)
   {
-    nDir = Dp;
-    nOff = (M + nDir - 1) / nDir;
+    nOff = (M + 4 * Dp - 1) / (4 * Dp); // ceil(M / (4 Dp))
+    if(nOff < 1)
+      nOff = 1;
+    nDir = M / nOff;
+    if(nDir < 1)
+      nDir = 1;
   }
-  if(nDir > M)
-    nDir = M;
-  if(nOff < 1)
-    nOff = 1;
 
   WOut.resize(M, Dp + 1);
   WOut.zeros();
   ndlutil::init_genrand(rngSeed);
 
-  // Gram–Schmidt orthonormal directions in R^{Dp}.
   vector<vector<double> > dirs(nDir, vector<double>(Dp, 0.0));
-  for(unsigned int di = 0; di < nDir; di++)
+  unsigned int di = 0;
+  while(di < nDir)
   {
-    for(unsigned int j = 0; j < Dp; j++)
-      dirs[di][j] = ndlutil::randn();
-    for(unsigned int p = 0; p < di; p++)
+    const unsigned int batch = min(Dp, nDir - di);
+    // Fresh orthonormal frame of size batch in R^{Dp}.
+    for(unsigned int b = 0; b < batch; b++)
     {
-      double dot = 0.0;
       for(unsigned int j = 0; j < Dp; j++)
-        dot += dirs[di][j] * dirs[p][j];
-      for(unsigned int j = 0; j < Dp; j++)
-        dirs[di][j] -= dot * dirs[p][j];
-    }
-    double nrm = 0.0;
-    for(unsigned int j = 0; j < Dp; j++)
-      nrm += dirs[di][j] * dirs[di][j];
-    nrm = sqrt(nrm);
-    if(!(nrm > 1e-12))
-    {
-      // Degenerate draw: fall back to a coordinate axis not yet used.
-      for(unsigned int j = 0; j < Dp; j++)
-        dirs[di][j] = (j == (di % Dp)) ? 1.0 : 0.0;
-      for(unsigned int p = 0; p < di; p++)
+        dirs[di + b][j] = ndlutil::randn();
+      for(unsigned int p = 0; p < b; p++)
       {
         double dot = 0.0;
         for(unsigned int j = 0; j < Dp; j++)
-          dot += dirs[di][j] * dirs[p][j];
+          dot += dirs[di + b][j] * dirs[di + p][j];
         for(unsigned int j = 0; j < Dp; j++)
-          dirs[di][j] -= dot * dirs[p][j];
+          dirs[di + b][j] -= dot * dirs[di + p][j];
       }
-      nrm = 0.0;
+      double nrm = 0.0;
       for(unsigned int j = 0; j < Dp; j++)
-        nrm += dirs[di][j] * dirs[di][j];
-      nrm = sqrt(max(nrm, 1e-30));
+        nrm += dirs[di + b][j] * dirs[di + b][j];
+      nrm = sqrt(nrm);
+      if(!(nrm > 1e-12))
+      {
+        for(unsigned int j = 0; j < Dp; j++)
+          dirs[di + b][j] = (j == ((di + b) % Dp)) ? 1.0 : 0.0;
+        for(unsigned int p = 0; p < b; p++)
+        {
+          double dot = 0.0;
+          for(unsigned int j = 0; j < Dp; j++)
+            dot += dirs[di + b][j] * dirs[di + p][j];
+          for(unsigned int j = 0; j < Dp; j++)
+            dirs[di + b][j] -= dot * dirs[di + p][j];
+        }
+        nrm = 0.0;
+        for(unsigned int j = 0; j < Dp; j++)
+          nrm += dirs[di + b][j] * dirs[di + b][j];
+        nrm = sqrt(max(nrm, 1e-30));
+      }
+      for(unsigned int j = 0; j < Dp; j++)
+        dirs[di + b][j] /= nrm;
     }
-    for(unsigned int j = 0; j < Dp; j++)
-      dirs[di][j] /= nrm;
+    di += batch;
   }
 
-  // Assign rows: block of up to nOff offsets per direction; leftover dirs get
-  // fewer if M is not divisible.
+  // Assign rows: up to nOff one-sided offsets per direction.
   unsigned int row = 0;
-  for(unsigned int di = 0; di < nDir && row < M; di++)
+  for(unsigned int dIdx = 0; dIdx < nDir && row < M; dIdx++)
   {
     const unsigned int remain = M - row;
-    const unsigned int dirsLeft = nDir - di;
+    const unsigned int dirsLeft = nDir - dIdx;
     const unsigned int nThis = min(nOff, (remain + dirsLeft - 1) / dirsLeft);
     for(unsigned int o = 0; o < nThis && row < M; o++, row++)
     {
       for(unsigned int j = 0; j < Dp; j++)
-        WOut.setVal(dirs[di][j], row, j);
-      // Offsets on [-2.5, 2.5]; never a=0 (zero K_fu for odd erf + prior, and
-      // at s=√2 every direction's a=0 window is identical → singular K_uu).
-      double a0 = 0.5;
+        WOut.setVal(dirs[dIdx][j], row, j);
+      // One-sided offsets on [1, 2.5]; never a=0 (erf odd ⇒ ±a duplicate up to sign).
+      double a0 = 1.5;
       if(nThis > 1)
-      {
-        a0 = -2.5 + 5.0 * (double)o / (double)(nThis - 1);
-        if(fabs(a0) < 1e-14)
-          a0 = 0.5 * 5.0 / (double)(nThis - 1); // half-step off zero
-      }
+        a0 = 1.0 + 1.5 * (double)o / (double)(nThis - 1);
       WOut.setVal(a0, row, Dp);
     }
   }
 
-  // Offset spacing Δa = 5/(n_off-1). CIP isotropic grid: s/Δa ≲ 0.75 ⇒ κ~10^2;
-  // s/Δa ≈ 1 ⇒ κ~5×10^3. Start at 0.75·Δa (capped), then shrink to κ≤10^4.
-  const double spacing = (nOff <= 1) ? 5.0 : (5.0 / (double)(nOff - 1));
+  // Offset spacing Δa = 1.5/(n_off-1) on [1, 2.5]. Start near 0.75·Δa (capped),
+  // then shrink to κ(K_uu)≤10^4. Single-offset layouts start at s=0.8.
+  const double spacing = (nOff <= 1) ? (1.5 / 0.75) : (1.5 / (double)(nOff - 1));
   double s0 = min(0.8, 0.75 * spacing);
   if(s0 < 0.08)
     s0 = 0.08;

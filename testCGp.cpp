@@ -2009,33 +2009,12 @@ int testWeightSpaceInducingPhase1Ridge()
     fail += failTrue(rel < 1e-4, "ridge wsRidgeGradParams vs FD weightVariance");
   }
 
-  // Variance-captured gate: d=16, M=64, κ≤1e4 ⇒ capture ≥ 0.80.
+  // Variance-captured gate (CIP-0037 layout): d=16, M=64, κ≤1e4 ⇒ capture ≥ 0.80.
   {
     const unsigned int d = 16;
     const unsigned int M = 64;
-    const unsigned int nOff = 4;
-    const double s = 0.8; // budget_sweep best at d=16,M=64
-    CMatrix W(M, d + 2);
-    ndlutil::init_genrand(11u);
-    const unsigned int nDir = M / nOff;
-    for(unsigned int di = 0; di < nDir; di++)
-    {
-      double nrm = 0.0;
-      vector<double> v(d + 1);
-      for(unsigned int j = 0; j < d + 1; j++)
-      {
-        v[j] = ndlutil::randn();
-        nrm += v[j] * v[j];
-      }
-      nrm = sqrt(nrm);
-      for(unsigned int o = 0; o < nOff; o++)
-      {
-        const unsigned int m = di * nOff + o;
-        for(unsigned int j = 0; j < d + 1; j++)
-          W.setVal(v[j] / nrm, m, j);
-        W.setVal(-2.5 + 5.0 * (double)o / (double)(nOff - 1), m, d + 1);
-      }
-    }
+    CMatrix W;
+    const double s = CInducingWeightSpace::makeRidgeInit(W, M, d, 11u);
     CInducingWeightSpace ind(W, s, false, true);
     CMatrix X(1, d); // dummy for kernel input dim
     X.zeros();
@@ -2262,15 +2241,86 @@ int testWeightSpaceInducingCip0032()
     fail += failTrue(threwSqrt2, "reject window width = √2");
   }
 
-  // makeRidgeInit never places offset a=0.
+  // makeRidgeInit never places offset a=0; offsets are one-sided (CIP-0037).
   {
     CMatrix W;
-    (void)CInducingWeightSpace::makeRidgeInit(W, 10, 2, 3u); // forces odd nOff sometimes
+    (void)CInducingWeightSpace::makeRidgeInit(W, 10, 2, 3u);
     bool anyZero = false;
+    bool anyNeg = false;
     for(unsigned int i = 0; i < W.getRows(); i++)
-      if(fabs(W.getVal(i, W.getCols() - 1)) < 1e-14)
+    {
+      const double a = W.getVal(i, W.getCols() - 1);
+      if(fabs(a) < 1e-14)
         anyZero = true;
+      if(a < 0.0)
+        anyNeg = true;
+    }
     fail += failTrue(!anyZero, "makeRidgeInit offsets avoid a=0");
+    fail += failTrue(!anyNeg, "makeRidgeInit offsets are one-sided (a>0)");
+  }
+
+  // CIP-0037: one-sided layout avoids ±a column collapse (exact rank M/2).
+  {
+    const unsigned int d = 8;
+    const unsigned int M = 32;
+    CMatrix W;
+    const double s = CInducingWeightSpace::makeRidgeInit(W, M, d, 19u);
+    CInducingWeightSpace ind(W, s, false, true);
+    CMatrix Xdummy(1, d);
+    Xdummy.zeros();
+    CMlpKern kern(Xdummy);
+    kern.setParam(1.0 / (double)d, 0);
+    kern.setParam(0.01, 1);
+    kern.setParam(1.0, 2);
+    const unsigned int nProbe = 128;
+    CMatrix Xp(nProbe, d);
+    ndlutil::init_genrand(21u);
+    for(unsigned int n = 0; n < nProbe; n++)
+      for(unsigned int j = 0; j < d; j++)
+        Xp.setVal(ndlutil::randn(), n, j);
+    CMatrix Vr(M, d + 1), ar(M, 1);
+    ind.ridgeFactors(Vr, ar);
+    CMatrix Kfu(nProbe, M);
+    kern.wsRidgeCrossCompute(Kfu, Xp, Vr, ar, s);
+
+    // No column pair should be an exact negative (the ±a pathology).
+    unsigned int negPairs = 0;
+    for(unsigned int i = 0; i < M; i++)
+      for(unsigned int j = i + 1; j < M; j++)
+      {
+        double ii = 0.0, jj = 0.0, ij = 0.0;
+        for(unsigned int n = 0; n < nProbe; n++)
+        {
+          const double a = Kfu.getVal(n, i);
+          const double b = Kfu.getVal(n, j);
+          ii += a * a;
+          jj += b * b;
+          ij += a * b;
+        }
+        const double c = ij / sqrt(max(ii * jj, 1e-30));
+        if(c < -0.999)
+          negPairs++;
+      }
+    fail += failTrue(negPairs == 0,
+                     "makeRidgeInit: no ±a negative-duplicate K_fu columns");
+
+    CMatrix G(M, M);
+    G.gemm(Kfu, Kfu, 1.0, 0.0, "t", "n");
+    G.setSymmetric(true);
+    CMatrix lam(1, M);
+    G.syev(lam, "n", "l");
+    unsigned int rank = 0;
+    double lmax = 0.0;
+    for(unsigned int i = 0; i < M; i++)
+      lmax = max(lmax, fabs(lam.getVal(i)));
+    // Loose relative floor: catch exact M/2 collapse, not weak-direction noise.
+    const double thresh = max(1e-12, 1e-8 * lmax);
+    for(unsigned int i = 0; i < M; i++)
+      if(fabs(lam.getVal(i)) > thresh)
+        rank++;
+    cout << "  makeRidgeInit rank(Kfu)=" << rank << " / " << M
+         << " negPairs=" << negPairs << " s=" << s << endl;
+    fail += failTrue(rank == M, "makeRidgeInit default layout rank(K_fu)=M");
   }
 
   // Untied learnS: pack M widths; ∂L/∂s_0 matches FD.

@@ -597,7 +597,7 @@ void CInducingGreens::setCentres(const CMatrix& Z)
 
 CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool learnSIn,
                                            bool ridgeIn)
-  : W(WIn), s(sIn), learnS(learnSIn), ridge(ridgeIn)
+  : W(WIn), s(sIn), learnS(learnSIn), ridge(ridgeIn), gScache(0.0)
 {
   if(W.getRows() == 0 || W.getCols() == 0)
     throw ndlexceptions::Error("CInducingWeightSpace requires non-empty W.");
@@ -1107,7 +1107,34 @@ void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMa
       kern.wsGradX(*gXOrNull, X, W, s, gKfu);
   }
 
-  (void)learnS;
+  gScache = 0.0;
+  if(learnS)
+  {
+    // ⟨gKuu, ∂Kuu/∂s⟩ via central FD on fillKuu (ridge analytic form is bulky).
+    const double eps = 1e-7 * ((s > 1.0) ? s : 1.0);
+    CMatrix Kup(M, M), Kum(M, M);
+    const double s0 = s;
+    const_cast<CInducingWeightSpace*>(this)->s = s0 + eps;
+    fillKuu(Kup);
+    const_cast<CInducingWeightSpace*>(this)->s = s0 - eps;
+    fillKuu(Kum);
+    const_cast<CInducingWeightSpace*>(this)->s = s0;
+    double gSkuu = 0.0;
+    for(unsigned int i = 0; i < M; i++)
+      for(unsigned int j = 0; j < M; j++)
+        gSkuu += gKuu.getVal(i, j) * (Kup.getVal(i, j) - Kum.getVal(i, j)) / (2.0 * eps);
+
+    CMatrix gSkuf(1, 1);
+    gSkuf.zeros();
+    if(ridge)
+    {
+      ridgeFactors(Vtmp, atmp);
+      kern.wsRidgeGradS(gSkuf, X, Vtmp, atmp, s, gKfu);
+    }
+    else
+      kern.wsGradS(gSkuf, X, W, s, gKfu);
+    gScache = gSkuu + gSkuf.getVal(0);
+  }
 }
 
 unsigned int CInducingWeightSpace::getNumParams() const

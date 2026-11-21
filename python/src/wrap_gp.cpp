@@ -404,12 +404,14 @@ PySparseGPRegression::PySparseGPRegression(
     py::object kernel,
     const std::string& inducing,
     double window_width,
-    unsigned int arccos_order)
+    unsigned int arccos_order,
+    bool learn_window_width)
     : X(matrixFromNumpy(Xin)),
       Y(matrixFromNumpy(Yin)),
       Z(matrixFromNumpy(Zin)),
       approxType("dtcvar"),
-      inducingFixed(inducing_fixed)
+      inducingFixed(inducing_fixed),
+      learnWindowWidth(learn_window_width)
 {
   checkXY(X, Y);
   if(arccos_order > 1)
@@ -499,13 +501,24 @@ PySparseGPRegression::PySparseGPRegression(
   if(weightSpace)
   {
     model->setInducingType("weightspace");
+    CInducing* pInd = model->getInducing();
+    if(pInd == 0)
+      throw ndlexceptions::Error("weight-space inducing object missing after setInducingType");
     if(window_width > 0.0)
-    {
-      CInducing* pInd = model->getInducing();
-      if(pInd == 0)
-        throw ndlexceptions::Error("weight-space inducing object missing after setInducingType");
       pInd->setWindowWidth(window_width);
+    if(learnWindowWidth)
+    {
+      if(inducingFixed)
+        throw ndlexceptions::Error(
+            "learn_window_width=True requires inducing_fixed=False "
+            "(s is packed with free inducing parameters).");
+      pInd->setLearnWindowWidth(true);
     }
+  }
+  else if(learnWindowWidth)
+  {
+    throw ndlexceptions::Error(
+        "learn_window_width is only supported with inducing='weightspace'.");
   }
 }
 
@@ -702,21 +715,25 @@ void bind_gp(py::module_& m)
                     py::object,
                     const std::string&,
                     double,
-                    unsigned int>(),
+                    unsigned int,
+                    bool>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("Z"),
            py::arg("approx") = "dtcvar",
-           py::arg("inducing_fixed") = true,
+           py::arg("inducing_fixed") = false,
            py::arg("verbosity") = 0,
            py::arg("kernel") = py::str("rbf"),
            py::arg("inducing") = "points",
            py::arg("window_width") = -1.0,
            py::arg("arccos_order") = 0,
+           py::arg("learn_window_width") = false,
            "Construct sparse Gaussian GP with inducing inputs Z.\n\n"
            "approx: 'dtcvar' (default), 'fitc', or 'dtc'.\n"
            "kernel: string name or gpc.kern parts list (parts list needs inducing='points').\n"
-           "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).")
+           "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).\n"
+           "inducing_fixed defaults False (matches CGp); pass True to freeze Z/W.\n"
+           "learn_window_width: optimise global weight-space s (requires free inducing).")
       .def("set_by_path",
            &PySparseGPRegression::set_by_path,
            py::arg("path"),
@@ -768,6 +785,10 @@ void bind_gp(py::module_& m)
           "inducing_fixed",
           &PySparseGPRegression::inducing_fixed,
           "True if inducing inputs are held fixed during optimise.")
+      .def_property_readonly(
+          "learn_window_width",
+          &PySparseGPRegression::learn_window_width,
+          "True if global weight-space window width s is free.")
       .def_property_readonly(
           "window_width",
           &PySparseGPRegression::window_width,

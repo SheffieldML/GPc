@@ -2093,8 +2093,9 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   {
     if(!isInducingFixed()) 
     {
-      // Centre grads live in gX_u (inducing params; s fixed by default).
-      // Weight-space uses domainDim=d+1 (CIP-0028 Design A).
+      // Centre grads live in gX_u; optional global window-width grad follows
+      // (CIP-0028 learnS / backlog 2026-11-21_weightspace-learn-window-width).
+      // Weight-space uses domainDim = d+1 (isotropic) or d+2 (ridge).
       const unsigned int dInd =
           (pInducing != 0) ? pInducing->domainDim() : getInputDim();
       const unsigned int mInd =
@@ -2106,6 +2107,11 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
           g.setVal(gX_u.getVal(i, j), 0, counter);
           counter++;
         }
+      }
+      if(pInducing != 0 && pInducing->learnsWindowWidth())
+      {
+        g.setVal(pInducing->windowWidthGrad(), 0, counter);
+        counter++;
       }
     }
   }

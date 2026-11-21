@@ -345,12 +345,27 @@ void CMrd::factorizeSpace(vector<unsigned int>& shared, vector<unsigned int>& pr
   }
 }
 
-void CMrd::posteriorMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
-                            const CMatrix& Xstar) const
+void CMrd::latentMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
+                         const CMatrix& Xstar) const
 {
   BOUNDCHECK(view < views.size());
   syncViews();
-  views[view]->posteriorMeanVar(means, vars, Xstar);
+  views[view]->latentMeanVar(means, vars, Xstar);
+}
+
+void CMrd::predictiveMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
+                             const CMatrix& Xstar) const
+{
+  BOUNDCHECK(view < views.size());
+  syncViews();
+  views[view]->predictiveMeanVar(means, vars, Xstar);
+}
+
+void CMrd::posteriorMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
+                            const CMatrix& Xstar) const
+{
+  // CIP-0031: deprecated alias — same as predictiveMeanVar.
+  predictiveMeanVar(view, means, vars, Xstar);
 }
 
 void CMrd::writeParamsToStream(ostream& os) const

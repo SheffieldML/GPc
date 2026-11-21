@@ -128,6 +128,39 @@ int main()
     expect(maxAbsDiff(sp.getFBar(), dense.fBar) < tol, "FTC-remap fBar vs dense (init)");
   }
 
+  // ---- CIP-0031: dense vs sparse latent/predictive at M=N (no white) ----
+  // Dense CPpa::latentMeanVar is Var[fBar_*]; sparse delegates to CGp latent.
+  // At M=N Z=X after matching E-steps they agree; predictive = latent + 1/β.
+  {
+    CCmpndKern kernD(X); makeKernNoWhite(kernD, X);
+    CCmpndKern kernS(X); makeKernNoWhite(kernS, X);
+    CProbitNoise noiseD(&y); noiseD.initParams();
+    CProbitNoise noiseS(&y); noiseS.initParams();
+    CPpa dense(X, y, kernD, noiseD, 0);
+    CSparsePpa sp(X, y, kernS, noiseS, CGp::DTC, static_cast<unsigned int>(N), 1.0, 0);
+    dense.optimise(2, 0, 0);
+    sp.optimise(2, 0);
+    CMatrix Xstar(3, D);
+    for(int i = 0; i < 3; i++)
+      for(int j = 0; j < D; j++)
+        Xstar.setVal(X.getVal(i, j) + 0.05 * (j + 1), i, j);
+    CMatrix muD(3, 1), varD(3, 1), muS(3, 1), varS(3, 1);
+    CMatrix muDp(3, 1), varDp(3, 1), muSp(3, 1), varSp(3, 1);
+    dense.latentMeanVar(muD, varD, Xstar);
+    sp.latentMeanVar(muS, varS, Xstar);
+    dense.predictiveMeanVar(muDp, varDp, Xstar);
+    sp.predictiveMeanVar(muSp, varSp, Xstar);
+    expect(maxAbsDiff(varD, varS) < 1e-4,
+           "CIP-0031 DTC M=N latent var dense vs sparse");
+    expect(maxAbsDiff(varDp, varSp) < 1e-4,
+           "CIP-0031 DTC M=N predictive var dense vs sparse");
+    const double bDense = dense.beta.getVal(0, 0);
+    expect(fabs(varDp.getVal(0) - varD.getVal(0) - 1.0 / bDense) < 1e-10,
+           "CIP-0031 dense predictive − latent = 1/β");
+    expect(fabs(varSp.getVal(0) - varS.getVal(0) - 1.0 / sp.getBeta()) < 1e-10,
+           "CIP-0031 sparse predictive − latent = 1/β");
+  }
+
   // ---- Sanity: DTC M < N runs ----
   {
     CCmpndKern kern(X); makeKernNoWhite(kern, X);

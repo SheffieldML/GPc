@@ -792,7 +792,7 @@ void CClgplvm::gnuplot()
   yTest.ones();
   CMatrix variances(yTest.getRows(), yTest.getCols());
   CMatrix means(yTest.getRows(), yTest.getCols());
-  pmodel->posteriorMeanVar(means, variances, Xgrid);
+  pmodel->latentMeanVar(means, variances, Xgrid);
   for(int i=0; i<numy; i++)
     for(int j=0; j<numx; j++)
       {

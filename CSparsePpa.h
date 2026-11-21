@@ -46,6 +46,10 @@ class CSparsePpa {
   double ppaBound() const;
   double monitorLogLikelihood() const { return ppaBound(); }
 
+  // CIP-0031: delegates to inner CGp latent/predictive.
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const;
+  [[deprecated("CIP-0031: use predictiveMeanVar (or latentMeanVar for f_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const;
   void out(CMatrix& yPred, const CMatrix& Xin) const;
   void display(ostream& os) const;

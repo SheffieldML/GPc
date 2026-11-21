@@ -58,6 +58,10 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   double outGradParams(CMatrix& g, const CMatrix& Xin, unsigned int pointNo, unsigned int outputNo) const;
   double outGradX(CMatrix& g, const CMatrix& Xin, unsigned int pointNo, unsigned int outputNo) const;
 
+  // CIP-0031: latent = Var[fBar_*]; predictive adds 1/β (Gaussian site noise).
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   string getNoiseName() const
   {

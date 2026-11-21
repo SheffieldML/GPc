@@ -8,8 +8,11 @@ import numpy as np
 
 from . import kern as kern_mod
 from ._display import OptimiserTableProgress, format_model_description
+from ._gpc import BayesianGPLVM as _BayesianGPLVM
 from ._gpc import GPClassification as _GPClassification
+from ._gpc import GPLVM as _GPLVM
 from ._gpc import GPRegression as _GPRegression
+from ._gpc import MRD as _MRD
 from ._gpc import OptimiserEvent
 from ._gpc import SparseGPRegression as _SparseGPRegression
 
@@ -232,4 +235,187 @@ class GPClassification(_GPClassification):
         )
 
 
-__all__ = ["GPRegression", "SparseGPRegression", "GPClassification"]
+class GPLVM(_GPLVM):
+    """MAP Gaussian process latent variable model (``CGplvm``).
+
+    GPy-shaped constructor: observations ``Y`` (N×D) and latent ``input_dim``.
+    Default kernel matches the native ``./gplvm`` CLI (RBF + Bias + White).
+    """
+
+    def __init__(
+        self,
+        Y: np.ndarray,
+        input_dim: int = 2,
+        kernel: Any = "rbf",
+        verbosity: int = 0,
+    ) -> None:
+        spec = kern_mod.normalize_kernel_arg(kernel)
+        super().__init__(Y, input_dim=input_dim, kernel=spec, verbosity=verbosity)
+
+    def __str__(self) -> str:  # noqa: D105
+        return format_model_description(
+            self.describe(),
+            name="GPLVM",
+            objective=self.objective(),
+        )
+
+    def __repr__(self) -> str:  # noqa: D105
+        return self.__str__()
+
+    def optimize(
+        self,
+        iters: int = 100,
+        messages: bool = False,
+        callback: Callable[[OptimiserEvent], Any] | None = None,
+    ) -> None:
+        """Optimise latent positions and kernel hyperparameters."""
+        _GPLVM.optimize(
+            self,
+            iters=iters,
+            messages=False,
+            callback=_build_callback(
+                self,
+                messages=messages,
+                callback=callback,
+                display_name="GPLVM",
+                max_iters=iters,
+            ),
+        )
+
+
+class BayesianGPLVM(_BayesianGPLVM):
+    """Collapsed Bayesian GPLVM with psi statistics (``CBayesGplvm``; CIP-0017).
+
+    GPy-shaped constructor: ``Y``, ``input_dim``, ``num_inducing``. Default
+    kernel is RBF-ARD when ``ard=True`` (GPy ``BayesianGPLVM`` parity).
+    """
+
+    def __init__(
+        self,
+        Y: np.ndarray,
+        input_dim: int = 2,
+        num_inducing: int = 10,
+        kernel: Any = "rbf",
+        ard: bool = True,
+        verbosity: int = 0,
+    ) -> None:
+        spec = kern_mod.normalize_kernel_arg(kernel)
+        super().__init__(
+            Y,
+            input_dim=input_dim,
+            num_inducing=num_inducing,
+            kernel=spec,
+            ard=ard,
+            verbosity=verbosity,
+        )
+
+    def __str__(self) -> str:  # noqa: D105
+        return format_model_description(
+            self.describe(),
+            name="Bayesian GPLVM",
+            objective=self.objective(),
+        )
+
+    def __repr__(self) -> str:  # noqa: D105
+        return self.__str__()
+
+    def optimize(
+        self,
+        iters: int = 100,
+        messages: bool = False,
+        callback: Callable[[OptimiserEvent], Any] | None = None,
+    ) -> None:
+        """Optimise variational ``q(X)``, inducing inputs, kernel, and β."""
+        _BayesianGPLVM.optimize(
+            self,
+            iters=iters,
+            messages=False,
+            callback=_build_callback(
+                self,
+                messages=messages,
+                callback=callback,
+                display_name="Bayesian GPLVM",
+                max_iters=iters,
+            ),
+        )
+
+
+class MRD(_MRD):
+    """Manifold Relevance Determination (``CMrd``; CIP-0018).
+
+    GPy-shaped constructor: ``Ylist`` (aligned views), ``input_dim``,
+    ``num_inducing``. Default per-view kernel is bare RBF-ARD so
+    :meth:`factorize_space` works.
+    """
+
+    def __init__(
+        self,
+        Ylist: Any,
+        input_dim: int = 2,
+        num_inducing: int = 10,
+        kernel: Any = None,
+        ard: bool = True,
+        verbosity: int = 0,
+    ) -> None:
+        if kernel is None:
+            spec: Any = None
+        elif isinstance(kernel, (list, tuple)) and kernel and not isinstance(
+            kernel[0], dict
+        ):
+            # Per-view specs (strings / Kern / parts lists).
+            spec = [
+                None
+                if k is None
+                else kern_mod.normalize_kernel_arg(k)
+                for k in kernel
+            ]
+        else:
+            spec = kern_mod.normalize_kernel_arg(kernel)
+        super().__init__(
+            Ylist,
+            input_dim=input_dim,
+            num_inducing=num_inducing,
+            kernel=spec,
+            ard=ard,
+            verbosity=verbosity,
+        )
+
+    def __str__(self) -> str:  # noqa: D105
+        return format_model_description(
+            self.describe(),
+            name="MRD",
+            objective=self.objective(),
+        )
+
+    def __repr__(self) -> str:  # noqa: D105
+        return self.__str__()
+
+    def optimize(
+        self,
+        iters: int = 100,
+        messages: bool = False,
+        callback: Callable[[OptimiserEvent], Any] | None = None,
+    ) -> None:
+        """Optimise shared latents and per-view kernels."""
+        _MRD.optimize(
+            self,
+            iters=iters,
+            messages=False,
+            callback=_build_callback(
+                self,
+                messages=messages,
+                callback=callback,
+                display_name="MRD",
+                max_iters=iters,
+            ),
+        )
+
+
+__all__ = [
+    "GPRegression",
+    "SparseGPRegression",
+    "GPClassification",
+    "GPLVM",
+    "BayesianGPLVM",
+    "MRD",
+]

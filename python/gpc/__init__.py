@@ -28,12 +28,22 @@ from ._gpc import (
     matrix_from_numpy,
     matrix_to_numpy,
 )
-from .models import GPClassification, GPRegression, SparseGPRegression
+from .models import (
+    BayesianGPLVM,
+    GPClassification,
+    GPLVM,
+    GPRegression,
+    MRD,
+    SparseGPRegression,
+)
 
 __all__ = [
     "GPRegression",
     "SparseGPRegression",
     "GPClassification",
+    "GPLVM",
+    "BayesianGPLVM",
+    "MRD",
     "Matrix",
     "GpcError",
     "OptimiserEvent",

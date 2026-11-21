@@ -33,23 +33,25 @@ gpc_add_test(testMatrix ${GPC_ROOT}/testMatrix.cpp)
 gpc_add_test(testCoregionalize ${GPC_ROOT}/testCoregionalize.cpp)
 gpc_add_test(testPsi ${GPC_ROOT}/testPsi.cpp)
 
-add_library(gpc_mltools STATIC ${GPC_ROOT}/CMltools.cpp)
-target_link_libraries(gpc_mltools PUBLIC gpc_lib)
+# CMltools is in gpc_lib; keep an alias for older test link lines.
+add_library(gpc_mltools INTERFACE)
+target_link_libraries(gpc_mltools INTERFACE gpc_lib)
 
 gpc_add_test(testGp ${GPC_ROOT}/testGp.cpp)
-target_link_libraries(testGp PRIVATE gpc_mltools)
+target_link_libraries(testGp PRIVATE gpc_lib)
 
 gpc_add_test(testCGp ${GPC_ROOT}/testCGp.cpp)
-target_link_libraries(testCGp PRIVATE gpc_mltools)
+target_link_libraries(testCGp PRIVATE gpc_lib)
 
-add_library(gpc_bayes_gplvm STATIC ${GPC_ROOT}/CBayesGplvm.cpp)
-target_link_libraries(gpc_bayes_gplvm PUBLIC gpc_lib)
+# CBayesGplvm is in gpc_lib; keep an alias target for MRD / test link lines.
+add_library(gpc_bayes_gplvm INTERFACE)
+target_link_libraries(gpc_bayes_gplvm INTERFACE gpc_lib)
 
 gpc_add_test(testBayesGplvm ${GPC_ROOT}/testBayesGplvm.cpp)
-target_link_libraries(testBayesGplvm PRIVATE gpc_bayes_gplvm)
+target_link_libraries(testBayesGplvm PRIVATE gpc_lib)
 
 add_library(gpc_mrd STATIC ${GPC_ROOT}/CMrd.cpp)
-target_link_libraries(gpc_mrd PUBLIC gpc_bayes_gplvm)
+target_link_libraries(gpc_mrd PUBLIC gpc_lib)
 
 gpc_add_test(testMrd ${GPC_ROOT}/testMrd.cpp)
 target_link_libraries(testMrd PRIVATE gpc_mrd)

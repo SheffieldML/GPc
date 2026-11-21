@@ -17,9 +17,15 @@ def test_package_and_factory_docstrings():
     assert _nonempty(gpc.GPRegression.__doc__)
     assert _nonempty(gpc.SparseGPRegression.__doc__)
     assert _nonempty(gpc.GPClassification.__doc__)
+    assert _nonempty(gpc.GPLVM.__doc__)
+    assert _nonempty(gpc.BayesianGPLVM.__doc__)
+    assert _nonempty(gpc.MRD.__doc__)
     assert _nonempty(gpc.models.GPRegression.__doc__)
     assert _nonempty(gpc.models.SparseGPRegression.__doc__)
     assert _nonempty(gpc.models.GPClassification.__doc__)
+    assert _nonempty(gpc.models.GPLVM.__doc__)
+    assert _nonempty(gpc.models.BayesianGPLVM.__doc__)
+    assert _nonempty(gpc.models.MRD.__doc__)
     assert _nonempty(gpc.kern.__doc__)
 
 

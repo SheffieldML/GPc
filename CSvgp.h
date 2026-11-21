@@ -114,6 +114,9 @@ class CSvgp : public CStochasticOptimisable {
   // Euclidean grads of ELBO w.r.t. packed q params (Cholesky mode only).
   void qParamsGrad(CMatrix& gQ, const vector<unsigned int>& batch) const;
   void qParamsGrad(CMatrix& gQ) const;
+  // Data-term q grads at explicit inputs (no −KL); for deep-GP final layer.
+  void qParamsGradAt(CMatrix& gQ, const CMatrix& XB,
+                     const std::vector<unsigned int>& yRows, double c) const;
 
   // ---- Phase 2: gradients at fixed whitened q ----
   // Fills gKern (1 x nKernParams), gZ (same shape as centres()), gBeta.
@@ -179,6 +182,8 @@ class CSvgp : public CStochasticOptimisable {
   // Accumulate ∂dataTerm/∂m (M x d) and symmetric ∂dataTerm/∂S_j into gM / gS.
   void dataTermQGrads(const vector<unsigned int>& batch,
                       CMatrix& gM, vector<CMatrix>& gS) const;
+  void dataTermQGradsAt(const CMatrix& XB, const vector<unsigned int>& yRows,
+                        double c, CMatrix& gM, vector<CMatrix>& gS) const;
   // Pack Euclidean (gM, gS) into Cholesky q-parameter gradients (log-diag).
   void packQGradsFromMS(CMatrix& gQ, const CMatrix& gM,
                         const vector<CMatrix>& gS) const;

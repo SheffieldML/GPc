@@ -7,6 +7,7 @@ This file and CIvm.cpp contain classes for representing Gaussian processes using
 #ifndef CIVM_H
 #define CIVM_H
 #include "CMltools.h"
+#include "CNoiseSiteWorkspace.h"
 using namespace std;
 
 const double NULOW=1e-16;
@@ -237,6 +238,8 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
 
   CKern* pkern;
   CNoise* pnoise;
+  // CIP-0034: inference-owned ADF site caches (noise accessors write here).
+  CNoiseSiteWorkspace siteWorkspace;
   enum{ENTROPY, RENTROPY, RANDOM};
 
 

@@ -13,7 +13,7 @@ Dense `CGp` EP and Laplace are the v1 product path. **Sparse EP / GPy `EPDTC` re
 - New type: [`CNoiseSiteWorkspace.h`](../../CNoiseSiteWorkspace.h) (`mu`, `varSigma`).
 - `CNoise::attachSiteWorkspace` + bulk `setMus` / `setVarSigmas` dual-write when attached.
 - **Proof path:** `CPpa` owns `siteWorkspace` and attaches it in `initStoreage` (`testEp` also covers bulk dual-write).
-- Legacy `getMu` / `getVarSigma` still read likelihood-owned matrices. Full strip (REQ-0019 first criterion) waits until IVM/PPA/noise grads read the workspace.
+- Completed in [CIP-0034](../cip0034.md): accessors are base-only; storage is `ownedSites` or an attached inference workspace (IVM / PPA / SparsePpa).
 
 ## Thin façade
 

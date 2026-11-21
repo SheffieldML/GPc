@@ -1,10 +1,23 @@
 #include "CSvgp.h"
 #include "CCholAdjoint.h"
 #include "CInducing.h"
+#include "ndlassert.h"
 #include "ndlexceptions.h"
 #include "ndlutil.h"
 #include <cmath>
 #include <iostream>
+
+// CIP-002A numerics soak: round-off may make latent var slightly negative; clamp
+// only after asserting the dip is tiny relative to k(x,x).
+static void clampLatentVar(double& v, double kxx)
+{
+  if(v < 0.0)
+  {
+    const double scale = (kxx > 0.0) ? kxx : 1.0;
+    SANITYCHECK(v >= -1e-10 * scale);
+    v = 0.0;
+  }
+}
 
 CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Zin,
              double betaVal, int verbos)
@@ -301,8 +314,7 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
     for(unsigned int k = 0; k < B; k++)
     {
       double v = wsDK.getVal(k) - wsDQ.getVal(k) + wsAB.dotColCol(k, wsSAB, k);
-      if(v < 0.0)
-        v = 0.0;
+      clampLatentVar(v, wsDK.getVal(k));
       varOut.setVal(v, k, j);
     }
   }
@@ -338,8 +350,7 @@ void CSvgp::fillMarginals(const vector<unsigned int>& batch,
     for(unsigned int k = 0; k < B; k++)
     {
       double v = pDK->getVal(k) - pDQ->getVal(k) + pA->dotColCol(k, wsSAB, k);
-      if(v < 0.0)
-        v = 0.0;
+      clampLatentVar(v, pDK->getVal(k));
       varOut.setVal(v, k, j);
     }
   }

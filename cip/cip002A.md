@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-19"
 id: "002A"
-last_updated: "2026-11-20"
+last_updated: "2026-11-21"
 status: "Closed"
 compressed: false
 related_requirements: ["0015", "0002", "000F", "0014"]
@@ -141,6 +141,7 @@ Note: `CGp::posteriorMeanVar` returns variance **including** observation noise \
 ## Testing Strategy
 
 - `testSvgp` (Phase 1, matio-free): DTCVAR oracle, fixed point, predictions, monotone \(\gamma<1\), minibatch unbiasedness, \(M=N\) exact and ill-conditioned cases, guards. Add to `matio-tests` / coverage when accepted.
+- **Numerics soak** (backlog [`2026-11-19_cip002A-numerics-soak`](../backlog/features/2026-11-19_cip002A-numerics-soak.md), 2026-11-21): hyperparameter grads at \(q^\star\) vs `CGp` DTCVAR (envelope); probit CVI \(\theta^\star-\theta\) vs FD \(\nabla_\eta\) on \((\mathbf m,\mathbf S+\mathbf{mm}^\top)\); \(N=2\) probit orthant ELBO ≤ exact; nested inducing \(\mathrm{ELBO}(Z')\ge\mathrm{ELBO}(Z)\); `marginal` near-nonneg assert before clamp. Shared Gaussian SVGP vs `CSparsePpa` `ppaBound` recorded (PPA sites are Gaussian; orthant is SVGP-probit only).
 - Phase 2: finite-difference gradients (kernel, \(\mathbf{Z}\), \(\beta\)) at fixed \(q\).
 - Phase 3: same seed ⇒ identical trajectory; different seeds ⇒ same optimum within tolerance on a Gaussian problem.
 - Phase 4: probit ELBO \(\le\) exact orthant log marginal on small problems; GPy `SVGP` fixture parity.

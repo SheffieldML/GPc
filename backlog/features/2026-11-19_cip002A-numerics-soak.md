@@ -1,10 +1,10 @@
 ---
 id: "2026-11-19_cip002A-numerics-soak"
 title: "CIP-002A numerics soak: oracles, invariants, clamp assert"
-status: "Proposed"
+status: "Completed"
 priority: "High"
 created: "2026-11-19"
-last_updated: "2026-11-19"
+last_updated: "2026-11-21"
 category: "features"
 related_cips: ["002A", "0012", "0026"]
 owner: "Neil Lawrence"
@@ -50,18 +50,20 @@ Add a focused numerics soak to `testSvgp` (and fixtures where needed) that close
 
 ## Acceptance Criteria
 
-- [ ] Gradients at q\* match `CGp` DTCVAR within a documented tolerance
-- [ ] Probit natgrad step matches FD on expectation parameters
-- [ ] Exact probit orthant fixtures: ELBO ≤ exact; SVGP vs sparse PPA compare documented
-- [ ] Nested inducing: ELBO(Z′) ≥ ELBO(Z) when Z ⊂ Z′ (Gaussian)
-- [ ] `marginal()` asserts near-nonnegativity before any clamp; extreme cases green under it
-- [ ] CIP-002A Testing Strategy updated with a “Numerics soak” subsection pointing here
+- [x] Gradients at q\* match `CGp` DTCVAR within a documented tolerance
+- [x] Probit natgrad step matches FD on expectation parameters
+- [x] Exact probit orthant fixtures: ELBO ≤ exact; SVGP vs sparse PPA compare documented
+- [x] Nested inducing: ELBO(Z′) ≥ ELBO(Z) when Z ⊂ Z′ (Gaussian)
+- [x] `marginal()` asserts near-nonnegativity before any clamp; extreme cases green under it
+- [x] CIP-002A Testing Strategy updated with a “Numerics soak” subsection pointing here
 
 ## Implementation Notes
 
 - Extend `testSvgp` (matio-free where possible); orthant fixtures as committed text/arrays like other GPy/PPA fixtures.
 - Compare unconstrained param grads with the same transform convention as `CGp`.
 - No-gradient items (4)–(5) and whitening/permutation can land before fixtures.
+
+Landed 2026-11-21 on `cip002A-numerics-soak`: `testSvgp` soak section; `clampLatentVar` + `SANITYCHECK` in `CSvgp::fillMarginals*`. Orthant uses the closed-form bivariate Φ₂ identity (same as CIP-0030 Phase 3). Sparse PPA compare is Gaussian-site `ppaBound` on a shared problem (documented; not an orthant oracle).
 
 ## Related
 
@@ -73,3 +75,6 @@ Add a focused numerics soak to `testSvgp` (and fixtures where needed) that close
 
 ### 2026-11-19
 Task created after #84 merged; five-first list triaged from a broader numerics design note.
+
+### 2026-11-21
+First-five soak implemented and green in `testSvgp` (0 failures). Marked Completed.

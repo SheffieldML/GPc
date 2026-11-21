@@ -2,8 +2,8 @@
 
 Maintainer decisions for the NumPy-facing wrapper. Install and API recipes live in [`python/README.md`](../python/README.md); this page records why the surface looks the way it does.
 
-**Design**: [CIP-001D](../cip/cip001D.md) · [CIP-002F](../cip/cip002F.md) · [CIP-0020](../cip/cip0020.md) · [CIP-002C](../cip/cip002C.md)  
-**Requirements**: [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) · [REQ-0017](../requirements/req0017_python-facade-help-docstrings.md)
+**Design**: [CIP-001D](../cip/cip001D.md) · [CIP-002F](../cip/cip002F.md) · [CIP-0020](../cip/cip0020.md) · [CIP-002C](../cip/cip002C.md) · [CIP-0033](../cip/cip0033.md) · [CIP-0034](../cip/cip0034.md)  
+**Requirements**: [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) · [REQ-0017](../requirements/req0017_python-facade-help-docstrings.md) · [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md)
 
 ## Role
 
@@ -18,7 +18,14 @@ Maintainer decisions for the NumPy-facing wrapper. Install and API recipes live 
 5. **Same modelling subset as native tutorials** first (FTC, sparse DTCVAR, MLP/arccos, GPy-form `kern` / compound `+`). Loud errors on shape/path mistakes.
 6. **Build:** day-to-day editable via `python/Makefile` against root `libgp`; wheels via scikit-build-core + thin CMake ([CIP-0020](../cip/cip0020.md) / [CIP-002C](../cip/cip002C.md)). Make remains the blessed native/CI path.
 
-Deferred from 001D close: richer CIP-001E optimiser/model display landed with [CIP-001E](../cip/cip001E.md). Broader GPy-tutorial notebooks still out of subset (coreg, IVM/classification, GPLVM/MRD, SVGP, SVI BGPLVM) — see [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md) and CIP-001D follow-ups.
+Deferred from 001D close: richer CIP-001E optimiser/model display landed with [CIP-001E](../cip/cip001E.md). Broader GPy-tutorial notebooks still out of subset (coreg, IVM sparse classification, GPLVM/MRD, SVGP, SVI BGPLVM) — see [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md).
+
+## Classification ([CIP-0033](../cip/cip0033.md) / [CIP-0034](../cip/cip0034.md))
+
+- **`gpc.GPClassification(X, Y, kernel=..., inference="ep"|"laplace")`** — dense FTC Bernoulli–probit; EP is the default GPy `GPClassification` path; Laplace optional.
+- Predictive: `predict_noiseless` / `predict_proba` (EP latent + probit). Sparse EP / EPDTC is out of scope.
+- C++: `CGp::setEpInference` / `setLaplaceInference`; tutorial [cgp_ep_classification](./tutorials/cgp_ep_classification.md). Large-\(N\) active-set remains IVM ([ivm_unitsquare](./tutorials/ivm_unitsquare.md)).
+- Likelihood site caches are not façade-visible; ADF state lives in inference workspaces ([CIP-0034](../cip/cip0034.md)).
 
 ## Help and docstrings ([CIP-002F](../cip/cip002F.md))
 
@@ -37,4 +44,6 @@ Interactive discoverability is a **separate** requirement from the porting narra
 | Install (wheel / editable / Colab TestPyPI) | [`python/README.md`](../python/README.md) |
 | GPy porting map | [`python/docs/gpy_side_by_side.md`](../python/docs/gpy_side_by_side.md) |
 | Subset checklist | [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md) |
+| Classification tutorial | [tutorials/cgp_ep_classification.md](./tutorials/cgp_ep_classification.md) |
+| Architecture (likelihood / sites) | [target-architecture.md](./target-architecture.md) |
 | CMake / wheels / OpenBLAS threading | [build-and-ci.md](./build-and-ci.md) |

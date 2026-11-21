@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <random>
+#include <sstream>
 
 using namespace std;
 
@@ -87,8 +88,9 @@ CDeepGp::CDeepGp(const CMatrix& Xin, const CMatrix& Yin,
                  double beta, double chi, int verbos)
   : X(Xin), Y(Yin), nData(Xin.getRows()), inputDim(Xin.getCols()),
     outputDim(Yin.getCols()), numLayers(kerns.size()), verbosity(verbos),
-    pkerns(kerns), layerDims(dims), M(numInducing), numSamples(1), seed(0),
-    rng(0), freezeNoise(false), natGradGamma(0.0)
+    chiScale(chi), betaStore(beta), pkerns(kerns), ownKerns(false),
+    layerDims(dims), M(numInducing), numSamples(1), seed(0),
+    rng(0), freezeNoise(false), natGradGamma(0.0), dropResidual(false)
 {
   if(Xin.getRows() != Yin.getRows())
     throw ndlexceptions::Error("CDeepGp: X and Y must have the same number of rows");
@@ -106,14 +108,27 @@ CDeepGp::CDeepGp(const CMatrix& Xin, const CMatrix& Yin,
     if(M[ell] == 0 || M[ell] > nData)
       throw ndlexceptions::Error("CDeepGp: numInducing must be in 1..N");
 
+  inducingTypes.assign(numLayers, "points");
+  rebuildLayers(beta);
+  initKernVariances(chi);
+  // Rebuild again so kernel variance changes take effect in matrices.
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    layers[ell]->updateKernelMatrices();
+}
+
+CDeepGp::~CDeepGp() {}
+
+void CDeepGp::rebuildLayers(double beta)
+{
   meanP.resize(numLayers);
   Zstore.resize(numLayers);
   hiddenY.resize(numLayers);
   layers.resize(numLayers);
+  if(inducingTypes.size() != numLayers)
+    inducingTypes.assign(numLayers, "points");
 
   initMeanMaps();
   initInducing();
-  initKernVariances(chi);
 
   for(unsigned int ell = 0; ell < numLayers; ell++)
   {
@@ -131,6 +146,9 @@ CDeepGp::CDeepGp(const CMatrix& Xin, const CMatrix& Yin,
     }
     layers[ell].reset(new CSvgp(pkerns[ell], &X, pY, Zstore[ell], beta, verbosity));
     layers[ell]->setQParamMode(CSvgp::QModeCholesky);
+    if(inducingTypes[ell] != "points")
+      layers[ell]->setInducingType(inducingTypes[ell]);
+    layers[ell]->setDropResidual(dropResidual);
     if(ell + 1 < numLayers)
     {
       CMatrix m(layers[ell]->getNumInducing(), layers[ell]->getOutputDim());
@@ -148,8 +166,6 @@ CDeepGp::CDeepGp(const CMatrix& Xin, const CMatrix& Yin,
   }
   packLayerOffsets();
 }
-
-CDeepGp::~CDeepGp() {}
 
 unsigned int CDeepGp::getHiddenDim(unsigned int ell) const
 {
@@ -265,8 +281,10 @@ void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
 {
   if(ell >= numLayers)
     throw ndlexceptions::Error("CDeepGp::setLayerInducingType: layer out of range");
+  inducingTypes[ell] = typeName;
   layers[ell]->setInducingType(typeName);
   layers[ell]->setQParamMode(CSvgp::QModeCholesky);
+  layers[ell]->setDropResidual(dropResidual);
   if(ell + 1 < numLayers)
   {
     CMatrix m(layers[ell]->getNumInducing(), layers[ell]->getOutputDim());
@@ -282,6 +300,20 @@ void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
     layers[ell]->setWhitenedQ(m, S);
   }
   packLayerOffsets();
+}
+
+string CDeepGp::getLayerInducingType(unsigned int ell) const
+{
+  if(ell >= numLayers)
+    throw ndlexceptions::Error("CDeepGp::getLayerInducingType: layer out of range");
+  return inducingTypes[ell];
+}
+
+void CDeepGp::setDropResidual(bool val)
+{
+  dropResidual = val;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    layers[ell]->setDropResidual(val);
 }
 
 void CDeepGp::setLayerLearnWindowWidth(unsigned int ell, bool learn, bool untied)
@@ -524,4 +556,213 @@ void CDeepGp::afterBatchStep(const vector<unsigned int>& batch)
 {
   if(natGradGamma > 0.0)
     layers.back()->naturalGradientStep(natGradGamma, batch);
+}
+
+void CDeepGp::forwardSample(const CMatrix& Xin, const CMatrix& epsFlat,
+                            CMatrix& Hout) const
+{
+  const unsigned int B = Xin.getRows();
+  vector<CMatrix> Hs(numLayers + 1);
+  Hs[0].deepCopy(Xin);
+  unsigned int epsOff = 0;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    const unsigned int Dout = layerDims[ell + 1];
+    CMatrix mu, var;
+    layers[ell]->marginalsAt(Hs[ell], mu, var);
+    CMatrix Hnext(B, Dout);
+    Hnext.gemm(Hs[ell], meanP[ell], 1.0, 0.0, "n", "n");
+    for(unsigned int b = 0; b < B; b++)
+      for(unsigned int j = 0; j < Dout; j++)
+      {
+        const double s = sqrt(max(var.getVal(b, j), 0.0));
+        const double ep = (epsFlat.getRows() > epsOff + b * Dout + j)
+          ? epsFlat.getVal(epsOff + b * Dout + j, 0) : 0.0;
+        Hnext.setVal(Hnext.getVal(b, j) + mu.getVal(b, j) + s * ep, b, j);
+      }
+    Hs[ell + 1].deepCopy(Hnext);
+    epsOff += B * Dout;
+  }
+  Hout.deepCopy(Hs.back());
+}
+
+double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
+{
+  if(nProbe == 0)
+    throw ndlexceptions::Error("CDeepGp::jacobianSpread: nProbe >= 1");
+  if(inputDim != outputDim)
+    throw ndlexceptions::Error(
+        "CDeepGp::jacobianSpread: requires square input/output dims");
+  const unsigned int Din = inputDim;
+  mt19937_64 prng(probeSeed);
+  normal_distribution<double> nd(0.0, 1.0);
+  vector<double> spreads;
+  spreads.reserve(nProbe);
+  const double h = 1e-4;
+  unsigned int epsPerPoint = 0;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    epsPerPoint += layerDims[ell + 1];
+
+  for(unsigned int t = 0; t < nProbe; t++)
+  {
+    CMatrix x0(1, Din);
+    for(unsigned int d = 0; d < Din; d++)
+      x0.setVal(nd(prng), 0, d);
+    CMatrix eps(epsPerPoint > 0 ? epsPerPoint : 1, 1);
+    eps.zeros();
+    for(unsigned int i = 0; i < epsPerPoint; i++)
+      eps.setVal(nd(prng), i, 0);
+
+    CMatrix J(Din, Din);
+    for(unsigned int d = 0; d < Din; d++)
+    {
+      CMatrix xp(x0), xm(x0);
+      xp.setVal(x0.getVal(0, d) + h, 0, d);
+      xm.setVal(x0.getVal(0, d) - h, 0, d);
+      CMatrix yp, ym;
+      forwardSample(xp, eps, yp);
+      forwardSample(xm, eps, ym);
+      for(unsigned int o = 0; o < Din; o++)
+        J.setVal((yp.getVal(0, o) - ym.getVal(0, o)) / (2.0 * h), o, d);
+    }
+    // Singular values via eigenvalues of J^T J.
+    CMatrix G(Din, Din);
+    G.gemm(J, J, 1.0, 0.0, "t", "n");
+    G.setSymmetric(true);
+    CMatrix lam(1, Din);
+    G.syev(lam, "n", "l");
+    double lmin = 1e300, lmax = 0.0;
+    for(unsigned int i = 0; i < Din; i++)
+    {
+      const double s = sqrt(max(fabs(lam.getVal(i)), 0.0));
+      lmin = min(lmin, s);
+      lmax = max(lmax, s);
+    }
+    const double spread = log(max(lmax, 1e-300)) - log(max(lmin, 1e-300));
+    spreads.push_back(spread);
+  }
+  sort(spreads.begin(), spreads.end());
+  return spreads[spreads.size() / 2];
+}
+
+void CDeepGp::display(ostream& os) const
+{
+  os << "Deep GP (doubly stochastic VI on CSvgp layers):" << endl;
+  os << "  N=" << nData << " Din=" << inputDim << " Dout=" << outputDim
+     << " L=" << numLayers << " chi=" << chiScale
+     << " beta=" << betaStore
+     << " dropResidual=" << (dropResidual ? 1 : 0) << endl;
+  os << "  samples=" << numSamples
+     << " natgrad_gamma=" << natGradGamma << endl;
+  os << "  dims:";
+  for(unsigned int ell = 0; ell <= numLayers; ell++)
+    os << " " << layerDims[ell];
+  os << endl;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    os << "  layer " << ell << ": M=" << M[ell]
+       << " inducing=" << inducingTypes[ell]
+       << " kern=" << (pkerns[ell] ? pkerns[ell]->getType() : "?") << endl;
+  }
+}
+
+void CDeepGp::writeParamsToStream(ostream& os) const
+{
+  if(layers.empty() || pkerns.empty())
+    throw ndlexceptions::Error("CDeepGp::writeParamsToStream: uninitialised model");
+  writeToStream(os, "baseType", "deepgp");
+  writeToStream(os, "type", "deepgp");
+  writeToStream(os, "numData", nData);
+  writeToStream(os, "inputDim", inputDim);
+  writeToStream(os, "outputDim", outputDim);
+  writeToStream(os, "numLayers", numLayers);
+  writeToStream(os, "beta", betaStore);
+  writeToStream(os, "chi", chiScale);
+  writeToStream(os, "numSamples", numSamples);
+  writeToStream(os, "natGradGamma", natGradGamma);
+  writeToStream(os, "dropResidual", dropResidual);
+  for(unsigned int ell = 0; ell <= numLayers; ell++)
+    writeToStream(os, "dim", layerDims[ell]);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    writeToStream(os, "numInducing", M[ell]);
+    writeToStream(os, "inducingType", inducingTypes[ell]);
+  }
+  X.toStream(os);
+  Y.toStream(os);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    meanP[ell].toStream(os);
+    pkerns[ell]->toStream(os);
+    CMatrix pe;
+    layers[ell]->getStochasticParams(pe);
+    const unsigned int np = pe.getCols();
+    writeToStream(os, "numStochParams", np);
+    CMatrix peWrite(1, np > 0 ? np : 1);
+    peWrite.zeros();
+    if(np > 0)
+      peWrite.deepCopy(pe);
+    peWrite.toStream(os);
+  }
+}
+
+void CDeepGp::readParamsFromStream(istream& is)
+{
+  string tbase = getBaseTypeStream(is);
+  if(tbase != "deepgp")
+    throw ndlexceptions::StreamFormatError("baseType", "Expected deepgp");
+  string t = getTypeStream(is);
+  if(t != "deepgp")
+    throw ndlexceptions::StreamFormatError("type", "Expected deepgp");
+  nData = (unsigned int)readIntFromStream(is, "numData");
+  inputDim = (unsigned int)readIntFromStream(is, "inputDim");
+  outputDim = (unsigned int)readIntFromStream(is, "outputDim");
+  numLayers = (unsigned int)readIntFromStream(is, "numLayers");
+  betaStore = readDoubleFromStream(is, "beta");
+  chiScale = readDoubleFromStream(is, "chi");
+  numSamples = (unsigned int)readIntFromStream(is, "numSamples");
+  natGradGamma = readDoubleFromStream(is, "natGradGamma");
+  dropResidual = readBoolFromStream(is, "dropResidual");
+
+  layerDims.resize(numLayers + 1);
+  for(unsigned int ell = 0; ell <= numLayers; ell++)
+    layerDims[ell] = (unsigned int)readIntFromStream(is, "dim");
+  M.resize(numLayers);
+  inducingTypes.resize(numLayers);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    M[ell] = (unsigned int)readIntFromStream(is, "numInducing");
+    inducingTypes[ell] = readStringFromStream(is, "inducingType");
+  }
+  X.resize(nData, inputDim);
+  Y.resize(nData, outputDim);
+  X.fromStream(is);
+  Y.fromStream(is);
+
+  ownedKerns.clear();
+  pkerns.clear();
+  ownKerns = true;
+  vector<CMatrix> savedMeanP(numLayers);
+  vector<CMatrix> savedParams(numLayers);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    savedMeanP[ell].fromStream(is);
+    CKern* k = readKernFromStream(is);
+    ownedKerns.emplace_back(k);
+    pkerns.push_back(k);
+    const unsigned int np = (unsigned int)readIntFromStream(is, "numStochParams");
+    savedParams[ell].resize(1, np > 0 ? np : 1);
+    savedParams[ell].fromStream(is);
+  }
+
+  rebuildLayers(betaStore);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    meanP[ell].deepCopy(savedMeanP[ell]);
+    if(inducingTypes[ell] != "points")
+      layers[ell]->setInducingType(inducingTypes[ell]);
+    layers[ell]->setDropResidual(dropResidual);
+    layers[ell]->setStochasticParams(savedParams[ell]);
+  }
+  packLayerOffsets();
 }

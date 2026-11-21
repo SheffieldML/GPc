@@ -23,7 +23,7 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
              double betaVal, int verbos)
   : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
     verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0),
-    qParamMode(QModeCvi)
+    dropResidual(false), qParamMode(QModeCvi)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -318,7 +318,9 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
     wsSAB.symm(qCov[j], wsAB, 1.0, 0.0, "u", "l");
     for(unsigned int k = 0; k < B; k++)
     {
-      double v = wsDK.getVal(k) - wsDQ.getVal(k) + wsAB.dotColCol(k, wsSAB, k);
+      double v = wsAB.dotColCol(k, wsSAB, k);
+      if(!dropResidual)
+        v += wsDK.getVal(k) - wsDQ.getVal(k);
       clampLatentVar(v, wsDK.getVal(k));
       varOut.setVal(v, k, j);
     }
@@ -354,7 +356,9 @@ void CSvgp::fillMarginals(const vector<unsigned int>& batch,
     wsSAB.symm(qCov[j], *pA, 1.0, 0.0, "u", "l");
     for(unsigned int k = 0; k < B; k++)
     {
-      double v = pDK->getVal(k) - pDQ->getVal(k) + pA->dotColCol(k, wsSAB, k);
+      double v = pA->dotColCol(k, wsSAB, k);
+      if(!dropResidual)
+        v += pDK->getVal(k) - pDQ->getVal(k);
       clampLatentVar(v, pDK->getVal(k));
       varOut.setVal(v, k, j);
     }

@@ -13,7 +13,7 @@ else
 include make.linux
 endif
 
-all: gplvm bgplvm ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
+all: gplvm bgplvm deepgp ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).
 .PHONY: python-gpc python-gpc-test
@@ -79,6 +79,13 @@ bgplvm: bgplvm.o CClctrl.o CBayesGplvm.o CSviBayesGplvm.o CSvgp.o CAdam.o CStoch
 
 bgplvm.o: bgplvm.cpp bgplvm.h CBayesGplvm.h CSviBayesGplvm.h CAdam.h CClctrl.h CKern.h
 	$(CC) -c bgplvm.cpp -o bgplvm.o $(CCFLAGS)
+
+# CIP-0035: deep GP CLI.
+deepgp: deepgp.o CClctrl.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o deepgp deepgp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o $(LDFLAGS)
+
+deepgp.o: deepgp.cpp deepgp.h CDeepGp.h CAdam.h CClctrl.h CKern.h
+	$(CC) -c deepgp.cpp -o deepgp.o $(CCFLAGS)
 
 ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o ivm  ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
@@ -157,6 +164,11 @@ run-matio-tests: matio-tests
 run-bgplvm-smoke: bgplvm
 	chmod +x scripts/smoke_bgplvm.sh
 	./scripts/smoke_bgplvm.sh
+
+# CIP-0035: CLI smoke for ./deepgp.
+run-deepgp-smoke: deepgp
+	chmod +x scripts/smoke_deepgp.sh
+	./scripts/smoke_deepgp.sh
 
 # CIP-0019: adversarial / extreme-input numerical stability (separate from matio-tests).
 testNumericalStability: numerical_stability/testNumericalStability.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o

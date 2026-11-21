@@ -61,6 +61,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-002E](./cip002E.md): Tier CI triggers — Compile/Reference with governance `paths-ignore`; numerics/bench path-filtered; Coverage main/dispatch; Wheels packaging-path + dispatch (**Closed**) soft gate kept.
 - [CIP-002F](./cip002F.md): Python-compatible help and docstrings for the `gpc` façade (**Closed**). Implements [REQ-0017](../requirements/req0017_python-facade-help-docstrings.md). Follow-on to [CIP-001D](./cip001D.md); does not reopen modelling scope.
 - [CIP-0030](./cip0030.md): Uncollapsed Bayesian GP-LVM — sampled \(q(\mathbf X)\) on the SVGP machinery, for any inducing family (**Closed**); Phase 0 routes `CSvgp` through `CInducing` and is independently shippable.
+- [CIP-0031](./cip0031.md): Split `posteriorMeanVar` into latent and predictive (GPy-style) (**Proposed**). Implements prediction-contract pieces of [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0014](../requirements/req0014_observation-noise-in-likelihood.md). Supersedes backlog `2026-11-19_latent-vs-predictive-meanvar`.
 
 ## Creating a Good CIP
 

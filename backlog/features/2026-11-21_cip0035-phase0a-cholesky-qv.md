@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0035-phase0a-cholesky-qv"
 title: "CIP-0035 Phase 0a: Cholesky-mode q(v) in CSvgp"
-status: "In Progress"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -27,10 +27,10 @@ Add a parameterisation \(\tilde S_j=L_j L_j^\top\) (lower triangular, log diagon
 
 ## Acceptance Criteria
 
-- [ ] Cholesky-mode \(q(\mathbf v)\) on `CSvgp` (opt-in; CVI default unchanged)
-- [ ] Adam on \((\tilde{\mathbf m},L)\) reaches the CVI optimum on `testSvgp` problems
-- [ ] Finite differences on \(q\) parameters and KL gradient pass
-- [ ] Existing CVI / natgrad paths still green
+- [x] Cholesky-mode \(q(\mathbf v)\) on `CSvgp` (opt-in; CVI default unchanged)
+- [x] Adam on \((\tilde{\mathbf m},L)\) reaches the CVI optimum on `testSvgp` problems
+- [x] Finite differences on \(q\) parameters and KL gradient pass
+- [x] Existing CVI / natgrad paths still green
 
 ## Implementation Notes
 
@@ -45,3 +45,7 @@ Shared with the layer API (Phase 0b): `gQ` packing for Adam. Keep CVI storage of
 ### 2026-11-21
 
 Task created In Progress on CIP Accept; implementation starting in `GPc-cip0035`.
+
+### 2026-11-21 (complete)
+
+Phase 0a landed: `QModeCholesky`, pack/unpack, `qParamsGrad` FD-green; Adam-on-q reaches CVI ELBO (`./testSvgp` 0 failures).

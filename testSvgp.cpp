@@ -1148,6 +1148,110 @@ int main()
           }
         expect(ok, "Soak: crowded-Z marginal clamp keeps vars finite/nonneg");
       }
+
+      // CIP-0035 Phase 0a: Cholesky-mode q(v) — FD, KL, Adam reaches CVI.
+      {
+        const unsigned int N = 24, M = 5, D = 1;
+        const double beta = 20.0;
+        mt19937 rng(35);
+        normal_distribution<double> nd(0.0, 1.0);
+        uniform_real_distribution<double> ud(-1.5, 1.5);
+        CMatrix X(N, 1), y(N, D), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(ud(rng), i, 0);
+            y.setVal(0.8 * X.getVal(i, 0) + 0.1 * nd(rng), i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.4 + 2.8 * (double)k / (double)(M - 1), k, 0);
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CSvgp sv(&kern, &X, &y, Z, beta, 0);
+        sv.setQParamMode(CSvgp::QModeCholesky);
+        expect(sv.getQParamMode() == CSvgp::QModeCholesky,
+               "Phase 0a: setQParamMode(Cholesky)");
+        expect(sv.getStochasticNumParams()
+               == sv.getOptNumParams() + sv.getQParamNum(),
+               "Phase 0a: stochastic params append q");
+
+        // Round-trip packed q params.
+        CMatrix q0;
+        sv.getQParams(q0);
+        CMatrix qPert(q0);
+        qPert.setVal(q0.getVal(0) + 0.01, 0);
+        sv.setQParams(qPert);
+        CMatrix q1;
+        sv.getQParams(q1);
+        expect(fabs(q1.getVal(0) - qPert.getVal(0)) < 1e-14,
+               "Phase 0a: setQParams/getQParams round-trip");
+        sv.setQParams(q0);
+
+        // FD on q params at fixed hypers.
+        vector<unsigned int> all(N);
+        for(unsigned int i = 0; i < N; i++) all[i] = i;
+        CMatrix gQ;
+        sv.qParamsGrad(gQ, all);
+        const double eps = 1e-5;
+        double maxRel = 0.0;
+        for(unsigned int i = 0; i < sv.getQParamNum(); i++)
+          {
+            CMatrix qp(q0), qm(q0);
+            qp.setVal(q0.getVal(i) + eps, i);
+            qm.setVal(q0.getVal(i) - eps, i);
+            sv.setQParams(qp);
+            const double Lp = sv.elbo();
+            sv.setQParams(qm);
+            const double Lm = sv.elbo();
+            sv.setQParams(q0);
+            const double fd = (Lp - Lm) / (2.0 * eps);
+            const double an = gQ.getVal(i);
+            const double scale = max(1.0, max(fabs(fd), fabs(an)));
+            maxRel = max(maxRel, fabs(fd - an) / scale);
+          }
+        cout << "  info: Phase 0a qParams FD max relative diff=" << maxRel << endl;
+        expect(maxRel < 5e-4, "Phase 0a: qParamsGrad matches FD");
+
+        // Adam on packed (m~, L) alone (hypers fixed) reaches near CVI ELBO.
+        CSvgp ref(&kern, &X, &y, Z, beta, 0);
+        ref.naturalGradientStep(1.0);
+        const double Lcvi = ref.elbo();
+
+        CSvgp adamSv(&kern, &X, &y, Z, beta, 0);
+        adamSv.setQParamMode(CSvgp::QModeCholesky);
+        const unsigned int nQ = adamSv.getQParamNum();
+        CMatrix q;
+        adamSv.getQParams(q);
+        CMatrix mMom(1, nQ), vMom(1, nQ);
+        mMom.zeros();
+        vMom.zeros();
+        const double lr = 0.1, b1 = 0.9, b2 = 0.999, epsA = 1e-8;
+        double Ladam = adamSv.elbo();
+        for(unsigned int t = 1; t <= 800; t++)
+          {
+            CMatrix gQ;
+            adamSv.qParamsGrad(gQ, all);
+            const double b1t = 1.0 - pow(b1, (double)t);
+            const double b2t = 1.0 - pow(b2, (double)t);
+            for(unsigned int i = 0; i < nQ; i++)
+              {
+                const double g = gQ.getVal(i);
+                const double mi = b1 * mMom.getVal(i) + (1.0 - b1) * g;
+                const double vi = b2 * vMom.getVal(i) + (1.0 - b2) * g * g;
+                mMom.setVal(mi, i);
+                vMom.setVal(vi, i);
+                const double mhat = mi / b1t;
+                const double vhat = vi / b2t;
+                q.setVal(q.getVal(i) + lr * mhat / (sqrt(vhat) + epsA), i);
+              }
+            adamSv.setQParams(q);
+            Ladam = adamSv.elbo();
+          }
+        cout << "  info: Phase 0a Adam-on-q ELBO=" << Ladam << " CVI ELBO=" << Lcvi
+             << " gap=" << (Lcvi - Ladam) << endl;
+        expect(Ladam > Lcvi - 1e-3,
+               "Phase 0a: Adam on Cholesky q reaches near CVI ELBO");
+        expect(isfinite(Ladam), "Phase 0a: Adam ELBO is finite");
+      }
     }
   catch(ndlexceptions::Error& e)
     {

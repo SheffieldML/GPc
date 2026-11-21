@@ -102,6 +102,19 @@ class CSvgp : public CStochasticOptimisable {
   const CMatrix& getWhitenedCov(unsigned int j) const { return qCov[j]; }
   void setWhitenedQ(const CMatrix& mean, const vector<CMatrix>& cov);
 
+  // CIP-0035 Phase 0a: Cholesky-mode q(v) for Adam (CVI remains default).
+  // qCov[j] = qChol[j] qChol[j]^T with qChol lower-triangular; diagonal of
+  // qChol is stored positive, packed unconstrained as log(L_ii).
+  enum QParamMode { QModeCvi = 0, QModeCholesky = 1 };
+  void setQParamMode(QParamMode mode);
+  QParamMode getQParamMode() const { return qParamMode; }
+  unsigned int getQParamNum() const;
+  void getQParams(CMatrix& param, unsigned int offset = 0) const;
+  void setQParams(const CMatrix& param, unsigned int offset = 0);
+  // Euclidean grads of ELBO w.r.t. packed q params (Cholesky mode only).
+  void qParamsGrad(CMatrix& gQ, const vector<unsigned int>& batch) const;
+  void qParamsGrad(CMatrix& gQ) const;
+
   // ---- Phase 2: gradients at fixed whitened q ----
   // Fills gKern (1 x nKernParams), gZ (same shape as centres()), gBeta.
   // Optional gXOrNull (B x q, same rows as the batch inputs) via Phase 0b core.
@@ -132,12 +145,12 @@ class CSvgp : public CStochasticOptimisable {
   void getOptParams(CMatrix& param) const;
   void setOptParams(const CMatrix& param);
 
-  // CStochasticOptimisable
+  // CStochasticOptimisable — in Cholesky mode, appends packed (m~, L) after opt params.
   unsigned int numData() const override { return nData; }
   double objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g) override;
-  void getStochasticParams(CMatrix& param) const override { getOptParams(param); }
-  void setStochasticParams(const CMatrix& param) override { setOptParams(param); }
-  unsigned int getStochasticNumParams() const override { return getOptNumParams(); }
+  void getStochasticParams(CMatrix& param) const override;
+  void setStochasticParams(const CMatrix& param) override;
+  unsigned int getStochasticNumParams() const override;
 
   // Optional interleaved natgrad after each Adam step (Phase 3).
   void setNatGradGamma(double g) { natGradGamma = g; }
@@ -148,6 +161,12 @@ class CSvgp : public CStochasticOptimisable {
   void initVariationalPrior();
   void packInducingGrad(CMatrix& gFlat, unsigned int offset, const CMatrix& gZ) const;
   void gatherXB(const vector<unsigned int>& batch, CMatrix& XB) const;
+  void syncCovFromChol();
+  void syncCholFromCov();
+  void ensureCholStorage();
+  // Accumulate ∂dataTerm/∂m (M x d) and symmetric ∂dataTerm/∂S_j into gM / gS.
+  void dataTermQGrads(const vector<unsigned int>& batch,
+                      CMatrix& gM, vector<CMatrix>& gS) const;
 
   // Gaussian likelihood: E_q[log N(y|f,1/beta)] and its derivatives w.r.t.
   // the marginal mean and variance of q(f).  Non-Gaussian noise plugs in here.
@@ -194,6 +213,8 @@ class CSvgp : public CStochasticOptimisable {
   // Whitened variational parameters q(v_j) = N(qMean(:,j), qCov[j]).
   CMatrix qMean;         // M x d
   vector<CMatrix> qCov;  // d of M x M
+  QParamMode qParamMode;
+  vector<CMatrix> qChol; // lower Cholesky of qCov[j] when QModeCholesky
 
   // CIP-002D QW7: reusable buffers (resized only when shape changes).
   mutable CMatrix wsAB;

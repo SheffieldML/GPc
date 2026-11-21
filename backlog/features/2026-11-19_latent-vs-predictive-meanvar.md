@@ -1,12 +1,12 @@
 ---
 id: "2026-11-19_latent-vs-predictive-meanvar"
 title: "Split posteriorMeanVar into latent and predictive (noisy) variants, GPy-style"
-status: "Proposed"
+status: "Abandoned"
 priority: "Medium"
 created: "2026-11-19"
-last_updated: "2026-11-19"
+last_updated: "2026-11-21"
 category: "features"
-related_cips: ["002A", "0027", "001D", "0026", "0023"]
+related_cips: ["0031", "002A", "0027", "001D", "0026", "0023"]
 owner: "Neil Lawrence"
 dependencies: []
 tags:
@@ -16,9 +16,13 @@ tags:
 - gpy
 - noise
 - consistency
+- superseded
 ---
 
 # Task: Split `posteriorMeanVar` into latent and predictive variants
+
+> **Abandoned (2026-11-21):** design promoted to [CIP-0031](../../cip/cip0031.md) (Proposed). Implementation backlog tasks spawn when that CIP is Accepted — do not implement from this file.
+>
 
 > Surfaced while verifying the [CIP-002A](../../cip/cip002A.md) SVGP prototype against `CGp` DTCVAR: predictive means agreed to 1e-14 but variances differed by exactly \(1/\beta\), because `CGp::posteriorMeanVar` adds observation noise on sparse paths while `CSvgp::posteriorMeanVar` returns the latent variance.
 
@@ -73,3 +77,7 @@ Follow-on inconsistencies to resolve in this task:
 ### 2026-11-19
 
 Task created from the CIP-002A prototype comparison; audit table above from `main` at merge time.
+
+### 2026-11-21
+
+Promoted to CIP-0031. Status → Abandoned; keep file as historical design source linked from the CIP.

@@ -1909,6 +1909,87 @@ class CCosineKern: public CStationaryKern {
   double lengthScale;
 };
 
+// Sinc Kernel --- GPy-aligned stationary Sinc: k(r)=variance*sinc(2r) with numpy sinc (CIP-0038).
+class CSincKern: public CStationaryKern {
+ public:
+  CSincKern();
+  CSincKern(unsigned int inDim);
+  CSincKern(const CMatrix& X);
+  ~CSincKern();
+  CSincKern(const CSincKern&);
+  CSincKern* clone() const
+  {
+    return new CSincKern(*this);
+  }
+  double getVariance() const;
+  void setVariance(double val)
+  {
+    variance = val;
+    invalidateWorkspace();
+  }
+  double scaleFactor() const { return 1.0 / lengthScale; }
+  double K_of_r(double r) const;
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void diagCompute(CMatrix& d, const CMatrix& X) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+
+ private:
+  void _init();
+  double dK_dr(double r) const;
+  double variance;
+  double lengthScale;
+};
+
+// ExpQuadCosine --- GPy spectral-mixture style: σ² exp(-2π² r²) cos(2π r / T) (CIP-0038).
+class CExpQuadCosineKern: public CStationaryKern {
+ public:
+  CExpQuadCosineKern();
+  CExpQuadCosineKern(unsigned int inDim);
+  CExpQuadCosineKern(const CMatrix& X);
+  ~CExpQuadCosineKern();
+  CExpQuadCosineKern(const CExpQuadCosineKern&);
+  CExpQuadCosineKern* clone() const
+  {
+    return new CExpQuadCosineKern(*this);
+  }
+  double getVariance() const;
+  void setVariance(double val)
+  {
+    variance = val;
+    invalidateWorkspace();
+  }
+  double scaleFactor() const { return 1.0 / lengthScale; }
+  double K_of_r(double r) const;
+  void setInitParam();
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void diagCompute(CMatrix& d, const CMatrix& X) const;
+  void setParam(double val, unsigned int paramNum);
+  double getParam(unsigned int paramNum) const;
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  double getWhite() const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+
+ private:
+  void _init();
+  double dK_dr(double r) const;
+  double variance;
+  double lengthScale;
+  double period;
+};
+
 // Brownian Motion Kernel --- GPy-aligned Brownian kernel, k(x,x')=variance*min(x,x') for a 1-D, same-signed index.
 class CBrownianKern: public CKern {
  public:

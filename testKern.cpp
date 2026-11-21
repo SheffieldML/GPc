@@ -35,6 +35,8 @@ int main()
 
     fail += testType("stdperiodic");
     fail += testType("cosine");
+    fail += testType("sinc");
+    fail += testType("expquadcosine");
     fail += testType("brownian");
 
     fail += testType("cmpnd");
@@ -183,6 +185,16 @@ int testType(const string kernelType)
   {
     kern = new CCosineKern(X);
     kern2 = new CCosineKern(X);
+  }
+  else if(kernelType=="sinc")
+  {
+    kern = new CSincKern(X);
+    kern2 = new CSincKern(X);
+  }
+  else if(kernelType=="expquadcosine")
+  {
+    kern = new CExpQuadCosineKern(X);
+    kern2 = new CExpQuadCosineKern(X);
   }
   else if(kernelType=="brownian")
   {

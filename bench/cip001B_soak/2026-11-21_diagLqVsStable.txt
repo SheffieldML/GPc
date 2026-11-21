@@ -1,0 +1,38 @@
+==== diagLqVsStable (CIP-001B) ====
+
+crowdZ_fitc                 legacy    ll=-7.308465e+01  fd_rel=5.328212e-06
+crowdZ_fitc                 stable    ll=-7.308465e+01  fd_rel=1.922948e-07
+crowdZ_fitc                 lq        ll=-7.308465e+01  fd_rel=1.922948e-07
+  stable→lq  |Δll|=0.000000e+00  Δfd_rel(lq-stable)=0.000000e+00  (FD ~equal)
+
+crowdZ_dtcvar               legacy    ll=-4.789219e+07  fd_rel=1.701330e+00
+crowdZ_dtcvar               stable    ll=-4.789219e+07  fd_rel=1.602030e+00
+crowdZ_dtcvar               lq        ll=-4.789219e+07  fd_rel=1.602030e+00
+  stable→lq  |Δll|=0.000000e+00  Δfd_rel(lq-stable)=4.440892e-16  (FD ~equal)
+
+crowdZ_dtc                  legacy    ll=-1.794870e+07  fd_rel=1.571346e+00
+crowdZ_dtc                  stable    ll=-1.794870e+07  fd_rel=1.501431e+00
+crowdZ_dtc                  lq        ll=-1.794870e+07  fd_rel=1.501431e+00
+  stable→lq  |Δll|=0.000000e+00  Δfd_rel(lq-stable)=-2.220446e-16  (FD ~equal)
+
+mild_dtcvar                 legacy    ll=-7.393336e+01  fd_rel=7.459747e-07
+mild_dtcvar                 stable    ll=-7.393336e+01  fd_rel=6.251824e-07
+mild_dtcvar                 lq        ll=-7.393336e+01  fd_rel=6.251824e-07
+  stable→lq  |Δll|=0.000000e+00  Δfd_rel(lq-stable)=0.000000e+00  (FD ~equal)
+
+gamma1000_M20_dtcvar        legacy    ll=-1.509877e+03  fd_rel=9.676021e-08
+gamma1000_M20_dtcvar        stable    ll=-1.509877e+03  fd_rel=9.676021e-08
+gamma1000_M20_dtcvar        lq        ll=-1.509877e+03  fd_rel=9.676021e-08
+  stable→lq  |Δll|=0.000000e+00  Δfd_rel(lq-stable)=0.000000e+00  (FD ~equal)
+
+largeN_clust_kufkfu_dtcvar  legacy    ll=-1.125491e+06  fd_rel=2.980343e-01
+largeN_clust_kufkfu_dtcvar  stable    ll=-1.125491e+06  fd_rel=2.980343e-01
+largeN_clust_kufkfu_dtcvar  lq        ll=-1.125491e+06  fd_rel=2.980343e-01
+  stable→lq  |Δll|=9.313226e-10  Δfd_rel(lq-stable)=-6.016268e-09  (lq better FD)
+
+Wrote bench/cip001B_soak/largeN_clust_kufkfu_dtcvar_{stable,lq}_state.txt
+Notes:
+  crowdZ_*: LQ ≡ StableFactor (Δll=0); FD util limited by K_uu/K_mm,
+            not the Seeger C-side regime.
+  largeN_clust_*: C = I+βBB^T stressed; pair with testLQAdjoint κ/SVD
+            gate and sparse_mp_reference.py on the dumped state.

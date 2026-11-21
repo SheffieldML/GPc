@@ -101,10 +101,12 @@ Gates:
 - Dual-path toy: `make testCGp && ./testCGp` (StableFactor + LQ sections) and `make diagDtcvar && ./diagDtcvar`.
 - LQ unit: `make testLQAdjoint && ./testLQAdjoint` (includes ill-conditioned \(K_{uf}K_{fu}\) logdet vs SVD — the large-\(N\) C-side cell, distinct from crowdZ). Offline: `python scripts/lq_sparse_prototype.py`.
 - γ×M stress dual-path: `make diagSparseStable && ./diagSparseStable` (DTC/DTCVAR/FITC/PITC).
-- Stable vs LQ hard cells: `make diagLqVsStable && ./diagLqVsStable` (crowdZ = \(K_{uu}\)-limited; `largeN_clust_kufkfu_*` = \(K_{uf}K_{fu}\)-limited).
+- Stable vs LQ hard cells: `make diagLqVsStable && ./diagLqVsStable` (crowdZ = \(K_{uu}\)/\(K_{mm}\)-limited; `largeN_clust_kufkfu_*` = \(K_{uf}K_{fu}\)-limited).
 - Numerical-stability suite dual-path metrics: `make compare-sparse-modes` (DTC/DTCVAR/FITC/PITC FD + Legacy↔StableFactor LL/grad gaps).
 - Numerical-stability stress: crowded-Z / protocol FITC+DTCVAR both-mode FD ordering; γ×M dual-path slice in CI via `make run-numerical-stability`.
-- Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`.
+- Maintainer mpmath (pin `mpmath`, dps 60): after `./diagDtcvar`, run `python scripts/sparse_mp_reference.py diag_dtcvar_state.txt --approx dtcvar`. Large-\(N\) clustered soak dumps: `python scripts/sparse_mp_reference.py bench/cip001B_soak/largeN_clust_kufkfu_dtcvar_{stable,lq}_state.txt --approx dtcvar --rtol 1e-5` (compound `white` in the dump).
+
+**Crowded \(Z\) vs large-\(N\) clustered (CIP-001B soak, 2026-11-21).** Collapsed inducing points (`crowdZ_*` in `diagLqVsStable`) make \(K_{uu}\) the bottleneck: LQ ≡ StableFactor (\(\Delta\mathrm{LL}=0\), equal FD util). That is a \(K_{mm}\)-limited regime — not where Seeger’s LQ of \([I,\sqrt{\beta}B]\) helps. The C-side cell is `largeN_clust_kufkfu_*` (and `testLQAdjoint`’s ill-conditioned \(K_{uf}K_{fu}\) gate): OK \(K_{uu}\), huge \(\kappa(K_{uf}K_{fu})\), dual-path \(\lvert\Delta\mathrm{LL}\rvert\sim 10^{-9}\), mpmath relative LL \(\sim 10^{-5}\). Recorded under `bench/cip001B_soak/`.
 
 ## Reference mismatches cleared in CIP-0003
 

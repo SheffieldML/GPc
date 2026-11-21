@@ -43,7 +43,10 @@ public:
   // Copy shared latents into this view (MRD).
   void setLatents(const CMatrix& muIn, const CMatrix& SIn, const CMatrix& ZIn);
 
-  // Predictive mean/var of Y at fixed latent points Xstar (N* x q).
+  // CIP-0031: latent = p(f_*); predictive adds 1/β.
+  void latentMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
+  void predictiveMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
+  // Deprecated alias: same as predictiveMeanVar (pre-0031 added 1/β).
   void posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
 
   unsigned int getOptNumParams() const;

@@ -74,7 +74,7 @@ void CIvm::test(const CMatrix& ytest, const CMatrix& Xin) const
   DIMENSIONMATCH(ytest.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), getOutputDim());
   CMatrix varSigmaOut(Xin.getRows(), getOutputDim());
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   pnoise->test(muout, varSigmaOut, ytest);
 }
 void CIvm::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
@@ -84,7 +84,7 @@ void CIvm::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
   DIMENSIONMATCH(yTest.dimensionsMatch(pout));
   CMatrix muout(Xin.getRows(), getOutputDim());
   CMatrix varSigmaOut(Xin.getRows(), getOutputDim());
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   pnoise->likelihoods(pout, muout, varSigmaOut, yTest);
 }
 double CIvm::logLikelihood(const CMatrix& yTest, const CMatrix& Xin) const
@@ -94,7 +94,7 @@ double CIvm::logLikelihood(const CMatrix& yTest, const CMatrix& Xin) const
   DIMENSIONMATCH(getOutputDim()==yTest.getCols());
   CMatrix muout(Xin.getRows(), getOutputDim());
   CMatrix varSigmaOut(Xin.getRows(), getOutputDim());
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   return pnoise->logLikelihood(muout, varSigmaOut, yTest)+pkern->priorLogProb();
 }
 void CIvm::out(CMatrix& yout, const CMatrix& Xin) const
@@ -103,7 +103,8 @@ void CIvm::out(CMatrix& yout, const CMatrix& Xin) const
   DIMENSIONMATCH(yout.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), getOutputDim());
   CMatrix varSigmaOut(Xin.getRows(), getOutputDim());
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  // CIP-0031: latent into noise.out.
+  latentMeanVar(muout, varSigmaOut, Xin);
   pnoise->out(yout, muout, varSigmaOut);
 }
 void CIvm::out(CMatrix& yout, CMatrix& probout, const CMatrix& Xin) const
@@ -112,7 +113,7 @@ void CIvm::out(CMatrix& yout, CMatrix& probout, const CMatrix& Xin) const
   DIMENSIONMATCH(yout.getRows()==Xin.getRows());
   CMatrix muout(Xin.getRows(), getOutputDim());
   CMatrix varSigmaOut(Xin.getRows(), getOutputDim());
-  posteriorMeanVar(muout, varSigmaOut, Xin);
+  latentMeanVar(muout, varSigmaOut, Xin);
   pnoise->out(yout, probout, muout, varSigmaOut);
 }
 double CIvm::outGradParams(CMatrix& g, const CMatrix &Xin, unsigned int pointNo, unsigned int outputNo) const
@@ -123,7 +124,7 @@ double CIvm::outGradX(CMatrix& g, const CMatrix &Xin, unsigned int pointNo, unsi
 {
   throw ndlexceptions::NotImplementedError("outGradX not yet implemented for CIvm.");
 }
-void CIvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+void CIvm::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
 {
   DIMENSIONMATCH(mu.getCols()==getOutputDim());
   DIMENSIONMATCH(varSigma.getCols()==getOutputDim());
@@ -160,6 +161,24 @@ void CIvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) 
       mu.gemvColCol(k, Lk, m, k, 1.0, 0.0, "N");
     }
   }
+}
+
+void CIvm::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  latentMeanVar(mu, varSigma, Xin);
+  if(pnoise != 0 && pnoise->getType() == "gaussian")
+  {
+    const double sigma2 = static_cast<const CGaussianNoise*>(pnoise)->getVariance();
+    for(unsigned int i = 0; i < varSigma.getRows(); i++)
+      for(unsigned int j = 0; j < varSigma.getCols(); j++)
+        varSigma.setVal(varSigma.getVal(i, j) + sigma2, i, j);
+  }
+}
+
+void CIvm::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin) const
+{
+  // CIP-0031: deprecated alias — IVM historically returned latent variance.
+  latentMeanVar(mu, varSigma, Xin);
 }
 void CIvm::initStoreage()
 {

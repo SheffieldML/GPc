@@ -54,7 +54,12 @@ public:
   void factorizeSpace(vector<unsigned int>& shared, vector<unsigned int>& private0,
                       vector<unsigned int>& private1, double threshold = 0.005) const;
 
-  // Predict for a chosen view at fixed Xstar.
+  // CIP-0031: per-view latent / predictive (delegates to CBayesGplvm).
+  void latentMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
+                     const CMatrix& Xstar) const;
+  void predictiveMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
+                         const CMatrix& Xstar) const;
+  // Deprecated alias: predictive (matches pre-0031 CBayesGplvm).
   void posteriorMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
                         const CMatrix& Xstar) const;
 

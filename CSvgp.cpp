@@ -566,7 +566,7 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
   }
 }
 
-void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const
+void CSvgp::latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const
 {
   const unsigned int M = numInducing;
   const unsigned int Ns = Xs.getRows();
@@ -589,6 +589,21 @@ void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) 
       varSigma.setVal(kss - q + a.dotColCol(0, Sa, 0), i, j);
     }
   }
+}
+
+void CSvgp::predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const
+{
+  latentMeanVar(mu, varSigma, Xs);
+  const double noise = 1.0 / beta;
+  for(unsigned int i = 0; i < varSigma.getRows(); i++)
+    for(unsigned int j = 0; j < varSigma.getCols(); j++)
+      varSigma.setVal(varSigma.getVal(i, j) + noise, i, j);
+}
+
+void CSvgp::posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const
+{
+  // CIP-0031: deprecated alias — SVGP historically returned latent variance.
+  latentMeanVar(mu, varSigma, Xs);
 }
 
 double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta) const

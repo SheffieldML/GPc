@@ -9,6 +9,7 @@ set(GPC_PY_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/matrix_numpy.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_gp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_gplvm.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_deepgp.cpp
 )
 
 pybind11_add_module(_gpc MODULE ${GPC_PY_SOURCES})

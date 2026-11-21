@@ -9,6 +9,7 @@ import numpy as np
 from . import kern as kern_mod
 from ._display import OptimiserTableProgress, format_model_description
 from ._gpc import BayesianGPLVM as _BayesianGPLVM
+from ._gpc import DeepGP as _DeepGP
 from ._gpc import GPClassification as _GPClassification
 from ._gpc import GPLVM as _GPLVM
 from ._gpc import GPRegression as _GPRegression
@@ -495,6 +496,116 @@ class MRD(_MRD):
 
 
 
+
+class DeepGP(_DeepGP):
+    """Deep GP by doubly stochastic VI on stacked ``CSvgp`` layers (CIP-0035).
+
+    Parameters
+    ----------
+    X, Y :
+        Training inputs / outputs (NumPy arrays).
+    layers :
+        Number of GP layers ``L`` (default 2).
+    hidden :
+        Intermediate width (default ``X.shape[1]``).
+    num_inducing :
+        Int or length-``L`` sequence of inducing counts.
+    kernel :
+        ``'rbf'``, ``'mlp'``, or ``'lin'`` (same type on every layer).
+    inducing :
+        ``'points'`` or ``'weightspace'`` (MLP only).
+    chi, beta :
+        Hidden variance scale and observation precision init.
+    drop_residual :
+        If True, omit Nyström residual (finite-network bound).
+    likelihood :
+        ``'gaussian'``, ``'probit'``, or ``'ordered'``.
+    num_categories :
+        Categories for ordered likelihood.
+    """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        layers: int = 2,
+        hidden: int = -1,
+        num_inducing: Any = 10,
+        kernel: str = "rbf",
+        inducing: str = "points",
+        chi: float = 1.0,
+        beta: float = 1.0,
+        drop_residual: bool = False,
+        likelihood: str = "gaussian",
+        num_categories: int = 3,
+        verbosity: int = 0,
+    ) -> None:
+        super().__init__(
+            X,
+            Y,
+            layers=layers,
+            hidden=hidden,
+            num_inducing=num_inducing,
+            kernel=kernel,
+            inducing=inducing,
+            chi=chi,
+            beta=beta,
+            drop_residual=drop_residual,
+            likelihood=likelihood,
+            num_categories=num_categories,
+            verbosity=verbosity,
+        )
+
+    def __str__(self) -> str:  # noqa: D105
+        return format_model_description(
+            self.describe(),
+            name="Deep GP",
+            objective=self.objective(),
+        )
+
+    def __repr__(self) -> str:  # noqa: D105
+        return self.__str__()
+
+    @classmethod
+    def load(cls, path: str) -> Any:
+        """Load a ``deepgp`` ``.model`` stream.
+
+        Returns the bound C++ ``DeepGP`` instance (same methods as
+        :class:`DeepGP` for ``elbo`` / ``predict`` / ``save``; construct a
+        fresh :class:`DeepGP` when you need the Python ``optimize`` wrapper).
+        """
+        return _DeepGP.load(path)
+
+    def optimize(
+        self,
+        iters: int = 100,
+        batch_size: int = -1,
+        samples: int = 1,
+        adam_lr: float = 1e-2,
+        natgrad_gamma: float = 0.0,
+        seed: int = 0,
+        messages: bool = False,
+        callback: Callable[[OptimiserEvent], Any] | None = None,
+    ) -> None:
+        """Adam training (maximises ELBO); ``messages=True`` uses the paramz table."""
+        _DeepGP.optimize(
+            self,
+            iters=iters,
+            batch_size=batch_size,
+            samples=samples,
+            adam_lr=adam_lr,
+            natgrad_gamma=natgrad_gamma,
+            seed=seed,
+            messages=False,
+            callback=_build_callback(
+                self,
+                messages=messages,
+                callback=callback,
+                display_name="Deep GP",
+                max_iters=iters,
+            ),
+        )
+
 __all__ = [
     "GPRegression",
     "SparseGPRegression",
@@ -503,4 +614,5 @@ __all__ = [
     "GPLVM",
     "BayesianGPLVM",
     "MRD",
+    "DeepGP",
 ]

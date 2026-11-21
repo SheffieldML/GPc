@@ -23,7 +23,7 @@ tags:
 
 CIP-001C / 0028 ship \(s\) (`window_width`) **fixed by default** for conditioning. That is intentional policy, not a product bug. However `CInducingWeightSpace` already has a `learnS` flag and param pack/unpack, while `gradFromKuuKuf` does `(void)learnS` — no \(\partial L/\partial s\) is returned (kernel-level `wsGradS` / `wsRidgeGradS` already exist and are FD-gated in `testCGp`). Softness of the smoothed erf units is therefore stuck unless the user hand-sweeps \(s\).
 
-This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp packing + Python opt-in). Per-inducing \(s_m\) stays out of scope (future CIP).
+This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp packing + Python opt-in). Per-inducing \(s_m\) is out of scope here — see [CIP-0032](../../cip/cip0032.md) / [`2026-11-21_weightspace-per-unit-window-width`](./2026-11-21_weightspace-per-unit-window-width.md).
 
 ## Acceptance Criteria
 
@@ -42,7 +42,7 @@ This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp pa
 
 - CIP: 0028, 001C
 - Sibling: `2026-11-21_weightspace-inducing-fixed-default`
-- Non-goal: per-inducing \(s_m\) (new CIP if pursued)
+- Non-goal here: per-inducing \(s_m\) → [CIP-0032](../../cip/cip0032.md)
 
 ## Progress Updates
 
@@ -51,3 +51,5 @@ This backlog wires **one global** learnable \(s\) end-to-end (C++ grads + CGp pa
 Task created; `learnS` packing exists, gradient path voided.
 
 Wired `gScache` via FD on `fillKuu` + `wsGradS`/`wsRidgeGradS`; CGp packs `windowWidthGrad`; Python `learn_window_width`; FD gate in `testWeightSpaceInducingPhase1Ridge`. SVGP learnS slots still zero (out of scope).
+
+Follow-on: paths/describe omitted \(s\) (looked inert) — fixed in `2026-11-21_window-width-invisible-in-describe`.

@@ -88,6 +88,8 @@ Fixed window width: `--window-width` (default: median nearest-neighbour spacing 
 
 Stability cells: `wn_ls_sweep_*` (point vs white-noise RBF); `greens_var_sweep_*` / `greens_ls_sweep_*` (Brownian variance and Matérn lengthscale vs greens); `ws_ridge_wv_sweep_*` (ridge weight-space: \(\kappa\) flat in `weightVariance`, variance captured, DTCVAR finite under StableFactor/LQ).
 
+**Reading CIP-0019 PR soak comments.** Path-triggered runs sticky-comment the full metric table. Rows marked ⚠️ over budget with **New: 0** are documented standing debt (point-\(K_{uu}\) \(\kappa\), FITC \(Z=X\) gap, ridge capture util labelling) — see [`numerical_stability/KNOWN_DEBT.md`](../numerical_stability/KNOWN_DEBT.md). Do not treat that comment as evidence that a likelihood/EP PR regressed numerics unless **New** or **Forward** is nonzero.
+
 ## Sparse inducing linear algebra ([CIP-000E](../cip/cip000E.md) / [CIP-0012](../cip/cip0012.md) / [CIP-001B](../cip/cip001B.md))
 
 Runtime flag only (not stored in `.model` files). Toggle with `CGp::setSparseLinalgMode` or `gp … --sparse-linalg stable|lq|legacy` (prefer the long form: short `-L` collides with `--Learn-scales`).

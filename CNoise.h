@@ -37,7 +37,7 @@ const string NOISEVERSION="0.1";
  *   variational_expectations — E_q[log p(y|f)]  (maps to expectedLogLikelihood)
  *   log_predictive_density   — log E_q[p(y|f)]  (maps to logLikelihood(mu,var,y))
  *   predictive_moments       — out() mean / variance of the observation
- *   ep_moments               — deferred to follow-on likelihood/inference CIP
+ *   ep_moments               — CIP-0033: Bernoulli–probit (GPy moments_match_ep)
  *
  * Batched helpers take contiguous (Y, mu, var) blocks and write into
  * caller-provided buffers. They take observation variance as a parameter so
@@ -75,6 +75,38 @@ double gaussianLogPredictiveDensity(const CMatrix& y,
                                     const CMatrix& var,
                                     double sigma2,
                                     const double* biasOrNull = 0);
+
+/** GPy Bernoulli+Probit moments_match_ep for one observation.
+ *  Cavity natural params (tauCav, vCav); y in {0,1} or {-1,1}.
+ *  Writes Zhat, muHat, sigma2Hat (GPy return order). */
+void bernoulliProbitEpMoments(double& Zhat,
+                              double& muHat,
+                              double& sigma2Hat,
+                              double y,
+                              double tauCav,
+                              double vCav);
+
+/** Batched ep_moments: Y, tauCav, vCav are N×1 (or N×d with d=1 for v1). */
+void bernoulliProbitEpMoments(CMatrix& Zhat,
+                              CMatrix& muHat,
+                              CMatrix& sigma2Hat,
+                              const CMatrix& y,
+                              const CMatrix& tauCav,
+                              const CMatrix& vCav);
+
+/** Bernoulli–probit log-density and Laplace Hessian pieces at latent f.
+ *  y in {0,1} or {-1,1}. Writes:
+ *    logp = log Φ(s f), s=±1
+ *    d1   = ∂logp/∂f
+ *    W    = −∂²logp/∂f²  (≥0; GPy / R&W)
+ *    dWdf = ∂W/∂f        (= −∂³logp/∂f³)
+ */
+void bernoulliProbitLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f);
 
 } // namespace ndlnoise
 

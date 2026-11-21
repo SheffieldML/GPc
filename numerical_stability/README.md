@@ -63,6 +63,11 @@ METRIC name=<id> category=<cat> value=<float> budget=<float> unit=<rel|abs> cell
 Exit code is non-zero on `failed` or `xpassed`. Metric over-budget is **soft**
 during soak (does not fail the suite alone).
 
+**Sticky PR reports** often show ⚠️ over-budget rows with **Status: known debt**
+and **New: 0**. That means standing soft metrics re-measured after a
+path-triggered run — not that the PR introduced them. Catalogue:
+[KNOWN_DEBT.md](./KNOWN_DEBT.md).
+
 ## Categories (CIP-001A)
 
 Metric budgets follow the CIP-001A **error-source** table — they are **not** the
@@ -136,6 +141,7 @@ python3 numerical_stability/compare.py \
 
 ## See also
 
+- [KNOWN_DEBT.md](./KNOWN_DEBT.md) — standing xfails + soft over-budget metrics
 - [CIP-0019](../cip/cip0019.md) — outcome suite + report surface
 - [CIP-001A](../cip/cip001A.md) — categorised metrics + baseline trend
 - GPy CIP-0011 — sibling policy in the GPy repo

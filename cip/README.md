@@ -63,6 +63,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0030](./cip0030.md): Uncollapsed Bayesian GP-LVM — sampled \(q(\mathbf X)\) on the SVGP machinery, for any inducing family (**Closed**); Phase 0 routes `CSvgp` through `CInducing` and is independently shippable.
 - [CIP-0031](./cip0031.md): Split `posteriorMeanVar` into latent and predictive (GPy-style) (**Implemented** — worktree `GPc-cip0031` / `cip0031-latent-predictive`). Implements prediction-contract pieces of [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [REQ-0002](../requirements/req0002_runnable-verification.md) / [REQ-0014](../requirements/req0014_observation-noise-in-likelihood.md). Supersedes backlog `2026-11-19_latent-vs-predictive-meanvar`.
 - [CIP-0032](./cip0032.md): Per-unit window widths \(s_m\) for weight-space ridges (**Implemented** — branch `cip0032-per-unit-window-width`). Extends [CIP-0028](./cip0028.md) so each ridge can learn its own softness (MLP-equivalent per-unit scale on the VIK side); tied global \(s\) remains default.
+- [CIP-0033](./cip0033.md): Likelihood/inference split to unblock **EP and Laplace** on `CGp` (**In Progress** — branch `cip0033-likelihood-inference-ep`). Implements [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md); GPy Bernoulli+Probit+EP mirror; spawned from [CIP-0027](./cip0027.md); cites [`docs/target-architecture.md`](../docs/target-architecture.md).
 
 ## Creating a Good CIP
 

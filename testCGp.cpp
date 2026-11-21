@@ -99,15 +99,15 @@ int testPrediction()
     CMatrix yPred(2, 1);
     CMatrix prob(2, 1);
     toy.model->posteriorMean(mu, Xtest);
-    toy.model->posteriorMeanVar(mu, var, Xtest);
+    toy.model->predictiveMeanVar(mu, var, Xtest);
     toy.model->out(yPred, Xtest);
     toy.model->out(yPred, prob, Xtest);
     fail += failTrue(mu.getRows() == 2 && var.getVal(0, 0) > 0.0,
-                     "FTC posteriorMeanVar finite");
+                     "FTC predictiveMeanVar finite");
     // Non-unit scale / non-zero bias exercise scale branches in prediction.
     toy.model->setScaleVal(1.5, 0);
     toy.model->setBiasVal(0.25, 0);
-    toy.model->posteriorMeanVar(mu, var, Xtest);
+    toy.model->predictiveMeanVar(mu, var, Xtest);
     fail += failTrue(fabs(mu.getVal(0, 0)) > 0.0 || true, "FTC scaled posterior");
   }
 
@@ -121,7 +121,7 @@ int testPrediction()
     CMatrix var(2, 1);
     CMatrix yPred(2, 1);
     toy.model->posteriorMean(mu, Xtest);
-    toy.model->posteriorMeanVar(mu, var, Xtest);
+    toy.model->predictiveMeanVar(mu, var, Xtest);
     toy.model->out(yPred, Xtest);
     fail += failTrue(var.getVal(0, 0) > 0.0,
                      string("sparse posterior ") + toy.model->getApproximationStr());
@@ -292,9 +292,9 @@ int testStableSparse()
     ToyGp tp(predApprox[k]);
     CMatrix muL(2, 1), varL(2, 1), muS(2, 1), varS(2, 1);
     tp.model->setStableSparseLinalg(false);
-    tp.model->posteriorMeanVar(muL, varL, Xtest);
+    tp.model->predictiveMeanVar(muL, varL, Xtest);
     tp.model->setStableSparseLinalg(true);
-    tp.model->posteriorMeanVar(muS, varS, Xtest);
+    tp.model->predictiveMeanVar(muS, varS, Xtest);
     double pdiff = 0.0;
     for(unsigned int i = 0; i < 2; i++)
     {
@@ -1343,7 +1343,7 @@ int testWhiteNoiseInducing()
       CMatrix Xtest(2, Q);
       Xtest.setVal(0.1, 0, 0);
       Xtest.setVal(-0.5, 1, 0);
-      toy.model->posteriorMeanVar(mu, var, Xtest);
+      toy.model->predictiveMeanVar(mu, var, Xtest);
       fail += failTrue(std::isfinite(mu.getVal(0)) && std::isfinite(var.getVal(0)),
                        string("WN ") + toy.model->getApproximationStr() + " predict finite");
     }
@@ -3224,7 +3224,14 @@ int testLatentPredictive()
     CMatrix muL(2, 1), varL(2, 1), muP(2, 1), varP(2, 1), muA(2, 1), varA(2, 1);
     model.latentMeanVar(muL, varL, Xtest);
     model.predictiveMeanVar(muP, varP, Xtest);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
     model.posteriorMeanVar(muA, varA, Xtest);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
     fail += failTrue(fabs(muL.getVal(0) - muP.getVal(0)) < 1e-14,
                      "FTC latent/predictive means match");
     fail += failTrue(fabs(varP.getVal(0) - varL.getVal(0) - sigma2) < 1e-12,

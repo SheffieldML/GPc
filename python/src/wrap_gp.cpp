@@ -280,7 +280,8 @@ std::pair<py::array_t<double>, py::array_t<double>> predictImpl(
     CGp& model,
     const CMatrix& X,
     const CMatrix& Y,
-    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest)
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+    bool includeObservationNoise)
 {
   CMatrix Xt = matrixFromNumpy(Xtest);
   if(Xt.getCols() != X.getCols())
@@ -288,7 +289,11 @@ std::pair<py::array_t<double>, py::array_t<double>> predictImpl(
 
   CMatrix mu(Xt.getRows(), Y.getCols());
   CMatrix varSigma(Xt.getRows(), Y.getCols());
-  model.posteriorMeanVar(mu, varSigma, Xt);
+  // CIP-0031: predictive (y_*) vs latent (f_*).
+  if(includeObservationNoise)
+    model.predictiveMeanVar(mu, varSigma, Xt);
+  else
+    model.latentMeanVar(mu, varSigma, Xt);
   return {matrixToNumpy(mu), matrixToNumpy(varSigma)};
 }
 
@@ -391,7 +396,13 @@ double PyGPRegression::objective() const
 std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
 {
-  return predictImpl(*model, X, Y, Xtest);
+  return predictImpl(*model, X, Y, Xtest, true);
+}
+
+std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict_noiseless(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+{
+  return predictImpl(*model, X, Y, Xtest, false);
 }
 
 PySparseGPRegression::PySparseGPRegression(
@@ -572,7 +583,13 @@ double PySparseGPRegression::objective() const
 std::pair<py::array_t<double>, py::array_t<double>> PySparseGPRegression::predict(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
 {
-  return predictImpl(*model, X, Y, Xtest);
+  return predictImpl(*model, X, Y, Xtest, true);
+}
+
+std::pair<py::array_t<double>, py::array_t<double>> PySparseGPRegression::predict_noiseless(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+{
+  return predictImpl(*model, X, Y, Xtest, false);
 }
 
 py::array_t<double> PySparseGPRegression::inducing_inputs() const
@@ -688,7 +705,13 @@ void bind_gp(py::module_& m)
       .def("predict",
            &PyGPRegression::predict,
            py::arg("Xtest"),
-           "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+           "Predictive mean/variance of y_* at Xtest (includes observation noise).\n"
+           "Returns (mu, var) NumPy arrays. CIP-0031 / GPy predict.")
+      .def("predict_noiseless",
+           &PyGPRegression::predict_noiseless,
+           py::arg("Xtest"),
+           "Latent mean/variance of f_* at Xtest (no observation noise).\n"
+           "Returns (mu, var) NumPy arrays. CIP-0031 / GPy predict_noiseless.")
       .def("describe", &PyGPRegression::describe, "Structured ModelDescription (CIP-001E).")
       .def("__str__", &PyGPRegression::to_string)
       .def("__repr__", &PyGPRegression::to_string)
@@ -760,7 +783,13 @@ void bind_gp(py::module_& m)
       .def("predict",
            &PySparseGPRegression::predict,
            py::arg("Xtest"),
-           "Predict posterior mean and variance at Xtest; returns (mu, var) NumPy arrays.")
+           "Predictive mean/variance of y_* at Xtest (includes observation noise).\n"
+           "Returns (mu, var) NumPy arrays. CIP-0031 / GPy predict.")
+      .def("predict_noiseless",
+           &PySparseGPRegression::predict_noiseless,
+           py::arg("Xtest"),
+           "Latent mean/variance of f_* at Xtest (no observation noise).\n"
+           "Returns (mu, var) NumPy arrays. CIP-0031 / GPy predict_noiseless.")
       .def("describe",
            &PySparseGPRegression::describe,
            "Structured ModelDescription (CIP-001E).")

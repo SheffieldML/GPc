@@ -1072,7 +1072,7 @@ int testModels()
       Xs.setVal(-5.0 + 20.0 * (double)i / 49.0, i, 0);
     CMatrix mu(50, 1);
     CMatrix var(50, 1);
-    gp.model->posteriorMeanVar(mu, var, Xs);
+    gp.model->predictiveMeanVar(mu, var, Xs);
     bool ok = allFinite(mu) && allFinite(var);
     for(unsigned int i = 0; i < 50; i++)
       if(var.getVal(i, 0) < -1e-10)

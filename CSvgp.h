@@ -71,7 +71,7 @@ class CSvgp : public CStochasticOptimisable {
   // CIP-0031: latent = p(f_*); predictive adds 1/β for Gaussian observation noise.
   void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
   void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
-  // Deprecated alias: same as latentMeanVar (pre-0031 SVGP returned latent variance).
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xs) const;
 
   // KL(q(u_j) || p(u)).

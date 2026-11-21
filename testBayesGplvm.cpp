@@ -315,7 +315,7 @@ int testPosteriorMeanVar()
 
   CMatrix means(nStar, D);
   CMatrix vars(nStar, D);
-  model.posteriorMeanVar(means, vars, Xstar);
+  model.predictiveMeanVar(means, vars, Xstar);
   for(unsigned int i = 0; i < nStar; i++)
   {
     for(unsigned int d = 0; d < D; d++)
@@ -324,7 +324,7 @@ int testPosteriorMeanVar()
       const double v = vars.getVal(i, d);
       if(std::isnan(m) || std::isinf(m) || std::isnan(v) || std::isinf(v) || v < 0.0)
       {
-        cout << "FAILURE: posteriorMeanVar not finite/nonneg at ("
+        cout << "FAILURE: predictiveMeanVar not finite/nonneg at ("
              << i << "," << d << ")" << endl;
         return 1;
       }
@@ -336,7 +336,7 @@ int testPosteriorMeanVar()
       return 1;
     }
   }
-  cout << "OK: posteriorMeanVar finite" << endl;
+  cout << "OK: predictiveMeanVar finite" << endl;
   return 0;
 }
 

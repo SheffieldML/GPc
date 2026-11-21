@@ -634,7 +634,7 @@ CIvm::CIvm(CMatrix* inData,
   }
   CMatrix mu(getNumData(), getOutputDim());
   CMatrix varSigma(getNumData(), getOutputDim());
-  posteriorMeanVar(mu, varSigma, *pX);
+  latentMeanVar(mu, varSigma, *pX);
   pnoise->setMus(mu);
   pnoise->setVarSigmas(varSigma);
   updateNuG();

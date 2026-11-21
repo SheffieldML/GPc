@@ -674,7 +674,7 @@ CPpa::CPpa(const CMatrix& inData,
     }
   CMatrix mu(numData, numTarget);
   CMatrix varSigma(numData, numTarget);
-  posteriorMeanVar(mu, varSigma, X);
+  latentMeanVar(mu, varSigma, X);
   noise.setMus(mu);
   noise.setVarSigmas(varSigma);
   updateNuG();

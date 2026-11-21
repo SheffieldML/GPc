@@ -18,6 +18,7 @@ m = GPy.models.GPRegression(X, Y, k)
 m["rbf.lengthscale"] = 0.2
 m.optimize()
 mu, var = m.predict(X)
+mu_f, var_f = m.predict_noiseless(X)
 ```
 
 **`gpc` (kern / models form)**
@@ -29,16 +30,17 @@ import gpc
 X = np.linspace(0, 1, 20)[:, None]
 Y = np.sin(2 * np.pi * X) + 0.05 * np.random.randn(20, 1)
 
-k = gpc.kern.RBF(1) + gpc.kern.Bias(1) + gpc.kern.White(1)
+k = gpc.kern.RBF(1)  # CIP-0027: Bias/White opt-in; noise is likelihood.variance
 m = gpc.models.GPRegression(X, Y, kernel=k)
 m.set_by_path("rbf.lengthscale", 0.2)
 m.optimize(iters=50)
-mu, var = m.predict(X)
+mu, var = m.predict(X)  # y_* (includes observation noise)
+mu_f, var_f = m.predict_noiseless(X)  # f_* (CIP-0031)
 print(m.param_paths())
 print(m.objective())  # −log-likelihood (SCG minimises this)
 ```
 
-**Shorthand (default compound):** `gpc.GPRegression(X, Y)` still builds signal + bias + white for `kernel='rbf'` / `'eq'` / `'mlp'` / `'arccos'` string names.
+**Shorthand:** string `kernel='rbf'` / `'eq'` / `'mlp'` / `'arccos'` builds a **signal-only** compound; observation noise is `likelihood.variance` (CIP-0027).
 
 Install / build: see [`../README.md`](../README.md).
 
@@ -46,10 +48,11 @@ Install / build: see [`../README.md`](../README.md).
 
 | Topic | GPy | `gpc` |
 |---|---|---|
-| Kernel construction | `GPy.kern.*` + `+` | `gpc.kern.*` + `+` → exact compound; string `kernel=` keeps auto Bias/White |
+| Kernel construction | `GPy.kern.*` + `+` | `gpc.kern.*` + `+` → exact compound; string `kernel=` is signal-only (CIP-0027) |
 | Parameter access | `m["rbf.lengthscale"]` / paramz | `set_by_path` / `get_by_path` / `param_paths` (CIP-0014 units) |
 | Objective | log-likelihood (maximise) | `objective()` is **−log-likelihood** (minimise) |
-| Noise | Often `Gaussian` likelihood variance | Prefer observation noise via `White` (or string-default white); noiseless \(Y\) drives white→0 |
+| Noise | `likelihood.variance` / `Gaussian_noise.variance` | Same paths (CIP-0027); sparse algebra may keep internal \(\beta\) |
+| Predict | `predict` / `predict_noiseless` | Same names (CIP-0031): `y_*` vs `f_*` |
 | Sparse | `SparseGPRegression` / VarDTC | `gpc.models.SparseGPRegression(..., Z=Z, kernel=k)` → default `dtcvar`; also `approx="fitc"` / `"dtc"` |
 
 ## CLI twin

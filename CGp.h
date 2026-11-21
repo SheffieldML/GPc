@@ -64,7 +64,7 @@ public:
   // CIP-0031: latent = p(f_*); predictive = p(y_*) for Gaussian (adds obs noise once).
   void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
-  // Deprecated alias: same as predictiveMeanVar on CGp (pre-0031 posteriorMeanVar).
+  [[deprecated("CIP-0031: use predictiveMeanVar (or latentMeanVar for f_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   void posteriorMean(CMatrix& mu, const CMatrix& X) const;
   // Gradient routines

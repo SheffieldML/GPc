@@ -1132,7 +1132,7 @@ int main()
           {
             sv.naturalGradientStep(1.0);
             CMatrix mu, var;
-            sv.posteriorMeanVar(mu, var, X);
+            sv.latentMeanVar(mu, var, X);
             for(unsigned int i = 0; i < N; i++)
               if(!(isfinite(mu.getVal(i, 0)) && isfinite(var.getVal(i, 0))
                    && var.getVal(i, 0) >= 0.0))

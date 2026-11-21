@@ -8,6 +8,7 @@
 #include "matrix_numpy.h"
 #include "ndlexceptions.h"
 #include "wrap_gp.h"
+#include "wrap_gplvm.h"
 
 namespace py = pybind11;
 
@@ -78,4 +79,5 @@ PYBIND11_MODULE(_gpc, m)
         "Copy CMatrix to a NumPy array.");
 
   bind_gp(m);
+  bind_gplvm(m);
 }

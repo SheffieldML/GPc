@@ -29,9 +29,12 @@ from ._gpc import (
     matrix_to_numpy,
 )
 from .models import (
+    BayesianGPLVM,
     GPClassification,
     GPCoregionalizedRegression,
+    GPLVM,
     GPRegression,
+    MRD,
     SparseGPRegression,
 )
 
@@ -40,6 +43,9 @@ __all__ = [
     "SparseGPRegression",
     "GPClassification",
     "GPCoregionalizedRegression",
+    "GPLVM",
+    "BayesianGPLVM",
+    "MRD",
     "Matrix",
     "GpcError",
     "OptimiserEvent",

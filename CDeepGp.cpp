@@ -298,6 +298,16 @@ void CDeepGp::setLayerLearnWindowWidth(unsigned int ell, bool learn, bool untied
   packLayerOffsets();
 }
 
+void CDeepGp::setLikelihood(CNoise* noise)
+{
+  layers.back()->setLikelihood(noise);
+}
+
+CNoise* CDeepGp::getLikelihood() const
+{
+  return layers.back()->getLikelihood();
+}
+
 void CDeepGp::packLayerOffsets()
 {
   layerParamOffset.resize(numLayers + 1);

@@ -37,14 +37,15 @@ def test_mlp_construct_paths_optimize_predict():
     assert np.all(var >= 0.0)
 
 
-def test_mlp_string_kernel_scales_weight_variance_to_input():
-    # Calendar-scale X: default weight_variance must be O(1/Var(X)), else arcsin saturates.
+def test_mlp_defaults_match_gpy_constants():
     X = np.linspace(1896.0, 2024.0, 20)[:, None]
     Y = np.linspace(3.0, 4.5, 20)[:, None] + 0.05
     m = gpc.GPRegression(X, Y, kernel="mlp")
-    expected = 1.0 / float(np.var(X))
-    assert m.get_by_path("mlp.weight_variance") == pytest.approx(expected, rel=1e-6)
+    assert m.get_by_path("mlp.weight_variance") == pytest.approx(1.0)
     assert m.get_by_path("mlp.bias_variance") == pytest.approx(1.0)
+    assert m.get_by_path("mlp.variance") == pytest.approx(1.0)
+    # Notebook-style year-scale init (not a library default).
+    m.set_by_path("mlp.weight_variance", 1.0 / float(np.var(X)))
     m.optimize(iters=80)
     Xtest = np.linspace(1890.0, 2030.0, 100)[:, None]
     mu, _ = m.predict(Xtest)

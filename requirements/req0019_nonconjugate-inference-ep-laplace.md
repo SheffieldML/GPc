@@ -1,7 +1,7 @@
 ---
 id: "0019"
 title: "Non-conjugate inference on CGp: EP and Laplace over pure likelihoods"
-status: "In Progress"
+status: "Validated"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -24,14 +24,14 @@ Likelihood objects are **parameters plus batched pure functions** (log density, 
 
 ## Acceptance Criteria
 
-- [ ] `CNoise` (or successor likelihood type) holds **parameters only** on the hot path: no owned `py`, no per-point `mu` / `varSigma` site caches as likelihood state *(Phase D: dual-write workspace landed; full strip follow-on)*
+- [x] `CNoise` holds **parameters only** on the hot path for site state: per-point caches live in `CNoiseSiteWorkspace` (owned fallback or inference-attached); `py` is a **non-owning** pointer (model owns \(Y\)) — CIP-0034
 - [x] Batched likelihood API includes at least: `log_density`, `variational_expectations` (already sketched), **`ep_moments`**, and predictive moments usable by EP / Laplace / `out`
 - [x] EP inference on `CGp` for probit (or Bernoulli–probit link) trains kernel hyperparameters with a verified bound / marginal approximation; default kernel need not include White
 - [x] Laplace approximation on `CGp` for the same likelihood class, with mode-finding and Hessian (or equivalent) verified against FD or known fixtures
 - [x] Dense FTC classification smoke matches a GPy-generated or orthant / known-good fixture within documented tolerance
-- [ ] Softness story is explicit: White-in-\(K\) (IVM exception) vs likelihood scale vs site precision — documented, not mixed silently
-- [ ] Old streams / IVM / PPA keep working during migration (adapters or dual-read); no silent behaviour flip for existing IVM White defaults
-- [ ] Non-goals for first delivery: full GPy likelihood zoo (Poisson, Student-t, warped, heteroscedastic); HMC; replacing SVGP / PPA / IVM; Python façade beyond a thin classify/predict bind; putting EP inside the Python hot loop
+- [x] Softness story is explicit: White-in-\(K\) (IVM exception) vs likelihood scale vs site precision — documented in CIP-0027 / CIP-0033
+- [x] Old streams / IVM / PPA keep working during migration (adapters or dual-read); no silent behaviour flip for existing IVM White defaults
+- [x] Non-goals for first delivery respected (zoo / HMC / replacing SVGP·PPA·IVM / EP-in-Python hot loop out of scope)
 
 ## Notes (Optional)
 
@@ -56,3 +56,7 @@ CIP-0033 Accepted → In Progress. GPy mirror locks: Bernoulli+Probit `moments_m
 ### 2026-11-21 (Phase B/C)
 
 FTC EP and Laplace on `CGp` green (`setEpInference` / `setLaplaceInference`); numpy twin fixtures; FD grads. Remaining: strip sites from `CNoise` (Phase D) and thin façade.
+
+### 2026-11-21 (Phase D + CIP-0034)
+
+Thin `gpc.GPClassification` façade; site workspace attach. CIP-0034 consolidates site caches into `CNoiseSiteWorkspace` (IVM/PPA/SparsePpa attach). REQ acceptance criteria checked; status Validated.

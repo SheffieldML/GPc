@@ -1,4 +1,4 @@
-/* CIP-0035 Phase 1–3: CDeepGp verification (points, ridges, probit/ordered). */
+/* CIP-0035 Phase 1–4: CDeepGp verification (points, ridges, probit, stream, V7). */
 #include "CAdam.h"
 #include "CDeepGp.h"
 #include "CInducing.h"
@@ -10,6 +10,7 @@
 #include <cmath>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -985,6 +986,188 @@ int main()
              "Phase3: ordered ELBO finite");
       expect(L1 >= L0 - 1e-6,
              "Phase3: ordered final-layer CVI does not decrease ELBO");
+    }
+
+    // ---- Phase 4: residual-off reduces predictive variance ----
+    {
+      const unsigned int N = 12, M = 5;
+      CMatrix X(N, 1), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        X.setVal(-1.0 + 2.0 * (double)i / (double)(N - 1), i, 0);
+        y.setVal(sin(X.getVal(i, 0)), i, 0);
+      }
+      ndlutil::init_genrand(101u);
+      CCmpndKern k0(X), k1(X);
+      makeRbfOnly(k0, X, 1.0, 0.5);
+      makeRbfOnly(k1, X, 1.0, 1.0);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 1u},
+                  vector<unsigned int>{M, M}, 1.0, 0.5, 0);
+      CMatrix muOn, varOn, muOff, varOff;
+      dgp.layer(0).marginalsAt(X, muOn, varOn);
+      dgp.setDropResidual(true);
+      dgp.layer(0).marginalsAt(X, muOff, varOff);
+      double meanOn = 0.0, meanOff = 0.0;
+      for(unsigned int i = 0; i < N; i++)
+      {
+        meanOn += varOn.getVal(i, 0);
+        meanOff += varOff.getVal(i, 0);
+      }
+      meanOn /= (double)N;
+      meanOff /= (double)N;
+      cout << "  info: Phase4 residual varOn=" << meanOn
+           << " varOff=" << meanOff << endl;
+      expect(dgp.isDropResidual(), "Phase4: dropResidual flag set");
+      expect(meanOff <= meanOn + 1e-12,
+             "Phase4: residual-off variance <= residual-on");
+    }
+
+    // ---- Phase 4: stream round-trip ----
+    {
+      const unsigned int N = 10, M = 4;
+      CMatrix X(N, 1), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        X.setVal((double)i / (double)(N - 1), i, 0);
+        y.setVal(X.getVal(i, 0) * X.getVal(i, 0), i, 0);
+      }
+      ndlutil::init_genrand(103u);
+      CCmpndKern k0(X), k1(X);
+      makeRbfOnly(k0, X, 1.2, 0.4);
+      makeRbfOnly(k1, X, 0.9, 1.0);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 1u},
+                  vector<unsigned int>{M, M}, 2.0, 0.4, 0);
+      dgp.setNumSamples(2);
+      dgp.setDropResidual(true);
+      CMatrix p0;
+      dgp.getStochasticParams(p0);
+      const double L0 = dgp.elboEstimate();
+      ostringstream oss;
+      dgp.toStream(oss);
+      istringstream iss(oss.str());
+      CMatrix Xtmp(1, 1), Ytmp(1, 1);
+      CRbfKern ktmp(1);
+      ktmp.setInitParam();
+      vector<CKern*> tk{&ktmp};
+      CDeepGp loaded(Xtmp, Ytmp, tk, vector<unsigned int>{1u, 1u},
+                     vector<unsigned int>{1u}, 1.0, 1.0, 0);
+      loaded.fromStream(iss);
+      CMatrix p1;
+      loaded.getStochasticParams(p1);
+      expect(loaded.getNumLayers() == 2 && loaded.isDropResidual()
+             && loaded.getNumSamples() == 2,
+             "Phase4: stream restores meta fields");
+      expect(p0.getCols() == p1.getCols() && maxAbsDiff(p0, p1) < 1e-10,
+             "Phase4: stream restores stochastic params");
+      const double L1 = loaded.elboEstimate();
+      cout << "  info: Phase4 stream L0=" << L0 << " L1=" << L1 << endl;
+      expect(fabs(L0 - L1) < 1e-6, "Phase4: stream ELBO match");
+    }
+
+    // ---- Phase 4 V7: Jacobian spread with chi=1/L stays bounded ----
+    {
+      const unsigned int D = 2, L = 4, M = 8, N = 16;
+      mt19937 rng(107);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, D), y(N, D);
+      for(unsigned int i = 0; i < N; i++)
+        for(unsigned int d = 0; d < D; d++)
+        {
+          X.setVal(nd(rng), i, d);
+          y.setVal(nd(rng), i, d);
+        }
+      ndlutil::init_genrand(109u);
+      CCmpndKern k0(X), k1(X), k2(X), k3(X);
+      const double vPrior = 1.0 / (double)L;
+      makeRbfOnly(k0, X, 1.0, vPrior);
+      makeRbfOnly(k1, X, 1.0, vPrior);
+      makeRbfOnly(k2, X, 1.0, vPrior);
+      makeRbfOnly(k3, X, 1.0, vPrior);
+      vector<unsigned int> dims(L + 1, D);
+      vector<unsigned int> Ms(L, M);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1, &k2, &k3}, dims, Ms,
+                  1.0, 1.0, 0);
+      // Constructor scales hidden vars by chi/(L-1); restore chi=1/L on all.
+      k0.setVariance(vPrior);
+      k1.setVariance(vPrior);
+      k2.setVariance(vPrior);
+      k3.setVariance(vPrior);
+      for(unsigned int ell = 0; ell < L; ell++)
+      {
+        dgp.layer(ell).updateKernelMatrices();
+        const unsigned int Mi = dgp.layer(ell).getNumInducing();
+        const unsigned int Do = dgp.layer(ell).getOutputDim();
+        CMatrix m(Mi, Do);
+        m.zeros();
+        vector<CMatrix> S(Do);
+        for(unsigned int j = 0; j < Do; j++)
+        {
+          S[j].resize(Mi, Mi);
+          S[j].zeros();
+          S[j].addDiag(1.0);
+          S[j].setSymmetric(true);
+        }
+        dgp.layer(ell).setWhitenedQ(m, S);
+      }
+      const double spread = dgp.jacobianSpread(16, 111u);
+      cout << "  info: Phase4 V7 median log-sv spread L=" << L
+           << " D=" << D << " = " << spread << endl;
+      expect(isfinite(spread) && spread < 2.0,
+             "Phase4 V7: chi=1/L Jacobian spread < 2");
+    }
+
+    // ---- Phase 4 V8 smoke: inducing-point deep GP trains ----
+    {
+      const unsigned int N = 36, M = 8, Nte = 16;
+      mt19937 rng(113);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, 1), y(N, 1), Xte(Nte, 1), yte(Nte, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        const double x = -2.0 + 4.0 * (double)i / (double)(N - 1);
+        X.setVal(x, i, 0);
+        y.setVal(sin(1.2 * x) + 0.1 * nd(rng), i, 0);
+      }
+      for(unsigned int i = 0; i < Nte; i++)
+      {
+        const double x = -1.8 + 3.6 * (double)i / (double)(Nte - 1);
+        Xte.setVal(x, i, 0);
+        yte.setVal(sin(1.2 * x), i, 0);
+      }
+      ndlutil::init_genrand(115u);
+      CCmpndKern k0(X), k1(X);
+      makeRbfOnly(k0, X, 1.0, 0.5);
+      makeRbfOnly(k1, X, 1.0, 1.0);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 1u},
+                  vector<unsigned int>{M, M}, 5.0, 0.5, 0);
+      dgp.setNumSamples(1);
+      dgp.setSeed(7);
+      CAdam adam(0.05);
+      adam.setBatchSize(N);
+      adam.setMaxIters(30);
+      adam.setSeed(7);
+      adam.maximise(dgp);
+      CMatrix mu0, var0;
+      dgp.layer(0).marginalsAt(Xte, mu0, var0);
+      CMatrix H(Nte, 1);
+      H.gemm(Xte, dgp.meanMap(0), 1.0, 0.0, "n", "n");
+      for(unsigned int i = 0; i < Nte; i++)
+        H.setVal(H.getVal(i, 0) + mu0.getVal(i, 0), i, 0);
+      CMatrix mu1, var1;
+      dgp.layer(1).marginalsAt(H, mu1, var1);
+      double sse = 0.0;
+      for(unsigned int i = 0; i < Nte; i++)
+      {
+        const double e = mu1.getVal(i, 0) - yte.getVal(i, 0);
+        sse += e * e;
+      }
+      const double rmse = sqrt(sse / (double)Nte);
+      cout << "  info: Phase4 V8-points rmse=" << rmse << endl;
+      expect(isfinite(rmse) && rmse < 1.5,
+             "Phase4 V8: inducing-point deep GP RMSE finite and sane");
     }
   }
   catch(ndlexceptions::Error& e)

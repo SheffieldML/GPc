@@ -92,6 +92,11 @@ class CSvgp : public CStochasticOptimisable {
   void setLikelihood(CNoise* noise) { pnoise = noise; }
   CNoise* getLikelihood() const { return pnoise; }
 
+  // CIP-0035 Phase 4: drop Nyström residual k−Q from q(f) variance (finite-network
+  // / residual-off mode). Predictive var becomes aᵀ S a only.
+  void setDropResidual(bool val) { dropResidual = val; }
+  bool isDropResidual() const { return dropResidual; }
+
   // Unwhitened q(u_j): m = L m~, S = L S~ L^T.
   CMatrix getQMean() const;
   CMatrix getQCov(unsigned int j) const;
@@ -217,6 +222,7 @@ class CSvgp : public CStochasticOptimisable {
   int verbosity;
   CTransform* betaTransform;
   double natGradGamma;  // 0 => skip interleaved natgrad
+  bool dropResidual;    // CIP-0035 Phase 4 residual-off
 
   unsigned int nData;
   unsigned int numInducing;

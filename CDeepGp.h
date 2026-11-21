@@ -11,6 +11,7 @@
 #include "CSvgp.h"
 #include "CKern.h"
 #include "CMatrix.h"
+#include "CNoise.h"
 #include "CStochasticOptimisable.h"
 #include <cstdint>
 #include <memory>
@@ -57,6 +58,11 @@ class CDeepGp : public CStochasticOptimisable {
   // Enable learnable ridge window width(s); sigmoid-mapped into [0.05, 1].
   void setLayerLearnWindowWidth(unsigned int ell, bool learn,
                                 bool untied = false);
+
+  // Phase 3: non-Gaussian final-layer likelihood (probit / ordered via
+  // Gauss–Hermite on CSvgp). Borrowed; not owned. Labels still come from Y.
+  void setLikelihood(CNoise* noise);
+  CNoise* getLikelihood() const;
 
   // Unbiased ELBO estimate on a batch (K samples).
   double elboEstimate(const std::vector<unsigned int>& batch);

@@ -20,11 +20,12 @@ Maintainer decisions for the NumPy-facing wrapper. Install and API recipes live 
 
 Deferred from 001D close: richer CIP-001E optimiser/model display landed with [CIP-001E](../cip/cip001E.md). Broader GPy-tutorial notebooks still out of subset (coreg, IVM sparse classification, GPLVM/MRD, SVGP, SVI BGPLVM) — see [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md).
 
-## Classification ([CIP-0033](../cip/cip0033.md) / [CIP-0034](../cip/cip0034.md))
+## Classification ([CIP-0033](../cip/cip0033.md) / [CIP-0034](../cip/cip0034.md) / [CIP-0036](../cip/cip0036.md))
 
-- **`gpc.GPClassification(X, Y, kernel=..., inference="ep"|"laplace")`** — dense FTC Bernoulli–probit; EP is the default GPy `GPClassification` path; Laplace optional.
-- Predictive: `predict_noiseless` / `predict_proba` (EP latent + probit). Sparse EP / EPDTC is out of scope.
-- C++: `CGp::setEpInference` / `setLaplaceInference`; tutorial [cgp_ep_classification](./tutorials/cgp_ep_classification.md). Large-\(N\) active-set remains IVM ([ivm_unitsquare](./tutorials/ivm_unitsquare.md)).
+- **`gpc.GPClassification(X, Y, kernel=..., inference="ep"|"laplace")`** — dense FTC Bernoulli–probit; EP is the default GPy path; Laplace optional with full latent predict (CIP-0036).
+- Predictive: `predict` / `predict_noiseless` → latent \(f_*\); `predict_proba` / `predictive_probabilities` → \(P(y=1)\). Sparse EP / EPDTC deferred.
+- Teaching: [`python/examples/basic_classification.ipynb`](../python/examples/basic_classification.ipynb); capability matrix in [CIP-0036](../cip/cip0036.md) / [gpy_side_by_side](../python/docs/gpy_side_by_side.md).
+- C++: `CGp::setEpInference` / `setLaplaceInference` / `laplaceLatentMeanVar`; tutorial [cgp_ep_classification](./tutorials/cgp_ep_classification.md). Large-\(N\) active-set remains IVM ([ivm_unitsquare](./tutorials/ivm_unitsquare.md)).
 - Likelihood site caches are not façade-visible; ADF state lives in inference workspaces ([CIP-0034](../cip/cip0034.md)).
 
 ## Help and docstrings ([CIP-002F](../cip/cip002F.md))

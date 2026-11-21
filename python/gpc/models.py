@@ -179,7 +179,14 @@ class SparseGPRegression(_SparseGPRegression):
 
 
 class GPClassification(_GPClassification):
-    """FTC Bernoulli–probit classification (EP or Laplace; CIP-0033)."""
+    """FTC Bernoulli–probit classification (EP or Laplace; CIP-0033 / CIP-0036).
+
+    Reflects GPy ``GPClassification`` for the dense FTC path:
+
+    - ``inference='ep'`` (default) or ``'laplace'``
+    - ``predict`` / ``predict_noiseless`` → latent ``f_*`` mean/variance
+    - ``predict_proba`` / ``predictive_probabilities`` → ``P(y=1)``
+    """
 
     def __init__(
         self,
@@ -210,6 +217,7 @@ class GPClassification(_GPClassification):
         messages: bool = False,
         callback: Callable[[OptimiserEvent], Any] | None = None,
     ) -> None:
+        """Optimise kernel (and bias) hyperparameters; EP/Laplace inference fixed."""
         _GPClassification.optimize(
             self,
             iters=iters,

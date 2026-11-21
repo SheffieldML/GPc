@@ -149,8 +149,9 @@ public:
   const CMatrix& epPosteriorMean() const { return epMu; }
   const CMatrix& epPosteriorVarDiag() const { return epVarDiag; }
   const CMatrix& laplaceMode() const { return laplaceFhat; }
-  // CIP-0033 Phase D: EP latent predictive at Xin (requires epInference).
+  // CIP-0033 Phase D / CIP-0036: latent predictive at Xin (EP or Laplace).
   void epLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) const;
+  void laplaceLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) const;
   // CIP-0026: -KL(q(u)||p(u)) - ½β tr(Cov_f̄) [+ DTCVAR residual] + kern prior.
   // Matches dense CPpa approxLogLikelihood parts 1–4 when DTC/DTCVAR and M=N, Xu=X.
   // Throws for FITC/PITC (different A; use interim CGp LML + noise monitor).

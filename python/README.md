@@ -205,6 +205,29 @@ Examples (GPy-tutorial inspired where noted):
 
 Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md)). Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
 
+## GPLVM / Bayesian GPLVM / MRD
+
+MAP GPLVM (`CGplvm`), collapsed Bayesian GPLVM (`CBayesGplvm`, CIP-0017), and MRD (`CMrd`, CIP-0018):
+
+```python
+Y = ...  # N×D observations
+m = gpc.models.GPLVM(Y, input_dim=2)                 # RBF+Bias+White (CLI default)
+m.optimize(iters=50)
+X = m.latent_mean()                                  # N×q
+mu, var = m.predict(X)
+
+m = gpc.models.BayesianGPLVM(Y, input_dim=2, num_inducing=10)  # RBF-ARD
+m.optimize(iters=50)
+mu_x, s_x = m.latent_mean(), m.latent_variance()
+
+# Multi-view: aligned Y_v (same N), per-view RBF-ARD (GPy MRD default)
+m = gpc.models.MRD([Y0, Y1], input_dim=3, num_inducing=10)
+m.optimize(iters=50)
+fac = m.factorize_space(threshold=0.05)  # shared / private0 / private1
+```
+
+Defaults follow GPy’s `kern.RBF` (not `ExpQuad` path names). Native tutorials remain the verified share format ([gplvm_oil100](../docs/tutorials/gplvm_oil100.md), [bgplvm_oil100](../docs/tutorials/bgplvm_oil100.md), [mrd](../docs/tutorials/mrd.md)).
+
 ## Later / not in the Python notebook subset yet
 
-GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, EP classification / IVM, GPLVM / Bayesian GPLVM / MRD, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). Use the native tutorials until those façade follow-ons land. SVI Bayesian GPLVM is CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.
+Notebook ports of the oil / SVI GPLVM / MRD tutorials are still outstanding. Other GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, sparse EP / IVM, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). SVI Bayesian GPLVM remains CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.

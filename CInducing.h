@@ -243,12 +243,14 @@ class CInducingWeightSpace : public CInducing
       return 0u;
     return untiedS ? numInducing() : 1u;
   }
+  // Grad w.r.t. unconstrained u (chain ∂L/∂s · ds/du) for opt packing.
   double windowWidthGradAt(unsigned int i) const
   {
-    if(!untiedS)
-      return gScache;
-    BOUNDCHECK(i < gSvec.getRows());
-    return gSvec.getVal(i, 0);
+    const double gs = untiedS
+                          ? ((i < gSvec.getRows()) ? gSvec.getVal(i, 0) : 0.0)
+                          : gScache;
+    const double sNat = untiedS ? windowWidthAt(i) : s;
+    return gs * windowWidthDsDu(sNat);
   }
   unsigned int numWindowWidths() const { return numInducing(); }
   double getWindowWidthAt(unsigned int m) const { return windowWidthAt(m); }
@@ -258,16 +260,26 @@ class CInducingWeightSpace : public CInducing
   void ridgeFactors(CMatrix& V, CMatrix& a) const;
 
   // CIP-0028 ridge init: orthogonal direction blocks (≤ D'=d+1), n_off offsets
-  // on [-2.5, 2.5], and s from offset spacing so κ(K_uu) stays ~≤10^4.
+  // on [-2.5, 2.5] with no a=0, and s from offset spacing so κ(K_uu) stays ~≤10^4.
   // WOut is M × (d+2); returns recommended window width.
   static double makeRidgeInit(CMatrix& WOut, unsigned int M, unsigned int inputDim,
                               unsigned int rngSeed = 7u);
+
+  // Whitened-unit bounds for ridge window width (CIP-0028 stability follow-on).
+  // Above ~1, κ(K_uu) explodes vs offset spacing; s=√2 is a singular special case.
+  static double windowWidthMin() { return 0.05; }
+  static double windowWidthMax() { return 1.0; }
+  static void validateWindowWidth(double sIn);
 
  private:
   void fillKuu(CMatrix& Kuu) const;
   void fillKuuIsotropic(CMatrix& Kuu) const;
   void fillKuuRidge(CMatrix& Kuu) const;
   void syncSVecFromScalar();
+  // Learnable s packed in unconstrained coordinates: s = sLo + (sHi-sLo)·σ(u).
+  static double windowWidthFromUnconstrained(double u);
+  static double windowWidthToUnconstrained(double sIn);
+  static double windowWidthDsDu(double sIn);
   void kufFromKfu(CMatrix& Kuf, const CMatrix& Kfu) const;
   void gradWFromKuu(CMatrix& gW, const CMatrix& gKuu, const CMatrix& Kuu) const;
   // Analytic ∂⟨gKuu,Kuu⟩/∂(unit V, a); then chain to raw W via normalisation.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <vector>
 
 using namespace std;
@@ -606,9 +607,60 @@ CInducingWeightSpace::CInducingWeightSpace(const CMatrix& WIn, double sIn, bool 
         "CInducingWeightSpace ridge requires W with cols >= 2 (d+1 direction + offset).");
   if(!ridge && W.getCols() < 1)
     throw ndlexceptions::Error("CInducingWeightSpace isotropic requires W M x (d+1).");
-  if(!(s > 0.0))
-    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  validateWindowWidth(s);
   syncSVecFromScalar();
+}
+
+void CInducingWeightSpace::validateWindowWidth(double sIn)
+{
+  // Whitened ridge windows: κ(K_uu) grows ~exp(c (s/h)²) in offset spacing h.
+  // At s=√2 the ridge matches the prior along its direction and K_uu can become
+  // singular (especially with an offset at a=0). Cap below that regime.
+  if(!(sIn > 0.0))
+    throw ndlexceptions::Error(
+        "CInducingWeightSpace window width must be positive.");
+  if(sIn < windowWidthMin() || sIn > windowWidthMax())
+  {
+    ostringstream msg;
+    msg << "CInducingWeightSpace window width must lie in ["
+        << windowWidthMin() << ", " << windowWidthMax()
+        << "] whitened units (got " << sIn
+        << "). Larger s ill-conditions K_uu; s=√2 is singular.";
+    throw ndlexceptions::Error(msg.str());
+  }
+}
+
+double CInducingWeightSpace::windowWidthFromUnconstrained(double u)
+{
+  // σ(u) ∈ (0,1) → s ∈ (sLo, sHi)
+  double sig = 1.0 / (1.0 + exp(-u));
+  if(sig < 1e-12)
+    sig = 1e-12;
+  if(sig > 1.0 - 1e-12)
+    sig = 1.0 - 1e-12;
+  return windowWidthMin() + (windowWidthMax() - windowWidthMin()) * sig;
+}
+
+double CInducingWeightSpace::windowWidthToUnconstrained(double sIn)
+{
+  validateWindowWidth(sIn);
+  double z = (sIn - windowWidthMin()) / (windowWidthMax() - windowWidthMin());
+  if(z < 1e-12)
+    z = 1e-12;
+  if(z > 1.0 - 1e-12)
+    z = 1.0 - 1e-12;
+  return log(z / (1.0 - z));
+}
+
+double CInducingWeightSpace::windowWidthDsDu(double sIn)
+{
+  const double span = windowWidthMax() - windowWidthMin();
+  double z = (sIn - windowWidthMin()) / span;
+  if(z < 0.0)
+    z = 0.0;
+  if(z > 1.0)
+    z = 1.0;
+  return span * z * (1.0 - z);
 }
 
 void CInducingWeightSpace::syncSVecFromScalar()
@@ -637,10 +689,7 @@ void CInducingWeightSpace::setWindowWidths(const CMatrix& sIn)
   const unsigned int M = numInducing();
   DIMENSIONMATCH(sIn.getRows() == M && sIn.getCols() == 1);
   for(unsigned int i = 0; i < M; i++)
-  {
-    if(!(sIn.getVal(i, 0) > 0.0))
-      throw ndlexceptions::Error("CInducingWeightSpace window widths must be positive.");
-  }
+    validateWindowWidth(sIn.getVal(i, 0));
   sVec.deepCopy(sIn);
   untiedS = true;
   s = sVec.getVal(0, 0);
@@ -648,8 +697,7 @@ void CInducingWeightSpace::setWindowWidths(const CMatrix& sIn)
 
 void CInducingWeightSpace::setWindowWidthAt(unsigned int m, double sIn)
 {
-  if(!(sIn > 0.0))
-    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  validateWindowWidth(sIn);
   BOUNDCHECK(m < numInducing());
   if(sVec.getRows() != numInducing())
     syncSVecFromScalar();
@@ -734,9 +782,15 @@ double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
     {
       for(unsigned int j = 0; j < Dp; j++)
         WOut.setVal(dirs[di][j], row, j);
-      const double a0 = (nThis <= 1)
-                            ? 0.0
-                            : (-2.5 + 5.0 * (double)o / (double)(nThis - 1));
+      // Offsets on [-2.5, 2.5]; never a=0 (zero K_fu for odd erf + prior, and
+      // at s=√2 every direction's a=0 window is identical → singular K_uu).
+      double a0 = 0.5;
+      if(nThis > 1)
+      {
+        a0 = -2.5 + 5.0 * (double)o / (double)(nThis - 1);
+        if(fabs(a0) < 1e-14)
+          a0 = 0.5 * 5.0 / (double)(nThis - 1); // half-step off zero
+      }
       WOut.setVal(a0, row, Dp);
     }
   }
@@ -798,8 +852,7 @@ unsigned int CInducingWeightSpace::weightDim() const
 
 void CInducingWeightSpace::setWindowWidth(double sIn)
 {
-  if(!(sIn > 0.0))
-    throw ndlexceptions::Error("CInducingWeightSpace window width must be positive.");
+  validateWindowWidth(sIn);
   s = sIn;
   // Broadcast to all units (CIP-0032); leaves untiedS unchanged.
   if(sVec.getRows() != numInducing())
@@ -1376,16 +1429,18 @@ void CInducingWeightSpace::getParams(CMatrix& param, unsigned int offset) const
   }
   if(learnS)
   {
+    // Pack unconstrained u with s = sLo + (sHi-sLo)·σ(u) so SCG cannot
+    // drive widths outside the κ-safe interval.
     if(!untiedS)
     {
-      param.setVal(s, counter);
+      param.setVal(windowWidthToUnconstrained(s), counter);
       counter++;
     }
     else
     {
       for(unsigned int i = 0; i < numInducing(); i++)
       {
-        param.setVal(sVec.getVal(i, 0), counter);
+        param.setVal(windowWidthToUnconstrained(sVec.getVal(i, 0)), counter);
         counter++;
       }
     }
@@ -1407,7 +1462,7 @@ void CInducingWeightSpace::setParams(const CMatrix& param, unsigned int offset)
   {
     if(!untiedS)
     {
-      setWindowWidth(param.getVal(counter));
+      setWindowWidth(windowWidthFromUnconstrained(param.getVal(counter)));
       counter++;
     }
     else
@@ -1415,7 +1470,7 @@ void CInducingWeightSpace::setParams(const CMatrix& param, unsigned int offset)
       CMatrix sIn(numInducing(), 1);
       for(unsigned int i = 0; i < numInducing(); i++)
       {
-        sIn.setVal(param.getVal(counter), i, 0);
+        sIn.setVal(windowWidthFromUnconstrained(param.getVal(counter)), i, 0);
         counter++;
       }
       setWindowWidths(sIn);

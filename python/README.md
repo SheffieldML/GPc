@@ -184,7 +184,7 @@ m = gpc.SparseGPRegression(
 m.optimize(iters=50)
 ```
 
-Inducing inputs `Z` (and weight-space ridge centres) are **free** by default (`inducing_fixed=False`, matching C++ `CGp`). Pass `inducing_fixed=True` to freeze a grid. For CIP-0028 ridges, free centres let the finite-\(M\) mean behave like a trainable bank of smoothed erf units. Global window width \(s\) defaults fixed; pass `learn_window_width=True` (with free inducing) to optimise a tied softness, or `learn_window_widths=True` / a length-\(M\) `window_width` array for per-unit \(s_m\) ([CIP-0032](../cip/cip0032.md)) — conditioning can degrade if widths collapse, so start from a sensible scale. Weight-space compounds are one signal + optional white (no Bias); observation noise stays in \(\beta\). Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
+Inducing inputs `Z` (and weight-space ridge centres) are **free** by default (`inducing_fixed=False`, matching C++ `CGp`). Pass `inducing_fixed=True` to freeze a grid. For CIP-0028 ridges, free centres let the finite-\(M\) mean behave like a trainable bank of smoothed erf units. Global window width \(s\) defaults fixed; pass `learn_window_width=True` (with free inducing) to optimise a tied softness, or `learn_window_widths=True` / a length-\(M\) `window_width` array for per-unit \(s_m\) ([CIP-0032](../cip/cip0032.md)). Whitened \(s\) is bounded to \([0.05,1]\) (learned via a sigmoid map) so \(K_{uu}\) stays away from the \(s=\sqrt2\) singular regime. Weight-space compounds are one signal + optional white (no Bias); observation noise stays in \(\beta\). Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
 
 ## Plotting and notebooks
 

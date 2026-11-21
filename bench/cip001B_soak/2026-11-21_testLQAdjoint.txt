@@ -1,0 +1,15 @@
+==== testLQAdjoint (CIP-001B) ====
+OK: LQ log|I+AA^T| matches chol
+OK: LQ |diag| matches chol |diag|
+OK: L Q reconstructs [I|A]
+OK: lqAdjoint matches central FD on wide W
+  adj=0.104908 fd=0.104908 |diff|=2.84827e-10
+---- ill-conditioned K_uf K_fu (large N, OK K_uu) ----
+  κ~(K_uu)=24.7294 κ~(K_uf K_fu)=5.13222e+16
+  |ld chol-svd|=1.50202e-08 |ld lq-svd|=3.29692e-12  ratio chol/lq=4555.82
+OK: K_uu not crowdZ-collapsed (κ~ < 1e4)
+OK: K_uf K_fu ill-conditioned (κ~ > 1e6)
+OK: LQ logdet closer to SVD than Gram+chol
+OK: LQ logdet within 1e-10 of SVD reference
+OK: mild β=1: both chol and LQ match SVD
+All LQ tests passed.

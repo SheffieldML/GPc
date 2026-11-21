@@ -17,12 +17,55 @@
 #include "CMatrix.h"
 #include "CNoise.h"
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <string>
 
 using namespace std;
+
+static void dumpState(const string& path, const CMatrix& X, const CMatrix& y,
+                      const CMatrix& Xu, CGp& model, const string& approx)
+{
+  ofstream out(path.c_str());
+  out << setprecision(16);
+  out << "approx " << approx << endl;
+  out << "N " << X.getRows() << endl;
+  out << "q " << X.getCols() << endl;
+  out << "d " << y.getCols() << endl;
+  out << "M " << Xu.getRows() << endl;
+  out << "inverseWidth " << model.getKernel()->getParam(0) << endl;
+  out << "variance " << model.getKernel()->getParam(1) << endl;
+  // Compound RBF+White: white is param 2 (0 if kernel has fewer params).
+  const double white =
+    (model.getKernel()->getNumParams() > 2) ? model.getKernel()->getParam(2) : 0.0;
+  out << "white " << white << endl;
+  out << "beta " << model.getBetaVal() << endl;
+  out << "ll " << model.logLikelihood() << endl;
+  out << "X" << endl;
+  for(unsigned int i = 0; i < X.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < X.getCols(); j++)
+      out << X.getVal(i, j) << (j + 1 == X.getCols() ? "" : " ");
+    out << endl;
+  }
+  out << "y" << endl;
+  for(unsigned int i = 0; i < y.getRows(); i++)
+    out << y.getVal(i, 0) << endl;
+  out << "Xu" << endl;
+  for(unsigned int i = 0; i < Xu.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < Xu.getCols(); j++)
+      out << Xu.getVal(i, j) << (j + 1 == Xu.getCols() ? "" : " ");
+    out << endl;
+  }
+  CMatrix g(1, model.getOptNumParams());
+  model.logLikelihoodGradient(g);
+  out << "grads_ll " << g.getCols() << endl;
+  for(unsigned int j = 0; j < g.getCols(); j++)
+    out << g.getVal(0, j) << endl;
+}
 
 static bool finiteVal(double x)
 {
@@ -285,7 +328,22 @@ int main()
     model.setBetaVal(1e6);
     model.setVerbosity(0);
     compareCell(model, "largeN_clust_kufkfu_dtcvar");
+
+    // Dumps for scripts/sparse_mp_reference.py (CIP-001B soak).
+    model.setSparseLinalgMode(CGp::SparseLinalgStableFactor);
+    dumpState("bench/cip001B_soak/largeN_clust_kufkfu_dtcvar_stable_state.txt",
+              X, Y, Xu, model, "dtcvar");
+    model.setSparseLinalgMode(CGp::SparseLinalgLQ);
+    dumpState("bench/cip001B_soak/largeN_clust_kufkfu_dtcvar_lq_state.txt",
+              X, Y, Xu, model, "dtcvar");
+    cout << "Wrote bench/cip001B_soak/largeN_clust_kufkfu_dtcvar_{stable,lq}_state.txt"
+         << endl;
   }
 
+  cout << "Notes:\n"
+       << "  crowdZ_*: LQ ≡ StableFactor (Δll=0); FD util limited by K_uu/K_mm,\n"
+       << "            not the Seeger C-side regime.\n"
+       << "  largeN_clust_*: C = I+βBB^T stressed; pair with testLQAdjoint κ/SVD\n"
+       << "            gate and sparse_mp_reference.py on the dumped state.\n";
   return 0;
 }

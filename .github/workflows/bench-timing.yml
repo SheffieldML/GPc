@@ -54,7 +54,7 @@ jobs:
       OPENBLAS_NUM_THREADS: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install toolchain
         run: |
@@ -81,7 +81,7 @@ jobs:
             --sha "${{ github.sha }}"
 
       - name: Upload timings artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bench-timings
           path: |
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload main timings baseline
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bench-timings-main
           path: bench/timings.json
@@ -134,7 +134,7 @@ jobs:
 
       - name: Comment timing trend on PR
         if: always() && github.event_name == 'pull_request' && hashFiles('bench/timing_trend.md') != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');

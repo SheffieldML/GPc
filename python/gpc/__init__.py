@@ -30,6 +30,7 @@ from ._gpc import (
 )
 from .models import (
     BayesianGPLVM,
+    DeepGP,
     GPClassification,
     GPCoregionalizedRegression,
     GPLVM,
@@ -46,6 +47,7 @@ __all__ = [
     "GPLVM",
     "BayesianGPLVM",
     "MRD",
+    "DeepGP",
     "Matrix",
     "GpcError",
     "OptimiserEvent",

@@ -7,6 +7,7 @@
 #include "CMatrix.h"
 #include "matrix_numpy.h"
 #include "ndlexceptions.h"
+#include "wrap_deepgp.h"
 #include "wrap_gp.h"
 #include "wrap_gplvm.h"
 
@@ -80,4 +81,5 @@ PYBIND11_MODULE(_gpc, m)
 
   bind_gp(m);
   bind_gplvm(m);
+  bind_deepgp(m);
 }

@@ -186,6 +186,20 @@ m.optimize(iters=50)
 
 Inducing inputs `Z` (and weight-space ridge centres) are **free** by default (`inducing_fixed=False`, matching C++ `CGp`). Pass `inducing_fixed=True` to freeze a grid. For CIP-0028 ridges, free centres let the finite-\(M\) mean behave like a trainable bank of smoothed erf units. Global window width \(s\) defaults fixed; pass `learn_window_width=True` (with free inducing) to optimise a tied softness, or `learn_window_widths=True` / a length-\(M\) `window_width` array for per-unit \(s_m\) ([CIP-0032](../cip/cip0032.md)). Whitened \(s\) is bounded to \([0.05,1]\) (learned via a sigmoid map) so \(K_{uu}\) stays away from the \(s=\sqrt2\) singular regime. Weight-space compounds are one signal + optional white (no Bias); observation noise stays in \(\beta\). Tutorial recipes prefer **DTCVAR**; FITC and DTC are available for parity with the C++ API / bench.
 
+## Deep GP (`DeepGP`, CIP-0035)
+
+```python
+m = gpc.models.DeepGP(X, Y, layers=2, hidden=1, num_inducing=10, chi=0.5)
+m.optimize(iters=50, adam_lr=0.05, seed=1)
+mu, var = m.predict(X)
+m.save("deep.model")
+m2 = gpc.models.DeepGP.load("deep.model")
+# Probit / ordered finals: likelihood="probit" or "ordered"
+# Finite-network bound: drop_residual=True (Nyström residual off)
+```
+
+Runnable sketch: [`examples/deepgp_sinc.py`](examples/deepgp_sinc.py). Native CLI: [`docs/tutorials/deepgp.md`](../docs/tutorials/deepgp.md).
+
 ## Plotting and notebooks
 
 ```python
@@ -230,4 +244,4 @@ Defaults follow GPy’s `kern.RBF` (not `ExpQuad` path names). Native tutorials 
 
 ## Later / not in the Python notebook subset yet
 
-Notebook ports of the oil / SVI GPLVM / MRD tutorials are still outstanding. Other GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, sparse EP / IVM, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). SVI Bayesian GPLVM remains CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.
+Notebook ports of the oil / SVI GPLVM / MRD tutorials are still outstanding. Other GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, sparse EP / IVM, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). Deep GP is available as `gpc.models.DeepGP` ([CIP-0035](../cip/cip0035.md)). SVI Bayesian GPLVM remains CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.

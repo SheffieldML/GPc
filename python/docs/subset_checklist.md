@@ -37,6 +37,7 @@ These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gp
 | SVI Bayesian GPLVM | [bgplvm_svi](../../docs/tutorials/bgplvm_svi.md) | [CIP-0030](../../cip/cip0030.md); backlog [`2026-11-20_cip0030-phase4b-python-facade`](../../backlog/features/2026-11-20_cip0030-phase4b-python-facade.md) (Ready) | CLI-first today |
 | MRD | [mrd](../../docs/tutorials/mrd.md) | [CIP-0018](../../cip/cip0018.md) (Closed native); `gpc.models.MRD` | Shared q(X)/Z; per-view RBF-ARD |
 | SVGP / sparse variational | [svgp](../../docs/tutorials/svgp.md) | [CIP-002A](../../cip/cip002A.md); Phase 5 surfaces backlog [`2026-11-19_cip002A-phase5-surfaces`](../../backlog/features/2026-11-19_cip002A-phase5-surfaces.md) | Tutorial native; Python façade deferred |
+| Deep GP (DSVI) | [deepgp](../../docs/tutorials/deepgp.md) | [CIP-0035](../../cip/cip0035.md); `gpc.models.DeepGP` | Python façade landed; CLI `./deepgp` |
 | `models_basic` constrain / `fix` | CIP-0014 paths | Backlog [`2026-11-21_cip001D-python-fix-by-path`](../../backlog/features/2026-11-21_cip001D-python-fix-by-path.md) | Path get/set only today |
 | Sparse `likelihood.variance` teaching | CIP-0027 | Backlog [`2026-11-21_cip0027-python-sparse-likelihood-variance`](../../backlog/features/2026-11-21_cip0027-python-sparse-likelihood-variance.md) | Docs/façade teaching follow-on |
 | Poisson / Student-t / hetero / warped / HMC / mean functions | — | CIP-0015 / REQ-000E **non-goals** | Out of scope for the first subset |

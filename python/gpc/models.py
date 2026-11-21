@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
 
@@ -12,6 +12,17 @@ from ._gpc import GPClassification as _GPClassification
 from ._gpc import GPRegression as _GPRegression
 from ._gpc import OptimiserEvent
 from ._gpc import SparseGPRegression as _SparseGPRegression
+from .util import multioutput as mo
+
+
+def _contains_coregionalize(kernel: kern_mod.Kern) -> bool:
+    if isinstance(kernel, kern_mod.Coregionalize):
+        return True
+    if isinstance(kernel, kern_mod.Add):
+        return any(_contains_coregionalize(leaf) for leaf in kernel._leaves)
+    if isinstance(kernel, kern_mod.Prod):
+        return any(_contains_coregionalize(f) for f in kernel._factors)
+    return False
 
 
 def _build_callback(
@@ -232,4 +243,80 @@ class GPClassification(_GPClassification):
         )
 
 
-__all__ = ["GPRegression", "SparseGPRegression", "GPClassification"]
+class GPCoregionalizedRegression(GPRegression):
+    """Multi-output ICM/LCM regression (GPy ``GPCoregionalizedRegression`` spirit).
+
+    Accepts per-output ``X_list`` / ``Y_list``, stacks via ``build_XY``, and builds
+    an ICM (or uses a supplied ICM/LCM kernel) plus optional ``IndexWhite``.
+    Spherical ``likelihood.variance`` is frozen tiny when ``indexwhite`` is on
+    (CIP-000D / ``CCoregionalizedRegression``).
+    """
+
+    def __init__(
+        self,
+        X_list: Sequence[np.ndarray],
+        Y_list: Sequence[np.ndarray],
+        kernel: Any,
+        rank: int = 1,
+        *,
+        indexwhite: bool = True,
+        verbosity: int = 0,
+    ) -> None:
+        if not isinstance(kernel, kern_mod.Kern):
+            raise TypeError(
+                "GPCoregionalizedRegression requires a gpc.kern.Kern "
+                "(spatial kernel or ICM/LCM composition)"
+            )
+        X, Y = mo.build_XY(X_list, Y_list)
+        q = int(np.asarray(X_list[0], dtype=float).shape[1])
+        D = len(X_list)
+        if _contains_coregionalize(kernel):
+            k: kern_mod.Kern = kernel
+        else:
+            k = mo.ICM(q, D, kernel, W_rank=int(rank))
+        if indexwhite and not _contains_indexwhite(k):
+            k = k + kern_mod.IndexWhite(
+                1, output_dim=D, variance=0.1, active_dims=[q]
+            )
+        self._num_outputs = D
+        self._input_dim = q
+        super().__init__(X, Y, kernel=k, verbosity=verbosity)
+
+    @property
+    def num_outputs(self) -> int:
+        """Number of outputs (length of ``X_list``)."""
+        return self._num_outputs
+
+    def predict_output(
+        self,
+        Xstar: np.ndarray,
+        output: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Predict for one output index (stamps the last column of ``Xstar``)."""
+        Xs = np.asarray(Xstar, dtype=float)
+        if Xs.ndim == 1:
+            Xs = Xs[:, None]
+        if Xs.shape[1] == self._input_dim:
+            Xs = np.hstack(
+                [Xs, np.zeros((Xs.shape[0], 1), dtype=float)]
+            )
+        Xs = mo.stamp_output_index(Xs, int(output))
+        return self.predict(Xs)
+
+
+def _contains_indexwhite(kernel: kern_mod.Kern) -> bool:
+    if isinstance(kernel, kern_mod.IndexWhite):
+        return True
+    if isinstance(kernel, kern_mod.Add):
+        return any(_contains_indexwhite(leaf) for leaf in kernel._leaves)
+    if isinstance(kernel, kern_mod.Prod):
+        return any(_contains_indexwhite(f) for f in kernel._factors)
+    return False
+
+
+__all__ = [
+    "GPRegression",
+    "SparseGPRegression",
+    "GPClassification",
+    "GPCoregionalizedRegression",
+]

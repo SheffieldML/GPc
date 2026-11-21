@@ -205,6 +205,6 @@ Examples (GPy-tutorial inspired where noted):
 
 Native CLI/demos remain the primary share format ([CIP-0015](../cip/cip0015.md)). Plotting and `pods` stay **optional extras** (`gpc[plot]`, `gpc[examples]`), not core dependencies.
 
-## Later
+## Later / not in the Python notebook subset yet
 
-CIP-001E live progress / repr, custom kernel factories, coreg / GPLVM façades — follow-ups, not close blockers for the first subset. SVI Bayesian GPLVM (`CSviBayesGplvm`, CIP-0030) is CLI-first for now (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.
+GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, EP classification / IVM, GPLVM / Bayesian GPLVM / MRD, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). Use the native tutorials until those façade follow-ons land. SVI Bayesian GPLVM is CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.

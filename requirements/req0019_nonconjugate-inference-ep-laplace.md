@@ -24,8 +24,8 @@ Likelihood objects are **parameters plus batched pure functions** (log density, 
 
 ## Acceptance Criteria
 
-- [ ] `CNoise` (or successor likelihood type) holds **parameters only** on the hot path: no owned `py`, no per-point `mu` / `varSigma` site caches as likelihood state
-- [ ] Batched likelihood API includes at least: `log_density`, `variational_expectations` (already sketched), **`ep_moments`**, and predictive moments usable by EP / Laplace / `out`
+- [ ] `CNoise` (or successor likelihood type) holds **parameters only** on the hot path: no owned `py`, no per-point `mu` / `varSigma` site caches as likelihood state *(Phase D: dual-write workspace landed; full strip follow-on)*
+- [x] Batched likelihood API includes at least: `log_density`, `variational_expectations` (already sketched), **`ep_moments`**, and predictive moments usable by EP / Laplace / `out`
 - [x] EP inference on `CGp` for probit (or Bernoulli–probit link) trains kernel hyperparameters with a verified bound / marginal approximation; default kernel need not include White
 - [x] Laplace approximation on `CGp` for the same likelihood class, with mode-finding and Hessian (or equivalent) verified against FD or known fixtures
 - [x] Dense FTC classification smoke matches a GPy-generated or orthant / known-good fixture within documented tolerance

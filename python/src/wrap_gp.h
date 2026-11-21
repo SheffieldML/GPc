@@ -61,6 +61,52 @@ private:
   std::unique_ptr<CGp> model;
 };
 
+// CIP-0033 Phase D: FTC Bernoulli–probit classification (EP or Laplace).
+class PyGPClassification
+{
+public:
+  PyGPClassification(py::array_t<double, py::array::c_style | py::array::forcecast> X,
+                     py::array_t<double, py::array::c_style | py::array::forcecast> Y,
+                     py::object kernel = py::str("rbf"),
+                     const std::string& inference = "ep",
+                     int verbosity = 0);
+
+  void set_by_path(const std::string& path, double val);
+  double get_by_path(const std::string& path) const;
+  std::vector<std::string> param_paths() const;
+
+  void optimize(unsigned int iters = 100,
+                bool messages = false,
+                py::object callback = py::none());
+  double objective() const;
+
+  // Latent f_* mean/var under EP (Laplace: mode path not yet predictive).
+  std::pair<py::array_t<double>, py::array_t<double>> predict_noiseless(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+  // Class probability P(y=1) via probit link on latent predictive.
+  py::array_t<double> predict_proba(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+
+  std::string to_string() const;
+  ModelDescription describe() const;
+
+  unsigned int n() const { return X.getRows(); }
+  unsigned int input_dim() const { return X.getCols(); }
+  unsigned int output_dim() const { return Y.getCols(); }
+  const std::string& kernel_type() const { return kernelType; }
+  const std::string& inference() const { return inferenceType; }
+  std::string approx() const { return "ftc"; }
+
+private:
+  CMatrix X;
+  CMatrix Y;
+  std::string kernelType;
+  std::string inferenceType;
+  std::unique_ptr<CCmpndKern> kern;
+  std::unique_ptr<CProbitNoise> noise;
+  std::unique_ptr<CGp> model;
+};
+
 // Sparse DTCVAR / FITC / DTC regression (CIP-001D Phase C / F; CIP-0028 weight-space).
 class PySparseGPRegression
 {

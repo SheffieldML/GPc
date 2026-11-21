@@ -26,6 +26,7 @@ This file now also contains the code for ordered categorical noise models.
 #include "COptimisable.h"
 #include "CDist.h"
 #include "CKern.h"
+#include "CNoiseSiteWorkspace.h"
 using namespace std;
 
 const string NOISEVERSION="0.1";
@@ -281,17 +282,25 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
     initNames();      
   }
   
+  // CIP-0033 Phase D: dual-write site caches into an inference workspace.
+  void attachSiteWorkspace(CNoiseSiteWorkspace* ws) { pSiteWs = ws; }
+  CNoiseSiteWorkspace* siteWorkspace() const { return pSiteWs; }
+  void syncSitesToWorkspace() { dualWriteSitesToWorkspace(); }
+  bool sitesMatchWorkspace(double tol = ndlutil::MATCHTOL) const;
+
   virtual void setMus(double val)
   {
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setMu(val, i, j);
+    dualWriteSitesToWorkspace();
   }
   virtual void setVarSigmas(double val)
   {
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setVarSigma(val, i, j);
+    dualWriteSitesToWorkspace();
   }
   
   virtual void setMus(const CMatrix& vals)
@@ -301,6 +310,7 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setMu(vals.getVal(i, j), i, j);
+    dualWriteSitesToWorkspace();
   }
   virtual void setVarSigmas(const CMatrix& vals)
   {
@@ -309,6 +319,7 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setVarSigma(vals.getVal(i, j), i, j);
+    dualWriteSitesToWorkspace();
   }
   bool equals(const CNoise& noise, double tol=ndlutil::MATCHTOL) const;
 #ifdef _NDLMATLAB
@@ -344,6 +355,9 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
  protected:
   CMatrix mu;
   CMatrix varSigma;
+  // Non-owning; null = legacy-only (pre–Phase D callers unchanged).
+  CNoiseSiteWorkspace* pSiteWs = 0;
+  void dualWriteSitesToWorkspace();
   
   
   inline void setLogConcave(const bool val)

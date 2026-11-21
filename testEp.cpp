@@ -4,6 +4,7 @@
 #include "CGp.h"
 #include "CKern.h"
 #include "CNoise.h"
+#include "CNoiseSiteWorkspace.h"
 #include "ndlutil.h"
 #include <cmath>
 #include <iostream>
@@ -256,15 +257,39 @@ static int testCGpLaplaceOptimise()
   return fail;
 }
 
+static int testSiteWorkspaceDualWrite()
+{
+  CMatrix Y(3, 1);
+  Y.setVals(1.0);
+  CProbitNoise noise(&Y);
+  CNoiseSiteWorkspace ws;
+  noise.attachSiteWorkspace(&ws);
+  CMatrix mu(3, 1), vs(3, 1);
+  for(unsigned int i = 0; i < 3; i++)
+  {
+    mu.setVal(0.1 * (double)i, i, 0);
+    vs.setVal(0.5 + 0.1 * (double)i, i, 0);
+  }
+  noise.setMus(mu);
+  noise.setVarSigmas(vs);
+  int fail = 0;
+  fail += checkClose("site workspace dual-write match",
+                     noise.sitesMatchWorkspace() ? 1.0 : 0.0, 1.0, 0.0);
+  fail += checkClose("workspace mu[1]", ws.mu.getVal(1, 0), 0.1, 1e-15);
+  fail += checkClose("workspace vs[2]", ws.varSigma.getVal(2, 0), 0.7, 1e-15);
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
-  cout << "==== testEp CIP-0033 Phase A/B/C ====" << endl;
+  cout << "==== testEp CIP-0033 Phase A/B/C/D ====" << endl;
   fail += testMomentsMatchGPyFormula();
   fail += testEpLogMarginalFixture();
   fail += testCGpEpOptimise();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
+  fail += testSiteWorkspaceDualWrite();
   cout << "Total failures: " << fail << endl;
   return fail;
 }

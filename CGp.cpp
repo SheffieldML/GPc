@@ -609,13 +609,17 @@ vector<string> CGp::paramPaths() const
 {
   vector<string> paths;
   const vector<string> kpaths=pkern->paramPaths();
-  paths.reserve(kpaths.size()+getOutputDim()+2);
+  paths.reserve(kpaths.size()+getOutputDim()+3);
   for(size_t i=0; i<kpaths.size(); i++)
     paths.push_back(string("kern.")+kpaths[i]);
   if(isGaussianNoise())
     paths.push_back("likelihood.variance");
   if(isSparseApproximation())
     paths.push_back("beta");
+  if(isSparseApproximation()
+     && pInducing!=0
+     && pInducing->typeName()!="points")
+    paths.push_back("inducing.window_width");
   if(isOutputScaleLearnt())
   {
     for(unsigned int j=0; j<getOutputDim(); j++)
@@ -640,6 +644,12 @@ double CGp::getByPath(const string& path) const
     if(!isSparseApproximation())
       throw ndlexceptions::Error("beta path only valid for sparse approximations.");
     return getBetaVal();
+  }
+  if(p=="inducing.window_width" || p=="window_width")
+  {
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+      throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
+    return pInducing->getWindowWidth();
   }
   if(p.compare(0, 6, "scale.")==0)
   {
@@ -670,6 +680,14 @@ void CGp::setByPath(const string& path, double val)
     setBetaVal(val);
     if(isGaussianNoise())
       syncLikelihoodVarianceFromSparseBeta();
+    return;
+  }
+  if(p=="inducing.window_width" || p=="window_width")
+  {
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+      throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
+    pInducing->setWindowWidth(val);
+    invalidateCache();
     return;
   }
   if(p.compare(0, 6, "scale.")==0)
@@ -3316,7 +3334,18 @@ ModelDescription CGp::describe() const
     desc.headerLines.push_back(line.str());
   }
   if(isSparseApproximation())
+  {
     desc.headerLines.push_back(string("Inducing fixed: ") + (isInducingFixed() ? "1" : "0"));
+    if(pInducing!=0)
+    {
+      desc.headerLines.push_back(string("Inducing type: ") + pInducing->typeName());
+      if(pInducing->typeName()!="points")
+        desc.headerLines.push_back(
+            string("Learn window width: ")
+            + (pInducing->learnsWindowWidth() ? "1" : "0"));
+    }
+  }
+  desc.optNumParams = static_cast<int>(getOptNumParams());
 
   // Kernel / beta / scale paths with transforms and fix flags.
   if(pkern)
@@ -3364,6 +3393,14 @@ ModelDescription CGp::describe() const
     else
       beta.transform = "exp";
     desc.params.push_back(beta);
+    if(pInducing!=0 && pInducing->typeName()!="points")
+    {
+      ParamRow sRow("inducing.window_width", pInducing->getWindowWidth());
+      sRow.transform = "exp";
+      // Centres are omitted from the table; mark s fixed when not learnt.
+      sRow.fixed = !pInducing->learnsWindowWidth();
+      desc.params.push_back(sRow);
+    }
   }
   if(isOutputScaleLearnt())
   {

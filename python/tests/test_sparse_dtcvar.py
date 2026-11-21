@@ -89,12 +89,19 @@ def test_learn_window_width_opt_in():
     )
     assert m.inducing_fixed is False
     assert m.learn_window_width is True
-    n0 = len(m.param_paths())
+    assert "inducing.window_width" in m.param_paths()
+    assert m.get_by_path("inducing.window_width") == pytest.approx(0.55)
+    # Table must show s; opt count includes free centres + s (not just kern/beta).
+    text = str(m)
+    assert "inducing.window_width" in text
+    assert m.describe().opt_num_params > len(m.describe().params)
+    s0 = m.window_width
     before = m.objective()
-    m.optimize(iters=5)
+    m.optimize(iters=15)
     assert np.isfinite(m.objective())
     assert m.objective() <= before + 1e-5
-    assert len(m.param_paths()) == n0
+    # Softness should move when learning is on (smoke: not stuck at init).
+    assert m.window_width != pytest.approx(s0, rel=0.0, abs=1e-12) or m.objective() < before
     with pytest.raises(gpc.GpcError, match="inducing_fixed=False"):
         gpc.SparseGPRegression(
             X,
@@ -107,3 +114,14 @@ def test_learn_window_width_opt_in():
         )
     with pytest.raises(gpc.GpcError, match="weightspace"):
         gpc.SparseGPRegression(X, Y, Z, learn_window_width=True)
+
+
+def test_window_width_fixed_still_visible():
+    X, Y, Z = _toy_sparse()
+    m = gpc.SparseGPRegression(
+        X, Y, Z, kernel="mlp", inducing="weightspace", window_width=0.55
+    )
+    assert "inducing.window_width" in m.param_paths()
+    row = next(p for p in m.describe().params if p.path == "inducing.window_width")
+    assert row.fixed is True
+    assert row.value == pytest.approx(0.55)

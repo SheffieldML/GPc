@@ -3,7 +3,7 @@
 One design, two engines: a JAX-based GPy2 for GPU and research work, with GPc as the verified CPU reference and embeddable engine.
 
 **Status:** draft, 2026-11-20. CIPs that change model structure, likelihoods, data handling, randomness or serialisation should cite this note and say how they conform or why they deviate.
-**Relates to:** [CIP-0027](../cip/cip0027.md) (noise in the likelihood) · [CIP-002D](../cip/cip002D.md) Part B and [REQ-0016](../requirements/req0016_gpu-training-decision.md) (GPU route) · [CIP-002A](../cip/cip002A.md) (SVGP) · [CIP-0014](../cip/cip0014.md) (parameter paths) · [CIP-0009](../cip/cip0009.md) (caches) · CIP-0030 (uncollapsed Bayesian GP-LVM, proposed).
+**Relates to:** [CIP-0027](../cip/cip0027.md) (noise in the likelihood) · [CIP-0033](../cip/cip0033.md) / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) (likelihood/inference split; EP/Laplace) · [CIP-002D](../cip/cip002D.md) Part B and [REQ-0016](../requirements/req0016_gpu-training-decision.md) (GPU route) · [CIP-002A](../cip/cip002A.md) (SVGP) · [CIP-0014](../cip/cip0014.md) (parameter paths) · [CIP-0009](../cip/cip0009.md) (caches) · [CIP-0030](../cip/cip0030.md) (uncollapsed Bayesian GP-LVM).
 
 ## Why this note exists
 
@@ -69,7 +69,7 @@ Kept from GPy1: noise belongs to the likelihood; GPy1 names survive as aliases.
 | CIP | What it takes from this note |
 |---|---|
 | **CIP-0027 amendment** | Phase 0: likelihood naming and the batched likelihood API (rule 2), no state added to likelihoods. Phase A: Gaussian variance owned by the likelihood for every model with observation noise (rule 7). Retarget from "GPy-aligned" to "this note, with GPy1 names as aliases". |
-| **Follow-on likelihood / inference CIP** (to be written) | Rules 1, 3, 4: targets and marginals leave `CNoise`; IVM / PPA sites become inference state over likelihood primitives (EP moments); new likelihoods via Gauss–Hermite. |
+| **[CIP-0033](../cip/cip0033.md)** / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) | Rules 1, 3, 4: targets and marginals leave `CNoise`; IVM / PPA sites become inference state over likelihood primitives (`ep_moments`); EP and Laplace on `CGp`; new likelihoods via Gauss–Hermite. |
 | **CIP-0030** (proposed) | Rule 6: seed per step and injectable \(\boldsymbol\epsilon\) for the sampled Bayesian GP-LVM bound. |
 | **CIP-002D Part B / REQ-0016** | Option B is GPy2. Rules 5 and 8 (purity tests, shared fixtures) are the contract between the two engines. |
 

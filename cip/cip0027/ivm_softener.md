@@ -35,9 +35,9 @@ Add \(\sigma^2_{\mathrm{probit}}\) to `CProbitNoise`’s optimisable vector (pos
 
 Caveats: landscape partly redundant with kernel variance and with White if both free; **still not equivalent** to White-in-\(K\). B′ may compare this to status quo; shipping it as the default softener is **out of scope for CIP-0027**.
 
-### C — GPy-style Bernoulli + EP / Laplace on `CGp` (deferred)
+### C — GPy-style Bernoulli + EP / Laplace on `CGp`
 
-Default kernel can be RBF-only; softness lives in the likelihood + inference method. That is the real “integration of non-linear likelihoods” project (sites, EP/Laplace/variational, gradients, sparse + non-conjugate). **Defer to a dedicated CIP**; do not overload 0027.
+Default kernel can be RBF-only; softness lives in the likelihood + inference method. That is the real “integration of non-linear likelihoods” project (sites, EP/Laplace/variational, gradients, sparse + non-conjugate). Owned by **[CIP-0033](../cip0033.md)** / [REQ-0019](../../requirements/req0019_nonconjugate-inference-ep-laplace.md); do not overload 0027.
 
 ## Phase B′ experiment matrix
 

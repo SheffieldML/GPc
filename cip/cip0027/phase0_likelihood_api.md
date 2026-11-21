@@ -8,7 +8,7 @@ Maps existing `CNoise` surfaces onto the [target architecture](../../docs/target
 | `variational_expectations` | `gaussianVariationalExpectations` | `CGaussianNoise::expectedLogLikelihood` |
 | `log_predictive_density` | `gaussianLogPredictiveDensity` | `CGaussianNoise::logLikelihood(mu,var,y)` |
 | `predictive_moments` | (Phase A+) | `out()` |
-| `ep_moments` | deferred | follow-on likelihood / inference CIP |
+| `ep_moments` | `bernoulliProbitEpMoments` ([CIP-0033](../cip0033.md)) | GPy `Bernoulli.moments_match_ep` |
 
 **Gram helper for Phase A FTC:** `ndlnoise::addObservationNoiseDiag(K, sigma2)`.
 

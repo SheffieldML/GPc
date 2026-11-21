@@ -1,0 +1,21 @@
+== composite
+  DGP-shaped erf, L=2, M=32        [lr 0.001, wd 0.01, 2001 steps] single RMSE 0.431±0.012 NLL  0.579 | ens-5 RMSE 0.406 NLL  0.468
+  DGP-shaped erf, L=2, M=128       [lr 0.003, wd 0.01, 301 steps] single RMSE 0.460±0.017 NLL  0.687 | ens-5 RMSE 0.439 NLL  0.558
+  DGP-shaped erf, L=3, M=32        [lr 0.001, wd 0.01, 5001 steps] single RMSE 0.340±0.024 NLL  0.359 | ens-5 RMSE 0.288 NLL  0.189
+  DGP-shaped erf, L=3, M=128       [lr 0.003, wd 0.01, 501 steps] single RMSE 0.361±0.019 NLL  0.464 | ens-5 RMSE 0.328 NLL  0.110
+  plain relu, 2 hidden x 64        [lr 0.003, wd 0.01, 601 steps] single RMSE 0.777±0.020 NLL  1.171 | ens-5 RMSE 0.704 NLL  1.104
+  plain tanh, 2 hidden x 64        [lr 0.001, wd 0.01, 1301 steps] single RMSE 0.698±0.013 NLL  1.060 | ens-5 RMSE 0.639 NLL  0.984
+  plain relu, 3 hidden x 64        [lr 0.003, wd 0.01, 7801 steps] single RMSE 0.774±0.018 NLL  1.164 | ens-5 RMSE 0.681 NLL  1.050
+  plain tanh, 3 hidden x 64        [lr 0.003, wd 0.01, 7601 steps] single RMSE 0.759±0.026 NLL  1.152 | ens-5 RMSE 0.653 NLL  1.011
+== step
+Traceback (most recent call last):
+  File "/home/claude/work/deepws/mlp_baseline.py", line 86, in <module>
+    print("== step"); res["step"]=run("step",cfg_s)
+                                  ~~~^^^^^^^^^^^^^^
+  File "/home/claude/work/deepws/mlp_baseline.py", line 63, in run
+    f,ps=mk(np.random.default_rng(0)); v,_,tb=train(f,ps,a,Xtr,ytr,Xva,yva,lr=lr,wd=wd)
+                                              ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/claude/work/deepws/mlp_baseline.py", line 41, in train
+    idx=rng.choice(len(Xtr),B,replace=False); ps,st=step(ps,st,Xtr[idx],ytr[idx])
+  File "numpy/random/_generator.pyx", line 925, in numpy.random._generator.Generator.choice
+ValueError: Cannot take a larger sample than population when replace is False

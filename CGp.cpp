@@ -2155,8 +2155,12 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
       }
       if(pInducing != 0 && pInducing->learnsWindowWidth())
       {
-        g.setVal(pInducing->windowWidthGrad(), 0, counter);
-        counter++;
+        const unsigned int nS = pInducing->numLearnedWindowWidths();
+        for(unsigned int is = 0; is < nS; is++)
+        {
+          g.setVal(pInducing->windowWidthGradAt(is), 0, counter);
+          counter++;
+        }
       }
     }
   }

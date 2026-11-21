@@ -656,7 +656,8 @@ void bind_gp(py::module_& m)
       .def_readonly("header_lines", &ModelDescription::headerLines)
       .def_readonly("params", &ModelDescription::params)
       .def_readonly("has_log_likelihood", &ModelDescription::hasLogLikelihood)
-      .def_readonly("log_likelihood", &ModelDescription::logLikelihood);
+      .def_readonly("log_likelihood", &ModelDescription::logLikelihood)
+      .def_readonly("opt_num_params", &ModelDescription::optNumParams);
 
   py::class_<PyGPRegression>(
       m,

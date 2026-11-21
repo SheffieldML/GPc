@@ -34,9 +34,13 @@ struct ModelDescription
   std::vector<ParamRow> params;
   bool hasLogLikelihood;
   double logLikelihood;
+  // When >0, overrides the displayed "Number of Optimization Parameters"
+  // (table rows alone omit free inducing centres / learnable window width).
+  int optNumParams;
 
   ModelDescription()
-    : title(), headerLines(), params(), hasLogLikelihood(false), logLikelihood(0.0)
+    : title(), headerLines(), params(), hasLogLikelihood(false), logLikelihood(0.0),
+      optNumParams(-1)
   {
   }
 };
@@ -77,6 +81,8 @@ inline std::ostream& formatModelDescription(const ModelDescription& desc, std::o
     if(!desc.params[i].fixed)
       ++nFree;
   }
+  if(desc.optNumParams >= 0)
+    nFree = static_cast<size_t>(desc.optNumParams);
 
   bool haveObj = false;
   double obj = 0.0;

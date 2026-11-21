@@ -41,6 +41,9 @@ def format_model_description(
     params = list(getattr(desc, "params", []) or [])
     n_params = len(params)
     n_free = sum(1 for p in params if not getattr(p, "fixed", False))
+    opt_override = getattr(desc, "opt_num_params", None)
+    if opt_override is not None and int(opt_override) >= 0:
+        n_free = int(opt_override)
 
     obj = objective
     if obj is None and getattr(desc, "has_log_likelihood", False):

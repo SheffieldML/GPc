@@ -23,8 +23,8 @@ python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 **Colab / TestPyPI:**
 
 - Keep `--extra-index-url https://pypi.org/simple/` so NumPy resolves from real PyPI (do not point both indexes at TestPyPI).
-- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a2` while `0.1.0a4` is already published).
-- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface; `0.1.0a3` reserved; `0.1.0a4` adds CIP-0031 `predict` / `predict_noiseless` and notebook teaching.
+- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a3` while `0.1.0a4` is already published).
+- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface; `0.1.0a3` frees sparse inducing by default and adds optional `learn_window_width` for weight-space; `0.1.0a4` adds CIP-0031 `predict` / `predict_noiseless` and notebook teaching.
 
 macOS wheels from CI currently require a recent macOS (deployment target follows Homebrew bottle `minOS` on `macos-15`). Linux wheels are manylinux.
 

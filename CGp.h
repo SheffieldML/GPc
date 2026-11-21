@@ -2,6 +2,7 @@
 #define CGP_H
 #include "CMltools.h"
 #include "CInducing.h"
+#include "CEpInference.h"
 #include "CModelDescription.h"
 
 using namespace std;
@@ -135,6 +136,14 @@ public:
   virtual double logLikelihood() const;
   // compute the gradients of the approximation wrt parameters.
   virtual double logLikelihoodGradient(CMatrix& g) const;
+
+  // CIP-0033: GPy-style EP on FTC (Bernoulli–probit). Prior K = kern(X,X); no
+  // likelihood.variance on the Gram. Requires FTC and outputDim==1.
+  void setEpInference(bool on);
+  bool isEpInference() const { return epInference; }
+  // Posterior latent mean / var after last EP evaluation (empty if unused).
+  const CMatrix& epPosteriorMean() const { return epMu; }
+  const CMatrix& epPosteriorVarDiag() const { return epVarDiag; }
   // CIP-0026: -KL(q(u)||p(u)) - ½β tr(Cov_f̄) [+ DTCVAR residual] + kern prior.
   // Matches dense CPpa approxLogLikelihood parts 1–4 when DTC/DTCVAR and M=N, Xu=X.
   // Throws for FITC/PITC (different A; use interim CGp LML + noise monitor).
@@ -413,11 +422,12 @@ public:
   {
     return KupToDate;
   }
-  void setKupToDate(const bool val) const 
+  void setKupToDate(const bool val) const
   {
     KupToDate = val;
     if(!KupToDate)
     {
+      epUpToDate = false;
       setAlphaUpToDate(false);
       setADupToDate(false);
     }
@@ -629,7 +639,15 @@ public:
   bool outputBiasLearnt;
   bool sparseApproximation;
   bool terminate;
-  bool epUpdate;
+  bool epUpdate; // legacy IVM-era flag (unused on CGp); prefer epInference
+  bool epInference; // CIP-0033 FTC EP
+  mutable bool epUpToDate;
+  mutable CEpInference epEngine;
+  mutable CEpSites epSites;
+  mutable CMatrix epMu;
+  mutable CMatrix epVarDiag;
+  mutable double epLogMarginalCache;
+  double epLogLikelihood() const; // GPy EP marginal + kern prior
   bool loadedModel;
   bool spherical;
   bool inducingFixed;

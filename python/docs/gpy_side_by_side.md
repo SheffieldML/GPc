@@ -55,6 +55,50 @@ Install / build: see [`../README.md`](../README.md).
 | Predict | `predict` / `predict_noiseless` | Same names (CIP-0031): `y_*` vs `f_*`; see [`examples/toy_1d_regression.ipynb`](../examples/toy_1d_regression.ipynb) |
 | Sparse | `SparseGPRegression` / VarDTC | `gpc.models.SparseGPRegression(..., Z=Z, kernel=k)` → default `dtcvar`; also `approx="fitc"` / `"dtc"` |
 
+## Binary classification (`basic_classification`)
+
+**GPy**
+
+```python
+import numpy as np
+import GPy
+
+X = np.linspace(-2, 2, 40)[:, None]
+Y = (np.sin(X[:, 0]) > 0).astype(float)[:, None]
+
+m = GPy.models.GPClassification(X, Y)  # Bernoulli + EP
+m.optimize()
+mu, var = m.predict_noiseless(X)       # latent f_*
+p = m.predictive_probabilities(X)      # P(y=1)
+```
+
+**`gpc`**
+
+```python
+import numpy as np
+import gpc
+
+X = np.linspace(-2, 2, 40)[:, None]
+Y = (np.sin(X[:, 0]) > 0).astype(float)[:, None]
+
+m = gpc.GPClassification(X, Y, inference="ep")  # or "laplace"
+m.optimize(iters=60)
+mu, var = m.predict_noiseless(X)   # also m.predict(X) — latent f_*
+p = m.predictive_probabilities(X)  # alias of predict_proba
+```
+
+| Topic | GPy | `gpc` |
+|---|---|---|
+| Default inference | EP | `inference="ep"` |
+| Laplace | optional | `inference="laplace"` (predict wired, CIP-0036) |
+| Latent predictive | `predict` / `predict_noiseless` | Same (`predict` aliases `predict_noiseless`) |
+| Class probabilities | `predictive_probabilities` | `predict_proba` **and** `predictive_probabilities` |
+| White softener | not on default classifier | No auto White (CIP-0027); sites/Hessian hold softness |
+| Sparse EP / EPDTC | available in GPy | **Deferred** (FTC-only; CIP-0033/0036) |
+| Large \(N\) | sparse classifiers | Native IVM tutorial; not wrapped in `gpc` yet |
+
+Notebook: [`examples/basic_classification.ipynb`](../examples/basic_classification.ipynb). Native twin: [`docs/tutorials/cgp_ep_classification.md`](../../docs/tutorials/cgp_ep_classification.md). Full capability matrix: [CIP-0036](../../cip/cip0036.md).
+
 ## CLI twin
 
 Same modelling surface without Python:

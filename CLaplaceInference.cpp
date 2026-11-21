@@ -258,6 +258,7 @@ double CLaplaceInference::run(const CMatrix& KIn, const CMatrix& Y)
     }
   }
   dLdKCache.setSymmetric(true);
+  KWiICache.deepCopy(KWiI);
   haveGradCache = true;
   return logMarginal;
 }
@@ -267,4 +268,42 @@ void CLaplaceInference::fillDLDK(CMatrix& dLdK) const
   if(!haveGradCache)
     throw ndlexceptions::Error("CLaplaceInference::fillDLDK requires a prior run().");
   dLdK.deepCopy(dLdKCache);
+}
+
+void CLaplaceInference::predictiveMeanVar(const CMatrix& KtrainTest,
+                                          const CMatrix& kss,
+                                          CMatrix& mu,
+                                          CMatrix& varDiag) const
+{
+  if(!haveGradCache)
+    throw ndlexceptions::Error(
+        "CLaplaceInference::predictiveMeanVar requires a prior run().");
+  const unsigned int n = KiF.getRows();
+  const unsigned int nt = KtrainTest.getCols();
+  DIMENSIONMATCH(KtrainTest.getRows() == n);
+  DIMENSIONMATCH(kss.getRows() == nt);
+  DIMENSIONMATCH(KWiICache.getRows() == n);
+  mu.resize(nt, 1);
+  varDiag.resize(nt, 1);
+  // μ = K_*ᵀ α  (α = K^{-1} f̂)
+  mu.gemvColCol(0, KtrainTest, KiF, 0, 1.0, 0.0, "t");
+  // v_i = kss_i − k_iᵀ (K + W^{-1})^{-1} k_i
+  CMatrix Wk(n, 1);
+  for(unsigned int t = 0; t < nt; t++)
+  {
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double s = 0.0;
+      for(unsigned int j = 0; j < n; j++)
+        s += KWiICache.getVal(i, j) * KtrainTest.getVal(j, t);
+      Wk.setVal(s, i, 0);
+    }
+    double quad = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+      quad += KtrainTest.getVal(i, t) * Wk.getVal(i, 0);
+    double v = kss.getVal(t, 0) - quad;
+    if(v < ndlutil::EPS)
+      v = ndlutil::EPS;
+    varDiag.setVal(v, t, 0);
+  }
 }

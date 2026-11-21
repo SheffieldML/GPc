@@ -503,14 +503,17 @@ double PyGPClassification::objective() const
 std::pair<py::array_t<double>, py::array_t<double>> PyGPClassification::predict_noiseless(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
 {
-  if(inferenceType != "ep")
-    throw ndlexceptions::Error(
-        "predict_noiseless for Laplace classification is not wired yet; use inference='ep'.");
   CMatrix Xt = matrixFromNumpy(Xtest);
   if(Xt.getCols() != X.getCols())
     throw ndlexceptions::Error("Xtest input dimension does not match training X");
   CMatrix mu, varDiag;
-  model->epLatentMeanVar(mu, varDiag, Xt);
+  if(inferenceType == "ep")
+    model->epLatentMeanVar(mu, varDiag, Xt);
+  else if(inferenceType == "laplace")
+    model->laplaceLatentMeanVar(mu, varDiag, Xt);
+  else
+    throw ndlexceptions::Error(
+        "predict_noiseless requires inference 'ep' or 'laplace'.");
   return {matrixToNumpy(mu), matrixToNumpy(varDiag)};
 }
 
@@ -929,8 +932,11 @@ void bind_gp(py::module_& m)
   py::class_<PyGPClassification>(
       m,
       "GPClassification",
-      "FTC Bernoulli–probit classification with EP or Laplace (CIP-0033 Phase D).\n\n"
+      "FTC Bernoulli–probit classification with EP or Laplace "
+      "(CIP-0033 / CIP-0036; GPy GPClassification reflection).\n\n"
       "Prefer gpc.models.GPClassification(X, Y, kernel=..., inference='ep').\n"
+      "predict / predict_noiseless → latent f_*; predict_proba / "
+      "predictive_probabilities → P(y=1).\n"
       "Sparse EP/EPDTC is out of scope (FTC-only).")
       .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
@@ -956,11 +962,19 @@ void bind_gp(py::module_& m)
       .def("predict_noiseless",
            &PyGPClassification::predict_noiseless,
            py::arg("Xtest"),
-           "Latent mean/variance of f_* (EP).")
+           "Latent mean/variance of f_* (EP or Laplace; CIP-0036).")
+      .def("predict",
+           &PyGPClassification::predict,
+           py::arg("Xtest"),
+           "Alias of predict_noiseless (GPy GPClassification: latent f_*).")
       .def("predict_proba",
            &PyGPClassification::predict_proba,
            py::arg("Xtest"),
-           "P(y=1 | Xtest) via probit on EP latent predictive.")
+           "P(y=1 | Xtest) via probit on latent predictive.")
+      .def("predictive_probabilities",
+           &PyGPClassification::predictive_probabilities,
+           py::arg("Xnew"),
+           "GPy alias of predict_proba.")
       .def("describe", &PyGPClassification::describe)
       .def("__str__", &PyGPClassification::to_string)
       .def("__repr__", &PyGPClassification::to_string)

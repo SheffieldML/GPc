@@ -257,6 +257,51 @@ static int testCGpLaplaceOptimise()
   return fail;
 }
 
+static int testCGpLaplaceLatentPredict()
+{
+  // CIP-0036: Laplace latent predictive at train inputs is finite / positive var.
+  const unsigned int n = 8;
+  CMatrix X(n, 1), Y(n, 1);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -1.5 + 3.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    Y.setVal(x < 0.0 ? 1.0 : 0.0, i, 0);
+  }
+  CRbfKern kern(X);
+  kern.setVariance(1.0);
+  kern.setLengthScale(0.8);
+  CProbitNoise noise(&Y);
+  CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+  model.setLaplaceInference(true);
+  model.setVerbosity(0);
+  (void)model.logLikelihood();
+  CMatrix mu, var;
+  model.laplaceLatentMeanVar(mu, var, X);
+  int fail = 0;
+  fail += checkClose("Laplace predict rows", (double)mu.getRows(), (double)n, 0.0);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    fail += checkClose("Laplace mu finite",
+                       std::isfinite(mu.getVal(i, 0)) ? 1.0 : 0.0, 1.0, 0.0);
+    fail += checkClose("Laplace var > 0",
+                       (var.getVal(i, 0) > 0.0) ? 1.0 : 0.0, 1.0, 0.0);
+  }
+  // Separable toy: mean sign should agree with labels on average.
+  double agree = 0.0;
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double y = Y.getVal(i, 0);
+    const double s = (y > 0.5) ? 1.0 : -1.0;
+    if(s * mu.getVal(i, 0) > 0.0)
+      agree += 1.0;
+  }
+  cout << "  Laplace latent sign agree=" << agree << "/" << n << endl;
+  fail += checkClose("Laplace latent sign majority",
+                     (agree >= 0.5 * (double)n) ? 1.0 : 0.0, 1.0, 0.0);
+  return fail;
+}
+
 static int testSiteWorkspaceAttach()
 {
   // CIP-0034: attached workspace is the active site store (inference owns it).
@@ -293,6 +338,7 @@ int main()
   fail += testCGpEpOptimise();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
+  fail += testCGpLaplaceLatentPredict();
   fail += testSiteWorkspaceAttach();
   cout << "Total failures: " << fail << endl;
   return fail;

@@ -16,8 +16,10 @@ def test_package_and_factory_docstrings():
     assert _nonempty(gpc.__doc__)
     assert _nonempty(gpc.GPRegression.__doc__)
     assert _nonempty(gpc.SparseGPRegression.__doc__)
+    assert _nonempty(gpc.GPClassification.__doc__)
     assert _nonempty(gpc.models.GPRegression.__doc__)
     assert _nonempty(gpc.models.SparseGPRegression.__doc__)
+    assert _nonempty(gpc.models.GPClassification.__doc__)
     assert _nonempty(gpc.kern.__doc__)
 
 
@@ -60,3 +62,16 @@ def test_bound_model_method_docstrings():
     assert _nonempty(type(s).__doc__)
     for name in ("optimize", "predict", "predict_noiseless", "inducing_inputs", "param_paths"):
         assert _nonempty(getattr(s, name).__doc__), name
+
+    Yb = (X[:, 0] < 0.5).astype(float)[:, None]
+    c = gpc.GPClassification(X, Yb)
+    assert _nonempty(type(c).__doc__)
+    for name in (
+        "optimize",
+        "predict",
+        "predict_noiseless",
+        "predict_proba",
+        "predictive_probabilities",
+        "param_paths",
+    ):
+        assert _nonempty(getattr(c, name).__doc__), name

@@ -13,7 +13,7 @@ else
 include make.linux
 endif
 
-all: gplvm bgplvm ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
+all: gplvm bgplvm deepgp ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).
 .PHONY: python-gpc python-gpc-test
@@ -80,6 +80,13 @@ bgplvm: bgplvm.o CClctrl.o CBayesGplvm.o CSviBayesGplvm.o CSvgp.o CAdam.o CStoch
 bgplvm.o: bgplvm.cpp bgplvm.h CBayesGplvm.h CSviBayesGplvm.h CAdam.h CClctrl.h CKern.h
 	$(CC) -c bgplvm.cpp -o bgplvm.o $(CCFLAGS)
 
+# CIP-0035: deep GP CLI.
+deepgp: deepgp.o CClctrl.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o deepgp deepgp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CMltools.o ndlassert.o $(LDFLAGS)
+
+deepgp.o: deepgp.cpp deepgp.h CDeepGp.h CAdam.h CClctrl.h CKern.h
+	$(CC) -c deepgp.cpp -o deepgp.o $(CCFLAGS)
+
 ivm: ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o ivm  ivm.o CClctrl.o CIvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
@@ -96,13 +103,13 @@ ppa.o: ppa.cpp CPpa.h CSparsePpa.h CKern.h CMatrix.h ppa.h CClctrl.h
 gp: gp.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
-# CIP-001D follow-on: include MAP / collapsed Bayesian GPLVM (+ CMltools) for gpc.
-LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o
+# CIP-001D / CIP-0035: GPLVM façades + DeepGP (SVGP/Adam) in libgp.
+LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
 
-libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o
+libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
 	$(LIBSCOMMAND) libgp$(LIBSEXT) $(LIBGP_OBJS)
 
-libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o
+libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
 	$(LIBDCOMMAND) libgp$(LIBDEXT) $(LIBGP_OBJS) $(LDFLAGS)
 
 gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
@@ -114,7 +121,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDiagGradParams testInducingGradZ
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -157,6 +164,11 @@ run-matio-tests: matio-tests
 run-bgplvm-smoke: bgplvm
 	chmod +x scripts/smoke_bgplvm.sh
 	./scripts/smoke_bgplvm.sh
+
+# CIP-0035: CLI smoke for ./deepgp.
+run-deepgp-smoke: deepgp
+	chmod +x scripts/smoke_deepgp.sh
+	./scripts/smoke_deepgp.sh
 
 # CIP-0019: adversarial / extreme-input numerical stability (separate from matio-tests).
 testNumericalStability: numerical_stability/testNumericalStability.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
@@ -275,6 +287,16 @@ CSviBayesGplvm.o: CSviBayesGplvm.cpp CSviBayesGplvm.h CSvgp.h
 
 CSvgp.o: CSvgp.cpp CSvgp.h CAdam.h CStochasticOptimisable.h CKern.h CMatrix.h CCholAdjoint.h CInducing.h
 	$(CC) -c CSvgp.cpp -o CSvgp.o $(CCFLAGS)
+
+# CIP-0035 Phase 1: deep GP (DSVI on CSvgp layers).
+testDeepGp: testDeepGp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testDeepGp testDeepGp.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testDeepGp.o: testDeepGp.cpp CDeepGp.h CSvgp.h CKern.h CMatrix.h
+	$(CC) -c testDeepGp.cpp -o testDeepGp.o $(CCFLAGS)
+
+CDeepGp.o: CDeepGp.cpp CDeepGp.h CSvgp.h
+	$(CC) -c CDeepGp.cpp -o CDeepGp.o $(CCFLAGS)
 
 CAdam.o: CAdam.cpp CAdam.h CStochasticOptimisable.h CMatrix.h
 	$(CC) -c CAdam.cpp -o CAdam.o $(CCFLAGS)

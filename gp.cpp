@@ -520,7 +520,16 @@ void CClgp::learn()
     if((inducingTypeStr == "whitenoise" || inducingTypeStr == "greens"
         || inducingTypeStr == "weightspace")
        && windowWidth > 0.0)
-      pmodel->getInducing()->setWindowWidth(windowWidth);
+    {
+      try
+      {
+        pmodel->getInducing()->setWindowWidth(windowWidth);
+      }
+      catch(ndlexceptions::Error& err)
+      {
+        exitError(err.getMessage());
+      }
+    }
   }
   if(optimiser=="scg")
     pmodel->setDefaultOptimiser(CGp::SCG);

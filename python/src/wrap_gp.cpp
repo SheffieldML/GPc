@@ -416,15 +416,17 @@ PySparseGPRegression::PySparseGPRegression(
     int verbosity,
     py::object kernel,
     const std::string& inducing,
-    double window_width,
+    py::object window_width,
     unsigned int arccos_order,
-    bool learn_window_width)
+    bool learn_window_width,
+    bool learn_window_widths)
     : X(matrixFromNumpy(Xin)),
       Y(matrixFromNumpy(Yin)),
       Z(matrixFromNumpy(Zin)),
       approxType("dtcvar"),
       inducingFixed(inducing_fixed),
-      learnWindowWidth(learn_window_width)
+      learnWindowWidth(learn_window_width),
+      learnWindowWidths(learn_window_widths)
 {
   checkXY(X, Y);
   if(arccos_order > 1)
@@ -517,21 +519,73 @@ PySparseGPRegression::PySparseGPRegression(
     CInducing* pInd = model->getInducing();
     if(pInd == 0)
       throw ndlexceptions::Error("weight-space inducing object missing after setInducingType");
-    if(window_width > 0.0)
-      pInd->setWindowWidth(window_width);
-    if(learnWindowWidth)
+
+    // CIP-0032: window_width may be a scalar or length-M vector.
+    bool haveVectorS = false;
+    if(!window_width.is_none())
+    {
+      if(py::isinstance<py::float_>(window_width) || py::isinstance<py::int_>(window_width))
+      {
+        const double s0 = py::cast<double>(window_width);
+        if(s0 > 0.0)
+          pInd->setWindowWidth(s0);
+      }
+      else
+      {
+        auto arr = py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(window_width);
+        if(!arr)
+          throw ndlexceptions::Error("window_width must be a float or a 1-D array of length M.");
+        if(arr.ndim() != 1 || static_cast<unsigned int>(arr.shape(0)) != numActive)
+          throw ndlexceptions::Error("window_width array must have shape (M,) matching Z rows.");
+        CMatrix sVec(numActive, 1);
+        auto r = arr.unchecked<1>();
+        for(unsigned int m = 0; m < numActive; m++)
+        {
+          if(!(r(m) > 0.0))
+            throw ndlexceptions::Error("window_width entries must be positive.");
+          sVec.setVal(r(m), m, 0);
+        }
+        CInducingWeightSpace* pWs = dynamic_cast<CInducingWeightSpace*>(pInd);
+        if(pWs == 0)
+          throw ndlexceptions::Error("per-unit window_width requires weight-space inducing.");
+        pWs->setWindowWidths(sVec);
+        haveVectorS = true;
+      }
+    }
+
+    if(learnWindowWidth && learnWindowWidths)
+      throw ndlexceptions::Error(
+          "Pass only one of learn_window_width=True (tied) or learn_window_widths=True (untied).");
+
+    if(learnWindowWidths || haveVectorS)
+    {
+      CInducingWeightSpace* pWs = dynamic_cast<CInducingWeightSpace*>(pInd);
+      if(pWs == 0)
+        throw ndlexceptions::Error("learn_window_widths requires weight-space inducing.");
+      if(!pWs->isWindowWidthUntied())
+      {
+        // Untie at current scalar (or keep vector already set).
+        CMatrix sVec(numActive, 1);
+        const double s0 = pWs->getWindowWidth();
+        for(unsigned int m = 0; m < numActive; m++)
+          sVec.setVal(s0, m, 0);
+        pWs->setWindowWidths(sVec);
+      }
+    }
+
+    if(learnWindowWidth || learnWindowWidths)
     {
       if(inducingFixed)
         throw ndlexceptions::Error(
-            "learn_window_width=True requires inducing_fixed=False "
+            "learn_window_width(s)=True requires inducing_fixed=False "
             "(s is packed with free inducing parameters).");
       pInd->setLearnWindowWidth(true);
     }
   }
-  else if(learnWindowWidth)
+  else if(learnWindowWidth || learnWindowWidths)
   {
     throw ndlexceptions::Error(
-        "learn_window_width is only supported with inducing='weightspace'.");
+        "learn_window_width(s) is only supported with inducing='weightspace'.");
   }
 }
 
@@ -607,6 +661,19 @@ double PySparseGPRegression::window_width() const
   return pInd->getWindowWidth();
 }
 
+py::array_t<double> PySparseGPRegression::window_widths() const
+{
+  const CInducing* pInd = model->getInducing();
+  if(pInd == 0 || pInd->numWindowWidths() == 0)
+    return py::array_t<double>(0);
+  const unsigned int M = pInd->numWindowWidths();
+  py::array_t<double> out(static_cast<py::ssize_t>(M));
+  auto r = out.mutable_unchecked<1>();
+  for(unsigned int m = 0; m < M; m++)
+    r(m) = pInd->getWindowWidthAt(m);
+  return out;
+}
+
 ModelDescription PyGPRegression::describe() const
 {
   return model->describe();
@@ -658,7 +725,8 @@ void bind_gp(py::module_& m)
       .def_readonly("header_lines", &ModelDescription::headerLines)
       .def_readonly("params", &ModelDescription::params)
       .def_readonly("has_log_likelihood", &ModelDescription::hasLogLikelihood)
-      .def_readonly("log_likelihood", &ModelDescription::logLikelihood);
+      .def_readonly("log_likelihood", &ModelDescription::logLikelihood)
+      .def_readonly("opt_num_params", &ModelDescription::optNumParams);
 
   py::class_<PyGPRegression>(
       m,
@@ -739,8 +807,9 @@ void bind_gp(py::module_& m)
                     int,
                     py::object,
                     const std::string&,
-                    double,
+                    py::object,
                     unsigned int,
+                    bool,
                     bool>(),
            py::arg("X"),
            py::arg("Y"),
@@ -753,12 +822,14 @@ void bind_gp(py::module_& m)
            py::arg("window_width") = -1.0,
            py::arg("arccos_order") = 0,
            py::arg("learn_window_width") = false,
+           py::arg("learn_window_widths") = false,
            "Construct sparse Gaussian GP with inducing inputs Z.\n\n"
            "approx: 'dtcvar' (default), 'fitc', or 'dtc'.\n"
            "kernel: string name or gpc.kern parts list (parts list needs inducing='points').\n"
            "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).\n"
            "inducing_fixed defaults False (matches CGp); pass True to freeze Z/W.\n"
-           "learn_window_width: optimise global weight-space s (requires free inducing).")
+           "window_width: scalar or length-M array (CIP-0032 per-unit s_m).\n"
+           "learn_window_width: optimise global tied s; learn_window_widths: untied s_m.")
       .def("set_by_path",
            &PySparseGPRegression::set_by_path,
            py::arg("path"),
@@ -819,9 +890,17 @@ void bind_gp(py::module_& m)
       .def_property_readonly(
           "learn_window_width",
           &PySparseGPRegression::learn_window_width,
-          "True if global weight-space window width s is free.")
+          "True if global tied weight-space window width s is free.")
+      .def_property_readonly(
+          "learn_window_widths",
+          &PySparseGPRegression::learn_window_widths,
+          "True if per-unit weight-space window widths s_m are free (CIP-0032).")
       .def_property_readonly(
           "window_width",
           &PySparseGPRegression::window_width,
-          "Weight-space ridge window width (0 if unused).");
+          "Weight-space ridge window width (tied scalar / first unit; 0 if unused).")
+      .def_property_readonly(
+          "window_widths",
+          &PySparseGPRegression::window_widths,
+          "Per-unit weight-space window widths as a length-M array (CIP-0032).");
 }

@@ -276,3 +276,40 @@ void CEpInference::fillDLDK(CMatrix& dLdK) const
   }
   dLdK.setSymmetric(true);
 }
+
+void CEpInference::predictiveMeanVar(const CMatrix& KtrainTest,
+                                     const CMatrix& kss,
+                                     CMatrix& mu,
+                                     CMatrix& varDiag) const
+{
+  if(!haveGradCache)
+    throw ndlexceptions::Error(
+        "CEpInference::predictiveMeanVar requires a prior run().");
+  const unsigned int n = alpha.getRows();
+  const unsigned int nt = KtrainTest.getCols();
+  DIMENSIONMATCH(KtrainTest.getRows() == n);
+  DIMENSIONMATCH(kss.getRows() == nt);
+  mu.resize(nt, 1);
+  varDiag.resize(nt, 1);
+  // μ = K_*ᵀ α
+  mu.gemvColCol(0, KtrainTest, alpha, 0, 1.0, 0.0, "t");
+  // v_i = kss_i − k_iᵀ W k_i
+  CMatrix Wk(n, 1);
+  for(unsigned int t = 0; t < nt; t++)
+  {
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double s = 0.0;
+      for(unsigned int j = 0; j < n; j++)
+        s += Wi.getVal(i, j) * KtrainTest.getVal(j, t);
+      Wk.setVal(s, i, 0);
+    }
+    double quad = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+      quad += KtrainTest.getVal(i, t) * Wk.getVal(i, 0);
+    double v = kss.getVal(t, 0) - quad;
+    if(v < ndlutil::EPS)
+      v = ndlutil::EPS;
+    varDiag.setVal(v, t, 0);
+  }
+}

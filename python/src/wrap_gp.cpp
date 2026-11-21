@@ -407,6 +407,139 @@ std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict_nois
   return predictImpl(*model, X, Y, Xtest, false);
 }
 
+PyGPClassification::PyGPClassification(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
+    py::array_t<double, py::array::c_style | py::array::forcecast> Yin,
+    py::object kernel,
+    const std::string& inference,
+    int verbosity)
+    : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)), inferenceType("ep")
+{
+  checkXY(X, Y);
+  if(Y.getCols() != 1)
+    throw ndlexceptions::Error("GPClassification requires a single output column.");
+  for(unsigned int i = 0; i < Y.getRows(); ++i)
+  {
+    const double yi = Y.getVal(i, 0);
+    if(!(yi == 0.0 || yi == 1.0 || yi == -1.0))
+      throw ndlexceptions::Error(
+          "GPClassification labels must be in {0,1} or {-1,1}.");
+  }
+
+  kern = std::make_unique<CCmpndKern>(X);
+  if(kernelIsPartsList(kernel))
+  {
+    py::list parts = py::reinterpret_borrow<py::list>(kernel);
+    kernelType = addPartsCompound(*kern, X, parts);
+  }
+  else
+  {
+    const std::string kernelName = py::cast<std::string>(kernel);
+    const SignalKind kind = parseSignalKind(kernelName);
+    kernelType = signalKindLabel(kind);
+    addFtcStyleCompound(*kern, X, kind, 0);
+  }
+
+  noise = std::make_unique<CProbitNoise>(&Y);
+  model = std::make_unique<CGp>(kern.get(), noise.get(), &X, CGp::FTC, 0, verbosity);
+  if(inference == "ep" || inference == "EP")
+  {
+    inferenceType = "ep";
+    model->setEpInference(true);
+  }
+  else if(inference == "laplace" || inference == "Laplace")
+  {
+    inferenceType = "laplace";
+    model->setLaplaceInference(true);
+  }
+  else
+    throw ndlexceptions::Error(
+        "GPClassification inference must be 'ep' or 'laplace' (FTC only).");
+}
+
+void PyGPClassification::set_by_path(const std::string& path, double val)
+{
+  model->setByPath(path, val);
+}
+
+double PyGPClassification::get_by_path(const std::string& path) const
+{
+  return model->getByPath(path);
+}
+
+std::vector<std::string> PyGPClassification::param_paths() const
+{
+  return model->paramPaths();
+}
+
+void PyGPClassification::optimize(unsigned int iters, bool messages, py::object callback)
+{
+  (void)messages;
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(false);
+  model->setVerbosity(0);
+  const bool haveCallback = !(callback.is_none());
+  if(haveCallback)
+  {
+    py::object cb = callback;
+    model->addOptimiserObserver([cb](const OptimiserEvent& e) {
+      py::gil_scoped_acquire acquire;
+      cb(e);
+    });
+  }
+  {
+    py::gil_scoped_release release;
+    model->optimise(iters);
+  }
+  model->clearOptimiserObservers();
+  model->setDefaultTextProgress(true);
+}
+
+double PyGPClassification::objective() const
+{
+  return model->computeObjectiveVal();
+}
+
+std::pair<py::array_t<double>, py::array_t<double>> PyGPClassification::predict_noiseless(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+{
+  if(inferenceType != "ep")
+    throw ndlexceptions::Error(
+        "predict_noiseless for Laplace classification is not wired yet; use inference='ep'.");
+  CMatrix Xt = matrixFromNumpy(Xtest);
+  if(Xt.getCols() != X.getCols())
+    throw ndlexceptions::Error("Xtest input dimension does not match training X");
+  CMatrix mu, varDiag;
+  model->epLatentMeanVar(mu, varDiag, Xt);
+  return {matrixToNumpy(mu), matrixToNumpy(varDiag)};
+}
+
+py::array_t<double> PyGPClassification::predict_proba(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+{
+  auto mv = predict_noiseless(Xtest);
+  CMatrix mu = matrixFromNumpy(mv.first);
+  CMatrix var = matrixFromNumpy(mv.second);
+  CMatrix yPos(mu.getRows(), 1);
+  yPos.setVals(1.0);
+  CMatrix prob(mu.getRows(), 1);
+  noise->likelihoods(prob, mu, var, yPos); // P(y=+1)
+  return matrixToNumpy(prob);
+}
+
+std::string PyGPClassification::to_string() const
+{
+  std::ostringstream os;
+  os << "GPClassification(n=" << n() << ", inference=" << inferenceType
+     << ", kernel=" << kernelType << ", approx=ftc)";
+  return os.str();
+}
+
+ModelDescription PyGPClassification::describe() const
+{
+  return model->describe();
+}
+
 PySparseGPRegression::PySparseGPRegression(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
     py::array_t<double, py::array::c_style | py::array::forcecast> Yin,
@@ -792,6 +925,51 @@ void bind_gp(py::module_& m)
                              &PyGPRegression::kernel_type,
                              "Kernel label (string name or compound part summary).")
       .def_property_readonly("approx", &PyGPRegression::approx, "Approximation type ('ftc').");
+
+  py::class_<PyGPClassification>(
+      m,
+      "GPClassification",
+      "FTC Bernoulli–probit classification with EP or Laplace (CIP-0033 Phase D).\n\n"
+      "Prefer gpc.models.GPClassification(X, Y, kernel=..., inference='ep').\n"
+      "Sparse EP/EPDTC is out of scope (FTC-only).")
+      .def(py::init<py::array_t<double, py::array::c_style | py::array::forcecast>,
+                    py::array_t<double, py::array::c_style | py::array::forcecast>,
+                    py::object,
+                    const std::string&,
+                    int>(),
+           py::arg("X"),
+           py::arg("Y"),
+           py::arg("kernel") = py::str("rbf"),
+           py::arg("inference") = "ep",
+           py::arg("verbosity") = 0,
+           "Construct FTC classification GP.\n\n"
+           "Y labels in {0,1} or {-1,1}. inference: 'ep' (default) or 'laplace'.")
+      .def("set_by_path", &PyGPClassification::set_by_path, py::arg("path"), py::arg("value"))
+      .def("get_by_path", &PyGPClassification::get_by_path, py::arg("path"))
+      .def("param_paths", &PyGPClassification::param_paths)
+      .def("optimize",
+           &PyGPClassification::optimize,
+           py::arg("iters") = 100,
+           py::arg("messages") = false,
+           py::arg("callback") = py::none())
+      .def("objective", &PyGPClassification::objective)
+      .def("predict_noiseless",
+           &PyGPClassification::predict_noiseless,
+           py::arg("Xtest"),
+           "Latent mean/variance of f_* (EP).")
+      .def("predict_proba",
+           &PyGPClassification::predict_proba,
+           py::arg("Xtest"),
+           "P(y=1 | Xtest) via probit on EP latent predictive.")
+      .def("describe", &PyGPClassification::describe)
+      .def("__str__", &PyGPClassification::to_string)
+      .def("__repr__", &PyGPClassification::to_string)
+      .def_property_readonly("n", &PyGPClassification::n)
+      .def_property_readonly("input_dim", &PyGPClassification::input_dim)
+      .def_property_readonly("output_dim", &PyGPClassification::output_dim)
+      .def_property_readonly("kernel_type", &PyGPClassification::kernel_type)
+      .def_property_readonly("inference", &PyGPClassification::inference)
+      .def_property_readonly("approx", &PyGPClassification::approx);
 
   py::class_<PySparseGPRegression>(
       m,

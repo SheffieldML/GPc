@@ -7,6 +7,7 @@
 
 #include "CMltools.h"
 #include "CNoise.h"
+#include "CNoiseSiteWorkspace.h"
 #include "CKern.h"
 #include <cassert>
 
@@ -149,6 +150,8 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
 
   CKern& kern;
   CNoise& noise;
+  // CIP-0033 Phase D: dual-write proof — noise.setMus/setVarSigmas mirror here.
+  CNoiseSiteWorkspace siteWorkspace;
 
  private:
   double logLike;

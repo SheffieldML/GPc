@@ -291,6 +291,10 @@ void CPpa::initStoreage()
   invK.resize(numTrainData, numTrainData);
   invK.setSymmetric(true);
 
+  // CIP-0033 Phase D: attach site workspace for dual-write of ADF caches.
+  siteWorkspace.resize((unsigned int)numData, (unsigned int)numTarget);
+  siteWorkspace.zeros();
+  noise.attachSiteWorkspace(&siteWorkspace);
 }
 
 void CPpa::initVals()
@@ -318,6 +322,7 @@ void CPpa::initVals()
 	  noise.setVarSigma(dk, i, j);
 	}
     }
+  noise.syncSitesToWorkspace(); // per-element setVarSigma bypasses bulk dual-write
   for(int c=0; c<numCovStruct; c++)
     {
       M[c].setVals(0.0);

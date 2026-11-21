@@ -577,9 +577,47 @@ bool CNoise::equals(const CNoise& noise, double tol) const
     return false;
   return true;
 }
+void CNoise::dualWriteSitesToWorkspace()
+{
+  if(pSiteWs == 0)
+    return;
+  pSiteWs->resize(getNumData(), getOutputDim());
+  for(unsigned int i = 0; i < getNumData(); i++)
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      pSiteWs->mu.setVal(getMu(i, j), i, j);
+      pSiteWs->varSigma.setVal(getVarSigma(i, j), i, j);
+    }
+  }
+}
+
+bool CNoise::sitesMatchWorkspace(double tol) const
+{
+  if(pSiteWs == 0)
+    return false;
+  if(pSiteWs->mu.getRows() != getNumData()
+     || pSiteWs->mu.getCols() != getOutputDim()
+     || pSiteWs->varSigma.getRows() != getNumData()
+     || pSiteWs->varSigma.getCols() != getOutputDim())
+    return false;
+  for(unsigned int i = 0; i < getNumData(); i++)
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      if(fabs(getMu(i, j) - pSiteWs->mu.getVal(i, j)) > tol)
+        return false;
+      if(fabs(getVarSigma(i, j) - pSiteWs->varSigma.getVal(i, j)) > tol)
+        return false;
+    }
+  }
+  return true;
+}
+
 void CNoise::writeParamsToStream(ostream& out) const
 {
   //writeToStream(out, "numData", getNumData());
+  // CIP-0033 Phase D: stream carries parameters only — not py / mu / varSigma.
   writeToStream(out, "baseType", getBaseType());
   writeToStream(out, "type", getType());
   writeToStream(out, "outputDim", getOutputDim());

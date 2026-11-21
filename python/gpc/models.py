@@ -8,6 +8,7 @@ import numpy as np
 
 from . import kern as kern_mod
 from ._display import OptimiserTableProgress, format_model_description
+from ._gpc import GPClassification as _GPClassification
 from ._gpc import GPRegression as _GPRegression
 from ._gpc import OptimiserEvent
 from ._gpc import SparseGPRegression as _SparseGPRegression
@@ -177,4 +178,50 @@ class SparseGPRegression(_SparseGPRegression):
         )
 
 
-__all__ = ["GPRegression", "SparseGPRegression"]
+class GPClassification(_GPClassification):
+    """FTC Bernoulli–probit classification (EP or Laplace; CIP-0033)."""
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        kernel: Any = "rbf",
+        inference: str = "ep",
+        verbosity: int = 0,
+    ) -> None:
+        spec = kern_mod.normalize_kernel_arg(kernel)
+        super().__init__(
+            X, Y, kernel=spec, inference=inference, verbosity=verbosity
+        )
+
+    def __str__(self) -> str:  # noqa: D105
+        return format_model_description(
+            self.describe(),
+            name=f"GP classification ({self.inference})",
+            objective=self.objective(),
+        )
+
+    def __repr__(self) -> str:  # noqa: D105
+        return self.__str__()
+
+    def optimize(
+        self,
+        iters: int = 100,
+        messages: bool = False,
+        callback: Callable[[OptimiserEvent], Any] | None = None,
+    ) -> None:
+        _GPClassification.optimize(
+            self,
+            iters=iters,
+            messages=False,
+            callback=_build_callback(
+                self,
+                messages=messages,
+                callback=callback,
+                display_name=f"GP classification ({self.inference})",
+                max_iters=iters,
+            ),
+        )
+
+
+__all__ = ["GPRegression", "SparseGPRegression", "GPClassification"]

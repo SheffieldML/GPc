@@ -43,11 +43,19 @@ class CEpInference
   // Out must be N×N; written symmetric.
   void fillDLDK(CMatrix& dLdK) const;
 
+  // Posterior at test: μ_* = K_*ᵀ α,  v_* = kss − diag(K_*ᵀ W K_*).
+  // KtrainTest is N×N_*, kss is N_*×1 prior variances.
+  void predictiveMeanVar(const CMatrix& KtrainTest,
+                         const CMatrix& kss,
+                         CMatrix& mu,
+                         CMatrix& varDiag) const;
+
   double lastLogMarginal() const { return logMarginal; }
   double lastLogZTilde() const { return logZTilde; }
   unsigned int lastIters() const { return itersUsed; }
   bool converged() const { return didConverge; }
   const CMatrix& lastAlpha() const { return alpha; }
+  const CMatrix& lastW() const { return Wi; }
 
  private:
   void recomputePosterior(const CMatrix& K,

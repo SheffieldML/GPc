@@ -2,8 +2,8 @@
 
 One design, two engines: a JAX-based GPy2 for GPU and research work, with GPc as the verified CPU reference and embeddable engine.
 
-**Status:** draft, 2026-11-20. CIPs that change model structure, likelihoods, data handling, randomness or serialisation should cite this note and say how they conform or why they deviate.
-**Relates to:** [CIP-0027](../cip/cip0027.md) (noise in the likelihood) · [CIP-0033](../cip/cip0033.md) / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) (likelihood/inference split; EP/Laplace) · [CIP-002D](../cip/cip002D.md) Part B and [REQ-0016](../requirements/req0016_gpu-training-decision.md) (GPU route) · [CIP-002A](../cip/cip002A.md) (SVGP) · [CIP-0014](../cip/cip0014.md) (parameter paths) · [CIP-0009](../cip/cip0009.md) (caches) · [CIP-0030](../cip/cip0030.md) (uncollapsed Bayesian GP-LVM).
+**Status:** living note (compressed 2026-11-21 for CIP-0027 / 0033 / 0034). CIPs that change model structure, likelihoods, data handling, randomness or serialisation should cite this note and say how they conform or why they deviate.
+**Relates to:** [CIP-0027](../cip/cip0027.md) (noise in the likelihood) · [CIP-0033](../cip/cip0033.md) / [CIP-0034](../cip/cip0034.md) / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) (likelihood/inference split; EP/Laplace; site strip) · [CIP-002D](../cip/cip002D.md) Part B and [REQ-0016](../requirements/req0016_gpu-training-decision.md) (GPU route) · [CIP-002A](../cip/cip002A.md) (SVGP) · [CIP-0014](../cip/cip0014.md) (parameter paths) · [CIP-0009](../cip/cip0009.md) (caches) · [CIP-0030](../cip/cip0030.md) (uncollapsed Bayesian GP-LVM).
 
 ## Why this note exists
 
@@ -45,15 +45,16 @@ The parameters of every part form **one parameter tree** with constraint transfo
 
 ## GPc today → change
 
-| Area | GPc today | Change |
+| Area | After CIP-0027 / 0033 / 0034 | Still open |
 |---|---|---|
-| Data | Y copied per model (`CGp::m`, `CBayesGplvm::Y`, `CSparsePpa::y`); `CNoise` points at Y and stores N×d `mu`, `varSigma` | One data owner; models read batches; `CNoise` loses `py`, `mu`, `varSigma` |
-| Likelihood | `CNoise` mixes data, ADF sites, prediction and two "log likelihoods"; per-element virtual `getGradInputs(…, i, j)` | Parameters plus batched functions with GPy2-canonical names; per-element versions as oracles |
-| Noise parameter | \(\beta\) stored on `CGp` (path `beta`), `CSvgp`, `CBayesGplvm` | `likelihood.variance` (alias `Gaussian_noise.variance`); \(\beta\) derived. PPA's augmentation \(\beta\) is not observation noise and stays |
-| Objective | Cache protocol; RNG member in `CSvgp` | Purity tests; seed and \(\boldsymbol\epsilon\) passed in |
-| Gradients | Hand-written adjoints (`CCholAdjoint`, `CLQAdjoint`, kernel and SVGP gradients) | Kept, and cross-checked against GPy2 autodiff via shared fixtures |
-| Inference | ADF / EP sites inside IVM, PPA, `CNoise` | Separate inference state built on likelihood primitives |
-| Serialisation | Model files mix configuration, parameters and sometimes data | Configuration + parameter tree; data separate; version bump |
+| Data | `CNoise::py` is a **non-owning** pointer; models own \(Y\). Scaled targets `CGp::m` etc. remain model-side | Fully unify on a single Dataset object / drop residual Y copies across GPLVM paths |
+| Likelihood | Gaussian observation noise on `likelihood.variance` ([CIP-0027](../cip/cip0027.md)); Bernoulli–probit `ep_moments` / Laplace Hessian oracles ([CIP-0033](../cip/cip0033.md)); site matrices **not** likelihood parameters | Broader likelihood zoo; remove pointer field `py` entirely from the type if desired |
+| Sites | ADF `mu`/`varSigma` live in `CNoiseSiteWorkspace` — owned fallback or attached by IVM / PPA / SparsePpa ([CIP-0034](../cip/cip0034.md)) | — |
+| Noise parameter | FTC Gaussian: `likelihood.variance`; sparse \(\beta\) derived. PPA augmentation \(\beta\) stays | — |
+| Classification | Dense FTC EP / Laplace on `CGp`; `gpc.GPClassification` | Sparse EP / EPDTC deferred |
+| Objective / RNG | Cache protocol; SVGP still has internal RNG paths | Rule 6 purity / injectable \(\boldsymbol\epsilon\) everywhere |
+| Gradients | Hand-written adjoints kept | Cross-check fixtures vs GPy2 autodiff |
+| Serialisation | `CNoise` streams **parameters only** (not sites / Y) | Broader model file split (config + params vs data) |
 
 ## What not to copy from GPy1
 
@@ -68,9 +69,10 @@ Kept from GPy1: noise belongs to the likelihood; GPy1 names survive as aliases.
 
 | CIP | What it takes from this note |
 |---|---|
-| **CIP-0027 amendment** | Phase 0: likelihood naming and the batched likelihood API (rule 2), no state added to likelihoods. Phase A: Gaussian variance owned by the likelihood for every model with observation noise (rule 7). Retarget from "GPy-aligned" to "this note, with GPy1 names as aliases". |
-| **[CIP-0033](../cip/cip0033.md)** / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) | Rules 1, 3, 4: targets and marginals leave `CNoise`; IVM / PPA sites become inference state over likelihood primitives (`ep_moments`); EP and Laplace on `CGp`; new likelihoods via Gauss–Hermite. |
-| **CIP-0030** (proposed) | Rule 6: seed per step and injectable \(\boldsymbol\epsilon\) for the sampled Bayesian GP-LVM bound. |
+| **[CIP-0027](../cip/cip0027.md)** (**Closed**, compressed) | Likelihood-owned Gaussian noise; drop auto White/Bias for regression; IVM White softener exception documented. |
+| **[CIP-0033](../cip/cip0033.md)** / [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md) (**Closed** / **Validated**) | `ep_moments`; FTC EP + Laplace on `CGp`; `gpc.GPClassification`. |
+| **[CIP-0034](../cip/cip0034.md)** (**Closed**, compressed) | Site caches in `CNoiseSiteWorkspace`; IVM/PPA attach; closes 0027’s deferred strip. |
+| **CIP-0030** | Rule 6: seed per step and injectable \(\boldsymbol\epsilon\) for the sampled Bayesian GP-LVM bound. |
 | **CIP-002D Part B / REQ-0016** | Option B is GPy2. Rules 5 and 8 (purity tests, shared fixtures) are the contract between the two engines. |
 
 ## Reviewer checklist

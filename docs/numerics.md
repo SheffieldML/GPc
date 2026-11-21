@@ -3,7 +3,8 @@
 Decisions that keep the matio reference suite trustworthy against MATLAB-era fixtures.
 
 **Design**: [CIP-0003](../cip/cip0003.md) · [CIP-0005](../cip/cip0005.md) · [CIP-0008](../cip/cip0008.md) · [CIP-0009](../cip/cip0009.md) · [CIP-000A](../cip/cip000A.md) · [CIP-000E](../cip/cip000E.md) · [CIP-000F](../cip/cip000F.md) · [CIP-0012](../cip/cip0012.md) · [CIP-0019](../cip/cip0019.md) · [CIP-001A](../cip/cip001A.md)  
-**Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)
+**Requirement**: [REQ-0002](../requirements/req0002_runnable-verification.md) · [REQ-0004](../requirements/req0004_modern-cpp-toolchain.md)  
+**Compression**: CIP-0019 marked compressed with [CIP-0027 / 0033 / 0034 batch](./compression-checklist-0027-0034.md) (content already lived here).
 
 ## Adversarial numerical stability ([CIP-0019](../cip/cip0019.md) / [CIP-001A](../cip/cip001A.md))
 

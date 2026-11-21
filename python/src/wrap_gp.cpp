@@ -88,6 +88,8 @@ void addOptionalWhite(CCmpndKern& kern, const CMatrix& X)
 
 // CIP-0027 Phase B: string-kernel default is signal only (no auto Bias/White).
 // Observation noise is likelihood.variance (FTC) or β (sparse).
+// MLP defaults match GPy.kern.MLP: variance=1, weight_variance=1, bias_variance=1
+// (no data-dependent scaling — callers / notebooks set scale for large |X|).
 void addFtcStyleCompound(CCmpndKern& kern,
                          const CMatrix& X,
                          SignalKind kind,
@@ -107,8 +109,8 @@ void addFtcStyleCompound(CCmpndKern& kern,
   {
     CMlpKern mlp(X);
     kern.addKern(&mlp);
-    kern.setByPath("mlp.weightVariance", 10.0);
-    kern.setByPath("mlp.biasVariance", 10.0);
+    kern.setByPath("mlp.weightVariance", 1.0);
+    kern.setByPath("mlp.biasVariance", 1.0);
     kern.setByPath("mlp.variance", 1.0);
     break;
   }
@@ -145,8 +147,8 @@ void addWeightSpaceCompound(CCmpndKern& kern,
     CMlpKern mlp(X);
     kern.addKern(&mlp);
     addOptionalWhite(kern, X);
-    kern.setByPath("mlp.weightVariance", 10.0);
-    kern.setByPath("mlp.biasVariance", 10.0);
+    kern.setByPath("mlp.weightVariance", 1.0);
+    kern.setByPath("mlp.biasVariance", 1.0);
     kern.setByPath("mlp.variance", 1.0);
     break;
   }
@@ -237,8 +239,8 @@ std::string addPartsCompound(CCmpndKern& kern, const CMatrix& X, const py::list&
     {
       CMlpKern mlp(X);
       kern.addKern(&mlp);
-      kern.setByPath("mlp.weightVariance", dictGet(d, "weight_variance", 10.0));
-      kern.setByPath("mlp.biasVariance", dictGet(d, "bias_variance", 10.0));
+      kern.setByPath("mlp.weightVariance", dictGet(d, "weight_variance", 1.0));
+      kern.setByPath("mlp.biasVariance", dictGet(d, "bias_variance", 1.0));
       kern.setByPath("mlp.variance", dictGet(d, "variance", 1.0));
       label << "mlp";
     }

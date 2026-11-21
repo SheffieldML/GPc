@@ -29,7 +29,8 @@ Documentation = "https://github.com/SheffieldML/GPc/blob/main/python/README.md"
 [project.optional-dependencies]
 test = ["pytest"]
 plot = ["matplotlib"]
-examples = ["matplotlib", "pods", "jupyter"]
+# ipywidgets: paramz-style in-place optimize(messages=True) in notebooks
+examples = ["matplotlib", "pods", "jupyter", "ipywidgets"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

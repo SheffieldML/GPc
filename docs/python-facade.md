@@ -18,7 +18,7 @@ Maintainer decisions for the NumPy-facing wrapper. Install and API recipes live 
 5. **Same modelling subset as native tutorials** first (FTC, sparse DTCVAR, MLP/arccos, GPy-form `kern` / compound `+`). Loud errors on shape/path mistakes.
 6. **Build:** day-to-day editable via `python/Makefile` against root `libgp`; wheels via scikit-build-core + thin CMake ([CIP-0020](../cip/cip0020.md) / [CIP-002C](../cip/cip002C.md)). Make remains the blessed native/CI path.
 
-Deferred from 001D close: richer CIP-001E optimiser/model display (Phase B2).
+Deferred from 001D close: richer CIP-001E optimiser/model display landed with [CIP-001E](../cip/cip001E.md). Broader GPy-tutorial notebooks still out of subset (coreg, IVM/classification, GPLVM/MRD, SVGP, SVI BGPLVM) — see [`python/docs/subset_checklist.md`](../python/docs/subset_checklist.md) and CIP-001D follow-ups.
 
 ## Help and docstrings ([CIP-002F](../cip/cip002F.md))
 

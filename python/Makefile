@@ -15,7 +15,7 @@ PYTHON_INCLUDE := $(shell $(PY) -c 'import sysconfig; print(sysconfig.get_path("
 EXT_SUFFIX := $(shell $(PY) -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')
 
 MODULE := gpc/_gpc$(EXT_SUFFIX)
-OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o
+OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o src/wrap_gplvm.o
 REF_FTC := ref_ftc_objective
 
 # Reuse root CCFLAGS (includes -fPIC, -std=c++17) plus pybind/numpy.
@@ -24,9 +24,11 @@ PY_CCFLAGS = $(CCFLAGS) -I$(ROOT) -I$(PYBIND11_INCLUDE) -I$(NUMPY_INCLUDE) -I$(P
 ifeq ($(PLAT),_OSX)
 PY_UNDEF = -undefined dynamic_lookup
 endif
-PY_LDFLAGS = -L$(ROOT) -lgp $(LDFLAGS) $(PY_UNDEF)
+# Prefer static libgp.a so the extension does not depend on DYLD_LIBRARY_PATH
+# for a sibling libgp.dylib (macOS dyld searches -lgp as .dylib first).
+PY_LDFLAGS = $(ROOT)/libgp$(LIBSEXT) $(LDFLAGS) $(PY_UNDEF)
 REF_CCFLAGS = $(CCFLAGS) -I$(ROOT)
-REF_LDFLAGS = -L$(ROOT) -lgp $(LDFLAGS)
+REF_LDFLAGS = $(ROOT)/libgp$(LIBSEXT) $(LDFLAGS)
 
 .PHONY: all test clean libgp
 
@@ -38,7 +40,7 @@ libgp:
 $(ROOT)/libgp$(LIBSEXT):
 	$(MAKE) -C $(ROOT) libgp$(LIBSEXT)
 
-src/module.o: src/module.cpp src/matrix_numpy.h src/wrap_gp.h
+src/module.o: src/module.cpp src/matrix_numpy.h src/wrap_gp.h src/wrap_gplvm.h
 	$(CC) -c src/module.cpp -o src/module.o $(PY_CCFLAGS)
 
 src/matrix_numpy.o: src/matrix_numpy.cpp src/matrix_numpy.h
@@ -46,6 +48,9 @@ src/matrix_numpy.o: src/matrix_numpy.cpp src/matrix_numpy.h
 
 src/wrap_gp.o: src/wrap_gp.cpp src/wrap_gp.h src/matrix_numpy.h
 	$(CC) -c src/wrap_gp.cpp -o src/wrap_gp.o $(PY_CCFLAGS)
+
+src/wrap_gplvm.o: src/wrap_gplvm.cpp src/wrap_gplvm.h src/matrix_numpy.h
+	$(CC) -c src/wrap_gplvm.cpp -o src/wrap_gplvm.o $(PY_CCFLAGS)
 
 $(MODULE): $(OBJS) $(ROOT)/libgp$(LIBSEXT)
 	$(LD) ${XLINKERFLAGS} -shared -o $(MODULE) $(OBJS) $(PY_LDFLAGS)

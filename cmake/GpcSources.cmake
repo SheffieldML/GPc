@@ -24,6 +24,11 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CMultioutput.cpp
   ${GPC_ROOT}/CDist.cpp
   ${GPC_ROOT}/ndlassert.cpp
+  # CIP-001D follow-on: MAP / collapsed Bayesian GPLVM / MRD for the Python façade.
+  ${GPC_ROOT}/CMltools.cpp
+  ${GPC_ROOT}/CGplvm.cpp
+  ${GPC_ROOT}/CBayesGplvm.cpp
+  ${GPC_ROOT}/CMrd.cpp
 )
 
 set(GPC_LIBGP_FORTRAN_SOURCES
@@ -31,19 +36,17 @@ set(GPC_LIBGP_FORTRAN_SOURCES
 )
 
 set(GPC_IVM_EXTRA_SOURCES ${GPC_ROOT}/CIvm.cpp)
-set(GPC_GPLVM_EXTRA_SOURCES ${GPC_ROOT}/CGplvm.cpp)
-# Match makefile bgplvm link line: collapsed + SVI (CIP-0030) extras.
+# CGplvm / CBayesGplvm / CMltools live in gpc_lib (Python façade + CLIs).
+set(GPC_GPLVM_EXTRA_SOURCES)
+# SVI (CIP-0030) extras only — collapsed Bayes GPLVM is in gpc_lib.
 set(GPC_BGPLVM_EXTRA_SOURCES
-  ${GPC_ROOT}/CBayesGplvm.cpp
   ${GPC_ROOT}/CSviBayesGplvm.cpp
   ${GPC_ROOT}/CSvgp.cpp
   ${GPC_ROOT}/CAdam.cpp
   ${GPC_ROOT}/CStochasticOptimisable.cpp
-  ${GPC_ROOT}/CMltools.cpp
 )
-# Match makefile ppa link line: CPpa + CSparsePpa + CMltools (CIP-0026 sparse path).
+# Match makefile ppa link line: CPpa + CSparsePpa (CMltools is in gpc_lib).
 set(GPC_PPA_EXTRA_SOURCES
   ${GPC_ROOT}/CPpa.cpp
   ${GPC_ROOT}/CSparsePpa.cpp
-  ${GPC_ROOT}/CMltools.cpp
 )

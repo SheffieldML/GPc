@@ -32,10 +32,10 @@ These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gp
 |---|---|---|---|
 | Coregionalization / `build_XY` / ICM | [coregionalization_toy](../../docs/tutorials/coregionalization_toy.md), [coregionalize.md](../../docs/coregionalize.md) | [CIP-0015](../../cip/cip0015.md) Phase A helpers exist natively; façade wrap listed under CIP-001D follow-ups | Multi-output index column / `stampOutputIndex` not bound |
 | Sparse EP / EPDTC classification | — | [CIP-0036](../../cip/cip0036.md) **Defer** | Dense FTC EP/Laplace is in-subset; sparse EP later |
-| GPLVM | [gplvm_oil100](../../docs/tutorials/gplvm_oil100.md) | CIP-001D follow-ups | MAP GPLVM CLI only |
-| Bayesian GPLVM (collapsed / psi) | [bgplvm_oil100](../../docs/tutorials/bgplvm_oil100.md) | [CIP-0017](../../cip/cip0017.md) (Closed native); Python still follow-on | |
+| GPLVM | [gplvm_oil100](../../docs/tutorials/gplvm_oil100.md) | CIP-001D follow-on: `gpc.models.GPLVM` | MAP GPLVM façade + native CLI |
+| Bayesian GPLVM (collapsed / psi) | [bgplvm_oil100](../../docs/tutorials/bgplvm_oil100.md) | [CIP-0017](../../cip/cip0017.md) (Closed native); `gpc.models.BayesianGPLVM` | Collapsed / psi façade |
 | SVI Bayesian GPLVM | [bgplvm_svi](../../docs/tutorials/bgplvm_svi.md) | [CIP-0030](../../cip/cip0030.md); backlog [`2026-11-20_cip0030-phase4b-python-facade`](../../backlog/features/2026-11-20_cip0030-phase4b-python-facade.md) (Ready) | CLI-first today |
-| MRD | [mrd](../../docs/tutorials/mrd.md) | [CIP-0018](../../cip/cip0018.md) (Closed native); CIP-001D follow-ups | |
+| MRD | [mrd](../../docs/tutorials/mrd.md) | [CIP-0018](../../cip/cip0018.md) (Closed native); `gpc.models.MRD` | Shared q(X)/Z; per-view RBF-ARD |
 | SVGP / sparse variational | [svgp](../../docs/tutorials/svgp.md) | [CIP-002A](../../cip/cip002A.md); Phase 5 surfaces backlog [`2026-11-19_cip002A-phase5-surfaces`](../../backlog/features/2026-11-19_cip002A-phase5-surfaces.md) | Tutorial native; Python façade deferred |
 | `models_basic` constrain / `fix` | CIP-0014 paths | Backlog [`2026-11-21_cip001D-python-fix-by-path`](../../backlog/features/2026-11-21_cip001D-python-fix-by-path.md) | Path get/set only today |
 | Sparse `likelihood.variance` teaching | CIP-0027 | Backlog [`2026-11-21_cip0027-python-sparse-likelihood-variance`](../../backlog/features/2026-11-21_cip0027-python-sparse-likelihood-variance.md) | Docs/façade teaching follow-on |

@@ -93,14 +93,14 @@ ppa: ppa.o CClctrl.o CPpa.o CSparsePpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdj
 ppa.o: ppa.cpp CPpa.h CSparsePpa.h CKern.h CMatrix.h ppa.h CClctrl.h
 	$(CC) -c ppa.cpp -o ppa.o $(CCFLAGS)
 
-gp: gp.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+gp: gp.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o gp gp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
-libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
-	$(LIBSCOMMAND) libgp$(LIBSEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
+libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
+	$(LIBSCOMMAND) libgp$(LIBSEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
 
-libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
-	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o $(LDFLAGS)
+libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o
+	$(LIBDCOMMAND) libgp$(LIBDEXT) CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o $(LDFLAGS)
 
 gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h CTransform.h \
@@ -393,8 +393,8 @@ testParamPaths: testParamPaths.o CMatrix.o ndlfortran.o CKern.o CTransform.o COp
 testParamPaths.o: testParamPaths.cpp CKern.h CTransform.h CMatrix.h
 	$(CC) -c testParamPaths.cpp -o testParamPaths.o $(CCFLAGS)
 
-testCGp: testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testCGp: testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testCGp testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c testCGp.cpp -o testCGp.o $(CCFLAGS)
@@ -460,14 +460,17 @@ testIvmSoftener.o: testIvmSoftener.cpp CIvm.h CKern.h CNoise.h CMatrix.h CClctrl
 	$(CC) -c testIvmSoftener.cpp -o testIvmSoftener.o $(CCFLAGS)
 
 # CIP-0033 Phase A: GPy-mirrored Bernoulli–probit ep_moments + dense EP.
-testEp: testEp.o CEpInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testEp testEp.o CEpInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testEp: testEp.o CEpInference.o CLaplaceInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testEp testEp.o CEpInference.o CLaplaceInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testEp.o: testEp.cpp CEpInference.h CGp.h CNoise.h CKern.h CMatrix.h
+testEp.o: testEp.cpp CEpInference.h CLaplaceInference.h CGp.h CNoise.h CKern.h CMatrix.h
 	$(CC) -c testEp.cpp -o testEp.o $(CCFLAGS)
 
 CEpInference.o: CEpInference.cpp CEpInference.h CNoise.h CMatrix.h ndlutil.h
 	$(CC) -c CEpInference.cpp -o CEpInference.o $(CCFLAGS)
+
+CLaplaceInference.o: CLaplaceInference.cpp CLaplaceInference.h CNoise.h CMatrix.h ndlutil.h
+	$(CC) -c CLaplaceInference.cpp -o CLaplaceInference.o $(CCFLAGS)
 
 testTransform: testTransform.o CMatrix.o ndlfortran.o  CTransform.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testTransform testTransform.o CMatrix.o ndlfortran.o CTransform.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o $(LDFLAGS) 
@@ -523,7 +526,7 @@ CInducing.o: CInducing.cpp CInducing.h CKern.h CMatrix.h ndlexceptions.h
 CGp.o: CGp.cpp CGp.h CInducing.h CCholAdjoint.h CLQAdjoint.h CMltools.h ndlassert.h ndlexceptions.h \
   ndlstrutil.h COptimisable.h CMatrix.h CNdlInterfaces.h ndlutil.h \
   ndlfortran.h lapack.h CKern.h CTransform.h CDataModel.h CDist.h \
-  CNoise.h CEpInference.h
+  CNoise.h CEpInference.h CLaplaceInference.h
 	$(CC) -c CGp.cpp -o CGp.o $(CCFLAGS)
 
 CIvm.o: CIvm.cpp CIvm.h CMltools.h ndlassert.h ndlexceptions.h \

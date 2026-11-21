@@ -13,7 +13,7 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 | [Compound + paths](./compound_paths.md) | `demo_compound_paths` (+ `gp -k`) | `examples/sinc.csv` | `basic_kernels` / `models_basic` |
 | [Coregionalization toy](./coregionalization_toy.md) | `demo_coregionalization_toy` | synthesised in-process | `coregionalization_toy` |
 | [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | Sparse classification (active set) |
-| [CGp EP classification](./cgp_ep_classification.md) | `testEp` | fixture in `cip/cip0033/` | Dense EP on `CGp` FTC (CIP-0033) |
+| [CGp EP / Laplace classification](./cgp_ep_classification.md) | `testEp` | fixtures in `cip/cip0033/` | Dense EP or Laplace on `CGp` FTC (CIP-0033) |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |
 | [GPLVM oil 100](./gplvm_oil100.md) | `gplvm` | `examples/oilTrain100.svml` | `gplvm_oil_100` |

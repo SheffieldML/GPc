@@ -14,6 +14,8 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CLQAdjoint.cpp
   ${GPC_ROOT}/CMatrix.cpp
   ${GPC_ROOT}/CNoise.cpp
+  ${GPC_ROOT}/CEpInference.cpp
+  ${GPC_ROOT}/CLaplaceInference.cpp
   ${GPC_ROOT}/ndlutil.cpp
   ${GPC_ROOT}/ndlstrutil.cpp
   ${GPC_ROOT}/CTransform.cpp

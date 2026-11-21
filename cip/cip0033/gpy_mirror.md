@@ -66,7 +66,7 @@ V=L^{-1}(S^{1/2}K),\quad
 | Inference | `EP()` | `CEpInference` (FTC first) |
 | Kernel default (demos) | RBF | RBF; **no auto White** |
 | Sparse EP | `EPDTC` exists | **Out of v1** (FTC-first Accept lock) |
-| Laplace | separate inference class | Phase C on same likelihood primitives |
+| Laplace | `Laplace()` | `CLaplaceInference` (FTC); same Bernoulli–probit derivs |
 
 ## Approximate marginal (GPy `_ep_marginal`)
 
@@ -79,6 +79,24 @@ After site convergence, with \(\log|B|\) from the Cholesky of \(B\) and \(\log\t
 (mean-zero prior; mean terms as in GPy when \(m_0\neq 0\)). Kernel gradients use \(\partial\log Z/\partial K = \tfrac12(\alpha\alpha^\top - W)\) with \(W=S^{1/2}B^{-1}S^{1/2}\).
 
 Frozen FTC twin: [`ep_ftc_fixture.txt`](ep_ftc_fixture.txt) (regenerate with [`gen_ep_fixture.py`](gen_ep_fixture.py)).
+
+## Laplace (GPy `Laplace` / R&W §3.4)
+
+Bernoulli–probit at latent \(f\) with \(s=\mathrm{sign}(y)\), \(t=s f\), \(r=\phi(t)/\Phi(t)\):
+
+\[
+\log p=\ln\Phi(t),\quad
+\partial_f\log p = s\,r,\quad
+W=-\partial_f^2\log p = r(t+r).
+\]
+
+Rasmussen mode find on \(a=K^{-1}f\); approximate marginal
+
+\[
+\log Z \approx -\tfrac12 a^\top f + \sum_i\log p(y_i\mid\hat f_i) - \tfrac12\log|I+W^{1/2}KW^{1/2}|.
+\]
+
+Kernel grads include the GPy implicit mode term. Fixture: [`laplace_ftc_fixture.txt`](laplace_ftc_fixture.txt) ([`gen_laplace_fixture.py`](gen_laplace_fixture.py)).
 
 ## Not mirrored (on purpose)
 

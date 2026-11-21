@@ -168,9 +168,7 @@ m = gpc.GPRegression(X, Y, kernel="mlp")       # mlp.weight_variance, bias_varia
 m = gpc.GPRegression(X, Y, kernel="arccos", arccos_order=0)  # or 1
 ```
 
-String `kernel="mlp"` sets `weight_variance ≈ 1/Var(X)` so large-magnitude inputs (olympic years) do not saturate. Explicit `gpc.kern.MLP(...)` defaults to `1.0` — set it from the data scale if inputs are not standardised.
-
-Side-by-side olympic demo: [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb).
+Defaults match GPy (`weight_variance=bias_variance=variance=1`). Large-magnitude inputs need an explicit scale (or standardised `X`); see [`examples/mlp_olympic.ipynb`](examples/mlp_olympic.ipynb).
 
 ## Sparse `SparseGPRegression`
 

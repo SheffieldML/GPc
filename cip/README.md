@@ -65,6 +65,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0032](./cip0032.md): Per-unit window widths \(s_m\) for weight-space ridges (**Implemented** — branch `cip0032-per-unit-window-width`). Extends [CIP-0028](./cip0028.md) so each ridge can learn its own softness (MLP-equivalent per-unit scale on the VIK side); tied global \(s\) remains default.
 - [CIP-0033](./cip0033.md): Likelihood/inference split to unblock **EP and Laplace** on `CGp` (**Closed**, compressed). Implements [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md); spawned from [CIP-0027](./cip0027.md).
 - [CIP-0034](./cip0034.md): Strip ADF site caches off `CNoise` into `CNoiseSiteWorkspace` (**Closed**, compressed — closes CIP-0027 residual; validates REQ-0019).
+- [CIP-0036](./cip0036.md): Reflect GPy `GPClassification` capabilities in `gpc` — capability matrix, close Gaps (Laplace predict, naming, notebook, wheel) (**Proposed**). Builds on CIP-0033/0034; sparse EP deferred.
 
 ## Creating a Good CIP
 

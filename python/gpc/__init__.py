@@ -16,7 +16,7 @@ default (``gpc.GPRegression(X, Y)`` / ``kernel='rbf'``; noise is
 
 from __future__ import annotations
 
-from . import kern, models
+from . import kern, models, util
 from ._display import OptimiserTableProgress, format_model_description
 from ._gpc import (
     GpcError,
@@ -31,6 +31,7 @@ from ._gpc import (
 from .models import (
     BayesianGPLVM,
     GPClassification,
+    GPCoregionalizedRegression,
     GPLVM,
     GPRegression,
     MRD,
@@ -41,6 +42,7 @@ __all__ = [
     "GPRegression",
     "SparseGPRegression",
     "GPClassification",
+    "GPCoregionalizedRegression",
     "GPLVM",
     "BayesianGPLVM",
     "MRD",
@@ -56,6 +58,7 @@ __all__ = [
     "matrix_to_numpy",
     "kern",
     "models",
+    "util",
     "__version__",
 ]
 

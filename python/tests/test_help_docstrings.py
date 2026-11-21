@@ -17,12 +17,14 @@ def test_package_and_factory_docstrings():
     assert _nonempty(gpc.GPRegression.__doc__)
     assert _nonempty(gpc.SparseGPRegression.__doc__)
     assert _nonempty(gpc.GPClassification.__doc__)
+    assert _nonempty(gpc.GPCoregionalizedRegression.__doc__)
     assert _nonempty(gpc.GPLVM.__doc__)
     assert _nonempty(gpc.BayesianGPLVM.__doc__)
     assert _nonempty(gpc.MRD.__doc__)
     assert _nonempty(gpc.models.GPRegression.__doc__)
     assert _nonempty(gpc.models.SparseGPRegression.__doc__)
     assert _nonempty(gpc.models.GPClassification.__doc__)
+    assert _nonempty(gpc.models.GPCoregionalizedRegression.__doc__)
     assert _nonempty(gpc.models.GPLVM.__doc__)
     assert _nonempty(gpc.models.BayesianGPLVM.__doc__)
     assert _nonempty(gpc.models.MRD.__doc__)
@@ -38,7 +40,21 @@ def test_package_and_factory_docstrings():
         gpc.kern.Bias,
         gpc.kern.MLP,
         gpc.kern.ArcCosine,
+        gpc.kern.Matern32,
+        gpc.kern.Matern52,
+        gpc.kern.Exponential,
+        gpc.kern.RatQuad,
+        gpc.kern.StdPeriodic,
+        gpc.kern.Cosine,
+        gpc.kern.Brownian,
+        gpc.kern.Linear,
+        gpc.kern.Poly,
+        gpc.kern.Sinc,
+        gpc.kern.ExpQuadCosine,
         gpc.kern.Add,
+        gpc.kern.Prod,
+        gpc.kern.Coregionalize,
+        gpc.kern.IndexWhite,
         gpc.kern.Kern,
     ],
 )

@@ -1,5 +1,6 @@
 #include "wrap_gp.h"
 
+#include <cctype>
 #include <sstream>
 
 #include <pybind11/functional.h>
@@ -39,6 +40,37 @@ bool isWhiteKernelName(const std::string& kernel)
 bool isBiasKernelName(const std::string& kernel)
 {
   return kernel == "bias" || kernel == "Bias" || kernel == "BIAS";
+}
+
+bool nameEq(const std::string& a, const std::string& b)
+{
+  if(a.size() != b.size())
+    return false;
+  for(size_t i = 0; i < a.size(); ++i)
+  {
+    const char ca = static_cast<char>(std::tolower(static_cast<unsigned char>(a[i])));
+    const char cb = static_cast<char>(std::tolower(static_cast<unsigned char>(b[i])));
+    if(ca != cb)
+      return false;
+  }
+  return true;
+}
+
+bool isType(const std::string& type, std::initializer_list<const char*> names)
+{
+  for(const char* n : names)
+  {
+    if(nameEq(type, n))
+      return true;
+  }
+  return false;
+}
+
+bool dictGetBool(const py::dict& d, const char* key, bool fallback)
+{
+  if(!d.contains(key))
+    return fallback;
+  return py::cast<bool>(d[key]);
 }
 
 enum class SignalKind
@@ -189,7 +221,349 @@ std::string partType(const py::dict& d)
   return py::cast<std::string>(d["type"]);
 }
 
+unsigned int partInputDim(const py::dict& d, const CMatrix& X)
+{
+  if(d.contains("input_dim"))
+    return dictGetUInt(d, "input_dim", X.getCols());
+  return X.getCols();
+}
+
+void applyActiveDims(CKern& k, const py::dict& d)
+{
+  if(!d.contains("active_dims"))
+    return;
+  py::sequence dims = py::reinterpret_borrow<py::sequence>(d["active_dims"]);
+  std::vector<unsigned int> active;
+  active.reserve(static_cast<size_t>(py::len(dims)));
+  for(py::handle h : dims)
+    active.push_back(static_cast<unsigned int>(py::cast<double>(h)));
+  k.setActiveDims(active);
+}
+
+// Apply GPy-facing leaf params on an atomic kernel (path names without component prefix).
+void applyAtomicParams(CKern& k, const py::dict& d)
+{
+  const std::string type = partType(d);
+
+  if(isRbfKernelName(type) || isType(type, {"rbfard"}) || isEqKernelName(type)
+     || isType(type, {"matern32", "Mat32", "matern32ard", "matern52", "Mat52",
+                      "matern52ard", "exp", "Exponential", "OU", "ratquad",
+                      "RatQuad", "ratquadard", "cosine", "Cosine", "sinc",
+                      "Sinc", "expquadcosine", "ExpQuadCosine"}))
+  {
+    k.setByPath("lengthscale", dictGet(d, "lengthscale", 1.0));
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    if(isType(type, {"ratquad", "RatQuad", "ratquadard"}))
+      k.setByPath("power", dictGet(d, "power", 2.0));
+    if(isType(type, {"expquadcosine", "ExpQuadCosine"}))
+      k.setByPath("period", dictGet(d, "period", 1.0));
+    return;
+  }
+  if(isType(type, {"stdperiodic", "std_periodic", "StdPeriodic"}))
+  {
+    k.setByPath("lengthscale", dictGet(d, "lengthscale", 1.0));
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    k.setByPath("period", dictGet(d, "period", 1.0));
+    return;
+  }
+  if(isWhiteKernelName(type) || isBiasKernelName(type)
+     || isType(type, {"brownian", "Brownian"}))
+  {
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    return;
+  }
+  if(isMlpKernelName(type) || isType(type, {"mlpard"}))
+  {
+    k.setByPath("weight_variance", dictGet(d, "weight_variance", 1.0));
+    k.setByPath("bias_variance", dictGet(d, "bias_variance", 1.0));
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    return;
+  }
+  if(isArccosKernelName(type))
+  {
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    return;
+  }
+  if(isType(type, {"lin", "linear", "Linear", "linard"}))
+  {
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    return;
+  }
+  if(isType(type, {"poly", "Poly", "polyard"}))
+  {
+    k.setByPath("variance", dictGet(d, "variance", 1.0));
+    k.setByPath("weight_variance", dictGet(d, "weight_variance", 1.0));
+    k.setByPath("bias_variance", dictGet(d, "bias_variance", 1.0));
+    return;
+  }
+  if(isType(type, {"coregionalize", "Coregionalize", "coregion"}))
+  {
+    // Defaults come from setInitParam (W / kappa); optional overrides via paths.
+    return;
+  }
+  if(isType(type, {"indexwhite", "IndexWhite"}))
+  {
+    if(d.contains("variances"))
+    {
+      py::sequence vars = py::reinterpret_borrow<py::sequence>(d["variances"]);
+      for(ssize_t i = 0; i < py::len(vars); ++i)
+      {
+        const std::string path = "variance_" + std::to_string(static_cast<long long>(i));
+        k.setByPath(path, py::cast<double>(vars[i]));
+      }
+    }
+    else if(d.contains("variance"))
+    {
+      // Broadcast a single variance to all outputs.
+      const double v = dictGet(d, "variance", 0.1);
+      for(unsigned int i = 0; i < k.getNumParams(); ++i)
+      {
+        const std::string path = "variance_" + std::to_string(i);
+        k.setByPath(path, v);
+      }
+    }
+    return;
+  }
+}
+
+// Build one atomic CKern from a parts dict (no nested compound/tensor).
+std::pair<std::unique_ptr<CKern>, std::string>
+makeAtomicKernFromPart(const CMatrix& X, const py::dict& d)
+{
+  const std::string type = partType(d);
+  const unsigned int inDim = partInputDim(d, X);
+  const bool ard = dictGetBool(d, "ARD", false)
+      || isType(type, {"rbfard", "linard", "polyard", "mlpard",
+                       "matern32ard", "matern52ard", "ratquadard"});
+  std::unique_ptr<CKern> k;
+  std::string label;
+
+  if(isType(type, {"coregionalize", "Coregionalize", "coregion"}))
+  {
+    const unsigned int outputDim = dictGetUInt(d, "output_dim", 1);
+    const unsigned int rank = dictGetUInt(d, "rank", 1);
+    if(outputDim < 1 || rank < 1)
+      throw ndlexceptions::Error("Coregionalize requires output_dim >= 1 and rank >= 1");
+    k = std::make_unique<CCoregionalizeKern>(outputDim, rank);
+    label = "coregionalize";
+  }
+  else if(isType(type, {"indexwhite", "IndexWhite"}))
+  {
+    const unsigned int outputDim = dictGetUInt(d, "output_dim", 1);
+    if(outputDim < 1)
+      throw ndlexceptions::Error("IndexWhite requires output_dim >= 1");
+    k = std::make_unique<CIndexWhiteKern>(1, outputDim);
+    label = "indexwhite";
+  }
+  else if(isRbfKernelName(type) || isType(type, {"rbfard"}))
+  {
+    if(ard)
+      k = std::make_unique<CRbfardKern>(inDim);
+    else
+      k = std::make_unique<CRbfKern>(inDim);
+    label = ard ? "rbfard" : "rbf";
+  }
+  else if(isEqKernelName(type))
+  {
+    if(ard)
+      throw ndlexceptions::Error("ExpQuad / eq does not support ARD; use rbfard.");
+    k = std::make_unique<CEqKern>(inDim);
+    label = "eq";
+  }
+  else if(isWhiteKernelName(type))
+  {
+    k = std::make_unique<CWhiteKern>(inDim);
+    label = "white";
+  }
+  else if(isBiasKernelName(type))
+  {
+    k = std::make_unique<CBiasKern>(inDim);
+    label = "bias";
+  }
+  else if(isMlpKernelName(type) || isType(type, {"mlpard"}))
+  {
+    if(ard)
+      k = std::make_unique<CMlpardKern>(inDim);
+    else
+      k = std::make_unique<CMlpKern>(inDim);
+    label = ard ? "mlpard" : "mlp";
+  }
+  else if(isArccosKernelName(type))
+  {
+    auto ac = std::make_unique<CArcCosineKern>(inDim);
+    const unsigned int order = dictGetUInt(d, "order", 0);
+    if(order > 1)
+      throw ndlexceptions::Error("arccos order must be 0 or 1");
+    ac->setOrder(order);
+    k = std::move(ac);
+    label = "arccos";
+  }
+  else if(isType(type, {"matern32", "Mat32", "matern32ard"}))
+  {
+    if(ard)
+      k = std::make_unique<CMatern32ardKern>(inDim);
+    else
+      k = std::make_unique<CMatern32Kern>(inDim);
+    label = ard ? "matern32ard" : "matern32";
+  }
+  else if(isType(type, {"matern52", "Mat52", "matern52ard"}))
+  {
+    if(ard)
+      k = std::make_unique<CMatern52ardKern>(inDim);
+    else
+      k = std::make_unique<CMatern52Kern>(inDim);
+    label = ard ? "matern52ard" : "matern52";
+  }
+  else if(isType(type, {"exp", "Exponential", "OU"}))
+  {
+    k = std::make_unique<CExpKern>(inDim);
+    label = "exp";
+  }
+  else if(isType(type, {"ratquad", "RatQuad", "ratquadard"}))
+  {
+    if(ard)
+      k = std::make_unique<CRatQuadardKern>(inDim);
+    else
+      k = std::make_unique<CRatQuadKern>(inDim);
+    label = ard ? "ratquadard" : "ratquad";
+  }
+  else if(isType(type, {"stdperiodic", "std_periodic", "StdPeriodic"}))
+  {
+    k = std::make_unique<CStdPeriodicKern>(inDim);
+    label = "stdperiodic";
+  }
+  else if(isType(type, {"cosine", "Cosine"}))
+  {
+    k = std::make_unique<CCosineKern>(inDim);
+    label = "cosine";
+  }
+  else if(isType(type, {"brownian", "Brownian"}))
+  {
+    if(inDim != 1)
+      throw ndlexceptions::Error("Brownian requires 1-D inputs (input_dim == 1).");
+    k = std::make_unique<CBrownianKern>(inDim);
+    label = "brownian";
+  }
+  else if(isType(type, {"lin", "linear", "Linear", "linard"}))
+  {
+    if(ard)
+      k = std::make_unique<CLinardKern>(inDim);
+    else
+      k = std::make_unique<CLinKern>(inDim);
+    label = ard ? "linard" : "lin";
+  }
+  else if(isType(type, {"poly", "Poly", "polyard"}))
+  {
+    const unsigned int degree = dictGetUInt(d, "degree", 2);
+    if(ard)
+    {
+      auto p = std::make_unique<CPolyardKern>(inDim);
+      p->setDegree(static_cast<double>(degree));
+      k = std::move(p);
+    }
+    else
+    {
+      auto p = std::make_unique<CPolyKern>(inDim);
+      p->setDegree(static_cast<double>(degree));
+      k = std::move(p);
+    }
+    label = ard ? "polyard" : "poly";
+  }
+  else if(isType(type, {"sinc", "Sinc"}))
+  {
+    k = std::make_unique<CSincKern>(inDim);
+    label = "sinc";
+  }
+  else if(isType(type, {"expquadcosine", "ExpQuadCosine"}))
+  {
+    k = std::make_unique<CExpQuadCosineKern>(inDim);
+    label = "expquadcosine";
+  }
+  else
+  {
+    throw ndlexceptions::Error(
+        "Unknown kernel part type '" + type
+        + "'. See CIP-0038 / gpc.kern for the supported catalogue.");
+  }
+
+  applyAtomicParams(*k, d);
+  applyActiveDims(*k, d);
+  return {std::move(k), label};
+}
+
+std::pair<std::unique_ptr<CKern>, std::string>
+buildKernFromPart(const CMatrix& X, const py::dict& d);
+
+// Nested sum inside a product (or nested compound): {"type":"cmpnd","parts":[...]}.
+std::pair<std::unique_ptr<CKern>, std::string>
+makeCmpndFromParts(const CMatrix& X, const py::list& parts, const char* labelPrefix)
+{
+  if(parts.size() < 1)
+    throw ndlexceptions::Error("cmpnd parts list must be non-empty");
+  auto cmpnd = std::make_unique<CCmpndKern>(X);
+  std::ostringstream label;
+  label << labelPrefix << "(";
+  bool first = true;
+  for(py::handle h : parts)
+  {
+    py::dict child = py::reinterpret_borrow<py::dict>(h);
+    auto built = buildKernFromPart(X, child);
+    if(!first)
+      label << "+";
+    first = false;
+    label << built.second;
+    cmpnd->addKern(std::move(built.first));
+  }
+  label << ")";
+  return {std::move(cmpnd), label.str()};
+}
+
+std::pair<std::unique_ptr<CKern>, std::string>
+makeTensorFromParts(const CMatrix& X, const py::list& parts)
+{
+  if(parts.size() < 2)
+    throw ndlexceptions::Error("tensor / Prod requires at least two factors");
+  auto tensor = std::make_unique<CTensorKern>(X);
+  std::ostringstream label;
+  label << "tensor(";
+  bool first = true;
+  for(py::handle h : parts)
+  {
+    py::dict child = py::reinterpret_borrow<py::dict>(h);
+    auto built = buildKernFromPart(X, child);
+    if(!first)
+      label << "*";
+    first = false;
+    label << built.second;
+    // CTensorKern rejects white / indexwhite inside the product.
+    tensor->addKern(std::move(built.first));
+  }
+  label << ")";
+  return {std::move(tensor), label.str()};
+}
+
+std::pair<std::unique_ptr<CKern>, std::string>
+buildKernFromPart(const CMatrix& X, const py::dict& d)
+{
+  const std::string type = partType(d);
+  if(isType(type, {"tensor", "prod", "Prod"}))
+  {
+    if(!d.contains("parts"))
+      throw ndlexceptions::Error("tensor part dict missing 'parts'");
+    return makeTensorFromParts(X, py::reinterpret_borrow<py::list>(d["parts"]));
+  }
+  if(isType(type, {"cmpnd", "sum", "Add"}))
+  {
+    if(!d.contains("parts"))
+      throw ndlexceptions::Error("cmpnd part dict missing 'parts'");
+    return makeCmpndFromParts(X, py::reinterpret_borrow<py::list>(d["parts"]), "cmpnd");
+  }
+  return makeAtomicKernFromPart(X, d);
+}
+
 // Build exactly the listed components (GPy-style; no auto Bias/White).
+// CIP-0038: full single-output catalogue; nested {"type":"tensor","parts":...} → CTensorKern.
+// Path segments follow gpyComponentName() (tensor.rbf.lengthscale, …).
 std::string addPartsCompound(CCmpndKern& kern, const CMatrix& X, const py::list& parts)
 {
   if(parts.size() < 1)
@@ -200,67 +574,12 @@ std::string addPartsCompound(CCmpndKern& kern, const CMatrix& X, const py::list&
   for(py::handle h : parts)
   {
     py::dict d = py::reinterpret_borrow<py::dict>(h);
-    const std::string type = partType(d);
+    auto built = buildKernFromPart(X, d);
     if(!first)
       label << "+";
     first = false;
-
-    if(isRbfKernelName(type))
-    {
-      CRbfKern rbf(X);
-      kern.addKern(&rbf);
-      kern.setByPath("rbf.lengthscale", dictGet(d, "lengthscale", 1.0));
-      kern.setByPath("rbf.variance", dictGet(d, "variance", 1.0));
-      label << "rbf";
-    }
-    else if(isEqKernelName(type))
-    {
-      CEqKern eq(X);
-      kern.addKern(&eq);
-      kern.setByPath("ExpQuad.lengthscale", dictGet(d, "lengthscale", 1.0));
-      kern.setByPath("ExpQuad.variance", dictGet(d, "variance", 1.0));
-      label << "eq";
-    }
-    else if(isWhiteKernelName(type))
-    {
-      CWhiteKern white(X);
-      kern.addKern(&white);
-      kern.setByPath("white.variance", dictGet(d, "variance", 1.0));
-      label << "white";
-    }
-    else if(isBiasKernelName(type))
-    {
-      CBiasKern bias(X);
-      kern.addKern(&bias);
-      kern.setByPath("bias.variance", dictGet(d, "variance", 1.0));
-      label << "bias";
-    }
-    else if(isMlpKernelName(type))
-    {
-      CMlpKern mlp(X);
-      kern.addKern(&mlp);
-      kern.setByPath("mlp.weightVariance", dictGet(d, "weight_variance", 1.0));
-      kern.setByPath("mlp.biasVariance", dictGet(d, "bias_variance", 1.0));
-      kern.setByPath("mlp.variance", dictGet(d, "variance", 1.0));
-      label << "mlp";
-    }
-    else if(isArccosKernelName(type))
-    {
-      CArcCosineKern ac(X);
-      const unsigned int order = dictGetUInt(d, "order", 0);
-      if(order > 1)
-        throw ndlexceptions::Error("arccos order must be 0 or 1");
-      ac.setOrder(order);
-      kern.addKern(&ac);
-      kern.setByPath("arccos.variance", dictGet(d, "variance", 1.0));
-      label << "arccos";
-    }
-    else
-    {
-      throw ndlexceptions::Error(
-          "Unknown kernel part type '" + type
-          + "'. Use rbf, eq/ExpQuad, white, bias, mlp, or arccos.");
-    }
+    label << built.second;
+    kern.addKern(std::move(built.first));
   }
   return label.str();
 }
@@ -339,6 +658,17 @@ PyGPRegression::PyGPRegression(
   try
   {
     (void)kern->getByPath("white.variance");
+    model->fixLikelihoodVariance(true);
+  }
+  catch(ndlexceptions::Error&)
+  {
+  }
+  // CIP-000D / CIP-0038 Phase D: per-output noise in indexwhite → freeze spherical
+  // likelihood.variance (matches CCoregionalizedRegression).
+  try
+  {
+    (void)kern->getByPath("indexwhite.variance_0");
+    model->setLikelihoodVariance(1e-6);
     model->fixLikelihoodVariance(true);
   }
   catch(ndlexceptions::Error&)

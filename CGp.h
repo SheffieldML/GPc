@@ -61,6 +61,10 @@ public:
 
   // update alpha representation.
   void updateAlpha() const;
+  // CIP-0031: latent = p(f_*); predictive = p(y_*) for Gaussian (adds obs noise once).
+  void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
+  // Deprecated alias: same as predictiveMeanVar on CGp (pre-0031 posteriorMeanVar).
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   void posteriorMean(CMatrix& mu, const CMatrix& X) const;
   // Gradient routines
@@ -606,7 +610,12 @@ public:
   void _testComputeKx(CMatrix& kX, const CMatrix& Xin) const; /// compute the kernel for some test points.
   
   void _posteriorMean(CMatrix& mu, const CMatrix& kX) const; /// compute the posterior mean given the kernel evaluated at test points.
-  void _posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin) const; /// compute the posterior variance given the kernel evaluated at test points.
+  // CIP-0031: includeObservationNoise adds 1/β (sparse) or likelihood.variance (FTC Gram path).
+  void _posteriorVar(CMatrix& varSigma, CMatrix& kX, const CMatrix& Xin,
+                     bool includeObservationNoise) const;
+  void _posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& Xin,
+                         bool includeObservationNoise) const;
+  double _observationNoiseVariance() const;
   double jitter;
 
   CTransform* betaTransform;

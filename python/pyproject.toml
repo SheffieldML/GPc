@@ -12,7 +12,7 @@ build-backend = "scikit_build_core.build"
 # CIP-002C Phase C: distribution name locked to `gpc` (matches import).
 # Checked 2026-11-19: pypi.org/pypi/gpc and sheffieldml-gpc both 404 (available).
 name = "gpc"
-version = "0.1.0a7"
+version = "0.1.0a8"
 description = "Light Python façade over SheffieldML GPc (CIP-001D)"
 readme = "README.md"
 requires-python = ">=3.10"

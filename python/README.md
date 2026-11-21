@@ -141,7 +141,7 @@ mu_f, var_f = m.predict_noiseless(X)  # f_* (CIP-0031)
 
 Shorthand (CIP-0027): string kernels build **signal-only** compounds; observation noise is `likelihood.variance` (alias `Gaussian_noise.variance`). Bias/White are opt-in. Prefer **noisy** observations. `objective()` is **−log-likelihood** (SCG minimises it). `plot_1d(..., noiseless=True)` draws the latent band.
 
-`optimize(messages=True)` refreshes the paramz-style parameter table **in place**: Jupyter updates one `display_id` cell; terminal / terminal IPython uses ANSI cursor rewrite (not `clear_output`, which stacks in terminal IPython). It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks.
+`optimize(messages=True)` shows a paramz-style live view **in place**: with `ipywidgets` (notebook / Colab) a progress bar + status + model HTML update like GPy; without widgets, a single Jupyter `display_id` cell; in a plain terminal, ANSI cursor rewrite. It does not stream C++ `Iteration:` / gradient-check dumps. Pass `callback=` for outer-iteration hooks. Install widgets via `pip install ipywidgets` or `gpc[examples]`.
 
 - GPy porting fragment: [`docs/gpy_side_by_side.md`](docs/gpy_side_by_side.md)
 - Tutorial map: [`docs/subset_checklist.md`](docs/subset_checklist.md)

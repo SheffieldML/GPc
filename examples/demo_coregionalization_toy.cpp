@@ -76,7 +76,7 @@ int main()
   for(unsigned int d = 0; d < coreg.getNumOutputs(); d++)
   {
     stampOutputIndex(Xstar, d);
-    model.posteriorMeanVar(mu, var, Xstar);
+    model.predictiveMeanVar(mu, var, Xstar);
     cout << "  predict output " << d << ": mu[0]=" << mu.getVal(0)
          << " mu[mid]=" << mu.getVal(N_PRED / 2)
          << " mu[end]=" << mu.getVal(N_PRED - 1) << endl;

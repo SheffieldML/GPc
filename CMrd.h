@@ -59,7 +59,7 @@ public:
                      const CMatrix& Xstar) const;
   void predictiveMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
                          const CMatrix& Xstar) const;
-  // Deprecated alias: predictive (matches pre-0031 CBayesGplvm).
+  [[deprecated("CIP-0031: use predictiveMeanVar (or latentMeanVar for f_*)")]]
   void posteriorMeanVar(unsigned int view, CMatrix& means, CMatrix& vars,
                         const CMatrix& Xstar) const;
 

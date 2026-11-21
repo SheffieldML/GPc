@@ -46,7 +46,7 @@ public:
   // CIP-0031: latent = p(f_*); predictive adds 1/β.
   void latentMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
   void predictiveMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
-  // Deprecated alias: same as predictiveMeanVar (pre-0031 added 1/β).
+  [[deprecated("CIP-0031: use predictiveMeanVar (or latentMeanVar for f_*)")]]
   void posteriorMeanVar(CMatrix& means, CMatrix& vars, const CMatrix& Xstar) const;
 
   unsigned int getOptNumParams() const;

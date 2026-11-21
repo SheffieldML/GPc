@@ -87,7 +87,7 @@ class CIvm : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   // Gaussian σ² when the noise model is Gaussian, else equals latent.
   void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
-  // Deprecated alias: same as latentMeanVar (pre-0031 IVM returned latent).
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for Gaussian y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   string getNoiseName() const
   {

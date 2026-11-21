@@ -99,8 +99,8 @@ int testFtcEquivalence()
   CMatrix Xtest(2, Q);
   Xtest.setVal(0.2, 0, 0);
   Xtest.setVal(-0.7, 1, 0);
-  gpLik.posteriorMeanVar(muL, varL, Xtest);
-  gpWhite.posteriorMeanVar(muW, varW, Xtest);
+  gpLik.predictiveMeanVar(muL, varL, Xtest);
+  gpWhite.predictiveMeanVar(muW, varW, Xtest);
   fail += checkClose("pred mu[0]", muL.getVal(0, 0), muW.getVal(0, 0));
   fail += checkClose("pred mu[1]", muL.getVal(1, 0), muW.getVal(1, 0));
   fail += checkClose("pred var[0]", varL.getVal(0, 0), varW.getVal(0, 0));

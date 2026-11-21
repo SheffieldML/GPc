@@ -37,7 +37,10 @@ public:
                 py::object callback = py::none());
   double objective() const;
 
+  // CIP-0031: predict → predictiveMeanVar (y_*); predict_noiseless → latent (f_*).
   std::pair<py::array_t<double>, py::array_t<double>> predict(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+  std::pair<py::array_t<double>, py::array_t<double>> predict_noiseless(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
 
   std::string to_string() const;
@@ -84,7 +87,10 @@ public:
                 py::object callback = py::none());
   double objective() const;
 
+  // CIP-0031: predict → predictiveMeanVar (y_*); predict_noiseless → latent (f_*).
   std::pair<py::array_t<double>, py::array_t<double>> predict(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+  std::pair<py::array_t<double>, py::array_t<double>> predict_noiseless(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
 
   std::string to_string() const;

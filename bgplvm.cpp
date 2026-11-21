@@ -765,9 +765,9 @@ void CClbgplvm::gnuplot()
   CMatrix means(Xgrid.getRows(), outDim);
   CMatrix variances(Xgrid.getRows(), outDim);
   if(isSvi)
-    svi.getSvgp().posteriorMeanVar(means, variances, Xgrid);
+    svi.getSvgp().latentMeanVar(means, variances, Xgrid);
   else
-    collapsed.posteriorMeanVar(means, variances, Xgrid);
+    collapsed.predictiveMeanVar(means, variances, Xgrid);
   for(i = 0; i < numy; i++)
     for(j = 0; j < numx; j++)
       matrixOut[i]->setVal(-log(variances.getVal(i * numy + j)), j, 2);

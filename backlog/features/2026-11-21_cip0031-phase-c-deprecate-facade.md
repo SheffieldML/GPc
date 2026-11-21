@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0031-phase-c-deprecate-facade"
 title: "CIP-0031 Phase C: deprecate posteriorMeanVar + Python façade"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -24,10 +24,10 @@ Mark `posteriorMeanVar` deprecated; migrate internal callers to latent/predictiv
 
 ## Acceptance Criteria
 
-- [ ] `posteriorMeanVar` documented deprecated; internal callers migrated where practical
-- [ ] Python `predict` → predictive; `predict_noiseless` → latent
-- [ ] Pytest: predictive variance ≈ noiseless + `likelihood.variance`
-- [ ] `subset_checklist.md` / side-by-side updated
+- [x] `posteriorMeanVar` documented deprecated; internal callers migrated where practical
+- [x] Python `predict` → predictive; `predict_noiseless` → latent
+- [x] Pytest: predictive variance ≈ noiseless + `likelihood.variance`
+- [x] `subset_checklist.md` / side-by-side updated
 
 ## Related
 
@@ -39,3 +39,7 @@ Mark `posteriorMeanVar` deprecated; migrate internal callers to latent/predictiv
 ### 2026-11-21
 
 Task created Ready on CIP Accept.
+
+### 2026-11-21 (complete)
+
+`[[deprecated]]` attributes; call-site migration; `predict_noiseless` on FTC and sparse façade; `test_latent_predictive.py`; docs updated.

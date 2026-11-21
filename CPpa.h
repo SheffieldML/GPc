@@ -61,7 +61,7 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   // CIP-0031: latent = Var[fBar_*]; predictive adds 1/β (Gaussian site noise).
   void latentMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   void predictiveMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
-  // Deprecated alias: same as latentMeanVar (MATLAB ppaPosteriorMeanVar).
+  [[deprecated("CIP-0031: use latentMeanVar (or predictiveMeanVar for y_*)")]]
   void posteriorMeanVar(CMatrix& mu, CMatrix& varSigma, const CMatrix& X) const;
   string getNoiseName() const
   {

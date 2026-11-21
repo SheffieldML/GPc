@@ -26,9 +26,9 @@ Likelihood objects are **parameters plus batched pure functions** (log density, 
 
 - [ ] `CNoise` (or successor likelihood type) holds **parameters only** on the hot path: no owned `py`, no per-point `mu` / `varSigma` site caches as likelihood state
 - [ ] Batched likelihood API includes at least: `log_density`, `variational_expectations` (already sketched), **`ep_moments`**, and predictive moments usable by EP / Laplace / `out`
-- [ ] EP inference on `CGp` for probit (or Bernoulli–probit link) trains kernel hyperparameters with a verified bound / marginal approximation; default kernel need not include White
-- [ ] Laplace approximation on `CGp` for the same likelihood class, with mode-finding and Hessian (or equivalent) verified against FD or known fixtures
-- [ ] Dense FTC classification smoke matches a GPy-generated or orthant / known-good fixture within documented tolerance
+- [x] EP inference on `CGp` for probit (or Bernoulli–probit link) trains kernel hyperparameters with a verified bound / marginal approximation; default kernel need not include White
+- [x] Laplace approximation on `CGp` for the same likelihood class, with mode-finding and Hessian (or equivalent) verified against FD or known fixtures
+- [x] Dense FTC classification smoke matches a GPy-generated or orthant / known-good fixture within documented tolerance
 - [ ] Softness story is explicit: White-in-\(K\) (IVM exception) vs likelihood scale vs site precision — documented, not mixed silently
 - [ ] Old streams / IVM / PPA keep working during migration (adapters or dual-read); no silent behaviour flip for existing IVM White defaults
 - [ ] Non-goals for first delivery: full GPy likelihood zoo (Poisson, Student-t, warped, heteroscedastic); HMC; replacing SVGP / PPA / IVM; Python façade beyond a thin classify/predict bind; putting EP inside the Python hot loop
@@ -52,3 +52,7 @@ Requirement drafted with CIP-0033 (spawned from CIP-0027 deferred follow-on).
 ### 2026-11-21 (Accept)
 
 CIP-0033 Accepted → In Progress. GPy mirror locks: Bernoulli+Probit `moments_match_ep`, sites \((\tilde\tau,\tilde\nu)\), FTC-first. Phase A: `ep_moments` + `CEpInference` + `testEp`.
+
+### 2026-11-21 (Phase B/C)
+
+FTC EP and Laplace on `CGp` green (`setEpInference` / `setLaplaceInference`); numpy twin fixtures; FD grads. Remaining: strip sites from `CNoise` (Phase D) and thin façade.

@@ -94,6 +94,20 @@ void bernoulliProbitEpMoments(CMatrix& Zhat,
                               const CMatrix& tauCav,
                               const CMatrix& vCav);
 
+/** Bernoulli–probit log-density and Laplace Hessian pieces at latent f.
+ *  y in {0,1} or {-1,1}. Writes:
+ *    logp = log Φ(s f), s=±1
+ *    d1   = ∂logp/∂f
+ *    W    = −∂²logp/∂f²  (≥0; GPy / R&W)
+ *    dWdf = ∂W/∂f        (= −∂³logp/∂f³)
+ */
+void bernoulliProbitLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.

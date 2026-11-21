@@ -1,5 +1,6 @@
-/* CIP-0033: Bernoulli–probit ep_moments + dense EP + CGp FTC wire-up. */
+/* CIP-0033: Bernoulli–probit ep_moments + dense EP/Laplace + CGp FTC wire-up. */
 #include "CEpInference.h"
+#include "CLaplaceInference.h"
 #include "CGp.h"
 #include "CKern.h"
 #include "CNoise.h"
@@ -144,13 +145,126 @@ static int testCGpEpOptimise()
   return fail;
 }
 
+static int testLaplaceDerivsAndMode()
+{
+  // W = r(t+r) at f=0.5, y=1: t=0.5
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::bernoulliProbitLaplaceDerivs(logp, d1, W, dW, 1.0, 0.5);
+  const double t = 0.5;
+  const double r = ndlutil::gradLnCumGaussian(t);
+  int fail = 0;
+  fail += checkClose("Laplace logp", logp, ndlutil::lnCumGaussian(t));
+  fail += checkClose("Laplace d1", d1, r);
+  fail += checkClose("Laplace W", W, r * (t + r));
+
+  // FD on W vs dW
+  const double h = 1e-6;
+  double lp2, d12, Wp, dWp, Wm, dWm;
+  ndlnoise::bernoulliProbitLaplaceDerivs(lp2, d12, Wp, dWp, 1.0, 0.5 + h);
+  ndlnoise::bernoulliProbitLaplaceDerivs(lp2, d12, Wm, dWm, 1.0, 0.5 - h);
+  const double fdW = (Wp - Wm) / (2.0 * h);
+  fail += checkClose("Laplace dW/df vs FD", dW, fdW, 1e-6);
+
+  const unsigned int n = 4;
+  CMatrix X(n, 1), Y(n, 1);
+  const double xs[] = {-1.5, -0.5, 0.5, 1.5};
+  const double ys[] = {1.0, 1.0, 0.0, 0.0};
+  for(unsigned int i = 0; i < n; i++)
+  {
+    X.setVal(xs[i], i, 0);
+    Y.setVal(ys[i], i, 0);
+  }
+  CRbfKern kern(X);
+  kern.setVariance(1.0);
+  kern.setLengthScale(1.0);
+  CMatrix K(n, n);
+  kern.compute(K, X);
+
+  CLaplaceInference lap;
+  lap.setJitter(1e-6);
+  lap.setTol(1e-6);
+  const double L = lap.run(K, Y);
+  // Frozen numpy twin: cip/cip0033/laplace_ftc_fixture.txt
+  const double Lref = -2.6616263191143181e+00;
+  fail += checkClose("Laplace converged", lap.converged() ? 1.0 : 0.0, 1.0, 0.0);
+  fail += checkClose("Laplace fixture log_marginal", L, Lref, 1e-10);
+  fail += checkClose("Laplace fixture iters", (double)lap.lastIters(), 3.0, 0.0);
+
+  // Same toy under EP: approximations should be in the same ballpark.
+  CEpInference ep;
+  ep.setJitter(1e-6);
+  ep.setTol(1e-8);
+  CEpSites sites;
+  CMatrix mu, vd;
+  const double Lep = ep.run(K, Y, sites, mu, vd);
+  fail += checkClose("Laplace vs EP |ΔL|<1", fabs(L - Lep) < 1.0 ? 1.0 : 0.0, 1.0, 0.0);
+  cout << "  EP L=" << Lep << " |L_lap-L_ep|=" << fabs(L - Lep) << endl;
+  return fail;
+}
+
+static int testCGpLaplaceOptimise()
+{
+  const unsigned int n = 8;
+  CMatrix X(n, 1), Y(n, 1);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -1.5 + 3.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    Y.setVal(x < 0.0 ? 1.0 : 0.0, i, 0);
+  }
+  CRbfKern kern(X);
+  kern.setVariance(1.0);
+  kern.setLengthScale(0.8);
+  CProbitNoise noise(&Y);
+  CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+  model.setLaplaceInference(true);
+  model.setVerbosity(0);
+
+  const double L0 = model.logLikelihood();
+  CMatrix g(1, model.getOptNumParams());
+  const double Lg = model.logLikelihoodGradient(g);
+  int fail = 0;
+  fail += checkClose("CGp Laplace LL finite", std::isfinite(L0) ? 1.0 : 0.0, 1.0, 0.0);
+  fail += checkClose("CGp Laplace grad LL match", Lg, L0, 1e-12);
+  for(unsigned int i = 0; i < g.getCols(); i++)
+    fail += checkClose("CGp Laplace grad finite",
+                       std::isfinite(g.getVal(0, i)) ? 1.0 : 0.0, 1.0, 0.0);
+
+  CMatrix p0(1, model.getOptNumParams());
+  model.getOptParams(p0);
+  const double u0 = p0.getVal(0);
+  const double h = 1e-5 * max(1.0, fabs(u0));
+  CMatrix pp(p0), pm(p0);
+  pp.setVal(u0 + h, 0);
+  pm.setVal(u0 - h, 0);
+  model.setOptParams(pp);
+  const double Lp = model.logLikelihood();
+  model.setOptParams(pm);
+  const double Lm = model.logLikelihood();
+  model.setOptParams(p0);
+  const double fd = (Lp - Lm) / (2.0 * h);
+  const double an = g.getVal(0);
+  const double rel = fabs(fd - an) / max(1.0, fabs(fd));
+  cout << "  CGp Laplace FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
+  fail += checkClose("CGp Laplace ∂L/∂θ0 vs FD", rel < 5e-2 ? 1.0 : 0.0, 1.0, 0.0);
+
+  model.optimise(40);
+  const double L1 = model.logLikelihood();
+  cout << "  CGp Laplace optimise L0=" << L0 << " → L1=" << L1 << endl;
+  fail += checkClose("CGp Laplace optimise improves or flat",
+                     (L1 >= L0 - 1e-6) ? 1.0 : 0.0, 1.0, 0.0);
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
-  cout << "==== testEp CIP-0033 Phase A/B ====" << endl;
+  cout << "==== testEp CIP-0033 Phase A/B/C ====" << endl;
   fail += testMomentsMatchGPyFormula();
   fail += testEpLogMarginalFixture();
   fail += testCGpEpOptimise();
+  fail += testLaplaceDerivsAndMode();
+  fail += testCGpLaplaceOptimise();
   cout << "Total failures: " << fail << endl;
   return fail;
 }

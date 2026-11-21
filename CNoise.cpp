@@ -149,6 +149,34 @@ void bernoulliProbitEpMoments(CMatrix& Zhat,
   }
 }
 
+void bernoulliProbitLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f)
+{
+  double sign = 0.0;
+  if(y == 1.0)
+    sign = 1.0;
+  else if(y == 0.0 || y == -1.0)
+    sign = -1.0;
+  else
+    throw ndlexceptions::Error(
+        "bernoulliProbitLaplaceDerivs: labels must be in {0,1} or {-1,1}.");
+  const double t = sign * f;
+  const double r = ndlutil::gradLnCumGaussian(t);
+  logp = ndlutil::lnCumGaussian(t);
+  d1 = sign * r;
+  // W = −d²logp/df² = r(t+r); dW/df = sign * dW/dt
+  W = r * (t + r);
+  if(W < ndlutil::EPS)
+    W = ndlutil::EPS;
+  const double dr = -r * (t + r);
+  const double dWdt = dr * (t + r) + r * (1.0 + dr);
+  dWdf = sign * dWdt;
+}
+
 } // namespace ndlnoise
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,

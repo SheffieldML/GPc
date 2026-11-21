@@ -145,8 +145,11 @@ void CGp::_init()
   numActive = 0;
   pInducing = 0;
   epInference = false;
+  laplaceInference = false;
   epUpToDate = false;
+  laplaceUpToDate = false;
   epLogMarginalCache = 0.0;
+  laplaceLogMarginalCache = 0.0;
 }
 
 void CGp::setEpInference(bool on)
@@ -159,9 +162,29 @@ void CGp::setEpInference(bool on)
     if(getOutputDim() != 1)
       throw ndlexceptions::Error(
           "CGp::setEpInference: EP currently supports a single output.");
+    laplaceInference = false;
+    laplaceUpToDate = false;
   }
   epInference = on;
   epUpToDate = false;
+  setKupToDate(false);
+}
+
+void CGp::setLaplaceInference(bool on)
+{
+  if(on)
+  {
+    if(isSparseApproximation() || getApproximationType() != FTC)
+      throw ndlexceptions::Error(
+          "CGp::setLaplaceInference: CIP-0033 Laplace requires FTC (dense).");
+    if(getOutputDim() != 1)
+      throw ndlexceptions::Error(
+          "CGp::setLaplaceInference: Laplace currently supports a single output.");
+    epInference = false;
+    epUpToDate = false;
+  }
+  laplaceInference = on;
+  laplaceUpToDate = false;
   setKupToDate(false);
 }
 
@@ -173,6 +196,17 @@ double CGp::epLogLikelihood() const
   epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
   epUpToDate = true;
   return epLogMarginalCache + pkern->priorLogProb();
+}
+
+double CGp::laplaceLogLikelihood() const
+{
+  const unsigned int n = getNumData();
+  CMatrix Klap(n, n);
+  pkern->compute(Klap, *pX);
+  laplaceLogMarginalCache = laplaceEngine.run(Klap, *py);
+  laplaceFhat.deepCopy(laplaceEngine.lastFhat());
+  laplaceUpToDate = true;
+  return laplaceLogMarginalCache + pkern->priorLogProb();
 }
 
 CGp::~CGp()
@@ -433,6 +467,7 @@ void CGp::invalidateCache()
   setKupToDate(false);
   setMupToDate(false);
   epUpToDate = false;
+  laplaceUpToDate = false;
 }
 
 void CGp::updateX()
@@ -1981,6 +2016,8 @@ double CGp::logLikelihood() const
 {
   if(epInference)
     return epLogLikelihood();
+  if(laplaceInference)
+    return laplaceLogLikelihood();
 
   ensureMUpToDate();
   ensureKUpToDate();
@@ -2170,8 +2207,8 @@ double CGp::sparsePpaElboGpTerms() const
 double CGp::logLikelihoodGradient(CMatrix& g) const
 {
   enforceObservationNoisePolicy();
-  // EP does not use scaled targets m (CIP-0033).
-  if(!epInference)
+  // EP / Laplace do not use scaled targets m (CIP-0033).
+  if(!epInference && !laplaceInference)
     ensureMUpToDate();
   updateG();
   g.zeros();
@@ -2276,6 +2313,20 @@ void CGp::updateG() const
     CMatrix tempG(1, numKernParams);
     CMatrix dLdK(getNumData(), getNumData());
     epEngine.fillDLDK(dLdK);
+    g_param.zeros();
+    pkern->getGradTransParams(tempG, *pX, dLdK, true);
+    for(unsigned int i = 0; i < numKernParams; i++)
+      g_param.setVal(tempG.getVal(i), i);
+    return;
+  }
+  if(laplaceInference)
+  {
+    if(!laplaceUpToDate)
+      (void)laplaceLogLikelihood();
+    const unsigned int numKernParams = pkern->getNumParams();
+    CMatrix tempG(1, numKernParams);
+    CMatrix dLdK(getNumData(), getNumData());
+    laplaceEngine.fillDLDK(dLdK);
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)

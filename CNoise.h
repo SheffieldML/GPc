@@ -268,13 +268,19 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
     }
   }
   
-  virtual void setMu(double val, unsigned int i, unsigned int j)=0;
-  virtual double getMu(unsigned int i, unsigned int j) const=0;
-  virtual void setVarSigma(double val, unsigned int i, unsigned int j)=0;
-  virtual double getVarSigma(unsigned int i, unsigned int j) const=0;
-  virtual double getTarget(unsigned int i, unsigned int j) const=0;
+  // CIP-0034: site / ADF caches live in CNoiseSiteWorkspace (owned or attached).
+  // These are inference adapter fields, not likelihood parameters.
+  void setMu(double val, unsigned int i, unsigned int j);
+  double getMu(unsigned int i, unsigned int j) const;
+  void setVarSigma(double val, unsigned int i, unsigned int j);
+  double getVarSigma(unsigned int i, unsigned int j) const;
+  virtual double getTarget(unsigned int i, unsigned int j) const
+  {
+    return py->getVal(i, j);
+  }
   virtual void setTarget(CMatrix* vals)
   {
+    // Non-owning: model / dataset owns Y (CIP-0027 / CIP-0034).
     py=vals;
     setNumData(vals->getRows());
     setOutputDim(vals->getCols());
@@ -282,83 +288,86 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
     initNames();      
   }
   
-  // CIP-0033 Phase D: dual-write site caches into an inference workspace.
+  // Null = use ownedSites; non-null = inference-owned workspace (IVM / PPA).
   void attachSiteWorkspace(CNoiseSiteWorkspace* ws) { pSiteWs = ws; }
   CNoiseSiteWorkspace* siteWorkspace() const { return pSiteWs; }
-  void syncSitesToWorkspace() { dualWriteSitesToWorkspace(); }
-  bool sitesMatchWorkspace(double tol = ndlutil::MATCHTOL) const;
+  bool usingExternalSiteWorkspace() const { return pSiteWs != 0; }
 
-  virtual void setMus(double val)
+  void setMus(double val)
   {
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setMu(val, i, j);
-    dualWriteSitesToWorkspace();
   }
-  virtual void setVarSigmas(double val)
+  void setVarSigmas(double val)
   {
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setVarSigma(val, i, j);
-    dualWriteSitesToWorkspace();
   }
   
-  virtual void setMus(const CMatrix& vals)
+  void setMus(const CMatrix& vals)
   {
     DIMENSIONMATCH(vals.getRows()==getNumData());
     DIMENSIONMATCH(vals.getCols()==getOutputDim());
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setMu(vals.getVal(i, j), i, j);
-    dualWriteSitesToWorkspace();
   }
-  virtual void setVarSigmas(const CMatrix& vals)
+  void setVarSigmas(const CMatrix& vals)
   {
     DIMENSIONMATCH(vals.getRows()==getNumData());
     DIMENSIONMATCH(vals.getCols()==getOutputDim());
     for(unsigned int i=0; i<getNumData(); i++)
       for(unsigned int j=0; j<getOutputDim(); j++)
 	setVarSigma(vals.getVal(i, j), i, j);
-    dualWriteSitesToWorkspace();
   }
   bool equals(const CNoise& noise, double tol=ndlutil::MATCHTOL) const;
 #ifdef _NDLMATLAB
-  virtual void setVarSigmas(const mxArray* matlabArray)
+  void setVarSigmas(const mxArray* matlabArray)
   {
     CMatrix varsig;
     varsig.fromMxArray(matlabArray);
     setVarSigmas(varsig);
   }
-  virtual void setMus(const mxArray* matlabArray)
+  void setMus(const mxArray* matlabArray)
   {
     CMatrix mus;
     mus.fromMxArray(matlabArray);
     setMus(mus);
   }
-  virtual mxArray* varSigmaToMxArray() const
+  mxArray* varSigmaToMxArray() const
   {
-    return varSigma.toMxArray();
+    return activeSites().varSigma.toMxArray();
   }
-  virtual mxArray* muToMxArray() const
+  mxArray* muToMxArray() const
   {
-    return mu.toMxArray();
+    return activeSites().mu.toMxArray();
   }
   
-  virtual mxArray* targetToMxArray() const
+  mxArray* targetToMxArray() const
   {
     return py->toMxArray();
   }
 #endif
 
+  // Non-owning pointer to targets (model owns the matrix).
   CMatrix* py;
   
  protected:
-  CMatrix mu;
-  CMatrix varSigma;
-  // Non-owning; null = legacy-only (pre–Phase D callers unchanged).
+  CNoiseSiteWorkspace ownedSites;
   CNoiseSiteWorkspace* pSiteWs = 0;
-  void dualWriteSitesToWorkspace();
+  CNoiseSiteWorkspace& activeSites()
+  {
+    return pSiteWs != 0 ? *pSiteWs : ownedSites;
+  }
+  const CNoiseSiteWorkspace& activeSites() const
+  {
+    return pSiteWs != 0 ? *pSiteWs : ownedSites;
+  }
+  void initSiteStoreage();
   
+
   
   inline void setLogConcave(const bool val)
   {
@@ -438,34 +447,12 @@ class CGaussianNoise : public CNoise {
   double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
   double logLikelihood() const 
   {
-    return logLikelihood(mu, varSigma, *py);
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
   }
   double expectedLogLikelihood(double y, double muVal, double var,
                                double& gMu, double& gVar) const;
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
-  inline double getMu(unsigned int i, unsigned int j) const 
-  {
-    return mu.getVal(i, j);
-  }
-  inline void setMu(double val, unsigned int i, unsigned int j) 
-  {
-    mu.setVal(val, i, j);
-  }
-  inline double getVarSigma(unsigned int i, unsigned int j) const 
-  {
-    return varSigma.getVal(i, j);
-  }
-  inline void setVarSigma(double val, unsigned int i, unsigned int j) 
-  {
-    SANITYCHECK(!isnan(val));
-    SANITYCHECK(val>=0);
-    varSigma.setVal(val, i, j);
-  }
-  inline double getTarget(unsigned int i, unsigned int j) const 
-  {
-    return py->getVal(i, j);
-  }
   double getBiasVal(unsigned int index) const 
   {
     BOUNDCHECK(index<getOutputDim());
@@ -566,32 +553,10 @@ class CScaleNoise : public CNoise {
   double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
   double logLikelihood() const
   {
-    return logLikelihood(mu, varSigma, *py);
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
   }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
-  inline double getMu(unsigned int i, unsigned int j) const
-  {
-    return mu.getVal(i, j);
-  }
-  inline void setMu(double val, unsigned int i, unsigned int j) 
-  {
-    mu.setVal(val, i, j);
-  }
-  inline double getVarSigma(unsigned int i, unsigned int j) const
-  {
-    return varSigma.getVal(i, j);
-  }
-  inline void setVarSigma(double val, unsigned int i, unsigned int j) 
-  {
-    SANITYCHECK(!isnan(val));
-    SANITYCHECK(val>=0);
-    varSigma.setVal(val, i, j);
-  }
-  inline double getTarget(unsigned int i, unsigned int j) const
-  {
-    return py->getVal(i, j);
-  }
  
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.
@@ -643,7 +608,7 @@ class CProbitNoise : public CNoise
   double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
   double logLikelihood() const
   {
-    return logLikelihood(mu, varSigma, *py);
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
   }
   double expectedLogLikelihood(double y, double muVal, double var,
                                double& gMu, double& gVar) const;
@@ -651,28 +616,6 @@ class CProbitNoise : public CNoise
   void setExpectedLogLikBias(double b) const { ellBias = b; }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
-  inline double getMu(unsigned int i, unsigned int j) const
-  {
-    return mu.getVal(i, j);
-  }
-  inline void setMu(double val, unsigned int i, unsigned int j) 
-  {
-    mu.setVal(val, i, j);
-  }
-  inline double getVarSigma(unsigned int i, unsigned int j) const
-  {
-    return varSigma.getVal(i, j);
-  }
-  inline void setVarSigma(double val, unsigned int i, unsigned int j) 
-  {
-    SANITYCHECK(!isnan(val));
-    SANITYCHECK(val>=0);
-    varSigma.setVal(val, i, j);
-  }
-  inline double getTarget(unsigned int i, unsigned int j) const
-  {
-    return py->getVal(i, j);
-  }
   double getBiasVal(unsigned int index) const
   {
     return bias.getVal(0, index);
@@ -732,28 +675,10 @@ class CNcnmNoise : public CNoise {
   void readParamsFromStream(istream& in);
   double logLikelihood() const
   {
-    return logLikelihood(mu, varSigma, *py);
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
   }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
-  inline double getMu(unsigned int i, unsigned int j) const
-  {
-    return mu.getVal(i, j);
-  }
-  inline void setMu(double val, unsigned int i, unsigned int j) 
-  {
-    mu.setVal(val, i, j);
-  }
-  inline double getVarSigma(unsigned int i, unsigned int j) const
-  {
-    return varSigma.getVal(i, j);
-  }
-  inline void setVarSigma(double val, unsigned int i, unsigned int j) 
-  {
-    SANITYCHECK(!isnan(val));
-    SANITYCHECK(val>=0);
-    varSigma.setVal(val, i, j);
-  }
   inline void setSplitGamma(const bool val)
   {
     splitGamma=val;
@@ -761,10 +686,6 @@ class CNcnmNoise : public CNoise {
   bool isSplitGamma() const
   {
     return splitGamma;
-  }
-  inline double getTarget(unsigned int i, unsigned int j) const
-  {
-    return py->getVal(i, j);
   }
   void setTarget(CMatrix* vals)
   {
@@ -842,7 +763,7 @@ class COrderedNoise : public CNoise {
   void readParamsFromStream(istream& in);
   double logLikelihood() const
   {
-    return logLikelihood(mu, varSigma, *py);
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
   }
   // CIP-0030 Phase 3 / CIP-002A: E_q[log p(y|f)] via Gauss–Hermite.
   double expectedLogLikelihood(double y, double muVal, double var,
@@ -851,28 +772,6 @@ class COrderedNoise : public CNoise {
   double getBiasVal(unsigned int index) const { return bias.getVal(0, index); }
   //void  getGradX(CMatrix& gX, const CMatrix& dmu, const CMatrix& cvs);
   
-  inline double getMu(unsigned int i, unsigned int j) const
-  {
-    return mu.getVal(i, j);
-  }
-  inline void setMu(double val, unsigned int i, unsigned int j) 
-  {
-    mu.setVal(val, i, j);
-  }
-  inline double getVarSigma(unsigned int i, unsigned int j) const
-  {
-    return varSigma.getVal(i, j);
-  }
-  inline void setVarSigma(double val, unsigned int i, unsigned int j) 
-  {
-    SANITYCHECK(!isnan(val));
-    SANITYCHECK(val>=0);
-    varSigma.setVal(val, i, j);
-  }
-  inline double getTarget(unsigned int i, unsigned int j) const
-  {
-    return py->getVal(i, j);
-  }
 #ifdef _NDLMATLAB
   // Adds parameters to the mxArray.
   void addParamToMxArray(mxArray* matlabArray) const;

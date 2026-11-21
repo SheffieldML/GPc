@@ -322,7 +322,6 @@ void CPpa::initVals()
 	  noise.setVarSigma(dk, i, j);
 	}
     }
-  noise.syncSitesToWorkspace(); // per-element setVarSigma bypasses bulk dual-write
   for(int c=0; c<numCovStruct; c++)
     {
       M[c].setVals(0.0);

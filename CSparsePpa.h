@@ -10,6 +10,7 @@
 #include "CGp.h"
 #include "CKern.h"
 #include "CNoise.h"
+#include "CNoiseSiteWorkspace.h"
 #include <cassert>
 
 using namespace std;
@@ -83,6 +84,8 @@ class CSparsePpa {
 
   CKern& kern;
   CNoise& outerNoise;
+  // CIP-0034: outer ADF sites owned by sparse PPA.
+  CNoiseSiteWorkspace siteWorkspace;
   CGaussianNoise* pInnerNoise;
   CGp* pGp;
 

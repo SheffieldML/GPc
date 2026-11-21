@@ -55,6 +55,10 @@ void CSparsePpa::constructGp(bool runInitEstep)
         setInducingToX();
     }
   outerNoise.setVerbosity(verbosity);
+  siteWorkspace.resize(static_cast<unsigned int>(numData),
+                       static_cast<unsigned int>(numTarget));
+  siteWorkspace.zeros();
+  outerNoise.attachSiteWorkspace(&siteWorkspace);
   if(runInitEstep)
     init();
 }

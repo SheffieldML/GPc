@@ -220,6 +220,12 @@ void CIvm::initStoreage()
   invK.setSymmetric(true);
   covGrad.resize(getNumActive(), getNumActive());
   covGrad.setSymmetric(true);
+
+  // CIP-0034: ADF site state owned by IVM, not by the likelihood object.
+  siteWorkspace.resize(getNumData(), getOutputDim());
+  siteWorkspace.zeros();
+  if(pnoise != 0)
+    pnoise->attachSiteWorkspace(&siteWorkspace);
 }
 
 void CIvm::initVals()

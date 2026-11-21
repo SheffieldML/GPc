@@ -2102,6 +2102,59 @@ int testWeightSpaceInducingPhase1Ridge()
     cout << "  variance captured=" << capture << " kappa=" << kappa << endl;
   }
 
+  // Global learnS: analytic ∂L/∂s vs FD (backlog 2026-11-21_weightspace-learn-window-width).
+  {
+    const unsigned int n = 16, m = 6;
+    CMatrix X(n, 1), y(n, 1), Xu(m, 1);
+    for(unsigned int i = 0; i < n; i++)
+    {
+      const double xv = -1.2 + 2.4 * (double)i / (double)(n - 1);
+      X.setVal(xv, i, 0);
+      y.setVal(sin(2.0 * xv) + 0.05 * xv, i, 0);
+    }
+    for(unsigned int i = 0; i < m; i++)
+      Xu.setVal(-1.0 + 2.0 * (double)i / (double)(m - 1), i, 0);
+    CCmpndKern kern(X);
+    kern.addKern(new CMlpKern(X));
+    kern.addKern(new CWhiteKern(X));
+    CGaussianNoise noise(&y);
+    noise.setBiasVal(0.0, 0);
+    CGp model(&kern, &noise, &X, CGp::DTCVAR, m, 0);
+    model.setInducingVals(Xu);
+    model.setInducingFixed(false);
+    model.setBetaVal(10.0);
+    model.setInducingType("weightspace");
+    model.getInducing()->setWindowWidth(0.55);
+    model.getInducing()->setLearnWindowWidth(true);
+    fail += failTrue(model.getInducing()->learnsWindowWidth(),
+                     "learnS enabled on weight-space inducing");
+    const unsigned int nOpt = model.getOptNumParams();
+    fail += failTrue(nOpt == model.getInducing()->getNumParams()
+                         + kern.getNumParams() + 1,
+                     "opt params include inducing(+s)+kern+beta");
+    CMatrix g(1, nOpt);
+    const double L0 = model.logLikelihoodGradient(g);
+    fail += failTrue(std::isfinite(L0), "learnS model LL finite");
+    CMatrix p0(1, nOpt);
+    model.getOptParams(p0);
+    const unsigned int sIdx = model.getInducing()->getNumParams() - 1;
+    const double sVal = p0.getVal(sIdx);
+    const double h = 1e-5 * max(1.0, fabs(sVal));
+    CMatrix pp(p0), pm(p0);
+    pp.setVal(sVal + h, sIdx);
+    pm.setVal(max(sVal - h, 1e-8), sIdx);
+    model.setOptParams(pp);
+    const double Lp = model.logLikelihood();
+    model.setOptParams(pm);
+    const double Lm = model.logLikelihood();
+    model.setOptParams(p0);
+    const double fd = (Lp - Lm) / (2.0 * h);
+    const double an = g.getVal(sIdx);
+    const double rel = fabs(fd - an) / max(1.0, fabs(fd));
+    cout << "  learnS FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
+    fail += failTrue(rel < 5e-3, "learnS ∂L/∂s matches FD");
+  }
+
   return fail;
 }
 

@@ -253,10 +253,10 @@ CSparsePpa.o: CSparsePpa.cpp CSparsePpa.h CGp.h CKern.h CNoise.h
 	$(CC) -c CSparsePpa.cpp -o CSparsePpa.o $(CCFLAGS)
 
 # CIP-002A: SVGP q(u) natural gradients, ELBO grads, Adam (Gaussian).
-testSvgp: testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testSvgp testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testSvgp: testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testSvgp testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testSvgp.o: testSvgp.cpp CSvgp.h CAdam.h CGp.h CKern.h CMatrix.h CNoise.h
+testSvgp.o: testSvgp.cpp CSvgp.h CAdam.h CGp.h CKern.h CMatrix.h CNoise.h CSparsePpa.h
 	$(CC) -c testSvgp.cpp -o testSvgp.o $(CCFLAGS)
 
 # CIP-0030 Phase 1: SVI Bayesian GP-LVM (sampled q(X) on CSvgp).

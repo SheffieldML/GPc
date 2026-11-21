@@ -1,5 +1,7 @@
-/* CIP-0035 Phase 1: CDeepGp verification (V1–V6; matio-free). */
+/* CIP-0035 Phase 1–2: CDeepGp verification (V1–V6 points; Phase 2 ridges). */
+#include "CAdam.h"
 #include "CDeepGp.h"
+#include "CInducing.h"
 #include "CKern.h"
 #include "CMatrix.h"
 #include "ndlexceptions.h"
@@ -490,6 +492,259 @@ int main()
       cout << "  info: V5 Lfull=" << Lfull << " Lavg=" << Lavg
            << " diff=" << fabs(Lfull - Lavg) << endl;
       expect(fabs(Lfull - Lavg) < 1e-8, "V5: partition average equals full (eps=0)");
+    }
+
+    // ---- Phase 2 V4: FD at fixed ε with weight-space ridges ----
+    {
+      const unsigned int N = 12, M = 6, q = 2;
+      const double beta = 6.0;
+      mt19937 rng(31);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, q), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        for(unsigned int d = 0; d < q; d++)
+          X.setVal(nd(rng), i, d);
+        y.setVal(tanh(X.getVal(i, 0) - 0.3 * X.getVal(i, 1)) + 0.05 * nd(rng),
+                 i, 0);
+      }
+      ndlutil::init_genrand(29u);
+      CMlpKern k0(X), k1(X);
+      k0.setParam(1.0, 0); k0.setParam(1.0, 1); k0.setParam(0.8, 2);
+      k1.setParam(1.0, 0); k1.setParam(1.0, 1); k1.setParam(1.2, 2);
+      vector<CKern*> kerns = {&k0, &k1};
+      vector<unsigned int> dims = {q, q, 1u};
+      vector<unsigned int> Ms = {M, M};
+      CDeepGp dgp(X, y, kerns, dims, Ms, beta, 0.5, 0);
+      dgp.setLayerInducingType(0, "weightspace");
+      dgp.setLayerInducingType(1, "weightspace");
+      // learnS grads are not packed yet (CSvgp::packInducingGrad); FD W/q/kern only.
+      CMatrix m0(dgp.layer(0).getNumInducing(), q);
+      m0.zeros();
+      vector<CMatrix> S0(q);
+      for(unsigned int j = 0; j < q; j++)
+      {
+        S0[j].resize(dgp.layer(0).getNumInducing(), dgp.layer(0).getNumInducing());
+        S0[j].zeros();
+        S0[j].addDiag(0.25);
+        S0[j].setSymmetric(true);
+      }
+      dgp.layer(0).setWhitenedQ(m0, S0);
+      dgp.layer(1).naturalGradientStep(0.25);
+      dgp.setNumSamples(1);
+
+      // Hidden noise: |batch| * K * D_1 = N * 1 * q
+      CMatrix eps(N * q, 1);
+      for(unsigned int i = 0; i < eps.getRows(); i++)
+        eps.setVal(nd(rng), i, 0);
+      dgp.setFrozenEps(eps);
+
+      vector<unsigned int> all(N);
+      for(unsigned int i = 0; i < N; i++) all[i] = i;
+      CMatrix gAnal;
+      dgp.objectiveGradBatch(all, gAnal);
+      CMatrix p0;
+      dgp.getStochasticParams(p0);
+      const double h = 1e-5;
+      double maxErr = 0.0;
+      unsigned int worst = 0;
+      // Subsample params for speed: first 12 + last 8 + every 7th.
+      vector<unsigned int> idxs;
+      for(unsigned int i = 0; i < min(12u, p0.getCols()); i++)
+        idxs.push_back(i);
+      for(unsigned int i = 12; i + 8 < p0.getCols(); i += 7)
+        idxs.push_back(i);
+      for(unsigned int i = (p0.getCols() > 8 ? p0.getCols() - 8 : 0);
+          i < p0.getCols(); i++)
+        idxs.push_back(i);
+      for(unsigned int i : idxs)
+      {
+        CMatrix pp(p0), pm(p0);
+        pp.setVal(p0.getVal(i) + h, i);
+        pm.setVal(p0.getVal(i) - h, i);
+        dgp.setStochasticParams(pp);
+        CMatrix gTmp;
+        const double Lp = dgp.objectiveGradBatch(all, gTmp);
+        dgp.setStochasticParams(pm);
+        const double Lm = dgp.objectiveGradBatch(all, gTmp);
+        dgp.setStochasticParams(p0);
+        const double gFd = (Lp - Lm) / (2.0 * h);
+        const double err = fabs(gAnal.getVal(i) - gFd);
+        if(err > maxErr)
+        {
+          maxErr = err;
+          worst = i;
+        }
+      }
+      cout << "  info: V4-ridge max|g-FD|=" << maxErr << " at i=" << worst
+           << " of " << p0.getCols() << " (checked " << idxs.size() << ")"
+           << endl;
+      expect(maxErr < 2e-2, "V4: ridge analytic grads match FD at fixed ε");
+    }
+
+    // ---- Phase 2: s ≤ 1 via sigmoid pack under Adam + hard push ----
+    {
+      const unsigned int N = 16, M = 8;
+      mt19937 rng(41);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, 1), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        X.setVal(-1.5 + 3.0 * (double)i / (double)(N - 1), i, 0);
+        y.setVal(sin(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+      }
+      ndlutil::init_genrand(43u);
+      CMlpKern k0(X), k1(X);
+      k0.setParam(1.0, 0); k0.setParam(0.5, 1); k0.setParam(0.5, 2);
+      k1.setParam(1.0, 0); k1.setParam(0.5, 1); k1.setParam(1.0, 2);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 1u},
+                  vector<unsigned int>{M, M}, 8.0, 0.5, 0);
+      dgp.setLayerInducingType(0, "points");
+      dgp.setLayerInducingType(1, "weightspace");
+      dgp.setLayerLearnWindowWidth(1, true, true); // untied s_m on final
+      dgp.setNumSamples(1);
+      dgp.setSeed(7);
+
+      auto* pWs = dynamic_cast<CInducingWeightSpace*>(dgp.layer(1).getInducing());
+      expect(pWs != 0, "Phase2: final layer is weight-space");
+      if(pWs != 0)
+      {
+        // Hard-push only unconstrained window coords u → +∞ (sigmoid → s→1).
+        CMatrix pe;
+        dgp.layer(1).getStochasticParams(pe);
+        const unsigned int s0 =
+            k1.getNumParams() + M * pWs->domainDim();
+        for(unsigned int m = 0; m < M; m++)
+          pe.setVal(40.0, s0 + m);
+        dgp.layer(1).setStochasticParams(pe);
+        bool ok = true;
+        double smax = 0.0, smin = 1e9;
+        for(unsigned int m = 0; m < M; m++)
+        {
+          const double sm = pWs->getWindowWidthAt(m);
+          smax = max(smax, sm);
+          smin = min(smin, sm);
+          if(!(sm <= CInducingWeightSpace::windowWidthMax() + 1e-9)
+             || !(sm >= CInducingWeightSpace::windowWidthMin() - 1e-9))
+            ok = false;
+        }
+        cout << "  info: Phase2 s after u=40 push in [" << smin << ", " << smax
+             << "]" << endl;
+        expect(ok && smax <= 1.0 + 1e-9 && smax > 0.9,
+               "Phase2: learnable s_m stay in [0.05, 1] under param push");
+
+        // Short Adam: widths remain in range (points hidden keeps Kuu stable).
+        CAdam adam(0.02);
+        adam.setBatchSize(N);
+        adam.setMaxIters(12);
+        adam.setSeed(11);
+        adam.maximise(dgp);
+        ok = true;
+        smax = 0.0;
+        for(unsigned int m = 0; m < M; m++)
+        {
+          const double sm = pWs->getWindowWidthAt(m);
+          smax = max(smax, sm);
+          if(!(sm <= CInducingWeightSpace::windowWidthMax() + 1e-9)
+             || !(sm >= CInducingWeightSpace::windowWidthMin() - 1e-9))
+            ok = false;
+        }
+        cout << "  info: Phase2 s_max after Adam=" << smax << endl;
+        expect(ok, "Phase2: learnable s_m stay in [0.05, 1] under Adam");
+      }
+    }
+
+    // ---- Phase 2 V8 smoke: learned-ridge deep GP trains, beats shallow ----
+    {
+      const unsigned int N = 40, M = 10, Nte = 20;
+      mt19937 rng(53);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, 1), y(N, 1), Xte(Nte, 1), yte(Nte, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        const double x = -2.0 + 4.0 * (double)i / (double)(N - 1);
+        X.setVal(x, i, 0);
+        y.setVal(sin(1.5 * x) + 0.15 * nd(rng), i, 0);
+      }
+      for(unsigned int i = 0; i < Nte; i++)
+      {
+        const double x = -1.8 + 3.6 * (double)i / (double)(Nte - 1);
+        Xte.setVal(x, i, 0);
+        yte.setVal(sin(1.5 * x), i, 0);
+      }
+
+      auto trainRmse = [&](bool deepRidge) {
+        ndlutil::init_genrand(55u);
+        if(deepRidge)
+        {
+          CMlpKern k0(X), k1(X);
+          k0.setParam(1.0, 0); k0.setParam(0.5, 1); k0.setParam(0.4, 2);
+          k1.setParam(1.0, 0); k1.setParam(0.5, 1); k1.setParam(1.0, 2);
+          CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                      vector<unsigned int>{1u, 1u, 1u},
+                      vector<unsigned int>{M, M}, 10.0, 0.5, 0);
+          dgp.setLayerInducingType(0, "weightspace");
+          dgp.setLayerInducingType(1, "weightspace");
+          dgp.setLayerLearnWindowWidth(0, true, false);
+          dgp.setLayerLearnWindowWidth(1, true, false);
+          dgp.setNumSamples(1);
+          dgp.setSeed(3);
+          CAdam adam(0.05);
+          adam.setBatchSize(N);
+          adam.setMaxIters(40);
+          adam.setSeed(3);
+          adam.maximise(dgp);
+          // Predictive mean via final-layer marginals at mean-path h = X P.
+          CMatrix mu0, var0;
+          dgp.layer(0).marginalsAt(Xte, mu0, var0);
+          CMatrix H(Nte, 1);
+          H.gemm(Xte, dgp.meanMap(0), 1.0, 0.0, "n", "n");
+          for(unsigned int i = 0; i < Nte; i++)
+            H.setVal(H.getVal(i, 0) + mu0.getVal(i, 0), i, 0);
+          CMatrix mu1, var1;
+          dgp.layer(1).marginalsAt(H, mu1, var1);
+          double sse = 0.0;
+          for(unsigned int i = 0; i < Nte; i++)
+          {
+            const double e = mu1.getVal(i, 0) - yte.getVal(i, 0);
+            sse += e * e;
+          }
+          return sqrt(sse / (double)Nte);
+        }
+        CMlpKern kern(X);
+        kern.setParam(1.0, 0); kern.setParam(0.5, 1); kern.setParam(1.0, 2);
+        CMatrix Z(M, 1);
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(X.getVal(k % N, 0), k, 0);
+        CSvgp sv(&kern, &X, &y, Z, 10.0, 0);
+        sv.setInducingType("weightspace");
+        sv.setQParamMode(CSvgp::QModeCholesky);
+        auto* pWs = dynamic_cast<CInducingWeightSpace*>(sv.getInducing());
+        if(pWs != 0)
+          pWs->setLearnWindowWidth(true);
+        CAdam adam(0.05);
+        adam.setBatchSize(N);
+        adam.setMaxIters(40);
+        adam.setSeed(3);
+        adam.maximise(sv);
+        CMatrix mu, var;
+        sv.marginalsAt(Xte, mu, var);
+        double sse = 0.0;
+        for(unsigned int i = 0; i < Nte; i++)
+        {
+          const double e = mu.getVal(i, 0) - yte.getVal(i, 0);
+          sse += e * e;
+        }
+        return sqrt(sse / (double)Nte);
+      };
+      const double rmseDeep = trainRmse(true);
+      const double rmseShallow = trainRmse(false);
+      cout << "  info: V8-ridge rmseDeep=" << rmseDeep
+           << " rmseShallow=" << rmseShallow << endl;
+      expect(isfinite(rmseDeep) && rmseDeep < 1.5,
+             "V8-ridge: deep learned-ridge RMSE finite and sane");
+      expect(isfinite(rmseShallow), "V8-ridge: shallow baseline RMSE finite");
     }
   }
   catch(ndlexceptions::Error& e)

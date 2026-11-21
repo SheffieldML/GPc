@@ -261,6 +261,43 @@ void CDeepGp::setFrozenEps(const CMatrix& eps)
   freezeNoise = true;
 }
 
+void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
+{
+  if(ell >= numLayers)
+    throw ndlexceptions::Error("CDeepGp::setLayerInducingType: layer out of range");
+  layers[ell]->setInducingType(typeName);
+  layers[ell]->setQParamMode(CSvgp::QModeCholesky);
+  if(ell + 1 < numLayers)
+  {
+    CMatrix m(layers[ell]->getNumInducing(), layers[ell]->getOutputDim());
+    m.zeros();
+    vector<CMatrix> S(layers[ell]->getOutputDim());
+    for(unsigned int j = 0; j < S.size(); j++)
+    {
+      S[j].resize(layers[ell]->getNumInducing(), layers[ell]->getNumInducing());
+      S[j].zeros();
+      S[j].addDiag(1e-4);
+      S[j].setSymmetric(true);
+    }
+    layers[ell]->setWhitenedQ(m, S);
+  }
+  packLayerOffsets();
+}
+
+void CDeepGp::setLayerLearnWindowWidth(unsigned int ell, bool learn, bool untied)
+{
+  if(ell >= numLayers)
+    throw ndlexceptions::Error("CDeepGp::setLayerLearnWindowWidth: layer out of range");
+  CInducingWeightSpace* pWs =
+      dynamic_cast<CInducingWeightSpace*>(layers[ell]->getInducing());
+  if(pWs == 0)
+    throw ndlexceptions::Error(
+        "CDeepGp::setLayerLearnWindowWidth: layer is not weight-space");
+  pWs->setLearnWindowWidth(learn);
+  pWs->setWindowWidthUntied(untied);
+  packLayerOffsets();
+}
+
 void CDeepGp::packLayerOffsets()
 {
   layerParamOffset.resize(numLayers + 1);

@@ -197,8 +197,8 @@ void CClgp::learn()
         const string& kt = kernelTypes[kernelTypes.size()-1];
         if(kt!="rbf" && kt!="rbfard" && kt!="eq" && kt!="exp" && kt!="ratquad" && kt!="ratquadard"
            && kt!="matern32" && kt!="matern52" && kt!="matern32ard" && kt!="matern52ard"
-           && kt!="stdperiodic" && kt!="cosine")
-          exitError("Inverse width / lengthscale (-g) only valid for RBF/EQ/exp/ratquad/Matérn/stdperiodic/cosine (and ARD variants).");
+           && kt!="stdperiodic" && kt!="cosine" && kt!="sinc" && kt!="expquadcosine")
+          exitError("Inverse width / lengthscale (-g) only valid for RBF/EQ/exp/ratquad/Matérn/stdperiodic/cosine/sinc/expquadcosine (and ARD variants).");
         rbfInvWidths[rbfInvWidths.size()-1]=2*getDoubleFromCurrentArgument(); 
       }
       else if (isCurrentArg("-d", "--degree")) {
@@ -380,6 +380,24 @@ void CClgp::learn()
       if(selectInputs[i])
         exitError("cosine does not map to ARD via -i.");
       kernels.push_back(new CCosineKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="sinc") {
+      if(selectInputs[i])
+        exitError("sinc does not map to ARD via -i.");
+      kernels.push_back(new CSincKern(*M));
+      if(rbfInvWidths[i]!=-1.0)
+        kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
+      if(variances[i]!=-1.0)
+        kernels[i]->setByPath("variance", variances[i]);
+    }
+    else if(kernelTypes[i]=="expquadcosine" || kernelTypes[i]=="ExpQuadCosine") {
+      if(selectInputs[i])
+        exitError("expquadcosine does not map to ARD via -i.");
+      kernels.push_back(new CExpQuadCosineKern(*M));
       if(rbfInvWidths[i]!=-1.0)
         kernels[i]->setByPath("lengthscale", 1.0/sqrt(rbfInvWidths[i]));
       if(variances[i]!=-1.0)
@@ -1149,7 +1167,7 @@ void CClgp::helpInfo()
   }
   else if(command=="kern") {
     cout << endl << "Covariance Function options:" << endl;
-    helpArgument("-k, --kernel string", "Covariance type (repeatable compound). Learn path: lin, poly, rbf, rbfard, eq/ExpQuad, exp, ratquad, ratquadard, matern32, matern52, matern32ard, matern52ard, stdperiodic, cosine, brownian, ibrownian, mlp, arccos (CIP-0028). Default: rbf only (CIP-0027: Bias/White opt-in via -k bias / -k white; FTC noise is likelihood.variance). Multi-output ICM/LCM + indexwhite: API demo (docs/tutorials/coregionalization_toy.md), not -k. Prefer -A dtcvar over FITC for sparse tutorials.");
+    helpArgument("-k, --kernel string", "Covariance type (repeatable compound). Learn path: lin, poly, rbf, rbfard, eq/ExpQuad, exp, ratquad, ratquadard, matern32, matern52, matern32ard, matern52ard, stdperiodic, cosine, sinc, expquadcosine, brownian, ibrownian, mlp, arccos (CIP-0028/0038). Default: rbf only (CIP-0027: Bias/White opt-in via -k bias / -k white; FTC noise is likelihood.variance). Multi-output ICM/LCM + indexwhite: API demo (docs/tutorials/coregionalization_toy.md), not -k. Prefer -A dtcvar over FITC for sparse tutorials.");
     helpArgument("--allow-white-and-noise", "CIP-0027 Phase C: allow trainable White and free likelihood.variance together on FTC. Default refuses dual free noise (legacy -k white fixes likelihood.variance).");
     helpArgument("--arccos-order int", "Arc-cosine order 0 (angular / infinite-MLP) or 1 (ReLU). Only with -k arccos. Default 0.");
     helpArgument("-g, --gamma float", "Lengthscale control: sets inverseWidth for RBF/EQ/exp, or lengthscale=1/sqrt(2γ) for ratquad/Matérn/stdperiodic/cosine (and ARD variants). Prefer -P …lengthscale=… when matching GPy.");

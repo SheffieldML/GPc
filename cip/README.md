@@ -66,6 +66,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0033](./cip0033.md): Likelihood/inference split to unblock **EP and Laplace** on `CGp` (**Closed**, compressed). Implements [REQ-0019](../requirements/req0019_nonconjugate-inference-ep-laplace.md); spawned from [CIP-0027](./cip0027.md).
 - [CIP-0034](./cip0034.md): Strip ADF site caches off `CNoise` into `CNoiseSiteWorkspace` (**Closed**, compressed — closes CIP-0027 residual; validates REQ-0019).
 - [CIP-0036](./cip0036.md): Reflect GPy `GPClassification` capabilities in `gpc` — capability matrix; Laplace predict, naming aliases, notebook (**Implemented**; TestPyPI `0.1.0a6` pending). Builds on CIP-0033/0034; sparse EP deferred.
+- [CIP-0038](./cip0038.md): GPy `kern` inventory on `gpc` — wrap catalogue, `Sinc`/`ExpQuadCosine`, `Prod`, ICM/coregionalize (**Implemented** — worktree `GPc-cip0038` / `cip0038-gpy-kern-inventory`). Extends [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [REQ-0005](../requirements/req0005_gpy-aligned-kernel-coverage.md); paths via [CIP-0014](./cip0014.md).
 
 ## Creating a Good CIP
 

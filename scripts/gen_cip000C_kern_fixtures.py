@@ -241,6 +241,25 @@ def K_cosine(pt, X, X2):
     return var * np.cos(r)
 
 
+def K_sinc(pt, X, X2):
+    # CIP-0038: GPy Sinc — σ² * np.sinc(2 r)
+    ls = atox_exp(pt[0])
+    var = atox_exp(pt[1])
+    r2 = np.sum(((X[:, None, :] - X2[None, :, :]) / ls) ** 2, axis=-1)
+    r = np.sqrt(np.maximum(r2, 0.0))
+    return var * np.sinc(2.0 * r)
+
+
+def K_expquadcosine(pt, X, X2):
+    # CIP-0038: lengthScale, variance, period — σ² exp(-2π² r²) cos(2π r / T)
+    ls = atox_exp(pt[0])
+    var = atox_exp(pt[1])
+    period = atox_exp(pt[2])
+    r2 = np.sum(((X[:, None, :] - X2[None, :, :]) / ls) ** 2, axis=-1)
+    r = np.sqrt(np.maximum(r2, 0.0))
+    return var * np.exp(-2.0 * np.pi**2 * r**2) * np.cos(2.0 * np.pi * r / period)
+
+
 def K_brownian(pt, X, X2):
     # variance only; 1-D GPy Brownian
     var = atox_exp(pt[0])
@@ -293,6 +312,16 @@ def main():
     X, X2 = make_xy(n, m, d)
     pt = np.array([-0.05, 0.1])
     pack_fixture("cosine", pt, ["exp", "exp"], K_cosine, X, X2)
+
+    # sinc (CIP-0038)
+    X, X2 = make_xy(n, m, d)
+    pt = np.array([-0.08, 0.12])
+    pack_fixture("sinc", pt, ["exp", "exp"], K_sinc, X, X2)
+
+    # expquadcosine (CIP-0038)
+    X, X2 = make_xy(n, m, d)
+    pt = np.array([-0.05, 0.1, 0.25])  # ls, var, period
+    pack_fixture("expquadcosine", pt, ["exp", "exp", "exp"], K_expquadcosine, X, X2)
 
     # brownian (1-D, positive-ish)
     X, X2 = make_xy(n, m, 1, positive=True)

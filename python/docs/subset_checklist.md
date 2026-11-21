@@ -13,6 +13,7 @@ Native demos/CLI remain the primary share format ([CIP-0015](../../cip/cip0015.m
 | GPy `ExpQuad` naming | [param-paths](../../docs/param-paths.md) | Notebook [`examples/expquad_regression.ipynb`](../examples/expquad_regression.ipynb); script twin `examples/expquad_regression.py` |
 | MLP / arcsin vs RBF | CIP-000C / CIP-001D Phase F | [`examples/mlp_olympic.ipynb`](../examples/mlp_olympic.ipynb) (year-scale `weight_variance` init in notebook; GPy defaults stay `1`) |
 | Weight-space inducing | [CIP-0028](../../cip/cip0028.md) | [`examples/weightspace_ridge_1d.ipynb`](../examples/weightspace_ridge_1d.ipynb) |
+| `basic_classification` (EP) | [cgp_ep_classification](../../docs/tutorials/cgp_ep_classification.md); IVM large-\(N\) — [ivm_unitsquare](../../docs/tutorials/ivm_unitsquare.md) | [`examples/basic_classification.ipynb`](../examples/basic_classification.ipynb); `gpc.GPClassification` EP/Laplace (CIP-0036); FTC-only |
 
 Install: see [`../README.md`](../README.md).
 
@@ -30,7 +31,7 @@ These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gp
 | GPy tutorial / example | Native GPc today | Owning CIP / backlog (Python later) | Notes |
 |---|---|---|---|
 | Coregionalization / `build_XY` / ICM | [coregionalization_toy](../../docs/tutorials/coregionalization_toy.md), [coregionalize.md](../../docs/coregionalize.md) | [CIP-0015](../../cip/cip0015.md) Phase A helpers exist natively; façade wrap listed under CIP-001D follow-ups | Multi-output index column / `stampOutputIndex` not bound |
-| `basic_classification` (EP) | `gpc.GPClassification` + [cgp_ep_classification](../../docs/tutorials/cgp_ep_classification.md); IVM sparse — [ivm_unitsquare](../../docs/tutorials/ivm_unitsquare.md) | CIP-0033 Phase D | FTC-only; sparse EP deferred |
+| Sparse EP / EPDTC classification | — | [CIP-0036](../../cip/cip0036.md) **Defer** | Dense FTC EP/Laplace is in-subset; sparse EP later |
 | GPLVM | [gplvm_oil100](../../docs/tutorials/gplvm_oil100.md) | CIP-001D follow-ups | MAP GPLVM CLI only |
 | Bayesian GPLVM (collapsed / psi) | [bgplvm_oil100](../../docs/tutorials/bgplvm_oil100.md) | [CIP-0017](../../cip/cip0017.md) (Closed native); Python still follow-on | |
 | SVI Bayesian GPLVM | [bgplvm_svi](../../docs/tutorials/bgplvm_svi.md) | [CIP-0030](../../cip/cip0030.md); backlog [`2026-11-20_cip0030-phase4b-python-facade`](../../backlog/features/2026-11-20_cip0030-phase4b-python-facade.md) (Ready) | CLI-first today |

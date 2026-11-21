@@ -80,12 +80,22 @@ public:
                 py::object callback = py::none());
   double objective() const;
 
-  // Latent f_* mean/var under EP (Laplace: mode path not yet predictive).
+  // CIP-0036 / GPy: predict and predict_noiseless → latent f_* mean/var.
   std::pair<py::array_t<double>, py::array_t<double>> predict_noiseless(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
-  // Class probability P(y=1) via probit link on latent predictive.
+  std::pair<py::array_t<double>, py::array_t<double>> predict(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+  {
+    return predict_noiseless(Xtest);
+  }
+  // Class probability P(y=1); GPy name predictive_probabilities is an alias.
   py::array_t<double> predict_proba(
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+  py::array_t<double> predictive_probabilities(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+  {
+    return predict_proba(Xtest);
+  }
 
   std::string to_string() const;
   ModelDescription describe() const;

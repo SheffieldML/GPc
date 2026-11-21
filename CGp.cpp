@@ -214,6 +214,23 @@ void CGp::epLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) con
   epEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
 }
 
+void CGp::laplaceLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) const
+{
+  if(!laplaceInference)
+    throw ndlexceptions::Error(
+        "laplaceLatentMeanVar requires setLaplaceInference(true).");
+  if(!laplaceUpToDate)
+    (void)laplaceLogLikelihood();
+  const unsigned int n = getNumData();
+  const unsigned int nt = Xin.getRows();
+  CMatrix Kx(n, nt);
+  pkern->compute(Kx, *pX, Xin);
+  CMatrix kss(nt, 1);
+  for(unsigned int i = 0; i < nt; i++)
+    kss.setVal(pkern->diagComputeElement(Xin, i), i, 0);
+  laplaceEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+}
+
 double CGp::laplaceLogLikelihood() const
 {
   const unsigned int n = getNumData();

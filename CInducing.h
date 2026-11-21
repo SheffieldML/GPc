@@ -259,9 +259,9 @@ class CInducingWeightSpace : public CInducing
   // Extract unit directions V (M × (d+1)) and offsets a (M × 1). Ridge only.
   void ridgeFactors(CMatrix& V, CMatrix& a) const;
 
-  // CIP-0028 ridge init: orthogonal direction blocks (≤ D'=d+1), n_off offsets
-  // on [-2.5, 2.5] with no a=0, and s from offset spacing so κ(K_uu) stays ~≤10^4.
-  // WOut is M × (d+2); returns recommended window width.
+  // CIP-0037 ridge init: directions first (n_off=1 while M≤4 D'; else
+  // n_off=ceil(M/(4 D'))), one-sided offsets on [1, 2.5] (never a=0), and s from
+  // offset spacing so κ(K_uu) stays ~≤10^4. WOut is M × (d+2); returns window width.
   static double makeRidgeInit(CMatrix& WOut, unsigned int M, unsigned int inputDim,
                               unsigned int rngSeed = 7u);
 

@@ -72,9 +72,9 @@ bool typesCompatible(const string& type, const string& name)
 {
   if(name==type)
     return true;
-  if(type=="matern32" && (name=="Mat32" || name=="matern32"))
+  if((type=="matern32" || type=="matern32ard") && (name=="Mat32" || name=="matern32" || name=="matern32ard"))
     return true;
-  if(type=="matern52" && (name=="Mat52" || name=="matern52"))
+  if((type=="matern52" || type=="matern52ard") && (name=="Mat52" || name=="matern52" || name=="matern52ard"))
     return true;
   if(type=="exp" && (name=="Exponential" || name=="exp"))
     return true;
@@ -85,6 +85,10 @@ bool typesCompatible(const string& type, const string& name)
   if(type=="stdperiodic" && (name=="std_periodic" || name=="stdperiodic"))
     return true;
   if(type=="cosine" && (name=="Cosine" || name=="cosine"))
+    return true;
+  if(type=="sinc" && (name=="Sinc" || name=="sinc"))
+    return true;
+  if((type=="expquadcosine") && (name=="ExpQuadCosine" || name=="expquadcosine"))
     return true;
   if(type=="brownian" && (name=="Brownian" || name=="brownian"))
     return true;
@@ -115,18 +119,21 @@ bool typesCompatible(const string& type, const string& name)
 string CKern::gpyComponentName() const
 {
   const string t = getType();
-  if(t=="matern32") return "Mat32";
-  if(t=="matern52") return "Mat52";
+  if(t=="matern32" || t=="matern32ard") return "Mat32";
+  if(t=="matern52" || t=="matern52ard") return "Mat52";
   if(t=="exp") return "Exponential";
   if(t=="ratquad" || t=="ratquadard") return "RatQuad";
   if(t=="lin" || t=="linard") return "linear";
   if(t=="stdperiodic") return "std_periodic";
   if(t=="cosine") return "Cosine";
+  if(t=="sinc") return "Sinc";
+  if(t=="expquadcosine") return "ExpQuadCosine";
   if(t=="brownian") return "Brownian";
   if(t=="ibrownian" || t=="integratedbrownian") return "IntegratedBrownian";
   if(t=="rbfard") return "rbf";
   if(t=="eq") return "ExpQuad";
   if(t=="mlpard") return "mlp";
+  if(t=="poly" || t=="polyard") return "poly";
   if(t=="arccos" || t=="arccosine") return "ArcCosine";
   return t;
 }
@@ -8097,6 +8104,387 @@ double CCosineKern::getGradParam(unsigned int index, const CMatrix& X, const CMa
   throw ndlexceptions::NotImplementedError("Error getGradParam is not currently implemented for CCosineKern");
 }
 
+namespace {
+// numpy.sinc(x) = sin(π x)/(π x); GPy Sinc uses variance * np.sinc(2 r).
+inline double numpySinc(double x)
+{
+  if(fabs(x) < 1e-8)
+    return 1.0;
+  const double pix = M_PI * x;
+  return sin(pix) / pix;
+}
+} // namespace
+
+// CIP-0038: GPy Sinc — k(r) = variance * sinc(2 r) with numpy sinc.
+CSincKern::CSincKern() : CStationaryKern()
+{
+  _init();
+}
+CSincKern::CSincKern(unsigned int inDim) : CStationaryKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CSincKern::CSincKern(const CMatrix& X) : CStationaryKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CSincKern::CSincKern(const CSincKern& kern) : CStationaryKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+}
+CSincKern::~CSincKern()
+{
+}
+double CSincKern::getVariance() const
+{
+  return variance;
+}
+void CSincKern::_init()
+{
+  nParams = 2;
+  setType("sinc");
+  setName("Sinc");
+  setParamName("lengthScale", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setStationary(true);
+}
+void CSincKern::setInitParam()
+{
+  lengthScale = 1.0;
+  variance = 1.0;
+}
+double CSincKern::K_of_r(double r) const
+{
+  return variance * numpySinc(2.0 * r);
+}
+double CSincKern::dK_dr(double r) const
+{
+  // Match GPy.kern.Sinc.dK_dr (small-angle guard at 1e-5).
+  if(fabs(r) < 1e-5)
+    return -variance * (4.0 / 3.0) * M_PI * M_PI * r;
+  return variance * (cos(2.0 * M_PI * r) - numpySinc(2.0 * r)) / r;
+}
+inline double CSincKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+void CSincKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(d.getCols()==1);
+  DIMENSIONMATCH(X.rowsMatch(d));
+  d.setVals(variance);
+}
+void CSincKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    lengthScale = val;
+    break;
+  case 1:
+    variance = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+  invalidateWorkspace();
+}
+double CSincKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return lengthScale;
+  case 1:
+    return variance;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+void CSincKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r = scaleFactor() * sqrt(dist2Active(X, row, X2, k));
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double val = 0.0;
+      if(r != 0.0)
+      {
+	double dx = X.getVal(row, j)-X2.getVal(k, j);
+	val = dK_dr(r) * dx / (lengthScale * lengthScale * r);
+      }
+      if(addG)
+	gX.addVal(val, k, j);
+      else
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CSincKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CSincKern::getWhite() const
+{
+  return 0.0;
+}
+void CSincKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double g1=0.0;
+  double g2=0.0;
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  const bool useWork = hasRectWorkspace(X, X2);
+  const double invVar = (variance == 0.0) ? 0.0 : 1.0 / variance;
+  for(unsigned int i=0; i<nrows; i++)
+  {
+    for(unsigned int j=0; j<ncols; j++)
+    {
+      double d2 = 0.0;
+      double kvar = 0.0;
+      if(useWork)
+      {
+        d2 = rectR2(i, j);
+        kvar = rectK(i, j) * invVar;
+      }
+      else
+      {
+        d2 = dist2Active(X, i, X2, j);
+        const double r = sqrt(d2)/lengthScale;
+        kvar = numpySinc(2.0 * r);
+      }
+      const double r = sqrt(d2)/lengthScale;
+      const double cgVal = covGrad.getVal(i,j);
+      // ∂K/∂ℓ = dK/dr * ∂r/∂ℓ = dK/dr * (-r/ℓ)
+      g1 += cgVal * dK_dr(r) * (-r / lengthScale);
+      g2 += cgVal * kvar;
+    }
+  }
+  g.setVal(g1, 0);
+  g.setVal(g2, 1);
+  if(regularise)
+    addPriorGrad(g);
+}
+void CSincKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise);
+}
+double CSincKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not currently implemented for CSincKern");
+}
+double CSincKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not currently implemented for CSincKern");
+}
+
+// CIP-0038: GPy ExpQuadCosine — σ² exp(-2π² r²) cos(2π r / T).
+CExpQuadCosineKern::CExpQuadCosineKern() : CStationaryKern()
+{
+  _init();
+}
+CExpQuadCosineKern::CExpQuadCosineKern(unsigned int inDim) : CStationaryKern(inDim)
+{
+  _init();
+  setInputDim(inDim);
+}
+CExpQuadCosineKern::CExpQuadCosineKern(const CMatrix& X) : CStationaryKern(X)
+{
+  _init();
+  setInputDim(X.getCols());
+}
+CExpQuadCosineKern::CExpQuadCosineKern(const CExpQuadCosineKern& kern) : CStationaryKern(kern)
+{
+  _init();
+  setInputDim(kern.getInputDim());
+  variance = kern.variance;
+  lengthScale = kern.lengthScale;
+  period = kern.period;
+}
+CExpQuadCosineKern::~CExpQuadCosineKern()
+{
+}
+double CExpQuadCosineKern::getVariance() const
+{
+  return variance;
+}
+void CExpQuadCosineKern::_init()
+{
+  nParams = 3;
+  setType("expquadcosine");
+  setName("ExpQuadCosine");
+  setParamName("lengthScale", 0);
+  addTransform(CTransform::defaultPositive(), 0);
+  setParamName("variance", 1);
+  addTransform(CTransform::defaultPositive(), 1);
+  setParamName("period", 2);
+  addTransform(CTransform::defaultPositive(), 2);
+  setStationary(true);
+}
+void CExpQuadCosineKern::setInitParam()
+{
+  lengthScale = 1.0;
+  variance = 1.0;
+  period = 1.0;
+}
+double CExpQuadCosineKern::K_of_r(double r) const
+{
+  return variance * exp(-2.0 * M_PI * M_PI * r * r) * cos(2.0 * M_PI * r / period);
+}
+double CExpQuadCosineKern::dK_dr(double r) const
+{
+  const double a = exp(-2.0 * M_PI * M_PI * r * r);
+  const double ang = 2.0 * M_PI * r / period;
+  return variance * a * (-4.0 * M_PI * M_PI * r * cos(ang)
+                         - (2.0 * M_PI / period) * sin(ang));
+}
+inline double CExpQuadCosineKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  return variance;
+}
+void CExpQuadCosineKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(d.getCols()==1);
+  DIMENSIONMATCH(X.rowsMatch(d));
+  d.setVals(variance);
+}
+void CExpQuadCosineKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    lengthScale = val;
+    break;
+  case 1:
+    variance = val;
+    break;
+  case 2:
+    period = val;
+    break;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+  invalidateWorkspace();
+}
+double CExpQuadCosineKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  switch(paramNo)
+  {
+  case 0:
+    return lengthScale;
+  case 1:
+    return variance;
+  case 2:
+    return period;
+  default:
+    throw ndlexceptions::Error("Requested parameter doesn't exist.");
+  }
+}
+void CExpQuadCosineKern::getGradX(CMatrix& gX, const CMatrix& X, unsigned int row, const CMatrix& X2, bool addG) const
+{
+  DIMENSIONMATCH(gX.getRows() == X2.getRows());
+  BOUNDCHECK(row < X.getRows());
+  DIMENSIONMATCH(X.getCols()==X2.getCols());
+  for(unsigned int k=0; k<X2.getRows(); k++)
+  {
+    double r = scaleFactor() * sqrt(dist2Active(X, row, X2, k));
+    for(unsigned int j=0; j<X2.getCols(); j++)
+    {
+      double val = 0.0;
+      if(r != 0.0)
+      {
+	double dx = X.getVal(row, j)-X2.getVal(k, j);
+	val = dK_dr(r) * dx / (lengthScale * lengthScale * r);
+      }
+      if(addG)
+	gX.addVal(val, k, j);
+      else
+	gX.setVal(val, k, j);
+    }
+  }
+}
+void CExpQuadCosineKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
+{
+  DIMENSIONMATCH(gX.dimensionsMatch(X));
+  if(!addG)
+    gX.zeros();
+}
+double CExpQuadCosineKern::getWhite() const
+{
+  return 0.0;
+}
+void CExpQuadCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows()==1);
+  DIMENSIONMATCH(g.getCols()==nParams);
+  DIMENSIONMATCH(X.getRows()==covGrad.getRows());
+  DIMENSIONMATCH(X2.getRows()==covGrad.getCols());
+  double gLs=0.0;
+  double gVar=0.0;
+  double gPer=0.0;
+  const unsigned int nrows = X.getRows();
+  const unsigned int ncols = X2.getRows();
+  for(unsigned int i=0; i<nrows; i++)
+  {
+    for(unsigned int j=0; j<ncols; j++)
+    {
+      const double d2 = dist2Active(X, i, X2, j);
+      const double r = sqrt(d2)/lengthScale;
+      const double a = exp(-2.0 * M_PI * M_PI * r * r);
+      const double ang = 2.0 * M_PI * r / period;
+      const double c = cos(ang);
+      const double s = sin(ang);
+      const double cgVal = covGrad.getVal(i,j);
+      gLs += cgVal * dK_dr(r) * (-r / lengthScale);
+      gVar += cgVal * a * c;
+      // ∂K/∂T = variance * a * (2π r / T²) * sin(2π r / T)
+      gPer += cgVal * variance * a * (2.0 * M_PI * r / (period * period)) * s;
+    }
+  }
+  g.setVal(gLs, 0);
+  g.setVal(gVar, 1);
+  g.setVal(gPer, 2);
+  if(regularise)
+    addPriorGrad(g);
+}
+void CExpQuadCosineKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& covGrad, bool regularise) const
+{
+  getGradParams(g, X, X, covGrad, regularise);
+}
+double CExpQuadCosineKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not currently implemented for CExpQuadCosineKern");
+}
+double CExpQuadCosineKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& covGrad) const
+{
+  BOUNDCHECK(index<nParams);
+  throw ndlexceptions::NotImplementedError("getGradParam is not currently implemented for CExpQuadCosineKern");
+}
+
 // the Brownian motion kernel (GPy-aligned, non-stationary, 1-D index: k(x,x')=variance*min(x,x') for same-signed, non-zero x, x').
 CBrownianKern::CBrownianKern() : CKern()
 {
@@ -9241,6 +9629,10 @@ CKern* readKernFromStream(istream& in)
     pkern = new CStdPeriodicKern();
   else if(type=="cosine")
     pkern = new CCosineKern();
+  else if(type=="sinc")
+    pkern = new CSincKern();
+  else if(type=="expquadcosine" || type=="ExpQuadCosine")
+    pkern = new CExpQuadCosineKern();
   else if(type=="brownian")
     pkern = new CBrownianKern();
   else if(type=="ibrownian" || type=="integratedbrownian")

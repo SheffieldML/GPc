@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0035-phase0b-layer-api"
 title: "CIP-0035 Phase 0b: marginalsAt / marginalsGradAt / klQ layer API"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -24,11 +24,17 @@ Add `marginalsAt`, `marginalsGradAt`, and `klQ` to `CSvgp` for hidden-layer stac
 
 ## Acceptance Criteria
 
-- [ ] `marginalsAt` / `marginalsGradAt` / `klQ` on `CSvgp`
-- [ ] FD for all inducing families; `marginalsGradAt` vs FD on `marginalsAt`
-- [ ] `elboGradAt` reproduced by chaining `marginalsGradAt` with likelihood \((g^\mu,g^v)\) (round-off)
-- [ ] `testSvgp` covers the new API
+- [x] `marginalsAt` / `marginalsGradAt` / `klQ` on `CSvgp`
+- [x] FD for all inducing families; `marginalsGradAt` vs FD on `marginalsAt`
+- [x] `elboGradAt` reproduced by chaining `marginalsGradAt` with likelihood \((g^\mu,g^v)\) (round-off)
+- [x] `testSvgp` covers the new API
 
 ## Related
 
 - CIP: 0035
+
+## Progress Updates
+
+### 2026-11-21 (complete)
+
+Phase 0b landed: `marginalsAt` / `marginalsGradAt` / `klQ`; FD on gX for points/WN/weightspace/greens; `elboGradAt` gX/gKern match chained likelihood grads (round-off 0); `klQ` FD-green. `./testSvgp` 0 failures.

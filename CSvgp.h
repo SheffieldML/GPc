@@ -139,6 +139,18 @@ class CSvgp : public CStochasticOptimisable {
   void naturalGradientStepAt(double gamma, const CMatrix& XB,
                              const vector<unsigned int>& yRows, double c);
 
+  // ---- CIP-0035 Phase 0b: hidden-layer API ----
+  // Per-point marginals of q(f) at caller inputs XB (B x q); mean/var are B x p.
+  void marginalsAt(const CMatrix& XB, CMatrix& mean, CMatrix& var) const;
+  // Backward: upstream grads of the objective w.r.t. mean and var (B x p).
+  // Fills gKern, gInducing; gQ is packed Cholesky q params (empty if QModeCvi).
+  // Optional gX (B x q). Does not include KL(q(v)) — see klQ.
+  void marginalsGradAt(const CMatrix& XB, const CMatrix& gMean, const CMatrix& gVar,
+                       CMatrix& gKern, CMatrix& gInducing, CMatrix& gQ,
+                       CMatrix* gXOrNull) const;
+  // sum_j KL(q(v_j) || N(0,I)); optional ∂KL/∂packed-q into gQOrNull (Cholesky).
+  double klQ(CMatrix* gQOrNull = 0) const;
+
   // Packed unconstrained parameters: kern transforms, then inducing params
   // (CInducing::getParams), then betaTransform(beta).
   unsigned int getOptNumParams() const;
@@ -167,6 +179,9 @@ class CSvgp : public CStochasticOptimisable {
   // Accumulate ∂dataTerm/∂m (M x d) and symmetric ∂dataTerm/∂S_j into gM / gS.
   void dataTermQGrads(const vector<unsigned int>& batch,
                       CMatrix& gM, vector<CMatrix>& gS) const;
+  // Pack Euclidean (gM, gS) into Cholesky q-parameter gradients (log-diag).
+  void packQGradsFromMS(CMatrix& gQ, const CMatrix& gM,
+                        const vector<CMatrix>& gS) const;
 
   // Gaussian likelihood: E_q[log N(y|f,1/beta)] and its derivatives w.r.t.
   // the marginal mean and variance of q(f).  Non-Gaussian noise plugs in here.

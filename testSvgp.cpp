@@ -1252,6 +1252,222 @@ int main()
                "Phase 0a: Adam on Cholesky q reaches near CVI ELBO");
         expect(isfinite(Ladam), "Phase 0a: Adam ELBO is finite");
       }
+
+      // CIP-0035 Phase 0b: marginalsAt / marginalsGradAt / klQ.
+      {
+        auto checkLayerApi = [&](CSvgp& sv, const CMatrix& XB, const CMatrix& yIn,
+                                 double betaIn, const string& kind, double tolX) {
+          const unsigned int B = XB.getRows();
+          const unsigned int q = XB.getCols();
+          const unsigned int dOut = yIn.getCols();
+          sv.setQParamMode(CSvgp::QModeCholesky);
+          sv.naturalGradientStep(0.4);
+
+          CMatrix mu, var;
+          sv.marginalsAt(XB, mu, var);
+          expect(mu.getRows() == B && mu.getCols() == dOut,
+                 "Phase 0b: marginalsAt mean shape (" + kind + ")");
+          expect(var.getRows() == B && var.getCols() == dOut,
+                 "Phase 0b: marginalsAt var shape (" + kind + ")");
+          bool okMarg = true;
+          for(unsigned int i = 0; i < B; i++)
+            for(unsigned int j = 0; j < dOut; j++)
+              if(!(var.getVal(i, j) >= 0.0 && isfinite(mu.getVal(i, j))))
+                okMarg = false;
+          expect(okMarg, "Phase 0b: marginalsAt finite/nonneg (" + kind + ")");
+
+          CMatrix gMean(B, dOut), gVar(B, dOut);
+          gMean.ones();
+          gVar.ones();
+          CMatrix gKern, gZ, gQ, gX;
+          sv.marginalsGradAt(XB, gMean, gVar, gKern, gZ, gQ, &gX);
+          expect(gQ.getCols() == sv.getQParamNum(),
+                 "Phase 0b: marginalsGradAt fills gQ (" + kind + ")");
+          expect(gX.getRows() == B && gX.getCols() == q,
+                 "Phase 0b: marginalsGradAt fills gX (" + kind + ")");
+
+          const double eps = 1e-6;
+          double maxRelX = 0.0;
+          for(unsigned int i = 0; i < B; i++)
+            for(unsigned int d = 0; d < q; d++)
+              {
+                CMatrix Xp(XB), Xm(XB);
+                Xp.setVal(XB.getVal(i, d) + eps, i, d);
+                Xm.setVal(XB.getVal(i, d) - eps, i, d);
+                CMatrix mup, varp, mum, varm;
+                sv.marginalsAt(Xp, mup, varp);
+                sv.marginalsAt(Xm, mum, varm);
+                double Lp = 0.0, Lm = 0.0;
+                for(unsigned int r = 0; r < B; r++)
+                  for(unsigned int j = 0; j < dOut; j++)
+                    {
+                      Lp += mup.getVal(r, j) + varp.getVal(r, j);
+                      Lm += mum.getVal(r, j) + varm.getVal(r, j);
+                    }
+                const double fd = (Lp - Lm) / (2.0 * eps);
+                const double an = gX.getVal(i, d);
+                const double scale = max(1.0, max(fabs(fd), fabs(an)));
+                maxRelX = max(maxRelX, fabs(fd - an) / scale);
+              }
+          cout << "  info: Phase 0b " << kind << " max|gX-FD| rel=" << maxRelX << endl;
+          expect(maxRelX < tolX,
+                 "Phase 0b: marginalsGradAt gX matches FD (" + kind + ")");
+
+          vector<unsigned int> all(B);
+          for(unsigned int i = 0; i < B; i++) all[i] = i;
+          const double c = 1.0;
+          CMatrix mu0, var0;
+          sv.marginalsAt(XB, mu0, var0);
+          CMatrix gMeanL(B, dOut), gVarL(B, dOut);
+          gMeanL.zeros();
+          gVarL.zeros();
+          for(unsigned int i = 0; i < B; i++)
+            for(unsigned int j = 0; j < dOut; j++)
+              {
+                const double yv = yIn.getVal(i, j);
+                const double m = mu0.getVal(i, j);
+                gMeanL.setVal(c * betaIn * (yv - m), i, j);
+                gVarL.setVal(c * (-0.5 * betaIn), i, j);
+              }
+          CMatrix gKernM, gZM, gQM, gXM;
+          sv.marginalsGradAt(XB, gMeanL, gVarL, gKernM, gZM, gQM, &gXM);
+          CMatrix gKernE, gZE, gXE;
+          double gBetaE = 0.0;
+          sv.elboGradAt(gKernE, gZE, gBetaE, &gXE, XB, all, c);
+          double maxDX = 0.0;
+          for(unsigned int i = 0; i < B; i++)
+            for(unsigned int d = 0; d < q; d++)
+              maxDX = max(maxDX, fabs(gXM.getVal(i, d) - gXE.getVal(i, d)));
+          cout << "  info: Phase 0b " << kind << " max|gX chain-elbo|=" << maxDX << endl;
+          expect(maxDX < 1e-8,
+                 "Phase 0b: elboGradAt gX = chained marginalsGradAt (" + kind + ")");
+          double maxDK = 0.0;
+          for(unsigned int i = 0; i < gKernM.getCols(); i++)
+            maxDK = max(maxDK, fabs(gKernM.getVal(i) - gKernE.getVal(i)));
+          cout << "  info: Phase 0b " << kind << " max|gKern chain-elbo|=" << maxDK << endl;
+          expect(maxDK < 1e-6,
+                 "Phase 0b: elboGradAt gKern ≈ chained marginalsGradAt (" + kind + ")");
+        };
+
+        // points: RBF+bias
+        {
+          const unsigned int N = 20, M = 6;
+          const double beta = 12.0;
+          mt19937 rng(41);
+          normal_distribution<double> nd(0.0, 1.0);
+          CMatrix X(N, 1), y(N, 1), Z(M, 1);
+          for(unsigned int i = 0; i < N; i++)
+            {
+              X.setVal(-2.0 + 4.0 * (double)i / (double)(N - 1), i, 0);
+              y.setVal(sin(X.getVal(i, 0)) + 0.08 * nd(rng), i, 0);
+            }
+          for(unsigned int k = 0; k < M; k++)
+            Z.setVal(-1.6 + 3.2 * (double)k / (double)(M - 1), k, 0);
+          CCmpndKern kern(X);
+          makeKern(kern, X, false);
+          CSvgp sv(&kern, &X, &y, Z, beta, 0);
+          checkLayerApi(sv, X, y, beta, "points", 5e-4);
+
+          // klQ value and gradient FD
+          sv.setQParamMode(CSvgp::QModeCholesky);
+          double klSum = 0.0;
+          for(unsigned int j = 0; j < sv.getOutputDim(); j++)
+            klSum += sv.klDivergence(j);
+          CMatrix gKl;
+          const double kl = sv.klQ(&gKl);
+          expect(fabs(kl - klSum) < 1e-14, "Phase 0b: klQ equals sum klDivergence");
+          expect(gKl.getCols() == sv.getQParamNum(), "Phase 0b: klQ fills gQ");
+          CMatrix q0;
+          sv.getQParams(q0);
+          const double eps = 1e-5;
+          double maxRel = 0.0;
+          for(unsigned int i = 0; i < sv.getQParamNum(); i++)
+            {
+              CMatrix qp(q0), qm(q0);
+              qp.setVal(q0.getVal(i) + eps, i);
+              qm.setVal(q0.getVal(i) - eps, i);
+              sv.setQParams(qp);
+              const double kp = sv.klQ();
+              sv.setQParams(qm);
+              const double km = sv.klQ();
+              sv.setQParams(q0);
+              const double fd = (kp - km) / (2.0 * eps);
+              const double an = gKl.getVal(i);
+              const double scale = max(1.0, max(fabs(fd), fabs(an)));
+              maxRel = max(maxRel, fabs(fd - an) / scale);
+            }
+          cout << "  info: Phase 0b klQ FD max relative diff=" << maxRel << endl;
+          expect(maxRel < 5e-4, "Phase 0b: klQ gradient matches FD");
+        }
+
+        // white-noise: RBF only (no Bias)
+        {
+          const unsigned int N = 18, M = 5;
+          const double beta = 8.0;
+          CMatrix X(N, 1), y(N, 1), Z(M, 1);
+          for(unsigned int i = 0; i < N; i++)
+            {
+              const double x = -1.5 + 3.0 * (double)i / (double)(N - 1);
+              X.setVal(x, i, 0);
+              y.setVal(sin(2.0 * x), i, 0);
+            }
+          for(unsigned int k = 0; k < M; k++)
+            Z.setVal(-1.2 + 2.4 * (double)k / (double)(M - 1), k, 0);
+          CCmpndKern kern(X);
+          CRbfKern* prbf = new CRbfKern(X);
+          prbf->setParam(1.5, 0);
+          prbf->setParam(1.0, 1);
+          kern.addKern(prbf);
+          CSvgp sv(&kern, &X, &y, Z, beta, 0);
+          sv.setInducingType("whitenoise");
+          checkLayerApi(sv, X, y, beta, "whitenoise", 5e-4);
+        }
+
+        // weight-space: MLP
+        {
+          const unsigned int N = 14, M = 8, q = 2;
+          const double beta = 4.0;
+          mt19937 rng(5);
+          normal_distribution<double> nd(0.0, 1.0);
+          CMatrix X(N, q), y(N, 1), Z(M, q);
+          for(unsigned int i = 0; i < N; i++)
+            {
+              for(unsigned int d = 0; d < q; d++)
+                X.setVal(nd(rng), i, d);
+              y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+            }
+          for(unsigned int k = 0; k < M; k++)
+            for(unsigned int d = 0; d < q; d++)
+              Z.setVal(nd(rng) * 0.5, k, d);
+          CMlpKern kern(X);
+          kern.setParam(1.0, 0);
+          kern.setParam(1.0, 1);
+          kern.setParam(1.0, 2);
+          CSvgp sv(&kern, &X, &y, Z, beta, 0);
+          sv.setInducingType("weightspace");
+          checkLayerApi(sv, X, y, beta, "weightspace", 5e-3);
+        }
+
+        // Green's: Brownian 1-D
+        {
+          const unsigned int N = 16, M = 6;
+          const double beta = 6.0;
+          CMatrix X(N, 1), y(N, 1), Z(M, 1);
+          for(unsigned int i = 0; i < N; i++)
+            {
+              const double x = 0.05 + 0.9 * (double)i / (double)(N - 1);
+              X.setVal(x, i, 0);
+              y.setVal(sin(4.0 * x), i, 0);
+            }
+          for(unsigned int k = 0; k < M; k++)
+            Z.setVal(0.1 + 0.8 * (double)k / (double)(M - 1), k, 0);
+          CBrownianKern kern(X);
+          kern.setParam(1.0, 0);
+          CSvgp sv(&kern, &X, &y, Z, beta, 0);
+          sv.setInducingType("greens");
+          checkLayerApi(sv, X, y, beta, "greens", 5e-4);
+        }
+      }
     }
   catch(ndlexceptions::Error& e)
     {

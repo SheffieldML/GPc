@@ -2138,11 +2138,11 @@ int testWeightSpaceInducingPhase1Ridge()
     CMatrix p0(1, nOpt);
     model.getOptParams(p0);
     const unsigned int sIdx = model.getInducing()->getNumParams() - 1;
-    const double sVal = p0.getVal(sIdx);
+    const double sVal = p0.getVal(sIdx); // unconstrained u
     const double h = 1e-5 * max(1.0, fabs(sVal));
     CMatrix pp(p0), pm(p0);
     pp.setVal(sVal + h, sIdx);
-    pm.setVal(max(sVal - h, 1e-8), sIdx);
+    pm.setVal(sVal - h, sIdx);
     model.setOptParams(pp);
     const double Lp = model.logLikelihood();
     model.setOptParams(pm);
@@ -2152,7 +2152,7 @@ int testWeightSpaceInducingPhase1Ridge()
     const double an = g.getVal(sIdx);
     const double rel = fabs(fd - an) / max(1.0, fabs(fd));
     cout << "  learnS FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
-    fail += failTrue(rel < 5e-3, "learnS ∂L/∂s matches FD");
+    fail += failTrue(rel < 5e-3, "learnS ∂L/∂u matches FD");
   }
 
   return fail;
@@ -2246,6 +2246,33 @@ int testWeightSpaceInducingCip0032()
          << " rel=" << rel << endl;
   }
 
+  // Width bounds: reject s outside (s_min, s_max] whitened units.
+  {
+    CMatrix W(2, 3);
+    W.setVal(1.0, 0, 0); W.setVal(0.0, 0, 1); W.setVal(0.5, 0, 2);
+    W.setVal(0.0, 1, 0); W.setVal(1.0, 1, 1); W.setVal(-0.5, 1, 2);
+    CInducingWeightSpace ind(W, 0.55, false, true);
+    bool threwHi = false;
+    try { ind.setWindowWidth(1.5); }
+    catch(ndlexceptions::Error&) { threwHi = true; }
+    fail += failTrue(threwHi, "reject window width > 1");
+    bool threwSqrt2 = false;
+    try { ind.setWindowWidth(sqrt(2.0)); }
+    catch(ndlexceptions::Error&) { threwSqrt2 = true; }
+    fail += failTrue(threwSqrt2, "reject window width = √2");
+  }
+
+  // makeRidgeInit never places offset a=0.
+  {
+    CMatrix W;
+    (void)CInducingWeightSpace::makeRidgeInit(W, 10, 2, 3u); // forces odd nOff sometimes
+    bool anyZero = false;
+    for(unsigned int i = 0; i < W.getRows(); i++)
+      if(fabs(W.getVal(i, W.getCols() - 1)) < 1e-14)
+        anyZero = true;
+    fail += failTrue(!anyZero, "makeRidgeInit offsets avoid a=0");
+  }
+
   // Untied learnS: pack M widths; ∂L/∂s_0 matches FD.
   {
     const unsigned int n = 12, m = 4;
@@ -2292,7 +2319,7 @@ int testWeightSpaceInducingCip0032()
       const double h = 1e-5 * max(1.0, fabs(sVal));
       CMatrix pp(p), pm(p);
       pp.setVal(sVal + h, s0Idx);
-      pm.setVal(max(sVal - h, 1e-8), s0Idx);
+      pm.setVal(sVal - h, s0Idx); // unconstrained u
       model.setOptParams(pp);
       const double Lp = model.logLikelihood();
       model.setOptParams(pm);
@@ -2301,8 +2328,8 @@ int testWeightSpaceInducingCip0032()
       const double fd = (Lp - Lm) / (2.0 * h);
       const double an = g.getVal(s0Idx);
       const double rel = fabs(fd - an) / max(1.0, fabs(fd));
-      cout << "  untied s0 FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
-      fail += failTrue(rel < 5e-3, "untied ∂L/∂s_0 matches FD");
+      cout << "  untied u0 FD=" << fd << " analytic=" << an << " rel=" << rel << endl;
+      fail += failTrue(rel < 5e-3, "untied ∂L/∂u_0 matches FD");
     }
   }
 

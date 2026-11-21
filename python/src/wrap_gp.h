@@ -74,9 +74,10 @@ public:
       int verbosity = 0,
       py::object kernel = py::str("rbf"),
       const std::string& inducing = "points",
-      double window_width = -1.0,
+      py::object window_width = py::float_(-1.0),
       unsigned int arccos_order = 0,
-      bool learn_window_width = false);
+      bool learn_window_width = false,
+      bool learn_window_widths = false);
 
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
@@ -104,8 +105,10 @@ public:
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
   bool inducing_fixed() const { return inducingFixed; }
-  bool learn_window_width() const { return learnWindowWidth; }
+  bool learn_window_width() const { return learnWindowWidth && !learnWindowWidths; }
+  bool learn_window_widths() const { return learnWindowWidths; }
   double window_width() const;
+  py::array_t<double> window_widths() const;
   py::array_t<double> inducing_inputs() const;
 
 private:
@@ -118,6 +121,7 @@ private:
   std::string inducingType;
   bool inducingFixed;
   bool learnWindowWidth;
+  bool learnWindowWidths;
   std::unique_ptr<CCmpndKern> kern;
   std::unique_ptr<CGaussianNoise> noise;
   std::unique_ptr<CGp> model;

@@ -9,7 +9,7 @@ Native demos/CLI remain the primary share format ([CIP-0015](../../cip/cip0015.m
 | `basic_gp` / `toy_rbf_1d` | [regression_1d](../../docs/tutorials/regression_1d.md) | `gpc.models.GPRegression(X, Y, kernel=k)` with `gpc.kern.*` — [side-by-side](./gpy_side_by_side.md); notebook [`examples/toy_1d_regression.ipynb`](../examples/toy_1d_regression.ipynb) teaches `predict` / `predict_noiseless` (CIP-0031) |
 | `sparse_GP_regression_1D` | [sparse_regression_1d](../../docs/tutorials/sparse_regression_1d.md) (DTCVAR) | Notebook [`examples/sparse_gp_regression_1d.ipynb`](../examples/sparse_gp_regression_1d.ipynb); `approx="dtcvar"` / `"fitc"` / `"dtc"` |
 | Olympics-style 1-D | CLI / pods data via scripts | Notebooks: `examples/olympic_marathon.ipynb`, `examples/mlp_olympic.ipynb` (need `pods`); `plot_1d(..., noiseless=)` |
-| `basic_kernels` / custom compounds | CIP-000C catalogue + paths | Notebook [`examples/basic_kernels_compound.ipynb`](../examples/basic_kernels_compound.ipynb); `gpc.kern.RBF/ExpQuad/White/Bias/MLP/ArcCosine` + `+` |
+| `basic_kernels` / custom compounds | CIP-000C catalogue + paths | Notebook [`examples/basic_kernels_compound.ipynb`](../examples/basic_kernels_compound.ipynb); CIP-0038: `gpc.kern` covers Matérn/Exp/RatQuad/StdPeriodic/Cosine/Brownian/Linear/Poly/Sinc/ExpQuadCosine (+ ARD where available) as well as RBF/ExpQuad/White/Bias/MLP/ArcCosine + `+` / `*` (`Prod` → `CTensorKern`) |
 | GPy `ExpQuad` naming | [param-paths](../../docs/param-paths.md) | Notebook [`examples/expquad_regression.ipynb`](../examples/expquad_regression.ipynb); script twin `examples/expquad_regression.py` |
 | MLP / arcsin vs RBF | CIP-000C / CIP-001D Phase F | [`examples/mlp_olympic.ipynb`](../examples/mlp_olympic.ipynb) (year-scale `weight_variance` init in notebook; GPy defaults stay `1`) |
 | Weight-space inducing | [CIP-0028](../../cip/cip0028.md) | [`examples/weightspace_ridge_1d.ipynb`](../examples/weightspace_ridge_1d.ipynb) |
@@ -30,7 +30,7 @@ These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gp
 
 | GPy tutorial / example | Native GPc today | Owning CIP / backlog (Python later) | Notes |
 |---|---|---|---|
-| Coregionalization / `build_XY` / ICM | [coregionalization_toy](../../docs/tutorials/coregionalization_toy.md), [coregionalize.md](../../docs/coregionalize.md) | [CIP-0015](../../cip/cip0015.md) Phase A helpers exist natively; façade wrap listed under CIP-001D follow-ups | Multi-output index column / `stampOutputIndex` not bound |
+| Coregionalization / `build_XY` / ICM | [coregionalization_toy](../../docs/tutorials/coregionalization_toy.md), [coregionalize.md](../../docs/coregionalize.md) | CIP-0038 Phase D: `gpc.util.multioutput` + `gpc.kern.Coregionalize` / `IndexWhite` + `GPCoregionalizedRegression` | Sparse / MixedNoise object graph still deferred |
 | Sparse EP / EPDTC classification | — | [CIP-0036](../../cip/cip0036.md) **Defer** | Dense FTC EP/Laplace is in-subset; sparse EP later |
 | GPLVM | [gplvm_oil100](../../docs/tutorials/gplvm_oil100.md) | CIP-001D follow-on: `gpc.models.GPLVM` | MAP GPLVM façade + native CLI |
 | Bayesian GPLVM (collapsed / psi) | [bgplvm_oil100](../../docs/tutorials/bgplvm_oil100.md) | [CIP-0017](../../cip/cip0017.md) (Closed native); `gpc.models.BayesianGPLVM` | Collapsed / psi façade |

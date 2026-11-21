@@ -92,6 +92,63 @@ double gaussianLogPredictiveDensity(const CMatrix& y,
   return L;
 }
 
+void bernoulliProbitEpMoments(double& Zhat,
+                              double& muHat,
+                              double& sigma2Hat,
+                              double y,
+                              double tauCav,
+                              double vCav)
+{
+  // Mirror GPy.likelihoods.Bernoulli.moments_match_ep (Probit link).
+  BOUNDCHECK(tauCav > 0.0);
+  double sign = 0.0;
+  if(y == 1.0)
+    sign = 1.0;
+  else if(y == 0.0 || y == -1.0)
+    sign = -1.0;
+  else
+    throw ndlexceptions::Error(
+        "bernoulliProbitEpMoments: labels must be in {0,1} or {-1,1}.");
+  const double den = sqrt(tauCav * tauCav + tauCav);
+  const double z = sign * vCav / den;
+  const double phiOverPhi = ndlutil::gradLnCumGaussian(z);
+  const double logZ = ndlutil::lnCumGaussian(z);
+  Zhat = exp(logZ);
+  muHat = vCav / tauCav + sign * phiOverPhi / den;
+  sigma2Hat = 1.0 / tauCav
+              - (phiOverPhi / (tauCav * tauCav + tauCav)) * (z + phiOverPhi);
+  if(!(sigma2Hat > 0.0))
+    sigma2Hat = ndlutil::EPS;
+}
+
+void bernoulliProbitEpMoments(CMatrix& Zhat,
+                              CMatrix& muHat,
+                              CMatrix& sigma2Hat,
+                              const CMatrix& y,
+                              const CMatrix& tauCav,
+                              const CMatrix& vCav)
+{
+  DIMENSIONMATCH(y.dimensionsMatch(tauCav));
+  DIMENSIONMATCH(y.dimensionsMatch(vCav));
+  DIMENSIONMATCH(Zhat.dimensionsMatch(y));
+  DIMENSIONMATCH(muHat.dimensionsMatch(y));
+  DIMENSIONMATCH(sigma2Hat.dimensionsMatch(y));
+  for(unsigned int i = 0; i < y.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < y.getCols(); j++)
+    {
+      double Zh = 0.0, mh = 0.0, s2 = 0.0;
+      bernoulliProbitEpMoments(Zh, mh, s2,
+                               y.getVal(i, j),
+                               tauCav.getVal(i, j),
+                               vCav.getVal(i, j));
+      Zhat.setVal(Zh, i, j);
+      muHat.setVal(mh, i, j);
+      sigma2Hat.setVal(s2, i, j);
+    }
+  }
+}
+
 } // namespace ndlnoise
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,

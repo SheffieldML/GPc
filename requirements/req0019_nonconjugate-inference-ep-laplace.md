@@ -1,7 +1,7 @@
 ---
 id: "0019"
 title: "Non-conjugate inference on CGp: EP and Laplace over pure likelihoods"
-status: "Proposed"
+status: "In Progress"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -48,3 +48,7 @@ HOW: [CIP-0033](../cip/cip0033.md). Builds on [CIP-0027](../cip/cip0027.md) Phas
 ### 2026-11-21
 
 Requirement drafted with CIP-0033 (spawned from CIP-0027 deferred follow-on).
+
+### 2026-11-21 (Accept)
+
+CIP-0033 Accepted → In Progress. GPy mirror locks: Bernoulli+Probit `moments_match_ep`, sites \((\tilde\tau,\tilde\nu)\), FTC-first. Phase A: `ep_moments` + `CEpInference` + `testEp`.

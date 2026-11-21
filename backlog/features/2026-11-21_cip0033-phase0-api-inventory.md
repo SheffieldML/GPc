@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_cip0033-phase0-api-inventory"
 title: "CIP-0033 Phase 0: ep_moments API freeze + CNoise site inventory"
-status: "Proposed"
+status: "Completed"
 priority: "High"
 created: "2026-11-21"
 last_updated: "2026-11-21"
@@ -40,3 +40,7 @@ Before coding EP/Laplace: freeze batched likelihood signatures (especially `ep_m
 ### 2026-11-21
 
 Task created with CIP-0033 / REQ-0019 Proposed.
+
+### 2026-11-21 (done)
+
+Accept locks + inventory + GPy mirror note landed; `ep_moments` implemented. Status → Completed.

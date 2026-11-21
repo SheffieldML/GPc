@@ -141,7 +141,14 @@ class Bias(_Atomic):
 
 
 class MLP(_Atomic):
-    """Williams infinite-MLP (arcsin) covariance."""
+    """Williams infinite-MLP (arcsin) covariance.
+
+    ``weight_variance`` scales ``x`` in the angle features. Large-magnitude
+    inputs (calendar years, etc.) saturate unless this is ``O(1/Var(X))``;
+    string ``kernel='mlp'`` picks that scale from training ``X``. Explicit
+    descriptors default to ``1.0`` (GPy-like); set them from the data scale
+    when inputs are not already standardised.
+    """
 
     _type = "mlp"
 
@@ -149,8 +156,8 @@ class MLP(_Atomic):
         self,
         input_dim: int,
         variance: float = 1.0,
-        weight_variance: float = 10.0,
-        bias_variance: float = 10.0,
+        weight_variance: float = 1.0,
+        bias_variance: float = 1.0,
     ) -> None:
         """Create an MLP kernel descriptor (``mlp.*`` paths / aliases)."""
         super().__init__(

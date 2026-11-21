@@ -37,6 +37,20 @@ def test_mlp_construct_paths_optimize_predict():
     assert np.all(var >= 0.0)
 
 
+def test_mlp_string_kernel_scales_weight_variance_to_input():
+    # Calendar-scale X: default weight_variance must be O(1/Var(X)), else arcsin saturates.
+    X = np.linspace(1896.0, 2024.0, 20)[:, None]
+    Y = np.linspace(3.0, 4.5, 20)[:, None] + 0.05
+    m = gpc.GPRegression(X, Y, kernel="mlp")
+    expected = 1.0 / float(np.var(X))
+    assert m.get_by_path("mlp.weight_variance") == pytest.approx(expected, rel=1e-6)
+    assert m.get_by_path("mlp.bias_variance") == pytest.approx(1.0)
+    m.optimize(iters=80)
+    Xtest = np.linspace(1890.0, 2030.0, 100)[:, None]
+    mu, _ = m.predict(Xtest)
+    assert float(mu.max() - mu.min()) > 0.5
+
+
 def test_arccos_order_zero_and_one():
     X, Y = _toy()
     m0 = gpc.GPRegression(X, Y, kernel="arccos", arccos_order=0)

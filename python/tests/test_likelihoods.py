@@ -65,3 +65,21 @@ def test_binomial_n1_matches_bernoulli():
     np.testing.assert_allclose(
         binom.logpdf(f, np.array([1.0])), bern.logpdf(f, np.array([1.0])), rtol=1e-12
     )
+
+
+def test_student_t_laplace_gp_regression_smoke():
+    """CIP-003A Phase 5: non-Gaussian GPRegression via Laplace."""
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(12, 1))
+    Y = 0.3 * X + 0.1 * rng.normal(size=(12, 1))
+    lik = gpc.likelihoods.StudentT(variance=0.25, deg_free=6.0)
+    m = gpc.models.GPRegression(X, Y, kernel="rbf", likelihood=lik, inference="laplace")
+    assert m.likelihood_type == "student_t"
+    assert m.inference == "laplace"
+    L0 = m.objective()
+    assert np.isfinite(L0)
+    m.optimize(iters=15)
+    assert np.isfinite(m.objective())
+    mu, var = m.predict_noiseless(X[:3])
+    assert mu.shape == (3, 1)
+    assert np.all(var > 0.0)

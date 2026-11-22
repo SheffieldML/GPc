@@ -48,6 +48,7 @@ const string NOISEVERSION="0.1";
  * Parameter naming (rule 7): likelihood.variance is canonical;
  * Gaussian_noise.variance is the GPy1 alias (wired in Phase A via CIP-0014).
  */
+class CNoise;  // forward for ndlnoise::laplacePointDerivs
 namespace ndlnoise {
 
 /** Add spherical observation noise σ² to the diagonal of a Gram matrix (FTC Phase A). */
@@ -182,6 +183,17 @@ void gammaLogLaplaceDerivs(double& logp,
                            double y,
                            double f,
                            double beta);
+
+/** CIP-003A Phase 5: dispatch pointwise Laplace pieces through a typed CNoise.
+ *  Supports probit / student_t / poisson / binomial / exponential / gamma /
+ *  skew_gaussian / skew_exponential. Throws for unsupported types. */
+void laplacePointDerivs(const CNoise& noise,
+                        double y,
+                        double f,
+                        double& logp,
+                        double& d1,
+                        double& W,
+                        double& dWdf);
 
 } // namespace ndlnoise
 

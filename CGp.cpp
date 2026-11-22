@@ -2520,7 +2520,7 @@ void CGp::updateG() const
     {
       CMatrix* gXptr = isOptimiseX() ? &gXorW : 0;
       // Pass cached K_uu/K_uf into inducingGradZ (skip RBF recompute; CoE 2026-11-22).
-      // Compound rbf+white: Kuf cache is safe (white K(Z,X)=0); Kuu is not forwarded by CCmpndKern.
+      // CCmpndKern does not forward these (compound K ≠ RBF slice).
       pInducing->gradFromKuuKuf(g_param, gX_u, gXptr, *pkern, *pX,
                                gK_uu, gK_uf, isOptimiseX(), true,
                                &K_uu, &K_uf);

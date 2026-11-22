@@ -1,10 +1,11 @@
 ---
 id: "2026-11-22_cip001D-kern-K-and-plot"
 title: "Façade Kern.K / thin Kern.plot for basic_kernels parity"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-22"
 last_updated: "2026-11-22"
+completed: "2026-11-22"
 category: "features"
 related_cips: ["001D", "0038"]
 owner: "Neil Lawrence"
@@ -36,23 +37,22 @@ Ship:
 
 ## Acceptance Criteria
 
-- [ ] `k.K(X)` and `k.K(X, X2)` return `(n, n2)` float arrays for atomic, `Add`, and `Prod` kernels (incl. ARD / `active_dims` smoke)
-- [ ] Pytest compares a few kernels (e.g. RBF, Matérn32, RBF×Linear) to a NumPy / GPy reference within tolerance
-- [ ] Thin plot path works with matplotlib (`gpc[plot]`); documented as optional
-- [ ] `basic_kernels` notebook (package and/or SheffieldML/notebook) uses `k.K` / plot and removes the explicit gap note
-- [ ] Help/docstrings list `K` (and plot helper) without claiming full GPy plot API parity
+- [x] `k.K(X)` and `k.K(X, X2)` return `(n, n2)` float arrays for atomic, `Add`, and `Prod` kernels (incl. ARD / `active_dims` smoke)
+- [x] Pytest compares a few kernels (e.g. RBF, Matérn32, RBF×Linear) to a NumPy / GPy reference within tolerance
+- [x] Thin plot path works with matplotlib (`gpc[plot]`); documented as optional
+- [x] `basic_kernels` notebook (package and/or SheffieldML/notebook) uses `k.K` / plot and removes the explicit gap note
+- [x] Help/docstrings list `K` (and plot helper) without claiming full GPy plot API parity
 
 ## Implementation Notes
 
-- Binding already knows how to turn parts dicts into `CKern` (`wrap_gp.cpp`); expose a free function or lightweight handle, e.g. `gpc._gp.kern_K(parts, X, X2=None)`, called from `Kern.K`.
-- Prefer evaluating from a temporary `CKern` over attaching a throwaway `GPRegression` (no likelihood / optimisable tax).
-- `plot`: keep under extras; mirror GPy’s “covariance vs distance / fixed other dims” only as far as the tutorial needs — no full interactive widget surface.
+- Binding: `gpc._gpc.kern_K(parts, X, X2=None)` in `wrap_gp.cpp` (temporary `CCmpndKern`, no GP).
+- `Kern.K` / `Kern.plot` on the façade; `gpc.plot.plot_kern` for the matplotlib slice.
 - Assert and Verify: dimension checks at the binding boundary; do not silently reshape `active_dims` mismatches.
 
 ## Related
 
 - CIP: 001D, 0038
-- Notebooks: [`python/examples/basic_kernels_compound.ipynb`](../../python/examples/basic_kernels_compound.ipynb); SheffieldML/notebook `GPc/basic_kernels.ipynb`
+- Notebooks: [`python/examples/basic_kernels_compound.ipynb`](../../python/examples/basic_kernels_compound.ipynb); SheffieldML/notebook `GPc/basic_kernels.ipynb` (sync later)
 - Docs: [`python/docs/subset_checklist.md`](../../python/docs/subset_checklist.md)
 
 ## Progress Updates
@@ -60,3 +60,5 @@ Ship:
 ### 2026-11-22
 
 Task created (Ready): façade gap after CIP-0038 catalogue landing.
+
+Implemented on `cip001D-kern-K-and-plot`: `kern_K` binding, `Kern.K` / thin `plot`, pytest `test_kern_K`, notebook + checklist + side-by-side. Status → Completed.

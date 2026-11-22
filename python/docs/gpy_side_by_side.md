@@ -49,6 +49,7 @@ Install / build: see [`../README.md`](../README.md).
 | Topic | GPy | `gpc` |
 |---|---|---|
 | Kernel construction | `GPy.kern.*` + `+` | `gpc.kern.*` + `+` → exact compound; string `kernel=` is signal-only (CIP-0027) |
+| Kernel matrix / plot | `k.K(X)`, `k.plot()` | `k.K(X[, X2])`; thin `k.plot` / `gpc.plot.plot_kern` (`gpc[plot]`) — not full GPy widgets |
 | Parameter access | `m["rbf.lengthscale"]` / paramz | `set_by_path` / `get_by_path` / `param_paths` (CIP-0014 units) |
 | Objective | log-likelihood (maximise) | `objective()` is **−log-likelihood** (minimise) |
 | Noise | `likelihood.variance` / `Gaussian_noise.variance` | Same paths (CIP-0027); sparse algebra may keep internal \(\beta\) |

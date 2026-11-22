@@ -136,6 +136,7 @@ class SparseGPRegression(_SparseGPRegression):
         arccos_order: int = 0,
         learn_window_width: bool = False,
         learn_window_widths: bool = False,
+        sparse_linalg: str = "lq",
     ) -> None:
         spec = kern_mod.normalize_kernel_arg(kernel)
         super().__init__(
@@ -151,6 +152,7 @@ class SparseGPRegression(_SparseGPRegression):
             arccos_order=arccos_order,
             learn_window_width=learn_window_width,
             learn_window_widths=learn_window_widths,
+            sparse_linalg=sparse_linalg,
         )
 
     def __str__(self) -> str:  # noqa: D105

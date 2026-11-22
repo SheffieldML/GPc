@@ -20,6 +20,7 @@ def test_construct_dtcvar_and_paths():
     X, Y, Z = _toy_sparse()
     m = gpc.SparseGPRegression(X, Y, Z)
     assert m.approx == "dtcvar"
+    assert m.sparse_linalg == "lq"  # CIP-001B / CIP-0016 default
     assert m.num_inducing == 6
     assert m.inducing_fixed is False  # matches CGp; pass True to freeze Z
     assert m.n == 24
@@ -31,6 +32,26 @@ def test_construct_dtcvar_and_paths():
     m_fix = gpc.SparseGPRegression(X, Y, Z, inducing_fixed=True)
     assert m_fix.inducing_fixed is True
     np.testing.assert_allclose(m_fix.inducing_inputs(), Z)
+
+
+def test_sparse_linalg_modes():
+    X, Y, Z = _toy_sparse()
+    m = gpc.SparseGPRegression(X, Y, Z, sparse_linalg="stable")
+    assert m.sparse_linalg == "stable"
+    ll_stable = m.objective()
+    m.sparse_linalg = "lq"
+    assert m.sparse_linalg == "lq"
+    assert np.isfinite(m.objective())
+    m.sparse_linalg = "legacy"
+    assert m.sparse_linalg == "legacy"
+    # Aliases on set (canonical get is stable/legacy/lq).
+    m.sparse_linalg = "chol"
+    assert m.sparse_linalg == "stable"
+    m.sparse_linalg = "StableFactor"
+    assert m.sparse_linalg == "stable"
+    assert np.isfinite(ll_stable)
+    with pytest.raises(gpc.GpcError, match="sparse_linalg"):
+        gpc.SparseGPRegression(X, Y, Z, sparse_linalg="bogus")
 
 
 def test_optimize_and_predict():

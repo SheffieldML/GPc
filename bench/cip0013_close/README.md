@@ -1,9 +1,9 @@
-# CIP-0013 close re-benchmark (2026-11-21)
+# CIP-0013 close re-benchmark (2026-11-21) — withdrawn
 
-q=2 spherical RBF protocol from [cip0013.md](../../cip/cip0013.md), one BLAS thread (`OPENBLAS_NUM_THREADS=1`), `make RELEASE=1` `./benchGPc`, gated by `bench/run_bench.py` (GPc / GPy / NumPy LL agreement).
+**Withdrawn 2026-11-22.** See [CoE](../../coe/2026-11-22_cip0013-bench-cache-reuse.md).
 
-Machine: Apple Silicon (arm64), OpenBLAS via Homebrew, g++-16 `-O2 -DNDEBUG`, `GPC_CHECKS=0`.
+The CSV below was produced by a harness that did **not** perturb parameters between timed repeats, so GPc reused factorisation caches after warm-up. That violated the CIP-0013 protocol. Do not use these numbers for REQ-0007.
 
-All published rows: `gate=pass` and `gpc_over_gpy ≤ 1.3` (REQ-0007 sparse bar). Full GP is faster than the 2026-11-15 OpenBLAS column on the same N (no regression).
+Historical raw (invalid for close): [2026-11-21_q2_rebench.csv](./2026-11-21_q2_rebench.csv).
 
-Raw: [2026-11-21_q2_rebench.csv](./2026-11-21_q2_rebench.csv).
+Re-publish here only after a cache-busting rebench (`setOptParams` + perturbed params in the timed loop) on the reference Mac.

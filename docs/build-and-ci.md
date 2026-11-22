@@ -58,25 +58,11 @@ export OMP_NUM_THREADS=$(nproc)   # or a measured value
 
 The REQ-0007 documented one-thread bench protocol (`OPENBLAS_NUM_THREADS=1`, OpenMP off) remains the acceptance bar. Multi-thread measurements (P7) are recorded in [CIP-0025](../cip/cip0025.md) (2026-11-18 table): BLAS threads help most on GEMM-distance workloads (\(q \ge 8\)); OpenMP alone is a small VarDTC win; nesting is not clearly better — prefer `OPENBLAS_NUM_THREADS=1` with OpenMP unless re-measured. Raw TSV: [`bench/p7_results/p7_large.tsv`](../bench/p7_results/p7_large.tsv).
 
-### REQ-0007 close table (2026-11-21)
+### REQ-0007 close table (2026-11-21) — withdrawn
 
-Re-benchmark after CIP-0013 P1–P5 (+ CIP-0025 / CIP-002D sparse wins). Protocol: \(q=2\), one BLAS thread, `RELEASE=1`, LL-gated vs GPy (`bench/run_bench.py`). Artifact: [`bench/cip0013_close/2026-11-21_q2_rebench.csv`](../bench/cip0013_close/2026-11-21_q2_rebench.csv).
+**Withdrawn 2026-11-22** ([CoE](../coe/2026-11-22_cip0013-bench-cache-reuse.md)): the 2026-11-21 artifact timed repeated objective+grad calls **without** changing parameters, so GPc reused factorisation caches. That violated the CIP-0013 protocol (perturb between repeats). CIP-0013 and REQ-0007 are In Progress again; re-publish this table only after a cache-busting rebench on the reference Mac.
 
-| Model | N | M | GPc ms | GPy ms | GPc/GPy |
-|---|---|---|---|---|---|
-| Full GP | 1 000 | – | 1.84 | 73.4 | 0.03 |
-| Full GP | 2 000 | – | 8.17 | 430 | 0.02 |
-| Full GP | 4 000 | – | 38.0 | 2 988 | 0.01 |
-| VarDTC | 2 000 | 50 | 3.74 | 5.60 | 0.67 |
-| FITC | 2 000 | 50 | 3.86 | 5.25 | 0.73 |
-| VarDTC | 2 000 | 200 | 22.3 | 39.3 | 0.57 |
-| FITC | 2 000 | 200 | 25.5 | 46.8 | 0.55 |
-| VarDTC | 10 000 | 50 | 18.9 | 32.6 | 0.58 |
-| FITC | 10 000 | 50 | 17.5 | 34.9 | 0.50 |
-| VarDTC | 10 000 | 200 | 100 | 169 | 0.59 |
-| FITC | 10 000 | 200 | 99.9 | 206 | 0.48 |
-
-All sparse ratios ≤ 1.3× GPy (REQ-0007). Full GP does not regress vs the 2026-11-15 OpenBLAS column.
+Historical artifact (do not use for REQ-0007): [`bench/cip0013_close/2026-11-21_q2_rebench.csv`](../bench/cip0013_close/2026-11-21_q2_rebench.csv).
 
 ## Reference verification without MATLAB
 

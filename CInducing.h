@@ -28,7 +28,9 @@ class CInducing
   virtual void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                              const CKern& kern, const CMatrix& X,
                              const CMatrix& gKuu, const CMatrix& gKuf,
-                             bool wantX, bool regulariseKern) const = 0;
+                             bool wantX, bool regulariseKern,
+                             const CMatrix* KuuCached = 0,
+                             const CMatrix* KufCached = 0) const = 0;
 
   virtual unsigned int getNumParams() const = 0;
   virtual void getParams(CMatrix& param, unsigned int offset) const = 0;
@@ -79,7 +81,9 @@ class CInducingPoints : public CInducing
   void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                       const CKern& kern, const CMatrix& X,
                       const CMatrix& gKuu, const CMatrix& gKuf,
-                      bool wantX, bool regulariseKern) const;
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
 
   unsigned int getNumParams() const;
   void getParams(CMatrix& param, unsigned int offset) const;
@@ -116,7 +120,9 @@ class CInducingWhiteNoise : public CInducing
   void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                       const CKern& kern, const CMatrix& X,
                       const CMatrix& gKuu, const CMatrix& gKuf,
-                      bool wantX, bool regulariseKern) const;
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
 
   unsigned int getNumParams() const;
   void getParams(CMatrix& param, unsigned int offset) const;
@@ -163,7 +169,9 @@ class CInducingGreens : public CInducing
   void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                       const CKern& kern, const CMatrix& X,
                       const CMatrix& gKuu, const CMatrix& gKuf,
-                      bool wantX, bool regulariseKern) const;
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
 
   unsigned int getNumParams() const;
   void getParams(CMatrix& param, unsigned int offset) const;
@@ -213,7 +221,9 @@ class CInducingWeightSpace : public CInducing
   void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                       const CKern& kern, const CMatrix& X,
                       const CMatrix& gKuu, const CMatrix& gKuf,
-                      bool wantX, bool regulariseKern) const;
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
 
   unsigned int getNumParams() const;
   void getParams(CMatrix& param, unsigned int offset) const;

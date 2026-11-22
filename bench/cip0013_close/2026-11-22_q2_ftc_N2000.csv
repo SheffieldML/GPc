@@ -1,0 +1,2 @@
+kind,N,q,M,sparse_linalg,gpc_ll,gpy_ll,numpy_ll,gpc_median_ms,gpy_median_ms,gpc_over_gpy,gate,gate_notes,gpc_flags,gpc_checks,threads
+ftc,2000,2,0,n/a,1570,1570.00007,1570.000055,244.4600,300.6763,0.813,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1

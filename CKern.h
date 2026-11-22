@@ -90,8 +90,11 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   virtual void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const=0;
   // CIP-002D follow-up: accumulate ∂L/∂Z for point inducing from cotangents
   // gKuu (M×M) and gKuf (M×N). Default loops getGradX; RBF/Lin override with GEMM.
+  // Optional KuuCached/KufCached skip recomputing kernel matrices (CoE 2026-11-22).
   virtual void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                             const CMatrix& gKuu, const CMatrix& gKuf) const;
+                             const CMatrix& gKuu, const CMatrix& gKuf,
+                             const CMatrix* KuuCached = 0,
+                             const CMatrix* KufCached = 0) const;
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -533,6 +536,10 @@ class CStationaryKern : public CKern {
   const double* rectR2Vals() const { return m_workR2Rect.getVals(); }
   const double* rectKVals() const { return m_workKRect.getVals(); }
 
+  // CoE 2026-11-22: map unscaled r² buffer → K (column-major, n entries).
+  // Default: K_of_r(scaleFactor()*sqrt(r2)); RBF overrides (no sqrt, fused exp).
+  virtual void mapR2ToK(double* Kvals, const double* r2vals, unsigned int n) const;
+
  private:
   void fillSymWorkspace(const CMatrix& X) const;
   void fillRectWorkspace(const CMatrix& X, const CMatrix& X2) const;
@@ -699,7 +706,9 @@ class CCmpndKern: public CComponentKern {
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                     const CMatrix& gKuu, const CMatrix& gKuf) const;
+                     const CMatrix& gKuu, const CMatrix& gKuf,
+                     const CMatrix* KuuCached = 0,
+                     const CMatrix* KufCached = 0) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
   double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
   double psi0(const CMatrix& mu, const CMatrix& S) const;
@@ -1005,6 +1014,7 @@ class CRbfKern: public CStationaryKern {
   }
   double scaleFactor() const { return sqrt(inverseWidth); }
   double K_of_r(double r) const { return variance * exp(-0.5 * r * r); }
+  void mapR2ToK(double* Kvals, const double* r2vals, unsigned int n) const;
   void setInitParam();
   double diagComputeElement(const CMatrix& X, unsigned int index) const;
   void diagCompute(CMatrix& d, const CMatrix& X) const;
@@ -1013,7 +1023,9 @@ class CRbfKern: public CStationaryKern {
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                     const CMatrix& gKuu, const CMatrix& gKuf) const;
+                     const CMatrix& gKuu, const CMatrix& gKuf,
+                     const CMatrix* KuuCached = 0,
+                     const CMatrix* KufCached = 0) const;
   double getWhite() const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd, bool regularise=true) const;
   void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd, bool regularise=true) const;
@@ -1305,7 +1317,9 @@ class CLinKern: public CKern {
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
   void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                     const CMatrix& gKuu, const CMatrix& gKuf) const;
+                     const CMatrix& gKuu, const CMatrix& gKuf,
+                     const CMatrix* KuuCached = 0,
+                     const CMatrix* KufCached = 0) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;

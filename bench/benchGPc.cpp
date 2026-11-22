@@ -145,6 +145,7 @@ int main(int argc, char** argv)
 {
   string kind = "ftc";
   string kernName = "rbf";  // CIP-002D QW8: rbf (default) or mlp
+  string sparseLinalg = "lq";  // CoE 2026-11-22: lq (default) | stable | legacy
   string dataDir;
   unsigned int N = 1000;
   unsigned int q = 2;
@@ -158,6 +159,8 @@ int main(int argc, char** argv)
       kind = argv[++i];
     else if(!strcmp(argv[i], "--kern") && i + 1 < argc)
       kernName = argv[++i];
+    else if(!strcmp(argv[i], "--sparse-linalg") && i + 1 < argc)
+      sparseLinalg = argv[++i];
     else if(!strcmp(argv[i], "--N") && i + 1 < argc)
       N = (unsigned)atoi(argv[++i]);
     else if(!strcmp(argv[i], "--q") && i + 1 < argc)
@@ -173,6 +176,7 @@ int main(int argc, char** argv)
     else if(!strcmp(argv[i], "--help"))
     {
       cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp] [--kern rbf|mlp]\n"
+           << "                [--sparse-linalg lq|stable|legacy]\n"
            << "                [--N N] [--q q] [--M M] [--reps R]\n"
            << "                [--data-dir DIR] [--inducing-fixed]\n"
            << "Checked-build timings: make CHECKS=full bench && ./benchGPc ...\n"
@@ -316,7 +320,31 @@ int main(int argc, char** argv)
     model->setActiveSet(Xu);
     model->setInducingFixed(inducingFixed);
     model->setBetaVals(100.0);
+    int mode = CGp::SparseLinalgLQ;
+    if(sparseLinalg == "lq" || sparseLinalg == "LQ")
+      mode = CGp::SparseLinalgLQ;
+    else if(sparseLinalg == "stable" || sparseLinalg == "StableFactor"
+            || sparseLinalg == "chol")
+      mode = CGp::SparseLinalgStableFactor;
+    else if(sparseLinalg == "legacy" || sparseLinalg == "Legacy")
+      mode = CGp::SparseLinalgLegacy;
+    else
+    {
+      cerr << "benchGPc: unknown --sparse-linalg " << sparseLinalg
+           << " (want lq|stable|legacy)" << endl;
+      delete model;
+      return 2;
+    }
+    model->setSparseLinalgMode(mode);
+    if(model->getSparseLinalgMode() == CGp::SparseLinalgLQ)
+      sparseLinalg = "lq";
+    else if(model->getSparseLinalgMode() == CGp::SparseLinalgStableFactor)
+      sparseLinalg = "stable";
+    else
+      sparseLinalg = "legacy";
   }
+  else
+    sparseLinalg = "n/a";
 
   CMatrix g(1, model->getOptNumParams());
   CMatrix p0(1, model->getOptNumParams());
@@ -357,6 +385,7 @@ int main(int argc, char** argv)
        << " median_ms=" << med
        << " allocs_per_eval=" << (allocs / reps)
        << " reps=" << reps
+       << " sparse_linalg=" << sparseLinalg
        << " flags=" << flags
        << " gpc_checks=" << checks
        << " blas=openblas_or_platform"

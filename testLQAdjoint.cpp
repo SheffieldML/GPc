@@ -68,6 +68,23 @@ static void testFactorMatchesChol()
 
   expect(fabs(logDetLq - logDetChol) < 1e-10, "LQ log|I+AA^T| matches chol");
 
+  // Lazy Q (skip dorglq in factor, form later) matches eager Q.
+  {
+    CMatrix Llazy;
+    double ldLazy = 0.0;
+    CMatrix Whh;
+    vector<double> tau;
+    lqFactorIA(Llazy, ldLazy, 0, A, &Whh, &tau);
+    CMatrix Qlazy;
+    lqFormQ(Qlazy, Whh, tau, Llazy);
+    double qDiff = 0.0;
+    for(unsigned int i = 0; i < Q.getRows(); i++)
+      for(unsigned int j = 0; j < Q.getCols(); j++)
+        qDiff = max(qDiff, fabs(Q.getVal(i, j) - Qlazy.getVal(i, j)));
+    expect(qDiff < 1e-12, "lqFormQ matches eager dorglq Q");
+    expect(fabs(ldLazy - logDetLq) < 1e-14, "lazy factor logdet matches eager");
+  }
+
   double diagDiff = 0.0;
   for(unsigned int i = 0; i < m; i++)
     diagDiff = max(diagDiff, fabs(fabs(Lupper.getVal(i, i)) - fabs(U.getVal(i, i))));

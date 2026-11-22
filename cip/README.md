@@ -69,6 +69,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0036](./cip0036.md): Reflect GPy `GPClassification` capabilities in `gpc` — capability matrix; Laplace predict, naming aliases, notebook (**Implemented**; TestPyPI `0.1.0a6` pending). Builds on CIP-0033/0034; sparse EP deferred.
 - [CIP-0037](./cip0037.md): Fix `makeRidgeInit` — one-sided offsets and directions before offsets (**Implemented**). CIP-0028 follow-on (was CIP-0035 draft Phase 0c); unblocks CIP-0035 Phase 2. Re-record fixtures; no legacy flag.
 - [CIP-0038](./cip0038.md): GPy `kern` inventory on `gpc` — wrap catalogue, `Sinc`/`ExpQuadCosine`, `Prod`, ICM/coregionalize (**Implemented** — worktree `GPc-cip0038` / `cip0038-gpy-kern-inventory`). Extends [REQ-000E](../requirements/req000E_gpy-facing-python-facade.md) / [REQ-0005](../requirements/req0005_gpy-aligned-kernel-coverage.md); paths via [CIP-0014](./cip0014.md).
+- [CIP-0039](./cip0039.md): PR-time Coverage (path-triggered) and move `CHECKS=full` `testSvgp` / `testSparsePpa` onto the hard gate — amends [CIP-002E](./cip002E.md) demotion (**Proposed**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md).
 
 ## Creating a Good CIP
 

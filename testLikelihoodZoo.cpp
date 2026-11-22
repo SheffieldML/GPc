@@ -169,17 +169,85 @@ static int testBinomial()
   return fail;
 }
 
+static int testExponential()
+{
+  const double y = 1.5, f = 0.2;
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW, y, f);
+  int fail = 0;
+  fail += checkClose("Exponential logp", logp, -1.632104137240255);
+  fail += checkClose("Exponential d1", d1, -0.8321041372402549);
+  fail += checkClose("Exponential W", W, 1.832104137240255);
+
+  CMatrix Y(3, 1);
+  Y.setVal(0.5, 0, 0);
+  Y.setVal(1.2, 1, 0);
+  Y.setVal(0.8, 2, 0);
+  CExponentialNoise noise(&Y);
+  for(unsigned int i = 0; i < Y.getRows(); i++)
+  {
+    noise.setMu(-0.1 * static_cast<double>(i), i, 0);
+    noise.setVarSigma(0.0, i, 0);
+  }
+  fail += fdParamGrads(noise, 1e-5);
+  ostringstream oss;
+  writeNoiseToStream(noise, oss);
+  istringstream iss(oss.str());
+  CNoise* loaded = readNoiseFromStream(iss);
+  fail += checkClose("stream type exponential",
+                     loaded->getType() == "exponential" ? 1.0 : 0.0, 1.0);
+  delete loaded;
+  return fail;
+}
+
+static int testGamma()
+{
+  const double y = 1.5, f = 0.0, beta = 2.0;
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW, y, f, beta);
+  int fail = 0;
+  fail += checkClose("Gamma logp", logp, -1.208240530771945, 1e-9);
+  fail += checkClose("Gamma d1", d1, 1.3516559071392853, 1e-9);
+  fail += checkClose("Gamma W", W, 1.2280803602536212, 1e-6);
+  fail += checkClose("Gamma dWdf", dW, 3.1546424444859253, 1e-4);
+
+  CMatrix Y(3, 1);
+  Y.setVal(0.7, 0, 0);
+  Y.setVal(1.1, 1, 0);
+  Y.setVal(0.9, 2, 0);
+  CGammaNoise noise(&Y);
+  noise.setBeta(1.5);
+  for(unsigned int i = 0; i < Y.getRows(); i++)
+  {
+    noise.setMu(0.05 * static_cast<double>(i), i, 0);
+    noise.setVarSigma(0.0, i, 0);
+  }
+  fail += fdParamGrads(noise, 5e-5);
+  ostringstream oss;
+  writeNoiseToStream(noise, oss);
+  istringstream iss(oss.str());
+  CNoise* loaded = readNoiseFromStream(iss);
+  fail += checkClose("stream type gamma",
+                     loaded->getType() == "gamma" ? 1.0 : 0.0, 1.0);
+  CGammaNoise* gn = dynamic_cast<CGammaNoise*>(loaded);
+  fail += checkClose("stream beta", gn->getBeta(), 1.5);
+  delete loaded;
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
   fail += testStudentT();
   fail += testPoisson();
   fail += testBinomial();
+  fail += testExponential();
+  fail += testGamma();
   if(fail)
   {
     cout << "testLikelihoodZoo: " << fail << " failure(s)." << endl;
     return 1;
   }
-  cout << "All Phase-2 likelihood zoo tests passed." << endl;
+  cout << "All Phase-2/3 likelihood zoo tests passed." << endl;
   return 0;
 }

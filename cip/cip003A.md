@@ -205,9 +205,9 @@ Phases 1–3 may land as one PR series if review prefers; Phase 4 must not prece
 - [x] Phase 0 helpers + fixture generators (`ndlnoise::invMillsRatio*`, `cip/cip003A/gen_skew_fixture.py`)
 - [x] Phase 1 skew likelihoods (`CSkewGaussianNoise`, `CSkewExponentialNoise`, `./testSkewNoise` green)
 - [x] Phase 2 Student-t / Poisson / Binomial (`./testLikelihoodZoo` green)
-- [ ] Phase 3 Exponential / Gamma
-- [ ] Phase 4 `gpc.likelihoods` + model wiring
-- [ ] Phase 5 SVGP/DeepGP VE + docs
+- [x] Phase 3 Exponential / Gamma (`CExponentialNoise`, `CGammaNoise`)
+- [x] Phase 4 `gpc.likelihoods` + DeepGP string wiring + `noise_log_density`
+- [ ] Phase 5 SVGP generalised VE docs / Laplace-on-CGp generalisation
 
 ## References
 

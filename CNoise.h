@@ -166,6 +166,23 @@ void binomialProbitLaplaceDerivs(double& logp,
                                  double f,
                                  double numTrials);
 
+/** Exponential with log link: λ=exp(f), y>0. */
+void exponentialLogLaplaceDerivs(double& logp,
+                                 double& d1,
+                                 double& W,
+                                 double& dWdf,
+                                 double y,
+                                 double f);
+
+/** Gamma with log link: mean λ=exp(f), shape α=βλ, scale 1/β. */
+void gammaLogLaplaceDerivs(double& logp,
+                           double& d1,
+                           double& W,
+                           double& dWdf,
+                           double y,
+                           double f,
+                           double beta);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
@@ -1082,6 +1099,92 @@ class CBinomialNoise : public CNoise {
  private:
   void _init();
   unsigned int numTrials;
+};
+
+/** CIP-003A: Exponential observation noise with log link (GPy Exponential). */
+class CExponentialNoise : public CNoise {
+ public:
+  CExponentialNoise() { _init(); }
+  CExponentialNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CExponentialNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+ private:
+  void _init();
+};
+
+/** CIP-003A: Gamma observation noise with log link (GPy Gamma). Param: beta. */
+class CGammaNoise : public CNoise {
+ public:
+  CGammaNoise() { _init(); }
+  CGammaNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CGammaNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getBeta() const { return beta; }
+  void setBeta(double val) { BOUNDCHECK(val > 0.0); beta = val; }
+
+ private:
+  void _init();
+  double beta;
 };
 
 

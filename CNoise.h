@@ -139,6 +139,33 @@ void skewExponentialLaplaceDerivs(double& logp,
                                   double rate,
                                   double alpha);
 
+/** Student-t (identity link): scale² σ², degrees of freedom ν. */
+void studentTLaplaceDerivs(double& logp,
+                           double& d1,
+                           double& W,
+                           double& dWdf,
+                           double y,
+                           double f,
+                           double variance,
+                           double degFree);
+
+/** Poisson with log link: λ=exp(f). y ∈ {0,1,2,…}. */
+void poissonLogLaplaceDerivs(double& logp,
+                             double& d1,
+                             double& W,
+                             double& dWdf,
+                             double y,
+                             double f);
+
+/** Binomial with probit link: y successes in numTrials trials. */
+void binomialProbitLaplaceDerivs(double& logp,
+                                 double& d1,
+                                 double& W,
+                                 double& dWdf,
+                                 double y,
+                                 double f,
+                                 double numTrials);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
@@ -914,6 +941,147 @@ class CSkewExponentialNoise : public CNoise {
   void _init();
   double rate;
   double alpha;
+};
+
+/** CIP-003A: Student-t observation noise (GPy StudentT). Params: variance, deg_free. */
+class CStudentTNoise : public CNoise {
+ public:
+  CStudentTNoise() { _init(); }
+  CStudentTNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CStudentTNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getVariance() const { return variance; }
+  void setVariance(double val) { BOUNDCHECK(val > 0.0); variance = val; }
+  double getDegFree() const { return degFree; }
+  void setDegFree(double val) { BOUNDCHECK(val > 0.0); degFree = val; }
+
+ private:
+  void _init();
+  double variance;
+  double degFree;
+};
+
+/** CIP-003A: Poisson observation noise with log link (GPy Poisson). No free params. */
+class CPoissonNoise : public CNoise {
+ public:
+  CPoissonNoise() { _init(); }
+  CPoissonNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CPoissonNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+ private:
+  void _init();
+};
+
+/** CIP-003A: Binomial + probit link (GPy Binomial). Fixed numTrials; no free params. */
+class CBinomialNoise : public CNoise {
+ public:
+  CBinomialNoise() : numTrials(1) { _init(); }
+  CBinomialNoise(CMatrix* pyin, unsigned int trials = 1) : numTrials(trials)
+  {
+    BOUNDCHECK(trials >= 1);
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CBinomialNoise();
+
+  unsigned int getNumTrials() const { return numTrials; }
+  void setNumTrials(unsigned int t)
+  {
+    BOUNDCHECK(t >= 1);
+    numTrials = t;
+  }
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  unsigned int numTrials;
 };
 
 

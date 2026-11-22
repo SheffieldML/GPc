@@ -596,6 +596,133 @@ void CDeepGp::forwardSample(const CMatrix& Xin, const CMatrix& epsFlat,
   Hout.deepCopy(Hs.back());
 }
 
+void CDeepGp::forwardPriorDraw(const CMatrix& Xin,
+                               const vector<CMatrix>& vs,
+                               CMatrix& Hout) const
+{
+  if(vs.size() != numLayers)
+    throw ndlexceptions::Error(
+        "CDeepGp::forwardPriorDraw: need one whitened draw per layer");
+  const unsigned int B = Xin.getRows();
+  CMatrix H(Xin);
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    const unsigned int Dout = layerDims[ell + 1];
+    CMatrix f;
+    layers[ell]->applyWhitenedAt(H, vs[ell], f);
+    CMatrix Hnext(B, Dout);
+    Hnext.gemm(H, meanP[ell], 1.0, 0.0, "n", "n");
+    for(unsigned int b = 0; b < B; b++)
+      for(unsigned int j = 0; j < Dout; j++)
+        Hnext.setVal(Hnext.getVal(b, j) + f.getVal(b, j), b, j);
+    H.deepCopy(Hnext);
+  }
+  Hout.deepCopy(H);
+}
+
+void CDeepGp::predictMeanVar(const CMatrix& Xstar, CMatrix& mu, CMatrix& var,
+                             unsigned int samples, uint64_t sampleSeed,
+                             bool addNoise) const
+{
+  if(Xstar.getCols() != inputDim)
+    throw ndlexceptions::Error(
+        "CDeepGp::predictMeanVar: Xstar input dim mismatch");
+  const unsigned int Ns = Xstar.getRows();
+  const unsigned int Dout = outputDim;
+  const double noise =
+      (addNoise && layers.back()->getLikelihood() == 0
+       && layers.back()->getBeta() > 0.0)
+          ? (1.0 / layers.back()->getBeta())
+          : 0.0;
+
+  if(samples == 0 || numLayers == 1)
+  {
+    CMatrix H(Xstar);
+    for(unsigned int ell = 0; ell + 1 < numLayers; ell++)
+    {
+      CMatrix m, v;
+      layers[ell]->marginalsAt(H, m, v);
+      CMatrix Hnext(H.getRows(), layerDims[ell + 1]);
+      Hnext.gemm(H, meanP[ell], 1.0, 0.0, "n", "n");
+      for(unsigned int i = 0; i < Hnext.getRows(); i++)
+        for(unsigned int j = 0; j < Hnext.getCols(); j++)
+          Hnext.setVal(Hnext.getVal(i, j) + m.getVal(i, j), i, j);
+      H.deepCopy(Hnext);
+    }
+    layers.back()->marginalsAt(H, mu, var);
+    if(noise > 0.0)
+      for(unsigned int i = 0; i < var.getRows(); i++)
+        for(unsigned int j = 0; j < var.getCols(); j++)
+          var.setVal(var.getVal(i, j) + noise, i, j);
+    return;
+  }
+
+  // Mixture of S Gaussians at the final layer (CIP-0035 prediction).
+  unsigned int epsPerPoint = 0;
+  for(unsigned int ell = 0; ell + 1 < numLayers; ell++)
+    epsPerPoint += layerDims[ell + 1];
+  mt19937_64 prng(sampleSeed);
+  normal_distribution<double> nd(0.0, 1.0);
+
+  CMatrix sumMu(Ns, Dout);
+  CMatrix sumMuSq(Ns, Dout);
+  CMatrix sumVar(Ns, Dout);
+  sumMu.zeros();
+  sumMuSq.zeros();
+  sumVar.zeros();
+
+  for(unsigned int s = 0; s < samples; s++)
+  {
+    CMatrix epsFlat(epsPerPoint > 0 ? Ns * epsPerPoint : 1, 1);
+    epsFlat.zeros();
+    for(unsigned int i = 0; i < Ns * epsPerPoint; i++)
+      epsFlat.setVal(nd(prng), i, 0);
+
+    CMatrix H(Xstar);
+    unsigned int epsOff = 0;
+    for(unsigned int ell = 0; ell + 1 < numLayers; ell++)
+    {
+      const unsigned int Dh = layerDims[ell + 1];
+      CMatrix m, v;
+      layers[ell]->marginalsAt(H, m, v);
+      CMatrix Hnext(Ns, Dh);
+      Hnext.gemm(H, meanP[ell], 1.0, 0.0, "n", "n");
+      for(unsigned int b = 0; b < Ns; b++)
+        for(unsigned int j = 0; j < Dh; j++)
+        {
+          const double sig = sqrt(max(v.getVal(b, j), 0.0));
+          const double ep = epsFlat.getVal(epsOff + b * Dh + j, 0);
+          Hnext.setVal(Hnext.getVal(b, j) + m.getVal(b, j) + sig * ep, b, j);
+        }
+      H.deepCopy(Hnext);
+      epsOff += Ns * Dh;
+    }
+    CMatrix muS, varS;
+    layers.back()->marginalsAt(H, muS, varS);
+    for(unsigned int i = 0; i < Ns; i++)
+      for(unsigned int j = 0; j < Dout; j++)
+      {
+        const double m = muS.getVal(i, j);
+        const double vv = varS.getVal(i, j) + noise;
+        sumMu.setVal(sumMu.getVal(i, j) + m, i, j);
+        sumMuSq.setVal(sumMuSq.getVal(i, j) + m * m, i, j);
+        sumVar.setVal(sumVar.getVal(i, j) + vv, i, j);
+      }
+  }
+  const double invS = 1.0 / (double)samples;
+  mu.resize(Ns, Dout);
+  var.resize(Ns, Dout);
+  for(unsigned int i = 0; i < Ns; i++)
+    for(unsigned int j = 0; j < Dout; j++)
+    {
+      const double mbar = sumMu.getVal(i, j) * invS;
+      const double eVar = sumVar.getVal(i, j) * invS;
+      const double vMu = sumMuSq.getVal(i, j) * invS - mbar * mbar;
+      mu.setVal(mbar, i, j);
+      var.setVal(max(eVar + vMu, 0.0), i, j);
+    }
+}
+
 double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
 {
   if(nProbe == 0)
@@ -609,19 +736,24 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
   vector<double> spreads;
   spreads.reserve(nProbe);
   const double h = 1e-4;
-  unsigned int epsPerPoint = 0;
-  for(unsigned int ell = 0; ell < numLayers; ell++)
-    epsPerPoint += layerDims[ell + 1];
 
   for(unsigned int t = 0; t < nProbe; t++)
   {
     CMatrix x0(1, Din);
     for(unsigned int d = 0; d < Din; d++)
       x0.setVal(nd(prng), 0, d);
-    CMatrix eps(epsPerPoint > 0 ? epsPerPoint : 1, 1);
-    eps.zeros();
-    for(unsigned int i = 0; i < epsPerPoint; i++)
-      eps.setVal(nd(prng), i, 0);
+
+    // One prior whitened draw v~N(0,I) per layer (prototype V7).
+    vector<CMatrix> vs(numLayers);
+    for(unsigned int ell = 0; ell < numLayers; ell++)
+    {
+      const unsigned int Mi = layers[ell]->getNumInducing();
+      const unsigned int Do = layers[ell]->getOutputDim();
+      vs[ell].resize(Mi, Do);
+      for(unsigned int r = 0; r < Mi; r++)
+        for(unsigned int c = 0; c < Do; c++)
+          vs[ell].setVal(nd(prng), r, c);
+    }
 
     CMatrix J(Din, Din);
     for(unsigned int d = 0; d < Din; d++)
@@ -630,8 +762,8 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
       xp.setVal(x0.getVal(0, d) + h, 0, d);
       xm.setVal(x0.getVal(0, d) - h, 0, d);
       CMatrix yp, ym;
-      forwardSample(xp, eps, yp);
-      forwardSample(xm, eps, ym);
+      forwardPriorDraw(xp, vs, yp);
+      forwardPriorDraw(xm, vs, ym);
       for(unsigned int o = 0; o < Din; o++)
         J.setVal((yp.getVal(0, o) - ym.getVal(0, o)) / (2.0 * h), o, d);
     }

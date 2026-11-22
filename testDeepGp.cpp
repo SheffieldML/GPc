@@ -1066,7 +1066,9 @@ int main()
       expect(fabs(L0 - L1) < 1e-6, "Phase4: stream ELBO match");
     }
 
-    // ---- Phase 4 V7: Jacobian spread with chi=1/L stays bounded ----
+    // ---- Phase 4 V7: prior Jacobian spread with chi=1/L stays bounded ----
+    // Draws v~N(0,I) per layer (A^T v), independent of trained q — matches
+    // prototype dgp_jacobian.py residual-off prior probe.
     {
       const unsigned int D = 2, L = 4, M = 8, N = 16;
       mt19937 rng(107);
@@ -1095,27 +1097,54 @@ int main()
       k2.setVariance(vPrior);
       k3.setVariance(vPrior);
       for(unsigned int ell = 0; ell < L; ell++)
-      {
         dgp.layer(ell).updateKernelMatrices();
-        const unsigned int Mi = dgp.layer(ell).getNumInducing();
-        const unsigned int Do = dgp.layer(ell).getOutputDim();
-        CMatrix m(Mi, Do);
-        m.zeros();
-        vector<CMatrix> S(Do);
-        for(unsigned int j = 0; j < Do; j++)
-        {
-          S[j].resize(Mi, Mi);
-          S[j].zeros();
-          S[j].addDiag(1.0);
-          S[j].setSymmetric(true);
-        }
-        dgp.layer(ell).setWhitenedQ(m, S);
-      }
       const double spread = dgp.jacobianSpread(16, 111u);
       cout << "  info: Phase4 V7 median log-sv spread L=" << L
            << " D=" << D << " = " << spread << endl;
-      expect(isfinite(spread) && spread < 2.0,
-             "Phase4 V7: chi=1/L Jacobian spread < 2");
+      expect(isfinite(spread) && spread > 0.05 && spread < 2.0,
+             "Phase4 V7: chi=1/L prior Jacobian spread in (0.05, 2)");
+    }
+
+    // ---- Sampled predict mixture moments ----
+    {
+      const unsigned int N = 20, M = 6, Nte = 8;
+      mt19937 rng(121);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, 1), y(N, 1), Xte(Nte, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        const double x = -2.0 + 4.0 * (double)i / (double)(N - 1);
+        X.setVal(x, i, 0);
+        y.setVal(sin(1.2 * x) + 0.05 * nd(rng), i, 0);
+      }
+      for(unsigned int i = 0; i < Nte; i++)
+        Xte.setVal(-1.5 + 3.0 * (double)i / (double)(Nte - 1), i, 0);
+      ndlutil::init_genrand(123u);
+      CCmpndKern k0(X), k1(X);
+      makeRbfOnly(k0, X, 1.0, 0.5);
+      makeRbfOnly(k1, X, 1.0, 1.0);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 1u},
+                  vector<unsigned int>{M, M}, 5.0, 0.5, 0);
+      CMatrix mu0, var0, muS, varS;
+      dgp.predictMeanVar(Xte, mu0, var0, 0);
+      dgp.predictMeanVar(Xte, muS, varS, 8, 7u);
+      expect(mu0.getRows() == Nte && var0.getRows() == Nte,
+             "predictMeanVar mean-path shapes");
+      expect(muS.getRows() == Nte && varS.getRows() == Nte,
+             "predictMeanVar mixture shapes");
+      for(unsigned int i = 0; i < Nte; i++)
+      {
+        expect(isfinite(mu0.getVal(i, 0)) && var0.getVal(i, 0) > 0.0,
+               "predictMeanVar mean-path finite positive var");
+        expect(isfinite(muS.getVal(i, 0)) && varS.getVal(i, 0) > 0.0,
+               "predictMeanVar mixture finite positive var");
+      }
+      // Mixture variance should be at least as large as mean-path (extra
+      // between-sample mean variance) once hidden q has prior mass; after
+      // near-identity init they can be close — just check agreement scale.
+      expect(fabs(mu0.getVal(0, 0) - muS.getVal(0, 0)) < 2.0,
+             "predictMeanVar mean-path vs mixture not wildly apart");
     }
 
     // ---- Phase 4 V8 smoke: inducing-point deep GP trains ----

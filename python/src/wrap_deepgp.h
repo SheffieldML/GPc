@@ -49,7 +49,9 @@ public:
   double objective() const { return -elbo(); }
 
   std::pair<py::array_t<double>, py::array_t<double>> predict(
-      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const;
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+      unsigned int samples = 0,
+      uint64_t seed = 0) const;
 
   void save(const std::string& path) const;
   static std::unique_ptr<PyDeepGP> load(const std::string& path);

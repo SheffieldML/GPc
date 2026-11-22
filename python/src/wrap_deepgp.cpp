@@ -249,7 +249,9 @@ double PyDeepGP::elbo() const
 }
 
 std::pair<py::array_t<double>, py::array_t<double>> PyDeepGP::predict(
-    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+    unsigned int samples,
+    uint64_t seed) const
 {
   if(!model)
     throw ndlexceptions::Error("DeepGP is uninitialised");
@@ -257,29 +259,9 @@ std::pair<py::array_t<double>, py::array_t<double>> PyDeepGP::predict(
   if(Xt.getCols() != model->getInputDim())
     throw ndlexceptions::Error("Xtest input dimension does not match training X");
 
-  CMatrix H(Xt);
-  const unsigned int L = model->getNumLayers();
-  for(unsigned int ell = 0; ell + 1 < L; ++ell)
-  {
-    CMatrix mu, var;
-    model->layer(ell).marginalsAt(H, mu, var);
-    CMatrix Hnext(H.getRows(), model->getHiddenDim(ell + 1));
-    Hnext.gemm(H, model->meanMap(ell), 1.0, 0.0, "n", "n");
-    for(unsigned int i = 0; i < Hnext.getRows(); ++i)
-      for(unsigned int j = 0; j < Hnext.getCols(); ++j)
-        Hnext.setVal(Hnext.getVal(i, j) + mu.getVal(i, j), i, j);
-    H.deepCopy(Hnext);
-  }
   CMatrix mu, var;
-  model->layer(L - 1).marginalsAt(H, mu, var);
-  if(likelihoodType == "gaussian")
-  {
-    const double beta = model->layer(L - 1).getBeta();
-    const double noise = (beta > 0.0) ? (1.0 / beta) : 0.0;
-    for(unsigned int i = 0; i < var.getRows(); ++i)
-      for(unsigned int j = 0; j < var.getCols(); ++j)
-        var.setVal(var.getVal(i, j) + noise, i, j);
-  }
+  const bool addNoise = (likelihoodType == "gaussian");
+  model->predictMeanVar(Xt, mu, var, samples, seed, addNoise);
   return {matrixToNumpy(mu), matrixToNumpy(var)};
 }
 
@@ -452,7 +434,10 @@ void bind_deepgp(py::module_& m)
       .def("predict",
            &PyDeepGP::predict,
            py::arg("Xtest"),
-           "Mean-path predictive mean/variance at Xtest.")
+           py::arg("samples") = 0,
+           py::arg("seed") = 0,
+           "Predictive mean/variance at Xtest. samples=0 uses the mean path; "
+           "samples>=1 mixes S hidden-layer draws (CIP-0035).")
       .def("save", &PyDeepGP::save, py::arg("path"), "Write deepgp .model stream.")
       .def_static("load", &PyDeepGP::load, py::arg("path"),
                   "Load a deepgp .model stream.")

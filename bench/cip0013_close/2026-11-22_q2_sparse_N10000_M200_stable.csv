@@ -1,0 +1,3 @@
+kind,N,q,M,sparse_linalg,gpc_ll,gpy_ll,numpy_ll,gpc_median_ms,gpy_median_ms,gpc_over_gpy,gate,gate_notes,gpc_flags,gpc_checks,threads
+dtcvar,10000,2,200,stable,874.961,874.9595516,,121.4560,169.7997,0.715,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,200,stable,6997.13,6997.084586,,160.6160,167.7150,0.958,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1

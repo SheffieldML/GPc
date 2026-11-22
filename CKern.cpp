@@ -566,9 +566,12 @@ void CKern::getGradTransParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGr
   }  
 }
 void CKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                          const CMatrix& gKuu, const CMatrix& gKuf) const
+                          const CMatrix& gKuu, const CMatrix& gKuf,
+                          const CMatrix* /*KuuCached*/,
+                          const CMatrix* /*KufCached*/) const
 {
   // Default: per-inducing getGradX (oracle for bulk overrides).
+  // Caches unused here — element path does not form full K.
   const unsigned int M = Z.getRows();
   const unsigned int d = Z.getCols();
   const unsigned int N = X.getRows();
@@ -929,9 +932,14 @@ void CCmpndKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& 
     addPriorGrad(g);
 }
 void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                               const CMatrix& gKuu, const CMatrix& gKuf) const
+                               const CMatrix& gKuu, const CMatrix& gKuf,
+                               const CMatrix* KuuCached,
+                               const CMatrix* KufCached) const
 {
   // K = Σ_c K_c ⇒ ∂L/∂Z = Σ_c ∂L_c/∂Z with the same cotangents.
+  // Do not forward GP K_uu/K_uf caches: compound K includes Bias/Lin/White
+  // terms, while CRbfKern::inducingGradZ needs the RBF slice only
+  // (testGp matfiles are rbf+lin+bias+white).
   const unsigned int M = Z.getRows();
   const unsigned int d = Z.getCols();
   gZ.resize(M, d);
@@ -939,9 +947,11 @@ void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
   CMatrix gZc(M, d);
   for(size_t i=0; i<components.size(); i++)
   {
-    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf);
+    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf, 0, 0);
     gZ.axpy(gZc, 1.0);
   }
+  (void)KuuCached;
+  (void)KufCached;
 }
 double CCmpndKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
@@ -1705,6 +1715,28 @@ double CBiasKern::getGradParam(unsigned int index, const CMatrix& X, const CMatr
 
 
 // CIP-0013 P4/P5: Stationary base — bulk compute + per-eval workspace.
+void CStationaryKern::mapR2ToK(double* Kvals, const double* r2vals, unsigned int n) const
+{
+  const double s = scaleFactor();
+  for(unsigned int t = 0; t < n; t++)
+  {
+    double r2 = r2vals[t];
+    if(r2 < 0.0) r2 = 0.0;
+    Kvals[t] = K_of_r(s * sqrt(r2));
+  }
+}
+void CRbfKern::mapR2ToK(double* Kvals, const double* r2vals, unsigned int n) const
+{
+  // K_of_r(s√r²) = variance·exp(-½ inverseWidth · r²) — no per-entry sqrt.
+  const double halfInv = -0.5 * inverseWidth;
+  const double var = variance;
+  for(unsigned int t = 0; t < n; t++)
+  {
+    double r2 = r2vals[t];
+    if(r2 < 0.0) r2 = 0.0;
+    Kvals[t] = var * exp(halfInv * r2);
+  }
+}
 void CStationaryKern::invalidateWorkspace()
 {
   ++m_wsEpoch;
@@ -1756,34 +1788,26 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
       }
       rowNorm2[i] = nrm;
     }
-    // Step 3: Add row norms, clamp r2 >= 0, set diagonal exactly 0
-    for(unsigned int i = 0; i < n; i++)
+    // Step 3: Add row norms, clamp r2 >= 0, set diagonal exactly 0 (column-major).
+    double* r2p = m_workR2Sym.getVals();
+    for(unsigned int j = 0; j < n; j++)
     {
-      m_workR2Sym.setVal(0.0, i, i);
-      for(unsigned int j = 0; j < i; j++)
+      for(unsigned int i = 0; i < n; i++)
       {
-        double r2 = m_workR2Sym.getVal(i, j) + rowNorm2[i] + rowNorm2[j];
+        if(i == j)
+        {
+          r2p[i + j * n] = 0.0;
+          continue;
+        }
+        double r2 = r2p[i + j * n] + rowNorm2[i] + rowNorm2[j];
         if(r2 < 0.0) r2 = 0.0;
-        m_workR2Sym.setVal(r2, i, j);
-        m_workR2Sym.setVal(r2, j, i);
+        r2p[i + j * n] = r2;
       }
     }
-    // Step 4: Apply K_of_r — diagonal via diagComputeElement; off-diag rows
-    // in parallel (each thread i writes row i and symmetric col i — disjoint).
+    // Step 4: bulk K_of_r (RBF: fused exp, no sqrt).
+    mapR2ToK(m_workKSym.getVals(), r2p, n * n);
     for(unsigned int i = 0; i < n; i++)
       m_workKSym.setVal(diagComputeElement(X, i), i, i);
-#ifdef GPC_OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for(unsigned int i = 0; i < n; i++)
-    {
-      for(unsigned int j = 0; j < i; j++)
-      {
-        const double k = K_of_r(s * sqrt(m_workR2Sym.getVal(i, j)));
-        m_workKSym.setVal(k, i, j);
-        m_workKSym.setVal(k, j, i);
-      }
-    }
   }
   else
   {
@@ -1808,6 +1832,7 @@ void CStationaryKern::fillSymWorkspace(const CMatrix& X) const
       }
     }
   }
+  (void)s;
   m_symX = &X;
   m_symEpoch = m_wsEpoch;
   m_symValid = true;
@@ -1842,21 +1867,19 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
       for(unsigned int c = 0; c < q; c++) { const double v = X2.getVal(j, c); nrm += v * v; }
       rowNorm2X2[j] = nrm;
     }
-    // Add norms, clamp r2 >= 0, apply K_of_r.
-    // Rows are fully disjoint: OpenMP parallel over outer index i is safe.
-#ifdef GPC_OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for(unsigned int i = 0; i < n; i++)
+    // Add norms, clamp r2 >= 0 (column-major), then bulk K_of_r.
+    double* r2p = m_workR2Rect.getVals();
+    for(unsigned int j = 0; j < m; j++)
     {
-      for(unsigned int j = 0; j < m; j++)
+      const double n2j = rowNorm2X2[j];
+      for(unsigned int i = 0; i < n; i++)
       {
-        double r2 = m_workR2Rect.getVal(i, j) + rowNorm2X[i] + rowNorm2X2[j];
+        double r2 = r2p[i + j * n] + rowNorm2X[i] + n2j;
         if(r2 < 0.0) r2 = 0.0;
-        m_workR2Rect.setVal(r2, i, j);
-        m_workKRect.setVal(K_of_r(s * sqrt(r2)), i, j);
+        r2p[i + j * n] = r2;
       }
     }
+    mapR2ToK(m_workKRect.getVals(), r2p, n * m);
   }
   else
   {
@@ -1875,6 +1898,7 @@ void CStationaryKern::fillRectWorkspace(const CMatrix& X, const CMatrix& X2) con
       }
     }
   }
+  (void)s;
   m_rectX = &X;
   m_rectX2 = &X2;
   m_rectEpoch = m_wsEpoch;
@@ -1905,17 +1929,7 @@ void CStationaryKern::compute(CMatrix& K, const CMatrix& X) const
   DIMENSIONMATCH(K.rowsMatch(X));
   MATRIXPROPERTIES(K.isSquare());
   fillSymWorkspace(X);
-  const unsigned int n = K.getRows();
-  for(unsigned int i = 0; i < n; i++)
-  {
-    for(unsigned int j = 0; j < i; j++)
-    {
-      const double k = symK(i, j);
-      K.setVal(k, i, j);
-      K.setVal(k, j, i);
-    }
-    K.setVal(symK(i, i), i, i);
-  }
+  K.deepCopy(m_workKSym);
   K.setSymmetric(true);
 }
 void CStationaryKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
@@ -1923,13 +1937,7 @@ void CStationaryKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) c
   DIMENSIONMATCH(K.rowsMatch(X));
   DIMENSIONMATCH(K.getCols() == X2.getRows());
   fillRectWorkspace(X, X2);
-  const unsigned int n = K.getRows();
-  const unsigned int m = K.getCols();
-  for(unsigned int i = 0; i < n; i++)
-  {
-    for(unsigned int j = 0; j < m; j++)
-      K.setVal(rectK(i, j), i, j);
-  }
+  K.deepCopy(m_workKRect);
 }
 
 // the RBF kernel.
@@ -2095,13 +2103,15 @@ void CRbfKern::getDiagGradX(CMatrix& gX, const CMatrix& X, bool addG) const
     gX.zeros();
 }
 void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                             const CMatrix& gKuu, const CMatrix& gKuf) const
+                             const CMatrix& gKuu, const CMatrix& gKuf,
+                             const CMatrix* KuuCached,
+                             const CMatrix* KufCached) const
 {
   // CIP-002D QW5: gZ = γ (W X − diag(W 1) Z) with W = K ⊙ gK (+ 2× for Kuu).
   // Falls back when activeDims is a subset (getGradX only touches those cols).
   if(!isDefaultActiveDims())
   {
-    CKern::inducingGradZ(gZ, Z, X, gKuu, gKuf);
+    CKern::inducingGradZ(gZ, Z, X, gKuu, gKuf, KuuCached, KufCached);
     return;
   }
   const unsigned int M = Z.getRows();
@@ -2111,10 +2121,20 @@ void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
   DIMENSIONMATCH(gKuf.getRows()==M && gKuf.getCols()==N);
   DIMENSIONMATCH(X.getCols()==d);
 
-  CMatrix Kuf(M, N);
-  compute(Kuf, Z, X);
+  CMatrix KufLocal(M, N);
+  const CMatrix* pKuf = KufCached;
+  if(pKuf == 0)
+  {
+    compute(KufLocal, Z, X);
+    pKuf = &KufLocal;
+  }
+  else
+  {
+    // Caller must pass RBF K(Z,X). CCmpndKern does not forward compound K_uf.
+    DIMENSIONMATCH(pKuf->getRows()==M && pKuf->getCols()==N);
+  }
   CMatrix Wuf(M, N);
-  Wuf.deepCopy(Kuf);
+  Wuf.deepCopy(*pKuf);
   Wuf.dotMultiply(gKuf);
   Wuf.scale(inverseWidth);
   gZ.resize(M, d);
@@ -2129,10 +2149,19 @@ void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
       gZ.addVal(-rs * Z.getVal(i, q), i, q);
   }
 
-  CMatrix Kuu(M, M);
-  compute(Kuu, Z);
+  CMatrix KuuLocal(M, M);
+  const CMatrix* pKuu = KuuCached;
+  if(pKuu == 0)
+  {
+    compute(KuuLocal, Z);
+    pKuu = &KuuLocal;
+  }
+  else
+  {
+    DIMENSIONMATCH(pKuu->getRows()==M && pKuu->getCols()==M);
+  }
   CMatrix Wuu(M, M);
-  Wuu.deepCopy(Kuu);
+  Wuu.deepCopy(*pKuu);
   Wuu.dotMultiply(gKuu);
   Wuu.scale(2.0 * inverseWidth);
   CMatrix gZuu(M, d);
@@ -3385,10 +3414,12 @@ void CLinKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cv
     addPriorGrad(g);
 }
 void CLinKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
-                             const CMatrix& gKuu, const CMatrix& gKuf) const
+                             const CMatrix& gKuu, const CMatrix& gKuf,
+                             const CMatrix* /*KuuCached*/,
+                             const CMatrix* /*KufCached*/) const
 {
   // ∂k(z,x)/∂z = σ x; after ×2 on Kuu and diag replace (no-op for Lin):
-  // gZ = σ gKuf X + 2σ gKuu Z.
+  // gZ = σ gKuf X + 2σ gKuu Z. (no K matrices — caches unused)
   const unsigned int M = Z.getRows();
   const unsigned int N = X.getRows();
   const unsigned int d = Z.getCols();

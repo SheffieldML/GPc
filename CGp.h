@@ -5,6 +5,7 @@
 #include "CEpInference.h"
 #include "CLaplaceInference.h"
 #include "CModelDescription.h"
+#include <vector>
 
 using namespace std;
 
@@ -600,7 +601,11 @@ public:
   mutable CMatrix LcholC;  // upper chol(C) or upper R = L^T from LQ of [I,A]
   mutable double logDetC;
   // CIP-001B: Q from LQ of [I, A] (M × (M+N)), rows orthonormal; needed for lqAdjoint.
+  // Formed lazily via lqFormQ from Householder (Wlq, tauLq) — skip dorglq in updateAD.
   mutable CMatrix Qlq;
+  mutable CMatrix Wlq;
+  mutable std::vector<double> tauLq;
+  mutable bool QlqReady;
 
   // Representations for intermediate gradients.
   mutable CMatrix dgKX;

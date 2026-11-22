@@ -141,6 +141,7 @@ void CGp::_init()
   KupToDate = false;
   sparseApproximation = false;
   sparseLinalgMode = SparseLinalgLQ;
+  QlqReady = false;
   setApproximationType(FTC);
   numActive = 0;
   pInducing = 0;
@@ -314,6 +315,9 @@ void CGp::initSparseStoreage()
     Cmat.resize(numActive, numActive);
     LcholC.resize(numActive, numActive);
     Qlq.resize(numActive, numActive + getNumData());
+    Wlq.resize(numActive, numActive + getNumData());
+    tauLq.assign(numActive, 0.0);
+    QlqReady = false;
     logDetC = 0.0;
   }
   else 
@@ -1723,7 +1727,9 @@ void CGp::updateAD() const {
           {
             CMatrix Afeat(B);
             Afeat.scale(sqrt(betaVal));
-            lqFactorIA(LcholC, logDetC, &Qlq, Afeat);
+            // Skip dorglq here; keep Householder for lazy Q in gpCovGrads.
+            lqFactorIA(LcholC, logDetC, 0, Afeat, &Wlq, &tauLq);
+            QlqReady = false;
           }
           else
           {
@@ -1735,16 +1741,9 @@ void CGp::updateAD() const {
               cout << "Warning: jitter of " << jitC << " added to C in whitened updateAD()." << endl;
             logDetC = logDet(LcholC);
           }
-          // Legacy A/Ainv retained for dual-path compares and residual callers.
-          A.deepCopy(K_uu);
-          A.gemm(K_uf, K_uf, 1.0, 1.0 / betaVal, "n", "t");
-          A.setSymmetric(true);
-          double jit = LcholA.jitChol(A);
-          if(jit > 1e-2 && getVerbosity() > 2)
-            cout << "Warning: jitter of " << jit << " added to A in updateAD()." << endl;
-          logDetA = logDet(LcholA);
-          Ainv.setSymmetric(true);
-          Ainv.pdinv(LcholA);
+          // Do not build Legacy A/Ainv here — LL/grads/Alpha use B and LcholC
+          // (CoE 2026-11-22: dual-path tax on every step). Dual-path compares
+          // switch sparseLinalgMode explicitly.
           if(getApproximationType() == DTCVAR)
           {
             // q_i = ||B_{:,i}||^2
@@ -1819,16 +1818,7 @@ void CGp::updateAD() const {
             V.scaleCol(j, d);
             scaledM.scaleRow(j, sqrt(d));
           }
-          // Legacy A/Ainv retained for dual-path compares and residual callers.
-          A.deepCopy(K_uu);
-          A.gemm(K_uf, V, 1.0, 1.0 / betaValF, "n", "t");
-          A.setSymmetric(true);
-          double jit = LcholA.jitChol(A);
-          if(jit > 1e-2 && getVerbosity() > 2)
-            cout << "Warning: jitter of " << jit << " added to A in updateAD()." << endl;
-          logDetA = logDet(LcholA);
-          Ainv.setSymmetric(true);
-          Ainv.pdinv(LcholA);
+          // Whitened FITC LL/grads use B, diagD, LcholC — skip Legacy A/Ainv.
 
           V.deepCopy(B);
           for(unsigned int j = 0; j < getNumData(); j++)
@@ -1843,7 +1833,8 @@ void CGp::updateAD() const {
           {
             CMatrix Afeat(V);
             Afeat.scale(sqrt(betaValF));
-            lqFactorIA(LcholC, logDetC, &Qlq, Afeat);
+            lqFactorIA(LcholC, logDetC, 0, Afeat, &Wlq, &tauLq);
+            QlqReady = false;
           }
           else
           {
@@ -1856,7 +1847,7 @@ void CGp::updateAD() const {
             logDetC = logDet(LcholC);
           }
 
-          jit = Lm.jitChol(Am);
+          double jit = Lm.jitChol(Am);
           if(jit > 1e-2 && getVerbosity() > 2)
             cout << "Warning: jitter of " << jit << " added to Am in updateAD()." << endl;
           invLmV.deepCopy(V);
@@ -1924,12 +1915,16 @@ void CGp::updateAD() const {
       if (isSpherical()) 
       {
         const double betaValP = getBetaVal();
-        A.deepCopy(K_uu);
-        A.scale(1.0 / betaValP);
-        A.setSymmetric(true);
+        const bool whitenedP = isWhitenedSparseLinalg();
+        if(!whitenedP)
+        {
+          A.deepCopy(K_uu);
+          A.scale(1.0 / betaValP);
+          A.setSymmetric(true);
+        }
         pitcKufDinvm.zeros();
         logDetDSum = 0.0;
-        if(isWhitenedSparseLinalg())
+        if(whitenedP)
           _whitenKuf(B, K_uf);
         for(unsigned int b = 0; b < getNumBlocks(); b++)
         {
@@ -1940,7 +1935,7 @@ void CGp::updateAD() const {
           K_uf.getMatrix(Kufb, 0, numActive - 1, start, endInc);
           blockD[b].deepCopy(blockK[b]);
           blockD[b].scale(betaValP);
-          if(isWhitenedSparseLinalg())
+          if(whitenedP)
           {
             // Q_b = B_b^T B_b with B = U^{-T} K_uf (CIP-0012).
             CMatrix Bb(numActive, bs);
@@ -1962,25 +1957,32 @@ void CGp::updateAD() const {
           logDetDSum += logDetD[b];
           blockDinv[b].setSymmetric(true);
           blockDinv[b].pdinv(blockLcholD[b]);
-          CMatrix KufDinv(numActive, bs);
-          KufDinv.gemm(Kufb, blockDinv[b], 1.0, 0.0, "n", "n");
-          A.gemm(KufDinv, Kufb, 1.0, 1.0, "n", "t");
+          if(!whitenedP)
+          {
+            CMatrix KufDinv(numActive, bs);
+            KufDinv.gemm(Kufb, blockDinv[b], 1.0, 0.0, "n", "n");
+            A.gemm(KufDinv, Kufb, 1.0, 1.0, "n", "t");
+          }
           CMatrix mb(bs, getOutputDim());
           m.getMatrix(mb, start, endInc, 0, getOutputDim() - 1);
           CMatrix Dinvm(bs, getOutputDim());
           Dinvm.symm(blockDinv[b], mb, 1.0, 0.0, "l", "l");
           pitcKufDinvm.gemm(Kufb, Dinvm, 1.0, 1.0, "n", "n");
         }
-        A.setSymmetric(true);
-        double jitA = LcholA.jitChol(A);
-        if(jitA > 1e-2 && getVerbosity() > 2)
-          cout << "Warning: jitter of " << jitA << " added to A in PITC updateAD()." << endl;
-        logDetA = logDet(LcholA);
-        Ainv.setSymmetric(true);
-        Ainv.pdinv(LcholA);
-        if(isWhitenedSparseLinalg())
+        if(!whitenedP)
+        {
+          A.setSymmetric(true);
+          double jitA = LcholA.jitChol(A);
+          if(jitA > 1e-2 && getVerbosity() > 2)
+            cout << "Warning: jitter of " << jitA << " added to A in PITC updateAD()." << endl;
+          logDetA = logDet(LcholA);
+          Ainv.setSymmetric(true);
+          Ainv.pdinv(LcholA);
+        }
+        if(whitenedP)
         {
           // C = I + β Σ_b B_b D_b^{-1} B_b^T; |A| = |C| |K_uu| / β^M.
+          // Skip Legacy A/Ainv — LL/grads/Alpha use B and LcholC.
           Cmat.eye();
           for(unsigned int b = 0; b < getNumBlocks(); b++)
           {
@@ -2081,21 +2083,39 @@ double CGp::logLikelihood() const
   case DTCVAR:
     if(isSpherical()) 
     {
-      CMatrix e(numActive, 1);
-      CMatrix invAe(numActive, 1);
-      // CIP-0012: StableFactor uses C = I+βBB^T; log|A|-log|K_uu| = log|C|-M log β.
+      // CIP-0012: StableFactor/LQ use C = I+βBB^T; log|A|-log|K_uu| = log|C|-M log β.
+      // Data-fit: e^T A^{-1} e = β (B m)^T C^{-1} (B m) with e = K_uf m.
       const double logDetTerm = isWhitenedSparseLinalg()
         ? (logDetC - (double)numActive * log(getBetaVal()))
         : (-logDetK_uu + logDetA);
       L+= (double)getOutputDim()*
       (((double)numActive-(double)getNumData())*log(getBetaVal())
        + logDetTerm);
-      for(unsigned int j=0; j<getOutputDim(); j++) 
+      if(isWhitenedSparseLinalg())
       {
-	e.gemvColCol(0, K_uf, m, j, 1.0, 0.0, "n");
-	invAe.symvColCol(0, Ainv, e, 0, 1.0, 0.0, "l");
-	L -= getBetaVal()*(invAe.dotColCol(0, e, 0)-m.dotColCol(j, m, j));
-      }	  
+        const double betaVal = getBetaVal();
+        CMatrix u(numActive, 1);
+        CMatrix a(numActive, 1);
+        for(unsigned int j=0; j<getOutputDim(); j++)
+        {
+          u.gemvColCol(0, B, m, j, 1.0, 0.0, "n");
+          a.deepCopy(u);
+          a.trsm(LcholC, 1.0, "l", "u", "t", "n");
+          a.trsm(LcholC, 1.0, "l", "u", "n", "n");
+          L -= betaVal * (betaVal * u.dotColCol(0, a, 0) - m.dotColCol(j, m, j));
+        }
+      }
+      else
+      {
+        CMatrix e(numActive, 1);
+        CMatrix invAe(numActive, 1);
+        for(unsigned int j=0; j<getOutputDim(); j++)
+        {
+          e.gemvColCol(0, K_uf, m, j, 1.0, 0.0, "n");
+          invAe.symvColCol(0, Ainv, e, 0, 1.0, 0.0, "l");
+          L -= getBetaVal()*(invAe.dotColCol(0, e, 0)-m.dotColCol(j, m, j));
+        }
+      }
       if(getApproximationType()==DTCVAR)
 	L += (double)getOutputDim()*diagD.sum();
     }
@@ -2135,14 +2155,31 @@ double CGp::logLikelihood() const
       const double dOut = (double)getOutputDim();
       const double betaValP = getBetaVal();
       // StableFactor: log|A|-log|K_uu| = log|C|-M log β ⇒ first term is d log|C|.
+      // Data-fit: e^T A^{-1} e = β (U^{-T} e)^T C^{-1} (U^{-T} e), e = pitcKufDinvm.
       if(isWhitenedSparseLinalg())
+      {
         L = dOut * logDetC;
+        CMatrix u(numActive, 1);
+        CMatrix a(numActive, 1);
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+        {
+          for(unsigned int i = 0; i < numActive; i++)
+            u.setVal(pitcKufDinvm.getVal(i, j), i);
+          u.trsm(LcholK, 1.0, "l", "u", "t", "n");
+          a.deepCopy(u);
+          a.trsm(LcholC, 1.0, "l", "u", "t", "n");
+          a.trsm(LcholC, 1.0, "l", "u", "n", "n");
+          L -= betaValP * betaValP * u.dotColCol(0, a, 0);
+        }
+      }
       else
+      {
         L = dOut * (logDetA - logDetK_uu + (double)numActive * log(betaValP));
-      CMatrix AinvKufDinvm(numActive, getOutputDim());
-      AinvKufDinvm.symm(Ainv, pitcKufDinvm, 1.0, 0.0, "l", "l");
-      for(unsigned int j = 0; j < getOutputDim(); j++)
-        L -= betaValP * AinvKufDinvm.dotColCol(j, pitcKufDinvm, j);
+        CMatrix AinvKufDinvm(numActive, getOutputDim());
+        AinvKufDinvm.symm(Ainv, pitcKufDinvm, 1.0, 0.0, "l", "l");
+        for(unsigned int j = 0; j < getOutputDim(); j++)
+          L -= betaValP * AinvKufDinvm.dotColCol(j, pitcKufDinvm, j);
+      }
       for(unsigned int b = 0; b < getNumBlocks(); b++)
       {
         unsigned int start = 0, endInc = 0;
@@ -2199,18 +2236,49 @@ double CGp::sparsePpaElboGpTerms() const
   const unsigned int M = numActive;
   const unsigned int dOut = getOutputDim();
 
-  CMatrix AinvKuu(M, M);
-  AinvKuu.symm(Ainv, K_uu, 1.0, 0.0, "l", "l");
-  const double trAinvKuu = AinvKuu.trace();
-  // log|S_u| = -M log β + 2 log|K_uu| - log|A|
-  const double logDetS = -(double)M * log(betaVal) + 2.0 * logDetK_uu - logDetA;
-  const double trKuuInvS = trAinvKuu / betaVal;
-
-  CMatrix e(M, 1);
-  CMatrix AinvE(M, 1);
-  CMatrix KuuAinvE(M, 1);
+  double trAinvKuu = 0.0;
+  double logDetAeff = 0.0;
   double negKL = 0.0;
-  for(unsigned int j = 0; j < dOut; j++)
+
+  if(isWhitenedSparseLinalg())
+  {
+    // |A| = |C| |K_uu| / β^M; tr(A^{-1} K_uu) = β tr(C^{-1});
+    // m_u^T K_uu^{-1} m_u = β² ||C^{-1} B m||².
+    CMatrix CinvEye(M, M);
+    CinvEye.eye();
+    CinvEye.trsm(LcholC, 1.0, "l", "u", "t", "n");
+    CinvEye.trsm(LcholC, 1.0, "l", "u", "n", "n");
+    double trCinv = 0.0;
+    for(unsigned int i = 0; i < M; i++)
+      trCinv += CinvEye.getVal(i, i);
+    trAinvKuu = betaVal * trCinv;
+    logDetAeff = logDetC + logDetK_uu - (double)M * log(betaVal);
+    const double logDetS = -(double)M * log(betaVal) + 2.0 * logDetK_uu - logDetAeff;
+    const double trKuuInvS = trCinv;
+    CMatrix u(M, 1);
+    CMatrix a(M, 1);
+    for(unsigned int j = 0; j < dOut; j++)
+    {
+      u.gemvColCol(0, B, m, j, 1.0, 0.0, "n");
+      a.deepCopy(u);
+      a.trsm(LcholC, 1.0, "l", "u", "t", "n");
+      a.trsm(LcholC, 1.0, "l", "u", "n", "n");
+      const double quad = betaVal * betaVal * a.dotColCol(0, a, 0);
+      negKL += 0.5 * ((double)M + logDetS - logDetK_uu - trKuuInvS - quad);
+    }
+  }
+  else
+  {
+    CMatrix AinvKuu(M, M);
+    AinvKuu.symm(Ainv, K_uu, 1.0, 0.0, "l", "l");
+    trAinvKuu = AinvKuu.trace();
+    logDetAeff = logDetA;
+    const double logDetS = -(double)M * log(betaVal) + 2.0 * logDetK_uu - logDetAeff;
+    const double trKuuInvS = trAinvKuu / betaVal;
+    CMatrix e(M, 1);
+    CMatrix AinvE(M, 1);
+    CMatrix KuuAinvE(M, 1);
+    for(unsigned int j = 0; j < dOut; j++)
     {
       e.gemvColCol(0, K_uf, m, j, 1.0, 0.0, "n");
       AinvE.symvColCol(0, Ainv, e, 0, 1.0, 0.0, "l");
@@ -2219,6 +2287,7 @@ double CGp::sparsePpaElboGpTerms() const
       // -KL = ½ (M + log|S| - log|K_uu| - tr(K_uu^{-1}S) - m_u^T K_uu^{-1} m_u)
       negKL += 0.5 * ((double)M + logDetS - logDetK_uu - trKuuInvS - quad);
     }
+  }
 
   // tr(Cov_Q) = β^{-1} tr(A^{-1} K_uf K_fu) = β^{-1}(M - β^{-1} tr(A^{-1} K_uu))
   const double trCovQ = ((double)M - trAinvKuu / betaVal) / betaVal;
@@ -2450,8 +2519,11 @@ void CGp::updateG() const
     if(pInducing != 0)
     {
       CMatrix* gXptr = isOptimiseX() ? &gXorW : 0;
+      // Pass cached K_uu/K_uf into inducingGradZ (skip RBF recompute; CoE 2026-11-22).
+      // CCmpndKern does not forward these (compound K ≠ RBF slice).
       pInducing->gradFromKuuKuf(g_param, gX_u, gXptr, *pkern, *pX,
-                               gK_uu, gK_uf, isOptimiseX(), true);
+                               gK_uu, gK_uf, isOptimiseX(), true,
+                               &K_uu, &K_uf);
     }
     else
     {
@@ -2631,6 +2703,11 @@ void CGp::gpCovGrads() const
           gLambda.setVals(-0.5 * dOut * betaVal);
         }
 
+        if(!QlqReady)
+        {
+          lqFormQ(Qlq, Wlq, tauLq, LcholC);
+          QlqReady = true;
+        }
         CMatrix Qbar(Mact, Mact + Ndat);
         Qbar.zeros();
         CMatrix Wbar;
@@ -2912,6 +2989,11 @@ void CGp::gpCovGrads() const
           for(unsigned int i = 0; i < Mact; i++)
             for(unsigned int j = 0; j <= i; j++)
               Lbar.setVal(tmp.getVal(i, j), i, j);
+          if(!QlqReady)
+          {
+            lqFormQ(Qlq, Wlq, tauLq, LcholC);
+            QlqReady = true;
+          }
           CMatrix Qbar(Mact, Mact + Ndat);
           Qbar.zeros();
           CMatrix Wbar;

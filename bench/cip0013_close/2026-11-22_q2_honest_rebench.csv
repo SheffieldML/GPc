@@ -1,0 +1,14 @@
+kind,N,q,M,sparse_linalg,gpc_ll,gpy_ll,numpy_ll,gpc_median_ms,gpy_median_ms,gpc_over_gpy,gate,gate_notes,gpc_flags,gpc_checks,threads
+ftc,1000,2,0,n/a,737.011,737.0114223,737.011433,35.3050,52.4490,0.673,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+ftc,2000,2,0,n/a,1570,1570.00007,1570.000055,244.4600,300.6763,0.813,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+ftc,4000,2,0,n/a,3306.04,3306.040043,3306.040025,1620.4700,1787.8974,0.906,pass,gpc_vs_numpy=match;gpc_vs_gpy=match;gpy_vs_numpy=match,O2-DNDEBUG,off,1
+dtcvar,10000,2,200,lq,874.961,874.9595516,,330.6480,155.1384,2.131,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,200,lq,6997.13,6997.084586,,351.1750,166.5935,2.108,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+dtcvar,10000,2,200,stable,874.961,874.9595516,,121.4560,169.7997,0.715,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,200,stable,6997.13,6997.084586,,160.6160,167.7150,0.958,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+dtcvar,10000,2,50,lq,-16731,-16730.98658,,45.4600,32.0454,1.419,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,10000,2,50,lq,4438.3,4438.214277,,41.9300,32.7095,1.282,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1
+dtcvar,2000,2,200,lq,28.2791,28.27867611,,68.4090,28.3827,2.410,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1
+fitc,2000,2,200,lq,1281.49,1281.485152,,65.4540,32.3786,2.022,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+dtcvar,2000,2,50,lq,-6155.86,-6155.860784,,8.6180,6.1133,1.410,pass,gpc_vs_gpy=match,O2-DNDEBUG,off,1
+fitc,2000,2,50,lq,649.834,649.8158712,,8.8120,7.9563,1.108,pass,gpc_vs_gpy=sparse_jitter_tol,O2-DNDEBUG,off,1

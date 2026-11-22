@@ -618,6 +618,40 @@ std::pair<py::array_t<double>, py::array_t<double>> predictImpl(
   return {matrixToNumpy(mu), matrixToNumpy(varSigma)};
 }
 
+// Evaluate covariance from a façade parts list without building a GP
+// (backlog 2026-11-22_cip001D-kern-K-and-plot / GPy k.K).
+py::array_t<double> kern_K(
+    py::object partsObj,
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
+    py::object X2in)
+{
+  if(!kernelIsPartsList(partsObj))
+    throw ndlexceptions::Error("kern_K expects a parts list from gpc.kern.to_parts()");
+  py::list parts = py::reinterpret_borrow<py::list>(partsObj);
+  CMatrix X = matrixFromNumpy(Xin);
+  if(X.getRows() < 1 || X.getCols() < 1)
+    throw ndlexceptions::Error("X must have positive shape");
+
+  CCmpndKern kern(X);
+  addPartsCompound(kern, X, parts);
+  kern.updateX(X);
+
+  if(X2in.is_none())
+  {
+    CMatrix K(X.getRows(), X.getRows());
+    kern.compute(K, X);
+    return matrixToNumpy(K);
+  }
+
+  CMatrix X2 = matrixFromNumpy(
+      py::cast<py::array_t<double, py::array::c_style | py::array::forcecast>>(X2in));
+  if(X2.getCols() != X.getCols())
+    throw ndlexceptions::Error("X2 input dimension does not match X");
+  CMatrix K(X.getRows(), X2.getRows());
+  kern.compute(K, X, X2);
+  return matrixToNumpy(K);
+}
+
 } // namespace
 
 PyGPRegression::PyGPRegression(
@@ -1425,4 +1459,13 @@ void bind_gp(py::module_& m)
           "window_widths",
           &PySparseGPRegression::window_widths,
           "Per-unit weight-space window widths as a length-M array (CIP-0032).");
+
+  m.def(
+      "kern_K",
+      &kern_K,
+      py::arg("parts"),
+      py::arg("X"),
+      py::arg("X2") = py::none(),
+      "Evaluate covariance K(X) or K(X, X2) from a gpc.kern parts list.\n\n"
+      "Builds a temporary CCmpndKern (no GP / likelihood). Used by Kern.K.");
 }

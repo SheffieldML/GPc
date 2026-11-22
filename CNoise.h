@@ -109,6 +109,36 @@ void bernoulliProbitLaplaceDerivs(double& logp,
                                   double y,
                                   double f);
 
+/** Inverse Mills ratio λ(z)=φ(z)/Φ(z) and derivatives (GPy gaussian_special). */
+double invMillsRatio(double z);
+double dInvMillsRatio(double z, double lam);
+double d2InvMillsRatio(double z, double lam);
+inline double dInvMillsRatio(double z) { return dInvMillsRatio(z, invMillsRatio(z)); }
+inline double d2InvMillsRatio(double z) { return d2InvMillsRatio(z, invMillsRatio(z)); }
+
+/** SkewGaussian (O'Hagan / Azzalini) log-density and Laplace pieces at latent f.
+ *  p(y|f) = (2/σ) φ((y-f)/σ) Φ(α (y-f)/σ). Writes logp, d1=∂logp/∂f,
+ *  W=−∂²logp/∂f², dWdf=∂W/∂f. */
+void skewGaussianLaplaceDerivs(double& logp,
+                               double& d1,
+                               double& W,
+                               double& dWdf,
+                               double y,
+                               double f,
+                               double variance,
+                               double alpha);
+
+/** SkewExponential (probit × Laplace base) at latent f.
+ *  p(y|f) = λ exp(−λ |y-f|) Φ(α (y-f)). */
+void skewExponentialLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f,
+                                  double rate,
+                                  double alpha);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
@@ -788,6 +818,102 @@ class COrderedNoise : public CNoise {
   mutable double ellBias;
   
   mutable CMatrix gwidth;
+};
+
+/** CIP-003A: skew-normal observation noise (GPy SkewGaussian). Params: variance, alpha. */
+class CSkewGaussianNoise : public CNoise {
+ public:
+  CSkewGaussianNoise() { _init(); }
+  CSkewGaussianNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CSkewGaussianNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getVariance() const { return variance; }
+  void setVariance(double val) { BOUNDCHECK(val > 0.0); variance = val; }
+  double getAlpha() const { return alpha; }
+  void setAlpha(double val) { alpha = val; }
+
+ private:
+  void _init();
+  double variance;
+  double alpha;
+};
+
+/** CIP-003A: skew-Laplace observation noise (GPy SkewExponential). Params: rate, alpha. */
+class CSkewExponentialNoise : public CNoise {
+ public:
+  CSkewExponentialNoise() { _init(); }
+  CSkewExponentialNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CSkewExponentialNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getRate() const { return rate; }
+  void setRate(double val) { BOUNDCHECK(val > 0.0); rate = val; }
+  double getAlpha() const { return alpha; }
+  void setAlpha(double val) { alpha = val; }
+
+ private:
+  void _init();
+  double rate;
+  double alpha;
 };
 
 

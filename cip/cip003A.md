@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-22"
 id: "003A"
-last_updated: "2026-11-22"
-status: "Proposed"
+last_updated: "2026-11-22"  # Accepted → In Progress; worktree started
+status: "In Progress"
 compressed: false
 related_requirements: ["001B", "0014", "0019", "000E", "0002", "0017"]
 related_cips: ["0027", "0033", "0034", "0036", "001D", "002A", "0035", "0015"]
@@ -26,13 +26,14 @@ title: "GPy-aligned likelihood zoo in CNoise and gpc.likelihoods"
 > CIPs describe HOW to achieve requirements (WHAT).  
 > Implements [REQ-001B](../requirements/req001B_gpy-aligned-likelihood-zoo.md).  
 > Architecture: [docs/target-architecture.md](../docs/target-architecture.md) · likelihood API: [cip0027/phase0_likelihood_api.md](./cip0027/phase0_likelihood_api.md).  
-> Skew design mirror: GPy CIP-0014 (`GPy/likelihoods/skewed.py`, `GPy/util/gaussian_special.py`).
+> Skew design mirror: GPy CIP-0014 (`GPy/likelihoods/skewed.py`, `GPy/util/gaussian_special.py`).  
+> Worktree: `GPc-cip003A` / branch `cip003A-likelihood-zoo`.
 
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
 - [ ] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
@@ -200,8 +201,9 @@ Phases 1–3 may land as one PR series if review prefers; Phase 4 must not prece
 ## Implementation Status
 
 - [x] Draft CIP + REQ-001B; capability matrix
-- [ ] Phase 0 helpers + fixture generators
-- [ ] Phase 1 skew likelihoods
+- [x] Accepted; worktree `cip003A-likelihood-zoo`
+- [x] Phase 0 helpers + fixture generators (`ndlnoise::invMillsRatio*`, `cip/cip003A/gen_skew_fixture.py`)
+- [x] Phase 1 skew likelihoods (`CSkewGaussianNoise`, `CSkewExponentialNoise`, `./testSkewNoise` green)
 - [ ] Phase 2 Student-t / Poisson / Binomial
 - [ ] Phase 3 Exponential / Gamma
 - [ ] Phase 4 `gpc.likelihoods` + model wiring

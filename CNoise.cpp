@@ -177,6 +177,74 @@ void bernoulliProbitLaplaceDerivs(double& logp,
   dWdf = sign * dWdt;
 }
 
+double invMillsRatio(double z)
+{
+  // λ(z)=φ/Φ = d/dz log Φ(z) (GPy gaussian_special / ndlutil::gradLnCumGaussian).
+  return ndlutil::gradLnCumGaussian(z);
+}
+
+double dInvMillsRatio(double z, double lam)
+{
+  return -lam * (z + lam);
+}
+
+double d2InvMillsRatio(double z, double lam)
+{
+  return lam * ((z + lam) * (z + 2.0 * lam) - 1.0);
+}
+
+void skewGaussianLaplaceDerivs(double& logp,
+                               double& d1,
+                               double& W,
+                               double& dWdf,
+                               double y,
+                               double f,
+                               double variance,
+                               double alpha)
+{
+  BOUNDCHECK(variance > 0.0);
+  const double sigma = sqrt(variance);
+  const double e = y - f;
+  const double z = e / sigma;
+  const double delta = alpha * z;
+  const double lam = invMillsRatio(delta);
+  const double aOverS = alpha / sigma;
+  logp = M_LN2 - log(sigma) - ndlutil::HALFLOGTWOPI - 0.5 * z * z
+         + ndlutil::lnCumGaussian(delta);
+  // dlogp/df with e=y-f (GPy dlogpdf_dlink).
+  d1 = e / variance - aOverS * lam;
+  const double d2 = -1.0 / variance + aOverS * aOverS * dInvMillsRatio(delta, lam);
+  W = -d2;
+  if(W < ndlutil::EPS)
+    W = ndlutil::EPS;
+  // d³logp/df³ = -(α/σ)³ λ''(δ); dW/df = -d³logp/df³
+  dWdf = aOverS * aOverS * aOverS * d2InvMillsRatio(delta, lam);
+}
+
+void skewExponentialLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f,
+                                  double rate,
+                                  double alpha)
+{
+  BOUNDCHECK(rate > 0.0);
+  const double e = y - f;
+  const double delta = alpha * e;
+  const double lam = invMillsRatio(delta);
+  const double ae = fabs(e);
+  logp = log(rate) - rate * ae + ndlutil::lnCumGaussian(delta);
+  const double sgn = (e > 0.0) ? 1.0 : ((e < 0.0) ? -1.0 : 0.0);
+  d1 = rate * sgn - alpha * lam;
+  const double d2 = alpha * alpha * dInvMillsRatio(delta, lam);
+  W = -d2;
+  if(W < ndlutil::EPS)
+    W = ndlutil::EPS;
+  dWdf = alpha * alpha * alpha * d2InvMillsRatio(delta, lam);
+}
+
 } // namespace ndlnoise
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
@@ -2162,9 +2230,473 @@ CNoise* readNoiseFromStream(istream& in)
     pnoise = new COrderedNoise();
   else if(type=="scale")
     pnoise = new CScaleNoise();
+  else if(type=="skew_gaussian")
+    pnoise = new CSkewGaussianNoise();
+  else if(type=="skew_exponential")
+    pnoise = new CSkewExponentialNoise();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown noise type " + type);
   pnoise->readParamsFromStream(in);  
   return pnoise;
+}
+
+// ---- CIP-003A SkewGaussian / SkewExponential ---------------------------------
+
+namespace {
+struct SkewGaussEllCtx {
+  double y;
+  double variance;
+  double alpha;
+};
+double skewGaussLogLik(double f, void* vctx)
+{
+  const SkewGaussEllCtx* c = static_cast<const SkewGaussEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewGaussianLaplaceDerivs(logp, d1, W, dW, c->y, f, c->variance, c->alpha);
+  return logp;
+}
+double skewGaussLogLikPrime(double f, void* vctx)
+{
+  const SkewGaussEllCtx* c = static_cast<const SkewGaussEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewGaussianLaplaceDerivs(logp, d1, W, dW, c->y, f, c->variance, c->alpha);
+  return d1;
+}
+struct SkewExpEllCtx {
+  double y;
+  double rate;
+  double alpha;
+};
+double skewExpLogLik(double f, void* vctx)
+{
+  const SkewExpEllCtx* c = static_cast<const SkewExpEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewExponentialLaplaceDerivs(logp, d1, W, dW, c->y, f, c->rate, c->alpha);
+  return logp;
+}
+double skewExpLogLikPrime(double f, void* vctx)
+{
+  const SkewExpEllCtx* c = static_cast<const SkewExpEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewExponentialLaplaceDerivs(logp, d1, W, dW, c->y, f, c->rate, c->alpha);
+  return d1;
+}
+} // namespace
+
+CSkewGaussianNoise::~CSkewGaussianNoise() {}
+
+void CSkewGaussianNoise::_init()
+{
+  setType("skew_gaussian");
+  setName("SkewGaussian");
+}
+
+void CSkewGaussianNoise::initStoreage()
+{
+  setNumParams(2);
+  initSiteStoreage();
+  clearTransforms();
+  addTransform(CTransform::defaultPositive(), 0); // variance
+  setLogConcave(false);
+  setSpherical(true);
+  setMissing(false);
+}
+
+void CSkewGaussianNoise::initNames()
+{
+  setParamName("variance", 0);
+  setParamName("alpha", 1);
+}
+
+void CSkewGaussianNoise::initVals()
+{
+  activeSites().zeros();
+  variance = 1.0;
+  alpha = 0.0;
+}
+
+void CSkewGaussianNoise::initParams()
+{
+  // Reasonable default: match residual scale; alpha starts at 0 (Gaussian).
+  if(py != 0 && getNumData() > 0)
+  {
+    double s = 0.0;
+    for(unsigned int i = 0; i < getNumData(); i++)
+      for(unsigned int j = 0; j < getOutputDim(); j++)
+      {
+        const double v = getTarget(i, j);
+        s += v * v;
+      }
+    variance = s / static_cast<double>(getNumData() * getOutputDim());
+    if(!(variance > 0.0))
+      variance = 1.0;
+  }
+}
+
+ostream& CSkewGaussianNoise::display(ostream& os)
+{
+  os << "SkewGaussian Noise: variance=" << variance
+     << " alpha=" << alpha << endl;
+  return os;
+}
+
+void CSkewGaussianNoise::setParam(double val, unsigned int index)
+{
+  BOUNDCHECK(index < getNumParams());
+  if(index == 0)
+    setVariance(val);
+  else
+    setAlpha(val);
+}
+
+void CSkewGaussianNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getRows() == 1);
+  DIMENSIONMATCH(params.getCols() == getNumParams());
+  setVariance(params.getVal(0));
+  setAlpha(params.getVal(1));
+}
+
+double CSkewGaussianNoise::getParam(unsigned int index) const
+{
+  BOUNDCHECK(index < getNumParams());
+  return (index == 0) ? variance : alpha;
+}
+
+void CSkewGaussianNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getRows() == 1);
+  DIMENSIONMATCH(params.getCols() == getNumParams());
+  params.setVal(variance, 0);
+  params.setVal(alpha, 1);
+}
+
+void CSkewGaussianNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getRows() == 1);
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  // Pointwise grads at cavity mean (var→0 / Laplace MAP); GPy dlogpdf_link_dθ.
+  double gVar = 0.0;
+  double gAlpha = 0.0;
+  const double sigma = sqrt(variance);
+  for(unsigned int i = 0; i < getNumData(); i++)
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      const double e = getTarget(i, j) - getMu(i, j);
+      const double z = e / sigma;
+      const double delta = alpha * z;
+      const double lam = ndlnoise::invMillsRatio(delta);
+      gVar += -0.5 / variance + 0.5 * (e * e) / (variance * variance)
+              - lam * delta / (2.0 * variance);
+      gAlpha += lam * z;
+    }
+  }
+  g.setVal(gVar, 0);
+  g.setVal(gAlpha, 1);
+}
+
+void CSkewGaussianNoise::getGradInputs(double& gmu, double& gvs,
+                                       unsigned int i, unsigned int j) const
+{
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewGaussianLaplaceDerivs(logp, d1, W, dW,
+                                      getTarget(i, j), getMu(i, j),
+                                      variance, alpha);
+  gmu = d1;
+  gvs = -0.5 * W; // 0.5 * d²logp/df²
+}
+
+void CSkewGaussianNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                              const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(yTest.dimensionsMatch(muout));
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  for(unsigned int j = 0; j < getOutputDim(); j++)
+    cout << "Mean Squared Error on output " << j + 1 << ": "
+         << yPred.dist2Col(j, yTest, j) / static_cast<double>(yTest.getRows())
+         << endl;
+}
+
+void CSkewGaussianNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                             const CMatrix& varSigmaTest) const
+{
+  DIMENSIONMATCH(yPred.dimensionsMatch(muTest));
+  const double sigma = sqrt(variance);
+  const double delta = alpha / sqrt(1.0 + alpha * alpha);
+  const double shift = sigma * delta * sqrt(2.0 / M_PI);
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+      yPred.setVal(muTest.getVal(i, j) + shift, i, j);
+}
+
+void CSkewGaussianNoise::out(CMatrix& yPred, CMatrix& errorBarOut,
+                             const CMatrix& muTest, const CMatrix& varSigmaTest) const
+{
+  out(yPred, muTest, varSigmaTest);
+  const double delta = alpha / sqrt(1.0 + alpha * alpha);
+  const double noise = variance * (1.0 - 2.0 * delta * delta / M_PI);
+  for(unsigned int i = 0; i < errorBarOut.getRows(); i++)
+    for(unsigned int j = 0; j < errorBarOut.getCols(); j++)
+      errorBarOut.setVal(sqrt(varSigmaTest.getVal(i, j) + noise), i, j);
+}
+
+void CSkewGaussianNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                                     const CMatrix& varSigmaTest,
+                                     const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(L.dimensionsMatch(muTest));
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+      ndlnoise::skewGaussianLaplaceDerivs(logp, d1, W, dW,
+                                          yTest.getVal(i, j), muTest.getVal(i, j),
+                                          variance, alpha);
+      L.setVal(exp(logp), i, j);
+    }
+  }
+}
+
+double CSkewGaussianNoise::logLikelihood(const CMatrix& muTest,
+                                         const CMatrix& varSigmaTest,
+                                         const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(yTest.dimensionsMatch(muTest));
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      const double vs = varSigmaTest.getVal(i, j);
+      if(vs <= ndlutil::EPS)
+      {
+        double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+        ndlnoise::skewGaussianLaplaceDerivs(logp, d1, W, dW,
+                                            yTest.getVal(i, j), muTest.getVal(i, j),
+                                            variance, alpha);
+        L += logp;
+      }
+      else
+      {
+        // log E_q[p] ≈ log( mean_GH exp(log p) ) via GH of log p then? Use E[log p]
+        // for site objectives when cavity var is non-zero (VE); for predictive Z
+        // prefer logsumexp of density — here E[log p] via GH (matches VE).
+        double gMu = 0.0, gVar = 0.0;
+        L += expectedLogLikelihood(yTest.getVal(i, j), muTest.getVal(i, j), vs,
+                                   gMu, gVar);
+      }
+    }
+  }
+  return L;
+}
+
+double CSkewGaussianNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                                 double& gMu, double& gVar) const
+{
+  SkewGaussEllCtx ctx;
+  ctx.y = y;
+  ctx.variance = variance;
+  ctx.alpha = alpha;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, skewGaussLogLik,
+                                     skewGaussLogLikPrime, &ctx, gMu, gVar);
+}
+
+CSkewExponentialNoise::~CSkewExponentialNoise() {}
+
+void CSkewExponentialNoise::_init()
+{
+  setType("skew_exponential");
+  setName("SkewExponential");
+}
+
+void CSkewExponentialNoise::initStoreage()
+{
+  setNumParams(2);
+  initSiteStoreage();
+  clearTransforms();
+  addTransform(CTransform::defaultPositive(), 0); // rate
+  setLogConcave(false);
+  setSpherical(true);
+  setMissing(false);
+}
+
+void CSkewExponentialNoise::initNames()
+{
+  setParamName("rate", 0);
+  setParamName("alpha", 1);
+}
+
+void CSkewExponentialNoise::initVals()
+{
+  activeSites().zeros();
+  rate = 1.0;
+  alpha = 0.0;
+}
+
+void CSkewExponentialNoise::initParams()
+{
+  rate = 1.0;
+  alpha = 0.0;
+}
+
+ostream& CSkewExponentialNoise::display(ostream& os)
+{
+  os << "SkewExponential Noise: rate=" << rate
+     << " alpha=" << alpha << endl;
+  return os;
+}
+
+void CSkewExponentialNoise::setParam(double val, unsigned int index)
+{
+  BOUNDCHECK(index < getNumParams());
+  if(index == 0)
+    setRate(val);
+  else
+    setAlpha(val);
+}
+
+void CSkewExponentialNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getRows() == 1);
+  DIMENSIONMATCH(params.getCols() == getNumParams());
+  setRate(params.getVal(0));
+  setAlpha(params.getVal(1));
+}
+
+double CSkewExponentialNoise::getParam(unsigned int index) const
+{
+  BOUNDCHECK(index < getNumParams());
+  return (index == 0) ? rate : alpha;
+}
+
+void CSkewExponentialNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getRows() == 1);
+  DIMENSIONMATCH(params.getCols() == getNumParams());
+  params.setVal(rate, 0);
+  params.setVal(alpha, 1);
+}
+
+void CSkewExponentialNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getRows() == 1);
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  double gRate = 0.0;
+  double gAlpha = 0.0;
+  for(unsigned int i = 0; i < getNumData(); i++)
+  {
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      const double e = getTarget(i, j) - getMu(i, j);
+      const double lam = ndlnoise::invMillsRatio(alpha * e);
+      gRate += 1.0 / rate - fabs(e);
+      gAlpha += lam * e;
+    }
+  }
+  g.setVal(gRate, 0);
+  g.setVal(gAlpha, 1);
+}
+
+void CSkewExponentialNoise::getGradInputs(double& gmu, double& gvs,
+                                          unsigned int i, unsigned int j) const
+{
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::skewExponentialLaplaceDerivs(logp, d1, W, dW,
+                                         getTarget(i, j), getMu(i, j),
+                                         rate, alpha);
+  gmu = d1;
+  gvs = -0.5 * W;
+}
+
+void CSkewExponentialNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                                 const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(yTest.dimensionsMatch(muout));
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  for(unsigned int j = 0; j < getOutputDim(); j++)
+    cout << "Mean Squared Error on output " << j + 1 << ": "
+         << yPred.dist2Col(j, yTest, j) / static_cast<double>(yTest.getRows())
+         << endl;
+}
+
+void CSkewExponentialNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                                const CMatrix& /*varSigmaTest*/) const
+{
+  // No closed-form predictive mean in GPy; use latent mean as point prediction.
+  yPred.deepCopy(muTest);
+}
+
+void CSkewExponentialNoise::out(CMatrix& yPred, CMatrix& errorBarOut,
+                                const CMatrix& muTest, const CMatrix& varSigmaTest) const
+{
+  out(yPred, muTest, varSigmaTest);
+  // Laplace scale 1/rate → var 2/rate² when alpha=0; use that as noise floor.
+  const double noise = 2.0 / (rate * rate);
+  for(unsigned int i = 0; i < errorBarOut.getRows(); i++)
+    for(unsigned int j = 0; j < errorBarOut.getCols(); j++)
+      errorBarOut.setVal(sqrt(varSigmaTest.getVal(i, j) + noise), i, j);
+}
+
+void CSkewExponentialNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                                        const CMatrix& /*varSigmaTest*/,
+                                        const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(L.dimensionsMatch(muTest));
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+      ndlnoise::skewExponentialLaplaceDerivs(logp, d1, W, dW,
+                                             yTest.getVal(i, j), muTest.getVal(i, j),
+                                             rate, alpha);
+      L.setVal(exp(logp), i, j);
+    }
+  }
+}
+
+double CSkewExponentialNoise::logLikelihood(const CMatrix& muTest,
+                                            const CMatrix& varSigmaTest,
+                                            const CMatrix& yTest) const
+{
+  DIMENSIONMATCH(yTest.dimensionsMatch(muTest));
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+  {
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      const double vs = varSigmaTest.getVal(i, j);
+      if(vs <= ndlutil::EPS)
+      {
+        double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+        ndlnoise::skewExponentialLaplaceDerivs(logp, d1, W, dW,
+                                               yTest.getVal(i, j), muTest.getVal(i, j),
+                                               rate, alpha);
+        L += logp;
+      }
+      else
+      {
+        double gMu = 0.0, gVar = 0.0;
+        L += expectedLogLikelihood(yTest.getVal(i, j), muTest.getVal(i, j), vs,
+                                   gMu, gVar);
+      }
+    }
+  }
+  return L;
+}
+
+double CSkewExponentialNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                                    double& gMu, double& gVar) const
+{
+  SkewExpEllCtx ctx;
+  ctx.y = y;
+  ctx.rate = rate;
+  ctx.alpha = alpha;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, skewExpLogLik,
+                                     skewExpLogLikPrime, &ctx, gMu, gVar);
 }
  

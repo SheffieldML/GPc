@@ -1,12 +1,14 @@
-/* CIP-0033 Phase C: dense Laplace inference (GPy Laplace mirror), Bernoulli–probit. */
+/* CIP-0033 Phase C / CIP-003A Phase 5: dense Laplace over CNoise oracles. */
 #ifndef CLAPLACEINFERENCE_H
 #define CLAPLACEINFERENCE_H
 
 #include "CMatrix.h"
 #include "CNoise.h"
 
-// Dense (FTC) Laplace approximation for Bernoulli–probit, mirroring
+// Dense (FTC) Laplace approximation mirroring
 // GPy.inference.latent_function_inference.laplace.Laplace.
+// Pointwise log-density / Hessian pieces come from ndlnoise::laplacePointDerivs
+// when a CNoise is attached; otherwise Bernoulli–probit (CIP-0033 fixtures).
 class CLaplaceInference
 {
  public:
@@ -15,6 +17,9 @@ class CLaplaceInference
   void setMaxIters(unsigned int n) { maxIters = n; }
   void setTol(double t) { tol = t; }
   void setJitter(double j) { jitter = j; }
+  // CIP-003A: attach observation model for generalised Laplace (nullptr → probit).
+  void setNoise(const CNoise* n) { pnoise = n; }
+  const CNoise* getNoise() const { return pnoise; }
 
   // Mode + approximate log marginal on prior Gram K (N×N), labels Y (N×1).
   // Returns GPy log_marginal (no kernel prior).
@@ -61,6 +66,7 @@ class CLaplaceInference
   unsigned int itersUsed;
   bool didConverge;
   double logMarginal;
+  const CNoise* pnoise;
 
   mutable CMatrix fHat;
   mutable CMatrix KiF;

@@ -15,7 +15,7 @@ PYTHON_INCLUDE := $(shell $(PY) -c 'import sysconfig; print(sysconfig.get_path("
 EXT_SUFFIX := $(shell $(PY) -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')
 
 MODULE := gpc/_gpc$(EXT_SUFFIX)
-OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o src/wrap_gplvm.o src/wrap_deepgp.o
+OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o src/wrap_gplvm.o src/wrap_deepgp.o src/wrap_likelihood.o
 REF_FTC := ref_ftc_objective
 
 # Reuse root CCFLAGS (includes -fPIC, -std=c++17) plus pybind/numpy.
@@ -40,7 +40,7 @@ libgp:
 $(ROOT)/libgp$(LIBSEXT):
 	$(MAKE) -C $(ROOT) libgp$(LIBSEXT)
 
-src/module.o: src/module.cpp src/matrix_numpy.h src/wrap_gp.h src/wrap_gplvm.h src/wrap_deepgp.h
+src/module.o: src/module.cpp src/matrix_numpy.h src/wrap_gp.h src/wrap_gplvm.h src/wrap_deepgp.h src/wrap_likelihood.h
 	$(CC) -c src/module.cpp -o src/module.o $(PY_CCFLAGS)
 
 src/matrix_numpy.o: src/matrix_numpy.cpp src/matrix_numpy.h
@@ -54,6 +54,9 @@ src/wrap_gplvm.o: src/wrap_gplvm.cpp src/wrap_gplvm.h src/matrix_numpy.h
 
 src/wrap_deepgp.o: src/wrap_deepgp.cpp src/wrap_deepgp.h src/matrix_numpy.h
 	$(CC) -c src/wrap_deepgp.cpp -o src/wrap_deepgp.o $(PY_CCFLAGS)
+
+src/wrap_likelihood.o: src/wrap_likelihood.cpp src/wrap_likelihood.h
+	$(CC) -c src/wrap_likelihood.cpp -o src/wrap_likelihood.o $(PY_CCFLAGS)
 
 $(MODULE): $(OBJS) $(ROOT)/libgp$(LIBSEXT)
 	$(LD) ${XLINKERFLAGS} -shared -o $(MODULE) $(OBJS) $(PY_LDFLAGS)

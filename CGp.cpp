@@ -237,6 +237,8 @@ double CGp::laplaceLogLikelihood() const
   const unsigned int n = getNumData();
   CMatrix Klap(n, n);
   pkern->compute(Klap, *pX);
+  // CIP-003A Phase 5: generalised Laplace over the attached CNoise oracles.
+  laplaceEngine.setNoise(pnoise);
   laplaceLogMarginalCache = laplaceEngine.run(Klap, *py);
   laplaceFhat.deepCopy(laplaceEngine.lastFhat());
   laplaceUpToDate = true;

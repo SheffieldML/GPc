@@ -687,17 +687,126 @@ py::array_t<double> kern_K(
 
 } // namespace
 
+namespace {
+
+std::string parseLikelihoodType(py::object likelihood, py::dict& paramsOut)
+{
+  paramsOut = py::dict();
+  if(py::isinstance<py::str>(likelihood))
+    return py::cast<std::string>(likelihood);
+  if(py::isinstance<py::dict>(likelihood))
+  {
+    py::dict d = py::reinterpret_borrow<py::dict>(likelihood);
+    if(!d.contains("type"))
+      throw ndlexceptions::Error("likelihood dict needs a 'type' key");
+    for(auto item : d)
+    {
+      const std::string key = py::cast<std::string>(item.first);
+      if(key == "type")
+        continue;
+      paramsOut[key.c_str()] = item.second;
+    }
+    return py::cast<std::string>(d["type"]);
+  }
+  // gpc.likelihoods.Likelihood-like: .type + .params
+  if(py::hasattr(likelihood, "type") && py::hasattr(likelihood, "params"))
+  {
+    paramsOut = py::dict(py::cast<py::dict>(likelihood.attr("params")));
+    return py::cast<std::string>(likelihood.attr("type"));
+  }
+  throw ndlexceptions::Error(
+      "likelihood must be a string, dict, or gpc.likelihoods object");
+}
+
+std::unique_ptr<CNoise> makeRegressionNoise(CMatrix& Y,
+                                            const std::string& typeIn,
+                                            const py::dict& params)
+{
+  std::string type = typeIn;
+  for(char& c : type)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if(type == "gaussian")
+  {
+    auto n = std::make_unique<CGaussianNoise>(&Y);
+    for(unsigned int j = 0; j < Y.getCols(); ++j)
+      n->setBiasVal(0.0, j);
+    if(params.contains("variance"))
+      n->setVariance(dictGet(params, "variance", 1.0));
+    return n;
+  }
+  if(Y.getCols() != 1)
+    throw ndlexceptions::Error(
+        "non-Gaussian likelihoods currently require a single output");
+  if(type == "student_t" || type == "studentt")
+  {
+    auto n = std::make_unique<CStudentTNoise>(&Y);
+    n->setVariance(dictGet(params, "variance", 1.0));
+    n->setDegFree(dictGet(params, "deg_free", 5.0));
+    return n;
+  }
+  if(type == "poisson")
+    return std::make_unique<CPoissonNoise>(&Y);
+  if(type == "binomial")
+  {
+    auto n = std::make_unique<CBinomialNoise>(
+        &Y, static_cast<unsigned int>(dictGet(params, "num_trials", 1.0)));
+    return n;
+  }
+  if(type == "exponential")
+    return std::make_unique<CExponentialNoise>(&Y);
+  if(type == "gamma")
+  {
+    auto n = std::make_unique<CGammaNoise>(&Y);
+    n->setBeta(dictGet(params, "beta", 1.0));
+    return n;
+  }
+  if(type == "skew_gaussian" || type == "skewgaussian")
+  {
+    auto n = std::make_unique<CSkewGaussianNoise>(&Y);
+    n->setVariance(dictGet(params, "variance", 1.0));
+    n->setAlpha(dictGet(params, "alpha", 0.0));
+    return n;
+  }
+  if(type == "skew_exponential" || type == "skewexponential")
+  {
+    auto n = std::make_unique<CSkewExponentialNoise>(&Y);
+    n->setRate(dictGet(params, "rate", 1.0));
+    n->setAlpha(dictGet(params, "alpha", 0.0));
+    return n;
+  }
+  if(type == "probit" || type == "bernoulli")
+    return std::make_unique<CProbitNoise>(&Y);
+  throw ndlexceptions::Error("unknown likelihood type '" + typeIn + "'");
+}
+
+}  // namespace
+
 PyGPRegression::PyGPRegression(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
     py::array_t<double, py::array::c_style | py::array::forcecast> Yin,
     py::object kernel,
     int verbosity,
-    unsigned int arccos_order)
-    : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin))
+    unsigned int arccos_order,
+    py::object likelihood,
+    const std::string& inference)
+    : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)), inferenceType(inference)
 {
   checkXY(X, Y);
   if(arccos_order > 1)
     throw ndlexceptions::Error("arccos_order must be 0 or 1");
+
+  py::dict likParams;
+  likelihoodType = parseLikelihoodType(likelihood, likParams);
+  for(char& c : likelihoodType)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if(likelihoodType == "studentt")
+    likelihoodType = "student_t";
+  if(likelihoodType == "skewgaussian")
+    likelihoodType = "skew_gaussian";
+  if(likelihoodType == "skewexponential")
+    likelihoodType = "skew_exponential";
+  if(likelihoodType == "bernoulli")
+    likelihoodType = "probit";
 
   kern = std::make_unique<CCmpndKern>(X);
   if(kernelIsPartsList(kernel))
@@ -713,33 +822,53 @@ PyGPRegression::PyGPRegression(
     addFtcStyleCompound(*kern, X, kind, arccos_order);
   }
 
-  noise = std::make_unique<CGaussianNoise>(&Y);
-  for(unsigned int j = 0; j < Y.getCols(); ++j)
-    noise->setBiasVal(0.0, j);
-
+  noise = makeRegressionNoise(Y, likelihoodType, likParams);
   model = std::make_unique<CGp>(kern.get(), noise.get(), &X, CGp::FTC, 0, verbosity);
-  model->setLikelihoodVariance(1.0);
-  // CIP-0027 Phase C: explicit White in a kern object → legacy White-owned
-  // observation noise (matches ./gp learn -k white). Likelihood-owned noise
-  // is the string-kernel default (no White).
-  try
+
+  const bool isGaussian = (likelihoodType == "gaussian");
+  std::string inf = inference;
+  for(char& c : inf)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if(inf == "ftc")
+    inf = "exact";
+  inferenceType = inf;
+
+  if(isGaussian)
   {
-    (void)kern->getByPath("white.variance");
-    model->fixLikelihoodVariance(true);
+    if(inf != "exact")
+      throw ndlexceptions::Error(
+          "Gaussian GPRegression inference must be 'exact' (FTC).");
+    model->setLikelihoodVariance(dictGet(likParams, "variance", 1.0));
+    // CIP-0027 Phase C: explicit White in a kern object → legacy White-owned
+    // observation noise (matches ./gp learn -k white). Likelihood-owned noise
+    // is the string-kernel default (no White).
+    try
+    {
+      (void)kern->getByPath("white.variance");
+      model->fixLikelihoodVariance(true);
+    }
+    catch(ndlexceptions::Error&)
+    {
+    }
+    // CIP-000D / CIP-0038 Phase D: per-output noise in indexwhite → freeze spherical
+    // likelihood.variance (matches CCoregionalizedRegression).
+    try
+    {
+      (void)kern->getByPath("indexwhite.variance_0");
+      model->setLikelihoodVariance(1e-6);
+      model->fixLikelihoodVariance(true);
+    }
+    catch(ndlexceptions::Error&)
+    {
+    }
   }
-  catch(ndlexceptions::Error&)
+  else
   {
-  }
-  // CIP-000D / CIP-0038 Phase D: per-output noise in indexwhite → freeze spherical
-  // likelihood.variance (matches CCoregionalizedRegression).
-  try
-  {
-    (void)kern->getByPath("indexwhite.variance_0");
-    model->setLikelihoodVariance(1e-6);
-    model->fixLikelihoodVariance(true);
-  }
-  catch(ndlexceptions::Error&)
-  {
+    if(inf != "laplace")
+      throw ndlexceptions::Error(
+          "Non-Gaussian GPRegression requires inference='laplace' "
+          "(CIP-003A Phase 5).");
+    model->setLaplaceInference(true);
   }
 }
 
@@ -795,12 +924,26 @@ double PyGPRegression::objective() const
 std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
 {
+  // CIP-003A Laplace path: latent predictive is the supported predict surface
+  // (observation noise is folded into the likelihood, not added on the Gram).
+  if(inferenceType == "laplace")
+    return predict_noiseless(Xtest);
   return predictImpl(*model, X, Y, Xtest, true);
 }
 
 std::pair<py::array_t<double>, py::array_t<double>> PyGPRegression::predict_noiseless(
     py::array_t<double, py::array::c_style | py::array::forcecast> Xtest) const
 {
+  if(inferenceType == "laplace")
+  {
+    CMatrix Xt = matrixFromNumpy(Xtest);
+    if(Xt.getCols() != X.getCols())
+      throw ndlexceptions::Error("Xtest input dimension does not match training X");
+    CMatrix mu(Xt.getRows(), 1);
+    CMatrix varDiag(Xt.getRows(), 1);
+    model->laplaceLatentMeanVar(mu, varDiag, Xt);
+    return {matrixToNumpy(mu), matrixToNumpy(varDiag)};
+  }
   return predictImpl(*model, X, Y, Xtest, false);
 }
 
@@ -1284,16 +1427,22 @@ void bind_gp(py::module_& m)
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::object,
                     int,
-                    unsigned int>(),
+                    unsigned int,
+                    py::object,
+                    std::string>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("kernel") = py::str("rbf"),
            py::arg("verbosity") = 0,
            py::arg("arccos_order") = 0,
-           "Construct FTC Gaussian GP.\n\n"
+           py::arg("likelihood") = py::str("gaussian"),
+           py::arg("inference") = "exact",
+           "Construct FTC GP (Gaussian exact, or CIP-003A likelihood + Laplace).\n\n"
            "kernel: string name ('rbf', 'eq'/'ExpQuad', 'mlp', 'arccos') builds the\n"
            "CIP-0027 signal-only compound (noise is likelihood.variance), or a parts\n"
-           "list from gpc.kern compounds.")
+           "list from gpc.kern compounds.\n"
+           "likelihood: 'gaussian' (default) or a CIP-003A family / gpc.likelihoods object.\n"
+           "inference: 'exact' for Gaussian; 'laplace' for non-Gaussian.")
       .def("set_by_path",
            &PyGPRegression::set_by_path,
            py::arg("path"),
@@ -1336,6 +1485,12 @@ void bind_gp(py::module_& m)
       .def_property_readonly("kernel_type",
                              &PyGPRegression::kernel_type,
                              "Kernel label (string name or compound part summary).")
+      .def_property_readonly("likelihood_type",
+                             &PyGPRegression::likelihood_type,
+                             "Observation likelihood type string (CIP-003A).")
+      .def_property_readonly("inference",
+                             &PyGPRegression::inference,
+                             "Inference mode: 'exact' or 'laplace'.")
       .def_property_readonly("approx", &PyGPRegression::approx, "Approximation type ('ftc').");
 
   py::class_<PyGPClassification>(

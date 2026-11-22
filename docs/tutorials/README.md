@@ -14,6 +14,7 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 | [Coregionalization toy](./coregionalization_toy.md) | `demo_coregionalization_toy` | synthesised in-process | `coregionalization_toy` |
 | [IVM unit square](./ivm_unitsquare.md) | `ivm` | `examples/unitsquaregp.svml` | Sparse classification (active set) |
 | [CGp EP / Laplace classification](./cgp_ep_classification.md) | `testEp` | fixtures in `cip/cip0033/` | Dense EP or Laplace on `CGp` FTC (CIP-0033) |
+| [Likelihood zoo](./likelihood_zoo.md) | `testLikelihoodZoo` | SciPy / GH fixtures | Student-t / Poisson / skew… ([CIP-003A](../../cip/cip003A.md)) |
 | [IVM ARD clusters](./ivm_ard_clusters.md) | `ivm` | `examples/ard_gaussian_clusters.svml` | ARD / input selection |
 | [IVM semi-supervised crescent](./ivm_semisupervised.md) | `ivm` | `examples/semisupercrescent.svml` | ncnm / semi-supervised |
 | [GPLVM oil 100](./gplvm_oil100.md) | `gplvm` | `examples/oilTrain100.svml` | `gplvm_oil_100` |

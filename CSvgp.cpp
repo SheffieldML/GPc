@@ -327,6 +327,17 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
   }
 }
 
+void CSvgp::applyWhitenedAt(const CMatrix& XB, const CMatrix& vWhitened,
+                            CMatrix& fOut) const
+{
+  if(vWhitened.getRows() != numInducing || vWhitened.getCols() != outputDim)
+    throw ndlexceptions::Error(
+        "CSvgp::applyWhitenedAt: vWhitened must be M x outputDim");
+  formABFromX(XB, wsAB, wsDK, wsDQ);
+  fOut.resize(XB.getRows(), outputDim);
+  fOut.gemm(wsAB, vWhitened, 1.0, 0.0, "t", "n");
+}
+
 void CSvgp::fillMarginals(const vector<unsigned int>& batch,
                           CMatrix& muOut, CMatrix& varOut) const
 {
@@ -1364,15 +1375,17 @@ void CSvgp::marginalsGradAt(const CMatrix& XB, const CMatrix& gMean,
         Abar.setVal(Abar.getVal(r, k) + da, r, k);
         gM.setVal(gM.getVal(r, j) + gMu * wsAB.getVal(r, k), r, j);
       }
-      for(unsigned int r = 0; r < M; r++)
-        for(unsigned int s = 0; s <= r; s++)
-        {
-          const double v = gV * wsAB.getVal(r, k) * wsAB.getVal(s, k);
-          gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
-          if(s != r)
-            gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
-        }
     }
+    // gS_j += A diag(gVar_{:,j}) A^T as one BLAS-3 product (was O(B M^2)
+    // scalar accessor calls per output).
+    CMatrix AD(wsAB);
+    for(unsigned int k = 0; k < B; k++)
+    {
+      const double gV = gVar.getVal(k, j);
+      for(unsigned int r = 0; r < M; r++)
+        AD.setVal(AD.getVal(r, k) * gV, r, k);
+    }
+    gS[j].gemm(AD, wsAB, 1.0, 1.0, "n", "t");
   }
 
   CMatrix KufBar, Ubar;

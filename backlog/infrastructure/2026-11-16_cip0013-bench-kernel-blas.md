@@ -4,7 +4,7 @@ title: "CIP-0013: benchmark harness and kernel/BLAS improvements"
 status: "In Progress"
 priority: "High"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-22"
 category: "infrastructure"
 related_cips: ["0013", "0012"]
 owner: "Neil Lawrence"
@@ -27,8 +27,9 @@ Accept and implement [CIP-0013](../../cip/cip0013.md) / [REQ-0007](../../require
 ## Acceptance Criteria
 
 - [x] CIP-0013 Accepted
-- [ ] Harness reports median obj+grad time with LL agreement gate (GPy/NumPy when available)
-- [ ] P1–P5 done; q=2 protocol meets 1.3× sparse / no full-GP regression
+- [x] Harness reports median obj+grad time with LL agreement gate (GPy/NumPy when available)
+- [ ] Harness perturbs params between repeats (includes `setOptParams` / GPy array apply)
+- [ ] P1–P5 done; q=2 protocol meets 1.3× sparse / no full-GP regression *(2026-11-21 close withdrawn; cache-busting rebench required)*
 - [ ] Docs + CIP Closed
 
 ## Related
@@ -50,3 +51,7 @@ P1/P2 + `benchGPc` on PR #60. P3: direct-loop `dist2Row`/`dist2Col` landed. Next
 ### 2026-11-16 (P4 slice)
 
 `CStationaryKern` base (`scaleFactor` / `K_of_r`); `CRbfKern` reparented; `CCmpndKern::compute` restored; `CGp::_updateK` uses bulk `compute`. Remaining stationary reparent + P5 workspace still open.
+
+### 2026-11-22
+
+2026-11-21 close used cache-reusing timings (params unchanged between repeats). CIP-0013 reopened. Next: delivery branch for harness fidelity + CoE + REQ-0007 status + reference-Mac rebench; then either meet 1.3× or revise the bar.

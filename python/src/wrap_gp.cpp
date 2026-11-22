@@ -37,6 +37,39 @@ bool isWhiteKernelName(const std::string& kernel)
   return kernel == "white" || kernel == "White" || kernel == "WHITE";
 }
 
+// Shared tokens with GPy / CIP-0016: lq | stable | legacy (+ read aliases).
+std::string lowerAscii(std::string s)
+{
+  for(char& c : s)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return s;
+}
+
+int parseSparseLinalgMode(const std::string& mode)
+{
+  const std::string t = lowerAscii(mode);
+  if(t == "lq")
+    return CGp::SparseLinalgLQ;
+  if(t == "stable" || t == "stablefactor" || t == "chol")
+    return CGp::SparseLinalgStableFactor;
+  if(t == "legacy" || t == "gram")
+    return CGp::SparseLinalgLegacy;
+  throw ndlexceptions::Error(
+      "sparse_linalg='" + mode
+      + "' is not supported. Use 'lq' (default), 'stable', or 'legacy'.");
+}
+
+std::string sparseLinalgModeName(int mode)
+{
+  if(mode == CGp::SparseLinalgLQ)
+    return "lq";
+  if(mode == CGp::SparseLinalgStableFactor)
+    return "stable";
+  if(mode == CGp::SparseLinalgLegacy)
+    return "legacy";
+  throw ndlexceptions::Error("Unknown sparseLinalgMode");
+}
+
 bool isBiasKernelName(const std::string& kernel)
 {
   return kernel == "bias" || kernel == "Bias" || kernel == "BIAS";
@@ -919,7 +952,8 @@ PySparseGPRegression::PySparseGPRegression(
     py::object window_width,
     unsigned int arccos_order,
     bool learn_window_width,
-    bool learn_window_widths)
+    bool learn_window_widths,
+    const std::string& sparse_linalg)
     : X(matrixFromNumpy(Xin)),
       Y(matrixFromNumpy(Yin)),
       Z(matrixFromNumpy(Zin)),
@@ -1009,6 +1043,7 @@ PySparseGPRegression::PySparseGPRegression(
 
   model = std::make_unique<CGp>(
       kern.get(), noise.get(), &X, approxEnum, numActive, verbosity);
+  model->setSparseLinalgMode(parseSparseLinalgMode(sparse_linalg));
   model->setActiveSet(Z);
   model->setInducingFixed(inducingFixed);
   model->setBetaVal(1.0);
@@ -1087,6 +1122,16 @@ PySparseGPRegression::PySparseGPRegression(
     throw ndlexceptions::Error(
         "learn_window_width(s) is only supported with inducing='weightspace'.");
   }
+}
+
+std::string PySparseGPRegression::sparse_linalg() const
+{
+  return sparseLinalgModeName(model->getSparseLinalgMode());
+}
+
+void PySparseGPRegression::set_sparse_linalg(const std::string& mode)
+{
+  model->setSparseLinalgMode(parseSparseLinalgMode(mode));
 }
 
 void PySparseGPRegression::set_by_path(const std::string& path, double val)
@@ -1366,7 +1411,8 @@ void bind_gp(py::module_& m)
                     py::object,
                     unsigned int,
                     bool,
-                    bool>(),
+                    bool,
+                    const std::string&>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("Z"),
@@ -1379,8 +1425,11 @@ void bind_gp(py::module_& m)
            py::arg("arccos_order") = 0,
            py::arg("learn_window_width") = false,
            py::arg("learn_window_widths") = false,
+           py::arg("sparse_linalg") = "lq",
            "Construct sparse Gaussian GP with inducing inputs Z.\n\n"
            "approx: 'dtcvar' (default), 'fitc', or 'dtc'.\n"
+           "sparse_linalg: 'lq' (default), 'stable', or 'legacy' "
+           "(inducing-side factor; orthogonal to approx; CIP-001B / CIP-0016).\n"
            "kernel: string name or gpc.kern parts list (parts list needs inducing='points').\n"
            "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).\n"
            "inducing_fixed defaults False (matches CGp); pass True to freeze Z/W.\n"
@@ -1435,6 +1484,11 @@ void bind_gp(py::module_& m)
       .def_property_readonly(
           "num_inducing", &PySparseGPRegression::num_inducing, "Number of inducing points M.")
       .def_property_readonly("approx", &PySparseGPRegression::approx, "Sparse approximation name.")
+      .def_property(
+          "sparse_linalg",
+          &PySparseGPRegression::sparse_linalg,
+          &PySparseGPRegression::set_sparse_linalg,
+          "Inducing-side factorisation: 'lq' (default), 'stable', or 'legacy'.")
       .def_property_readonly(
           "kernel_type", &PySparseGPRegression::kernel_type, "Kernel label / compound summary.")
       .def_property_readonly(

@@ -7,7 +7,9 @@ ratios only when the gate passes.
 
 Protocol (cip0013.md): q=2, X ~ U[-3,3]^2, y = sum_q sin(x_q) + eps,
 RBF(variance=1, lengthscale=1) + white/noise variance 0.01; sparse beta=100;
-shared inducing subset; OPENBLAS_NUM_THREADS=1.
+shared inducing subset; OPENBLAS_NUM_THREADS=1. Timing loops perturb
+parameters between repeats (and include setOptParams / optimizer_array apply)
+so caches cannot reuse factorisations; reported LL is at the base parameters.
 
 Usage:
   python bench/run_bench.py [--kinds ftc,dtcvar,fitc] [--N 1000] [--M 50]
@@ -146,21 +148,29 @@ def run_gpy(kind: str, X, y, Xu, reps: int, warm: int = 2):
     else:
         raise ValueError(kind)
 
-    # Warm-up.
-    for _ in range(warm):
-        model._objective_grads(model.optimizer_array)
+    x0 = np.array(model.optimizer_array, dtype=float, copy=True)
+
+    def _perturb(rep: int) -> np.ndarray:
+        h = 1e-6 * (1.0 + np.abs(x0)) * (1.0 + 0.01 * (rep + 1))
+        sign = np.where(((rep + np.arange(x0.size)) % 2) == 0, 1.0, -1.0)
+        return x0 + sign * h
+
+    # Warm-up with the same cache-busting pattern as the timed loop.
+    for w in range(warm):
+        model._objective_grads(_perturb(w))
     times = []
-    ll = None
-    for _ in range(reps):
+    for r in range(reps):
+        x = _perturb(warm + r)
         t0 = time.perf_counter()
-        ll, _grad = model._objective_grads(model.optimizer_array)
+        _ll, _grad = model._objective_grads(x)
         t1 = time.perf_counter()
         times.append((t1 - t0) * 1000.0)
-    # GPy objective is -LL.
+    # Gate LL at unperturbed protocol parameters (GPy objective is -LL).
+    ll, _grad = model._objective_grads(x0)
     return {
         "ll": float(-ll),
         "median_ms": float(np.median(times)),
-        "nparams": int(model.optimizer_array.size),
+        "nparams": int(x0.size),
     }
 
 

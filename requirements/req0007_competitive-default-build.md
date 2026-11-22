@@ -1,10 +1,10 @@
 ---
 id: "0007"
 title: "Default Linux build and kernel evaluations stay within stated factors of a tuned reference"
-status: "Validated"
+status: "In Progress"
 priority: "High"
 created: "2026-11-15"
-last_updated: "2026-11-21"
+last_updated: "2026-11-22"
 related_tenets: ["flexibility-with-performance", "lapack-owns-linear-algebra", "assert-and-verify", "compose-through-interfaces"]
 stakeholders: ["maintainers", "users building from source"]
 tags: ["performance", "build", "kernels", "benchmark"]
@@ -29,7 +29,7 @@ REQ-0001 and REQ-0002 are already validated. They require that the tools build a
 - [x] The documented Linux build links a tuned BLAS and compiles with optimisation (`-O2` or equivalent, bounds checks off). On the published protocol its one-evaluation time is no worse than the 2026-11-15 OpenBLAS `-O2 -DNDEBUG` measurements. The reference-test configuration keeps bounds checks
 - [x] An in-repo benchmark reports the median time of one objective-plus-gradient evaluation for the full GP, variational DTC, and FITC, on data shared with an independent reference
 - [x] The benchmark withholds a timing unless the log-likelihoods agree with that reference, allowing only constants the project has already recorded
-- [x] On the q=2, one-thread protocol the full GP does not regress, and variational DTC and FITC are at most 1.3× the independent reference
+- [ ] On the q=2, one-thread protocol the full GP does not regress, and variational DTC and FITC are at most 1.3× the independent reference *(reopened 2026-11-22: prior evidence used cache-reusing timings; see [CoE](../coe/2026-11-22_cip0013-bench-cache-reuse.md))*
 - [x] Each benchmark record includes input dimension, BLAS library, compiler flags, and thread count
 - [x] Compound kernels, including RBF plus white noise, take the fast kernel path, and that path agrees with the element-wise implementation to the project's match tolerance, including near-duplicate inputs
 
@@ -58,3 +58,6 @@ P3–P5 landed (`CStationaryKern` workspace + isotropic reparent). `bench/run_be
 
 ### 2026-11-21
 Close re-benchmark ([bench/cip0013_close/](../bench/cip0013_close/)): all sparse GPc/GPy ratios ≤ 0.73; full GP faster than 2026-11-15 OpenBLAS column. Documented in [docs/build-and-ci.md](../docs/build-and-ci.md). CIP-0013 Closed. Status → Validated.
+
+### 2026-11-22
+[CoE](../coe/2026-11-22_cip0013-bench-cache-reuse.md): close timings did not perturb parameters, so GPc cached factorisations. Status → In Progress until a cache-busting rebench meets the 1.3× sparse bar (or the bar is revised via a new CIP).

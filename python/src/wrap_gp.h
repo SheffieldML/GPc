@@ -133,7 +133,8 @@ public:
       py::object window_width = py::float_(-1.0),
       unsigned int arccos_order = 0,
       bool learn_window_width = false,
-      bool learn_window_widths = false);
+      bool learn_window_widths = false,
+      const std::string& sparse_linalg = "lq");
 
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
@@ -158,6 +159,8 @@ public:
   unsigned int output_dim() const { return Y.getCols(); }
   unsigned int num_inducing() const { return numActive; }
   std::string approx() const { return approxType; }
+  std::string sparse_linalg() const;
+  void set_sparse_linalg(const std::string& mode);
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
   bool inducing_fixed() const { return inducingFixed; }

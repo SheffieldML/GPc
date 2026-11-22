@@ -405,6 +405,8 @@ void CSvgp::upperCholOfS(unsigned int j, CMatrix& U) const
     for(unsigned int r = 0; r < M; r++)
       for(unsigned int c = 0; c <= r; c++)
         U.setVal(qChol[j].getVal(r, c), c, r);
+    // pdinv / logDet require the triangular property flag (CHECKS=full).
+    U.setTriangular(true);
     return;
   }
   U.deepCopy(qCov[j]);

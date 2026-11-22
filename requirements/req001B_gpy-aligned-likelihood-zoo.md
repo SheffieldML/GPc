@@ -1,7 +1,7 @@
 ---
 id: "001B"
 title: "GPy-aligned observation likelihoods are available in C++ and via the gpc façade"
-status: "Proposed"
+status: "In Progress"
 priority: "High"
 created: "2026-11-22"
 last_updated: "2026-11-22"
@@ -45,3 +45,6 @@ HOW is [CIP-003A](../cip/cip003A.md). Builds on [REQ-0014](./req0014_observation
 
 ### 2026-11-22
 Requirement drafted as Proposed alongside CIP-003A after auditing GPc `CNoise` vs GPy `likelihoods` (including SkewGaussian / SkewExponential on GPy branch `backport/stage3-and-skew`).
+
+### 2026-11-22 (accept)
+CIP-003A Accepted → In Progress on worktree `GPc-cip003A` / `cip003A-likelihood-zoo`. Requirement → In Progress.

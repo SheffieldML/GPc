@@ -122,15 +122,15 @@ The timing loops called `computeObjectiveGradParams` / `_objective_grads` with u
 ### Backlog tasks
 
 - [x] Reopen / continue [2026-11-16_cip0013-bench-kernel-blas](../backlog/infrastructure/2026-11-16_cip0013-bench-kernel-blas.md) — owner: Neil Lawrence — harness fidelity + honest rebench
-- [ ] Ordered sparse-path speedups (items 2–5 below) as backlog slices under CIP-0013 / 001B / 002D — owner: Neil Lawrence
+- [x] Ordered sparse-path speedups (items 2–5 below) as backlog slices under CIP-0013 / 001B / 002D — owner: Neil Lawrence — code on `cip0013-sparse-speed`; honest rebench still open
 
 ### CIPs
 
 - [x] Reopen [CIP-0013](../cip/cip0013.md) to In Progress — owner: Neil Lawrence — harness fidelity first; close only on honest 1.3× or revised REQ
-- [ ] [CIP-001B](../cip/cip001B.md) follow-up: LQ cost — make LQ opt-in *or* drop explicit `Q` (`dorglq`) and avoid paying whitening + LQ; document that the precision-form “no \(M\times N\) solve” saving was never taken on the whitened path — owner: Neil Lawrence
-- [ ] [CIP-0012](../cip/cip0012.md) / 001B residual: stop building Legacy `A`/`Ainv`/`pdinv` inside whitened `updateAD` (dual-path compares move to an explicit flag or offline tool) — owner: Neil Lawrence
-- [ ] [CIP-002D](../cip/cip002D.md) residual / CIP-0013: pass cached `K_uf`/`K_uu` into `inducingGradZ` (RBF recompute today) — owner: Neil Lawrence
-- [ ] CIP-0013 bulk kernel: vectorised `exp` / avoid per-element `K_of_r` + `setVal` copy out of workspace — owner: Neil Lawrence
+- [x] [CIP-001B](../cip/cip001B.md) follow-up: LQ cost — skip `dorglq` in `updateAD`; lazy `lqFormQ` only in `gpCovGrads` (LQ remains default; StableFactor still available) — owner: Neil Lawrence — delivered on `cip0013-sparse-speed`
+- [x] [CIP-0012](../cip/cip0012.md) / 001B residual: stop building Legacy `A`/`Ainv`/`pdinv` inside whitened `updateAD` (DTC/DTCVAR/FITC/PITC + whitened LL / `sparsePpaElboGpTerms`) — owner: Neil Lawrence — delivered on `cip0013-sparse-speed`
+- [x] [CIP-002D](../cip/cip002D.md) residual / CIP-0013: pass cached `K_uf`/`K_uu` into `inducingGradZ` (RBF uses caches; compound forwards `K_uf` only because white `K(Z,X)=0`) — owner: Neil Lawrence — delivered on `cip0013-sparse-speed`
+- [x] CIP-0013 bulk kernel: contiguous `mapR2ToK` (RBF fused `exp`, no `sqrt`) + `deepCopy` out of workspace — owner: Neil Lawrence — delivered on `cip0013-sparse-speed`
 
 ### Requirements
 
@@ -138,19 +138,23 @@ The timing loops called `computeObjectiveGradParams` / `_objective_grads` with u
 
 ### Validation tripwires
 
-- [ ] Harness or close script fails if full-GP GPc time ratio N=4k/N=2k is below ~5 (cache-reuse fingerprint) — owner: Neil Lawrence
-- [ ] Document “perturb params / include setOptParams” as a required close checklist item in CIP-0013 — owner: Neil Lawrence
-- [ ] Close artifacts record `sparse_linalg` mode (lq / stable / legacy); default-mode row is the REQ-0007 gate — owner: Neil Lawrence
+- [x] Harness or close script fails if full-GP GPc time ratio N=4k/N=2k is below ~5 (cache-reuse fingerprint) — owner: Neil Lawrence — measured ≈6.6 on 2026-11-22 honest rebench
+- [x] Document “perturb params / include setOptParams” as a required close checklist item in CIP-0013 — owner: Neil Lawrence — harness + CIP progress note
+- [x] Close artifacts record `sparse_linalg` mode (lq / stable / legacy); default-mode row is the REQ-0007 gate — owner: Neil Lawrence — `--sparse-linalg` in `benchGPc` / `run_bench.py`; CSV column present
+
+### 2026-11-22 honest rebench outcome
+
+Default `lq` still fails REQ-0007 (VarDTC/FITC mostly 1.4–2.4×). StableFactor meets it (0.72× / 0.96× at N=10k M=200). Full table: [`bench/cip0013_close/`](../bench/cip0013_close/). Remaining close options: further LQ cuts, or change the shipped default (CIP-001B).
 
 ### Ordered fix payoff (process note)
 
 Not C++ vs Python at these sizes — both sit in BLAS/LAPACK. Rough order:
 
-1. **Harness:** perturb params + time `setOptParams` (measurement gate).
-2. **LQ:** opt-in default *or* cut `dorglq` / redundant work (largest sparse swing; StableFactor already ≈ GPy on VarDTC).
-3. **Dual-path tax:** drop Legacy `A`/`Ainv` from the hot whitened path.
-4. **Reuse \(K_{uf}\)/\(K_{uu}\)** in `inducingGradZ`.
-5. **Bulk kernel / vectorised `exp`.**
+1. **Harness:** perturb params + time `setOptParams` (measurement gate). — done (PR #147)
+2. **LQ:** opt-in default *or* cut `dorglq` / redundant work (largest sparse swing; StableFactor already ≈ GPy on VarDTC). — done (lazy Q; LQ still default)
+3. **Dual-path tax:** drop Legacy `A`/`Ainv` from the hot whitened path. — done
+4. **Reuse \(K_{uf}\)/\(K_{uu}\)** in `inducingGradZ`. — done (`K_uf` on RBF / rbf+white)
+5. **Bulk kernel / vectorised `exp`.** — done (`mapR2ToK` + workspace `deepCopy`)
 
 ## Checklist
 

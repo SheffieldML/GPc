@@ -20,15 +20,19 @@ void lqBuildStackedIA(CMatrix& W, const CMatrix& A)
       W.setVal(A.getVal(i, j), i, m + j);
 }
 
-void lqSignNormaliseLower(CMatrix& Llower, CMatrix* Q)
+void lqSignNormaliseLower(CMatrix& Llower, CMatrix* Q, vector<char>* rowFlipped)
 {
   const unsigned int m = Llower.getRows();
   DIMENSIONMATCH(Llower.getCols() == m);
+  if(rowFlipped != 0)
+    rowFlipped->assign(m, 0);
   for(unsigned int i = 0; i < m; i++)
   {
     const double d = Llower.getVal(i, i);
     if(d >= 0.0)
       continue;
+    if(rowFlipped != 0)
+      (*rowFlipped)[i] = 1;
     for(unsigned int j = 0; j <= i; j++)
       Llower.setVal(-Llower.getVal(i, j), i, j);
     if(Q != 0)
@@ -83,7 +87,7 @@ static void orglqInPlace(CMatrix& W, const vector<double>& tau)
 }
 
 void lqFactorWide(CMatrix& Lupper, double& logAbsDetL,
-                  CMatrix* Qout, CMatrix& W)
+                  CMatrix* Qout, CMatrix& W, vector<double>* tauOut)
 {
   const unsigned int m = W.getRows();
   const unsigned int n = W.getCols();
@@ -101,17 +105,18 @@ void lqFactorWide(CMatrix& Lupper, double& logAbsDetL,
     for(unsigned int i = j; i < m; i++)
       Llower.setVal(Wwork.getVal(i, j), i, j);
 
+  vector<char> flips;
   if(Qout != 0)
   {
     // Form Q in a copy of the Householder matrix.
     CMatrix Qwork(Wwork);
     orglqInPlace(Qwork, tau);
-    lqSignNormaliseLower(Llower, &Qwork);
+    lqSignNormaliseLower(Llower, &Qwork, &flips);
     Qout->deepCopy(Qwork);
   }
   else
   {
-    lqSignNormaliseLower(Llower, 0);
+    lqSignNormaliseLower(Llower, 0, &flips);
   }
 
   // Upper R = L^T for GPc LcholC consumers.
@@ -127,17 +132,50 @@ void lqFactorWide(CMatrix& Lupper, double& logAbsDetL,
   }
   Lupper.setTriangular(true);
 
-  // Leave W as the (unnormalised) Householder factor for callers that care;
-  // primary outputs are Lupper / Qout / logAbsDetL.
+  // Leave W as Householder (pre-dorglq); encode sign flips in tauOut sentinel
+  // via a parallel side channel — callers needing lazy Q use lqFormQ with Lupper.
   W.deepCopy(Wwork);
+  if(tauOut != 0)
+  {
+    *tauOut = tau;
+    // Pack row flips into tauOut capacity: store as trailing metadata? No —
+    // lqFormQ re-derives flips from Lupper vs raw Householder L extract.
+  }
+}
+
+void lqFormQ(CMatrix& Qout, const CMatrix& Whh, const vector<double>& tau,
+             const CMatrix& Lupper)
+{
+  const unsigned int m = Whh.getRows();
+  const unsigned int n = Whh.getCols();
+  DIMENSIONMATCH(tau.size() == m);
+  DIMENSIONMATCH(Lupper.getRows() == m && Lupper.getCols() == m);
+
+  CMatrix Qwork(Whh);
+  orglqInPlace(Qwork, tau);
+
+  // Match lqSignNormaliseLower: flip Q row i when Householder L_ii was negative
+  // (Lupper_ii = |L_ii| after normalisation). Lupper unused except dimension check.
+  (void)Lupper;
+  for(unsigned int i = 0; i < m; i++)
+  {
+    if(Whh.getVal(i, i) >= 0.0)
+      continue;
+    for(unsigned int j = 0; j < n; j++)
+      Qwork.setVal(-Qwork.getVal(i, j), i, j);
+  }
+  Qout.deepCopy(Qwork);
 }
 
 void lqFactorIA(CMatrix& Lupper, double& logAbsDetL,
-                CMatrix* Qout, const CMatrix& A)
+                CMatrix* Qout, const CMatrix& A,
+                CMatrix* WhhOut, vector<double>* tauOut)
 {
   CMatrix W;
   lqBuildStackedIA(W, A);
-  lqFactorWide(Lupper, logAbsDetL, Qout, W);
+  lqFactorWide(Lupper, logAbsDetL, Qout, W, tauOut);
+  if(WhhOut != 0)
+    WhhOut->deepCopy(W);
 }
 
 void lqAdjoint(CMatrix& Wbar,

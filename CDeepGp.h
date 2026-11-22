@@ -128,6 +128,7 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   std::vector<CMatrix> meanP;          // P_ℓ : D_{ℓ-1} x D_ℓ
   std::vector<CMatrix> Zstore;         // centres storage owned per layer
   std::vector<CMatrix> hiddenY;        // dummy targets for hidden CSvgp cores
+  std::vector<CMatrix> layerX;         // per-layer inputs (X pushed through mean maps), D_{ℓ-1} cols
   std::vector<std::string> inducingTypes;
 
   unsigned int numSamples;

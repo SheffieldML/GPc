@@ -184,6 +184,7 @@ class CSvgp : public CStochasticOptimisable {
   void syncCovFromChol();
   void syncCholFromCov();
   void ensureCholStorage();
+  void upperCholOfS(unsigned int j, CMatrix& U) const;
   // Accumulate ∂dataTerm/∂m (M x d) and symmetric ∂dataTerm/∂S_j into gM / gS.
   void dataTermQGrads(const vector<unsigned int>& batch,
                       CMatrix& gM, vector<CMatrix>& gS) const;

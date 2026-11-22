@@ -381,14 +381,33 @@ vector<unsigned int> CSvgp::allIndices() const
   return idx;
 }
 
+// Upper factor U with S~_j = U^T U. In Cholesky mode this is qChol[j]^T exactly;
+// re-factorising S~ = L L^T can fail numerically when L has a small diagonal
+// and larger off-diagonals (it happens within a few Adam steps on hidden layers).
+void CSvgp::upperCholOfS(unsigned int j, CMatrix& U) const
+{
+  const unsigned int M = numInducing;
+  if(qParamMode == QModeCholesky && j < qChol.size() && qChol[j].getRows() == M)
+  {
+    U.resize(M, M);
+    U.zeros();
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int c = 0; c <= r; c++)
+        U.setVal(qChol[j].getVal(r, c), c, r);
+    return;
+  }
+  U.deepCopy(qCov[j]);
+  U.setSymmetric(true);
+  U.chol();
+}
+
 double CSvgp::klDivergence(unsigned int j) const
 {
   // KL(N(m~, S~) || N(0, I)); equals KL(q(u) || p(u)) under u = L v.
   const unsigned int M = numInducing;
   const CMatrix& S = qCov[j];
-  CMatrix cholS(S);
-  cholS.setSymmetric(true);
-  cholS.chol();
+  CMatrix cholS;
+  upperCholOfS(j, cholS);
   const double logDetS = logDet(cholS);
   return 0.5 * (S.trace() + qMean.dotColCol(j, qMean, j) - (double)M - logDetS);
 }
@@ -1242,10 +1261,8 @@ void CSvgp::qParamsGrad(CMatrix& gQ, const vector<unsigned int>& batch) const
   // Subtract KL grads: ∂KL/∂m = m, ∂KL/∂S = 0.5 (I - S^{-1}).
   for(unsigned int j = 0; j < outputDim; j++)
   {
-    CMatrix Scopy(qCov[j]);
-    Scopy.setSymmetric(true);
-    CMatrix cholS(Scopy);
-    cholS.chol();
+    CMatrix cholS;
+    upperCholOfS(j, cholS);
     CMatrix Sinv(M, M);
     Sinv.setSymmetric(true);
     Sinv.pdinv(cholS);
@@ -1426,10 +1443,8 @@ double CSvgp::klQ(CMatrix* gQOrNull) const
   vector<CMatrix> gS(outputDim, CMatrix(M, M));
   for(unsigned int j = 0; j < outputDim; j++)
   {
-    CMatrix Scopy(qCov[j]);
-    Scopy.setSymmetric(true);
-    CMatrix cholS(Scopy);
-    cholS.chol();
+    CMatrix cholS;
+    upperCholOfS(j, cholS);
     CMatrix Sinv(M, M);
     Sinv.setSymmetric(true);
     Sinv.pdinv(cholS);

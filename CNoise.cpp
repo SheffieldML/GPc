@@ -325,6 +325,82 @@ void binomialProbitLaplaceDerivs(double& logp,
   dWdf = -(y * d2lam - Ny * d2lamN_df);
 }
 
+namespace {
+/** Trigamma ψ₁(x) and tetragamma ψ₂(x) via recurrence + asymptotic (Abramowitz). */
+double trigamma(double x)
+{
+  BOUNDCHECK(x > 0.0);
+  double result = 0.0;
+  while(x < 8.0)
+  {
+    result += 1.0 / (x * x);
+    x += 1.0;
+  }
+  const double ix = 1.0 / x;
+  const double ix2 = ix * ix;
+  result += ix + 0.5 * ix2 + ix2 * ix / 6.0 - ix2 * ix2 * ix / 30.0;
+  return result;
+}
+double tetragamma(double x)
+{
+  BOUNDCHECK(x > 0.0);
+  double result = 0.0;
+  while(x < 8.0)
+  {
+    result -= 2.0 / (x * x * x);
+    x += 1.0;
+  }
+  const double ix = 1.0 / x;
+  const double ix2 = ix * ix;
+  const double ix3 = ix2 * ix;
+  result += -ix2 - ix3 - 0.5 * ix2 * ix2 + ix2 * ix3 / 6.0;
+  return result;
+}
+} // namespace
+
+void exponentialLogLaplaceDerivs(double& logp,
+                                 double& d1,
+                                 double& W,
+                                 double& dWdf,
+                                 double y,
+                                 double f)
+{
+  BOUNDCHECK(y > 0.0);
+  const double rate = exp(f);
+  logp = f - y * rate;
+  d1 = 1.0 - y * rate;
+  const double d2 = -y * rate;
+  W = -d2;
+  if(W < ndlutil::EPS)
+    W = ndlutil::EPS;
+  dWdf = y * rate; // −d3, d3=d2
+}
+
+void gammaLogLaplaceDerivs(double& logp,
+                           double& d1,
+                           double& W,
+                           double& dWdf,
+                           double y,
+                           double f,
+                           double beta)
+{
+  BOUNDCHECK(y > 0.0);
+  BOUNDCHECK(beta > 0.0);
+  const double lam = exp(f);
+  const double alpha = beta * lam;
+  logp = alpha * log(beta) - ndlutil::gammaln(alpha) + (alpha - 1.0) * log(y) - beta * y;
+  const double dig = ndlutil::digamma(alpha);
+  const double tri = trigamma(alpha);
+  const double tetra = tetragamma(alpha);
+  d1 = alpha * (log(beta * y) - dig);
+  const double d2 = d1 - alpha * alpha * tri;
+  W = -d2;
+  if(W < ndlutil::EPS)
+    W = ndlutil::EPS;
+  const double d3 = d2 - 2.0 * alpha * alpha * tri - alpha * alpha * alpha * tetra;
+  dWdf = -d3;
+}
+
 } // namespace ndlnoise
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
@@ -2320,6 +2396,10 @@ CNoise* readNoiseFromStream(istream& in)
     pnoise = new CPoissonNoise();
   else if(type=="binomial")
     pnoise = new CBinomialNoise();
+  else if(type=="exponential")
+    pnoise = new CExponentialNoise();
+  else if(type=="gamma")
+    pnoise = new CGammaNoise();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown noise type " + type);
   pnoise->readParamsFromStream(in);  
@@ -3284,5 +3364,308 @@ void CBinomialNoise::readParamsFromStream(istream& in)
   if(numPar != getNumParams())
     throw ndlexceptions::StreamFormatError("numParams",
         "Number of parameters in file does not match computed number.");
+}
+
+// ---- CIP-003A Phase 3: Exponential / Gamma ----------------------------------
+
+namespace {
+struct ExpEllCtx { double y; };
+double expLogLik(double f, void* vctx)
+{
+  const ExpEllCtx* c = static_cast<const ExpEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW, c->y, f);
+  return logp;
+}
+double expLogLikPrime(double f, void* vctx)
+{
+  const ExpEllCtx* c = static_cast<const ExpEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW, c->y, f);
+  return d1;
+}
+struct GammaEllCtx { double y; double beta; };
+double gammaLogLik(double f, void* vctx)
+{
+  const GammaEllCtx* c = static_cast<const GammaEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW, c->y, f, c->beta);
+  return logp;
+}
+double gammaLogLikPrime(double f, void* vctx)
+{
+  const GammaEllCtx* c = static_cast<const GammaEllCtx*>(vctx);
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW, c->y, f, c->beta);
+  return d1;
+}
+} // namespace
+
+CExponentialNoise::~CExponentialNoise() {}
+void CExponentialNoise::_init()
+{
+  setType("exponential");
+  setName("Exponential");
+}
+void CExponentialNoise::initStoreage()
+{
+  setNumParams(0);
+  initSiteStoreage();
+  clearTransforms();
+  setLogConcave(true);
+  setSpherical(true);
+  setMissing(false);
+}
+void CExponentialNoise::initNames() {}
+void CExponentialNoise::initVals() { activeSites().zeros(); }
+void CExponentialNoise::initParams() {}
+ostream& CExponentialNoise::display(ostream& os)
+{
+  os << "Exponential Noise (log link)" << endl;
+  return os;
+}
+void CExponentialNoise::setParam(double /*val*/, unsigned int /*index*/)
+{
+  throw ndlexceptions::Error("CExponentialNoise has no parameters");
+}
+void CExponentialNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+double CExponentialNoise::getParam(unsigned int /*index*/) const
+{
+  throw ndlexceptions::Error("CExponentialNoise has no parameters");
+}
+void CExponentialNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+void CExponentialNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getCols() == 0 || getNumParams() == 0);
+}
+void CExponentialNoise::getGradInputs(double& gmu, double& gvs,
+                                      unsigned int i, unsigned int j) const
+{
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW, getTarget(i, j), getMu(i, j));
+  gmu = d1;
+  gvs = -0.5 * W;
+}
+void CExponentialNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                             const CMatrix& yTest) const
+{
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  for(unsigned int j = 0; j < getOutputDim(); j++)
+    cout << "Mean Squared Error on output " << j + 1 << ": "
+         << yPred.dist2Col(j, yTest, j) / static_cast<double>(yTest.getRows()) << endl;
+}
+void CExponentialNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                            const CMatrix& /*varSigmaTest*/) const
+{
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+      yPred.setVal(exp(-muTest.getVal(i, j)), i, j); // E[y]=1/λ with λ=e^f
+}
+void CExponentialNoise::out(CMatrix& yPred, CMatrix& errorBarOut,
+                            const CMatrix& muTest, const CMatrix& varSigmaTest) const
+{
+  out(yPred, muTest, varSigmaTest);
+  for(unsigned int i = 0; i < errorBarOut.getRows(); i++)
+    for(unsigned int j = 0; j < errorBarOut.getCols(); j++)
+    {
+      const double mean = yPred.getVal(i, j);
+      errorBarOut.setVal(sqrt(mean * mean + varSigmaTest.getVal(i, j)), i, j);
+    }
+}
+void CExponentialNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                                    const CMatrix& /*varSigmaTest*/,
+                                    const CMatrix& yTest) const
+{
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+      ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW,
+                                            yTest.getVal(i, j), muTest.getVal(i, j));
+      L.setVal(exp(logp), i, j);
+    }
+}
+double CExponentialNoise::logLikelihood(const CMatrix& muTest,
+                                        const CMatrix& varSigmaTest,
+                                        const CMatrix& yTest) const
+{
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      const double vs = varSigmaTest.getVal(i, j);
+      if(vs <= ndlutil::EPS)
+      {
+        double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+        ndlnoise::exponentialLogLaplaceDerivs(logp, d1, W, dW,
+                                              yTest.getVal(i, j), muTest.getVal(i, j));
+        L += logp;
+      }
+      else
+      {
+        double gMu = 0.0, gVar = 0.0;
+        L += expectedLogLikelihood(yTest.getVal(i, j), muTest.getVal(i, j), vs, gMu, gVar);
+      }
+    }
+  return L;
+}
+double CExponentialNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                                double& gMu, double& gVar) const
+{
+  ExpEllCtx ctx;
+  ctx.y = y;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, expLogLik, expLogLikPrime, &ctx, gMu, gVar);
+}
+
+CGammaNoise::~CGammaNoise() {}
+void CGammaNoise::_init()
+{
+  setType("gamma");
+  setName("Gamma");
+}
+void CGammaNoise::initStoreage()
+{
+  setNumParams(1);
+  initSiteStoreage();
+  clearTransforms();
+  addTransform(CTransform::defaultPositive(), 0);
+  setLogConcave(true);
+  setSpherical(true);
+  setMissing(false);
+}
+void CGammaNoise::initNames() { setParamName("beta", 0); }
+void CGammaNoise::initVals()
+{
+  activeSites().zeros();
+  beta = 1.0;
+}
+void CGammaNoise::initParams() {}
+ostream& CGammaNoise::display(ostream& os)
+{
+  os << "Gamma Noise (log link): beta=" << beta << endl;
+  return os;
+}
+void CGammaNoise::setParam(double val, unsigned int index)
+{
+  BOUNDCHECK(index == 0);
+  setBeta(val);
+}
+void CGammaNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getRows() == 1 && params.getCols() == 1);
+  setBeta(params.getVal(0));
+}
+double CGammaNoise::getParam(unsigned int index) const
+{
+  BOUNDCHECK(index == 0);
+  return beta;
+}
+void CGammaNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getRows() == 1 && params.getCols() == 1);
+  params.setVal(beta, 0);
+}
+void CGammaNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == 1);
+  double gBeta = 0.0;
+  for(unsigned int i = 0; i < getNumData(); i++)
+    for(unsigned int j = 0; j < getOutputDim(); j++)
+    {
+      const double y = getTarget(i, j);
+      const double lam = exp(getMu(i, j));
+      const double alpha = beta * lam;
+      // GPy dlogpdf_link_dbeta with link_f = λ
+      gBeta += lam * (log(beta * y) + 1.0 - ndlutil::digamma(alpha)) - y;
+    }
+  g.setVal(gBeta, 0);
+}
+void CGammaNoise::getGradInputs(double& gmu, double& gvs,
+                                unsigned int i, unsigned int j) const
+{
+  double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW, getTarget(i, j), getMu(i, j), beta);
+  gmu = d1;
+  gvs = -0.5 * W;
+}
+void CGammaNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                       const CMatrix& yTest) const
+{
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  for(unsigned int j = 0; j < getOutputDim(); j++)
+    cout << "Mean Squared Error on output " << j + 1 << ": "
+         << yPred.dist2Col(j, yTest, j) / static_cast<double>(yTest.getRows()) << endl;
+}
+void CGammaNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                      const CMatrix& /*varSigmaTest*/) const
+{
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+      yPred.setVal(exp(muTest.getVal(i, j)), i, j); // E[y]=λ
+}
+void CGammaNoise::out(CMatrix& yPred, CMatrix& errorBarOut,
+                      const CMatrix& muTest, const CMatrix& varSigmaTest) const
+{
+  out(yPred, muTest, varSigmaTest);
+  for(unsigned int i = 0; i < errorBarOut.getRows(); i++)
+    for(unsigned int j = 0; j < errorBarOut.getCols(); j++)
+    {
+      const double mean = yPred.getVal(i, j);
+      errorBarOut.setVal(sqrt(mean / beta + varSigmaTest.getVal(i, j)), i, j);
+    }
+}
+void CGammaNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                              const CMatrix& /*varSigmaTest*/,
+                              const CMatrix& yTest) const
+{
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+      ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW,
+                                      yTest.getVal(i, j), muTest.getVal(i, j), beta);
+      L.setVal(exp(logp), i, j);
+    }
+}
+double CGammaNoise::logLikelihood(const CMatrix& muTest,
+                                  const CMatrix& varSigmaTest,
+                                  const CMatrix& yTest) const
+{
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j = 0; j < muTest.getCols(); j++)
+    {
+      const double vs = varSigmaTest.getVal(i, j);
+      if(vs <= ndlutil::EPS)
+      {
+        double logp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+        ndlnoise::gammaLogLaplaceDerivs(logp, d1, W, dW,
+                                        yTest.getVal(i, j), muTest.getVal(i, j), beta);
+        L += logp;
+      }
+      else
+      {
+        double gMu = 0.0, gVar = 0.0;
+        L += expectedLogLikelihood(yTest.getVal(i, j), muTest.getVal(i, j), vs, gMu, gVar);
+      }
+    }
+  return L;
+}
+double CGammaNoise::expectedLogLikelihood(double y, double muVal, double var,
+                                          double& gMu, double& gVar) const
+{
+  GammaEllCtx ctx;
+  ctx.y = y;
+  ctx.beta = beta;
+  return ndlutil::gaussHermiteExpect(muVal, var, 20, gammaLogLik, gammaLogLikPrime,
+                                     &ctx, gMu, gVar);
 }
  

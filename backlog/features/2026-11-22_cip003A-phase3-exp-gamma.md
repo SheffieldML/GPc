@@ -1,7 +1,7 @@
 ---
 id: "2026-11-22_cip003A-phase3-exp-gamma"
 title: "CIP-003A Phase 3: Exponential and Gamma CNoise"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-22"
 last_updated: "2026-11-22"
@@ -24,9 +24,14 @@ Add `CExponentialNoise` and `CGammaNoise` with stream registration and verificat
 
 ## Acceptance Criteria
 
-- [ ] Stream types `exponential` and `gamma`
-- [ ] Density / gradient tests green
+- [x] Stream types `exponential` and `gamma`
+- [x] Density / gradient tests green
 
 ## Related
 
 - CIP: 003A
+
+## Progress Updates
+
+### 2026-11-22
+Completed with Phase 2 test binary extended; Gamma trigamma local helper.

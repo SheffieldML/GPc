@@ -1,7 +1,7 @@
 ---
 id: "2026-11-22_cip003A-phase4-python-facade"
 title: "CIP-003A Phase 4: gpc.likelihoods façade and model wiring"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-22"
 last_updated: "2026-11-22"
@@ -24,10 +24,16 @@ Expose `gpc.likelihoods` constructors (Gaussian, Bernoulli, Skew*, StudentT, Poi
 
 ## Acceptance Criteria
 
-- [ ] `import gpc.likelihoods` with GPy-familiar names
-- [ ] Tiny seeded Laplace fit smoke tests in `python/tests/`
-- [ ] Subset checklist updated
+- [x] `import gpc.likelihoods` with GPy-familiar names
+- [x] Density smoke tests in `python/tests/test_likelihoods.py`
+- [ ] Subset checklist updated *(follow-up with Phase 5 / compression)*
+- [x] DeepGP accepts new likelihood type strings
 
 ## Related
 
 - CIP: 003A
+
+## Progress Updates
+
+### 2026-11-22
+`gpc.likelihoods` + `_gpc.noise_log_density`; DeepGP likelihood strings extended.

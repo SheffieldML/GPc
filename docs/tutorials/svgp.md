@@ -35,7 +35,7 @@ adam.maximise(sv);
 Same seed ⇒ identical trajectory. Progress hooks use
 `sv.setProgressObserver(...)` (`StochasticOptimiserEvent`).
 
-## Non-Gaussian (Phase 4)
+## Non-Gaussian (Phase 4 / CIP-003A)
 
 ```cpp
 CProbitNoise noise(&y);
@@ -46,7 +46,13 @@ sv.naturalGradientStep(0.2);  // warm up γ < 1 for non-conjugate
 `CNoise::expectedLogLikelihood` is \(\mathbb{E}_q[\log p(y\mid f)]\) (Gauss–Hermite
 for probit), distinct from ADF `logLikelihood(mu, var, y)`.
 
+CIP-003A adds the same Gauss–Hermite VE surface for Student-t, Poisson, Binomial,
+Exponential, Gamma, SkewGaussian, and SkewExponential — so SVGP / DeepGP can take
+those likelihood strings when the façade constructs the matching `CNoise`. Dense
+`CGp` fits of the same families use **Laplace** (`setLaplaceInference(true)` /
+`gpc.models.GPRegression(..., inference="laplace")`), not the SVGP ELBO.
+
 ## Related
 
-- CIP-002A, REQ-0015
+- CIP-002A, REQ-0015; likelihood zoo: [CIP-003A](../../cip/cip003A.md)
 - Collapsed alternative: `CGp` DTCVAR; sparse classification alternative: CIP-0026 PPA

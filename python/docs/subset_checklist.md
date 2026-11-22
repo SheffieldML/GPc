@@ -40,7 +40,7 @@ These GPy-online / CIP-0015 checklist items are **intentionally skipped** as `gp
 | Deep GP (DSVI) | [deepgp](../../docs/tutorials/deepgp.md) | [CIP-0035](../../cip/cip0035.md); `gpc.models.DeepGP` | Python façade landed; CLI `./deepgp` |
 | `models_basic` constrain / `fix` | CIP-0014 paths | Backlog [`2026-11-21_cip001D-python-fix-by-path`](../../backlog/features/2026-11-21_cip001D-python-fix-by-path.md) | Path get/set only today |
 | Sparse `likelihood.variance` teaching | CIP-0027 | Backlog [`2026-11-21_cip0027-python-sparse-likelihood-variance`](../../backlog/features/2026-11-21_cip0027-python-sparse-likelihood-variance.md) | Docs/façade teaching follow-on |
-| Poisson / Student-t / hetero / warped / HMC / mean functions | — | CIP-0015 / REQ-000E **non-goals** | Out of scope for the first subset |
+| Poisson / Student-t / skew / Exp / Gamma (likelihood zoo) | `CNoise` + Laplace / GH VE ([CIP-003A](../../cip/cip003A.md)) | [CIP-003A](../../cip/cip003A.md); `gpc.likelihoods` + `GPRegression(..., inference="laplace")`; DeepGP / SVGP VE strings | Hetero / warped / HMC / mean functions remain deferred |
 | Full GPy/`paramz` object graph, regex indexing | — | REQ-000E non-goals | Ergonomics ≈ recipes, not API identity |
 
 **Share-format reminder:** Jupyter is an optional ease-of-use surface. GPy notebooks remain the **spec/checklist**; CIP-0015 native CLI + gnuplot remain the primary verified share format ([docs/tutorials/README.md](../../docs/tutorials/README.md)).

@@ -57,7 +57,11 @@ def _build_callback(
 
 
 class GPRegression(_GPRegression):
-    """FTC Gaussian regression; ``str``/``repr`` use a paramz-inspired table."""
+    """FTC regression; ``str``/``repr`` use a paramz-inspired table.
+
+    Default is Gaussian + exact FTC. Non-Gaussian CIP-003A families need
+    ``inference='laplace'`` (e.g. ``likelihood=gpc.likelihoods.StudentT(...)``).
+    """
 
     def __init__(
         self,
@@ -66,10 +70,18 @@ class GPRegression(_GPRegression):
         kernel: Any = "rbf",
         verbosity: int = 0,
         arccos_order: int = 0,
+        likelihood: Any = "gaussian",
+        inference: str = "exact",
     ) -> None:
         spec = kern_mod.normalize_kernel_arg(kernel)
         super().__init__(
-            X, Y, kernel=spec, verbosity=verbosity, arccos_order=arccos_order
+            X,
+            Y,
+            kernel=spec,
+            verbosity=verbosity,
+            arccos_order=arccos_order,
+            likelihood=likelihood,
+            inference=inference,
         )
 
     def __str__(self) -> str:  # noqa: D105

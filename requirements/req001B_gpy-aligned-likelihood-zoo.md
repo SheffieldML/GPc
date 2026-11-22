@@ -1,7 +1,7 @@
 ---
 id: "001B"
 title: "GPy-aligned observation likelihoods are available in C++ and via the gpc façade"
-status: "In Progress"
+status: "Implemented"
 priority: "High"
 created: "2026-11-22"
 last_updated: "2026-11-22"
@@ -24,13 +24,13 @@ The first delivery closes the documented "broader likelihood zoo" gap left after
 
 ## Acceptance Criteria
 
-- [ ] Documented GPy ↔ GPc likelihood matrix lists Match / Gap / Defer for every exported GPy likelihood and every GPc-only noise type
-- [ ] C++ provides `CNoise` subclasses (or equivalent typed implementations) for at least: Student-t, Poisson, Binomial, Exponential, Gamma, SkewGaussian, SkewExponential, with stream `type` strings and `readNoiseFromStream` registration
-- [ ] Each new family implements the CIP-0027 / CIP-0033 oracle surface needed by its inference path: `logLikelihood` / link log-density and derivatives for Laplace; EP moments or documented quadrature fallback; `expectedLogLikelihood` where SVGP / DeepGP will use the family
-- [ ] Inverse Mills ratio (and derivatives) for skew live as shared C++ helpers, verified against GPy `gaussian_special` / SciPy
-- [ ] Python package exposes `gpc.likelihoods` constructors with GPy-familiar names and parameter paths (`likelihood.variance`, `likelihood.alpha`, …); models accept a likelihood object or documented string/type
-- [ ] Automated checks compare densities and gradients to GPy-generated or SciPy reference fixtures within documented tolerances; `checkGradients` passes for each new `CNoise`
-- [ ] Non-goals for the first delivery are explicit: survival likelihoods (Weibull, LogLogistic, LogGaussian); `MixedNoise` / `MultioutputLikelihood` containers; heteroscedastic Gaussian as a first-class GP; warped GP; full GPy link-function zoo beyond identity / probit / log as needed per family; putting Python in the likelihood hot path
+- [x] Documented GPy ↔ GPc likelihood matrix lists Match / Gap / Defer for every exported GPy likelihood and every GPc-only noise type
+- [x] C++ provides `CNoise` subclasses (or equivalent typed implementations) for at least: Student-t, Poisson, Binomial, Exponential, Gamma, SkewGaussian, SkewExponential, with stream `type` strings and `readNoiseFromStream` registration
+- [x] Each new family implements the CIP-0027 / CIP-0033 oracle surface needed by its inference path: `logLikelihood` / link log-density and derivatives for Laplace; EP moments or documented quadrature fallback; `expectedLogLikelihood` where SVGP / DeepGP will use the family
+- [x] Inverse Mills ratio (and derivatives) for skew live as shared C++ helpers, verified against GPy `gaussian_special` / SciPy
+- [x] Python package exposes `gpc.likelihoods` constructors with GPy-familiar names and parameter paths (`likelihood.variance`, `likelihood.alpha`, …); models accept a likelihood object or documented string/type
+- [x] Automated checks compare densities and gradients to GPy-generated or SciPy reference fixtures within documented tolerances; `checkGradients` passes for each new `CNoise`
+- [x] Non-goals for the first delivery are explicit: survival likelihoods (Weibull, LogLogistic, LogGaussian); `MixedNoise` / `MultioutputLikelihood` containers; heteroscedastic Gaussian as a first-class GP; warped GP; full GPy link-function zoo beyond identity / probit / log as needed per family; putting Python in the likelihood hot path
 
 ## Notes (Optional)
 
@@ -48,3 +48,6 @@ Requirement drafted as Proposed alongside CIP-003A after auditing GPc `CNoise` v
 
 ### 2026-11-22 (accept)
 CIP-003A Accepted → In Progress on worktree `GPc-cip003A` / `cip003A-likelihood-zoo`. Requirement → In Progress.
+
+### 2026-11-22 (Phase 5)
+CIP-003A Implemented: GH VE, generalised Laplace on `CGp`, `gpc.likelihoods` + Laplace `GPRegression`, docs. Requirement → Implemented (awaiting Close).

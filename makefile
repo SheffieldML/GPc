@@ -472,11 +472,11 @@ testSkewNoise: testSkewNoise.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstru
 testSkewNoise.o: testSkewNoise.cpp CNoise.h CMatrix.h
 	$(CC) -c testSkewNoise.cpp -o testSkewNoise.o $(CCFLAGS)
 
-# CIP-003A Phase 2: Student-t / Poisson / Binomial (no .mat).
-testLikelihoodZoo: testLikelihoodZoo.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CDist.o CClctrl.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testLikelihoodZoo testLikelihoodZoo.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+# CIP-003A Phase 2–5: likelihood zoo dens/VE + generalised Laplace on CGp.
+testLikelihoodZoo: testLikelihoodZoo.o CLaplaceInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testLikelihoodZoo testLikelihoodZoo.o CLaplaceInference.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testLikelihoodZoo.o: testLikelihoodZoo.cpp CNoise.h CMatrix.h
+testLikelihoodZoo.o: testLikelihoodZoo.cpp CNoise.h CGp.h CKern.h CLaplaceInference.h CMatrix.h
 	$(CC) -c testLikelihoodZoo.cpp -o testLikelihoodZoo.o $(CCFLAGS)
 
 # CIP-0027 Phase A: likelihood.variance on FTC Gram + path aliases.

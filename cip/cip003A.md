@@ -2,8 +2,8 @@
 author: "Neil Lawrence"
 created: "2026-11-22"
 id: "003A"
-last_updated: "2026-11-22"  # Accepted → In Progress; worktree started
-status: "In Progress"
+last_updated: "2026-11-22"  # Phase 5 done → Implemented
+status: "Implemented"
 compressed: false
 related_requirements: ["001B", "0014", "0019", "000E", "0002", "0017"]
 related_cips: ["0027", "0033", "0034", "0036", "001D", "002A", "0035", "0015"]
@@ -34,7 +34,7 @@ title: "GPy-aligned likelihood zoo in CNoise and gpc.likelihoods"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
+- [x] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
@@ -67,13 +67,13 @@ Status key: **Match** · **Gap** (this CIP) · **Defer** · **GPc-only**.
 | Ordinal | `COrderedNoise` | **GPc-only** | Keep; not in current GPy tree |
 | NCNM | `CNcnmNoise` | **GPc-only** | Keep |
 | Scale (GPLVM) | `CScaleNoise` | **GPc-only** | Not HeteroscedasticGaussian |
-| StudentT | — | **Gap** | Laplace primary; VE via GH quadrature |
-| Poisson | — | **Gap** | Laplace / EP quadrature; log link |
-| Binomial | — | **Gap** | As Bernoulli generalisation |
-| Exponential | — | **Gap** | Laplace / quadrature |
-| Gamma | — | **Gap** | Laplace / quadrature |
-| SkewGaussian | — | **Gap** | Laplace primary; EP quadrature |
-| SkewExponential | — | **Gap** | Laplace primary |
+| StudentT | `CStudentTNoise` | **Match** | Laplace + GH VE |
+| Poisson | `CPoissonNoise` | **Match** | Laplace + GH VE; log link |
+| Binomial | `CBinomialNoise` | **Match** | Laplace + GH VE; probit link |
+| Exponential | `CExponentialNoise` | **Match** | Laplace + GH VE |
+| Gamma | `CGammaNoise` | **Match** | Laplace + GH VE |
+| SkewGaussian | `CSkewGaussianNoise` | **Match** | Laplace + GH VE |
+| SkewExponential | `CSkewExponentialNoise` | **Match** | Laplace + GH VE |
 | HeteroscedasticGaussian | — | **Defer** | Needs per-point variance channel |
 | Weibull / LogLogistic / LogGaussian | — | **Defer** | Survival / censoring metadata |
 | MixedNoise / MultioutputLikelihood | — | **Defer** | Container types; coregionalise kernels already exist |
@@ -207,7 +207,7 @@ Phases 1–3 may land as one PR series if review prefers; Phase 4 must not prece
 - [x] Phase 2 Student-t / Poisson / Binomial (`./testLikelihoodZoo` green)
 - [x] Phase 3 Exponential / Gamma (`CExponentialNoise`, `CGammaNoise`)
 - [x] Phase 4 `gpc.likelihoods` + DeepGP string wiring + `noise_log_density`
-- [ ] Phase 5 SVGP generalised VE docs / Laplace-on-CGp generalisation
+- [x] Phase 5 GH VE checks, generalised `CLaplaceInference`, `GPRegression(likelihood=, inference='laplace')`, docs
 
 ## References
 

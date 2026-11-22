@@ -26,7 +26,7 @@ Expose `gpc.likelihoods` constructors (Gaussian, Bernoulli, Skew*, StudentT, Poi
 
 - [x] `import gpc.likelihoods` with GPy-familiar names
 - [x] Density smoke tests in `python/tests/test_likelihoods.py`
-- [ ] Subset checklist updated *(follow-up with Phase 5 / compression)*
+- [x] Subset checklist updated (Phase 5)
 - [x] DeepGP accepts new likelihood type strings
 
 ## Related

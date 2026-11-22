@@ -401,6 +401,66 @@ void gammaLogLaplaceDerivs(double& logp,
   dWdf = -d3;
 }
 
+void laplacePointDerivs(const CNoise& noise,
+                        double y,
+                        double f,
+                        double& logp,
+                        double& d1,
+                        double& W,
+                        double& dWdf)
+{
+  const string t = noise.getType();
+  if(t == "probit")
+  {
+    bernoulliProbitLaplaceDerivs(logp, d1, W, dWdf, y, f);
+    return;
+  }
+  if(t == "student_t")
+  {
+    const CStudentTNoise& n = dynamic_cast<const CStudentTNoise&>(noise);
+    studentTLaplaceDerivs(logp, d1, W, dWdf, y, f, n.getVariance(), n.getDegFree());
+    return;
+  }
+  if(t == "poisson")
+  {
+    poissonLogLaplaceDerivs(logp, d1, W, dWdf, y, f);
+    return;
+  }
+  if(t == "binomial")
+  {
+    const CBinomialNoise& n = dynamic_cast<const CBinomialNoise&>(noise);
+    binomialProbitLaplaceDerivs(logp, d1, W, dWdf, y, f,
+                                static_cast<double>(n.getNumTrials()));
+    return;
+  }
+  if(t == "exponential")
+  {
+    exponentialLogLaplaceDerivs(logp, d1, W, dWdf, y, f);
+    return;
+  }
+  if(t == "gamma")
+  {
+    const CGammaNoise& n = dynamic_cast<const CGammaNoise&>(noise);
+    gammaLogLaplaceDerivs(logp, d1, W, dWdf, y, f, n.getBeta());
+    return;
+  }
+  if(t == "skew_gaussian")
+  {
+    const CSkewGaussianNoise& n = dynamic_cast<const CSkewGaussianNoise&>(noise);
+    skewGaussianLaplaceDerivs(logp, d1, W, dWdf, y, f, n.getVariance(), n.getAlpha());
+    return;
+  }
+  if(t == "skew_exponential")
+  {
+    const CSkewExponentialNoise& n = dynamic_cast<const CSkewExponentialNoise&>(noise);
+    skewExponentialLaplaceDerivs(logp, d1, W, dWdf, y, f, n.getRate(), n.getAlpha());
+    return;
+  }
+  throw ndlexceptions::Error(
+      "ndlnoise::laplacePointDerivs: Laplace not supported for noise type '"
+      + t + "'");
+}
+
 } // namespace ndlnoise
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,

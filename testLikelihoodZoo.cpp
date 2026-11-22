@@ -1,6 +1,8 @@
-/* CIP-003A Phase 2: Student-t, Poisson, Binomial density / grad / stream tests.
-   References from SciPy / GPy (no matio). */
+/* CIP-003A Phase 2–5: Student-t / Poisson / Binomial / Exp / Gamma dens + VE + Laplace. */
 #include "CNoise.h"
+#include "CGp.h"
+#include "CKern.h"
+#include "CLaplaceInference.h"
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -235,6 +237,71 @@ static int testGamma()
   return fail;
 }
 
+static int testExpectedLogLikelihoodFD(CNoise& noise, double y, double mu, double var)
+{
+  double gMu = 0.0, gVar = 0.0;
+  const double ell = noise.expectedLogLikelihood(y, mu, var, gMu, gVar);
+  int fail = 0;
+  fail += checkClose("VE finite", std::isfinite(ell) ? 1.0 : 0.0, 1.0, 0.0);
+  const double h = 1e-5;
+  double t0 = 0.0, t1 = 0.0;
+  const double Lp = noise.expectedLogLikelihood(y, mu + h, var, t0, t1);
+  const double Lm = noise.expectedLogLikelihood(y, mu - h, var, t0, t1);
+  const double fdMu = 0.5 * (Lp - Lm) / h;
+  fail += checkClose("VE gMu vs FD", gMu, fdMu, 5e-4);
+  const double Vp = noise.expectedLogLikelihood(y, mu, var + h, t0, t1);
+  const double Vm = noise.expectedLogLikelihood(y, mu, max(var - h, 1e-8), t0, t1);
+  const double fdVar = 0.5 * (Vp - Vm) / h;
+  fail += checkClose("VE gVar vs FD", gVar, fdVar, 5e-3);
+  return fail;
+}
+
+static int testPhase5VeAndLaplace()
+{
+  int fail = 0;
+  CMatrix Yp(1, 1);
+  Yp.setVal(2.0, 0, 0);
+  CPoissonNoise poisson(&Yp);
+  fail += testExpectedLogLikelihoodFD(poisson, 2.0, 0.3, 0.4);
+
+  CMatrix Yt(1, 1);
+  Yt.setVal(0.5, 0, 0);
+  CStudentTNoise student(&Yt);
+  student.setVariance(0.5);
+  student.setDegFree(5.0);
+  fail += testExpectedLogLikelihoodFD(student, 0.5, 0.1, 0.3);
+
+  // Generalised Laplace on CGp with Student-t.
+  const unsigned int n = 8;
+  CMatrix X(n, 1), Y(n, 1);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -1.5 + 3.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    Y.setVal(0.2 * x + 0.1 * ((i % 2) ? 1.0 : -1.0), i, 0);
+  }
+  CRbfKern kern(X);
+  kern.setVariance(1.0);
+  kern.setLengthScale(0.8);
+  CStudentTNoise noise(&Y);
+  noise.setVariance(0.25);
+  noise.setDegFree(6.0);
+  CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+  model.setLaplaceInference(true);
+  model.setVerbosity(0);
+  const double L0 = model.logLikelihood();
+  fail += checkClose("CGp StudentT Laplace LL finite",
+                     std::isfinite(L0) ? 1.0 : 0.0, 1.0, 0.0);
+  CMatrix g(1, model.getOptNumParams());
+  const double Lg = model.logLikelihoodGradient(g);
+  fail += checkClose("CGp StudentT Laplace grad match", Lg, L0, 1e-12);
+  for(unsigned int i = 0; i < g.getCols(); i++)
+    fail += checkClose("CGp StudentT Laplace grad finite",
+                       std::isfinite(g.getVal(0, i)) ? 1.0 : 0.0, 1.0, 0.0);
+  cout << "  CGp StudentT Laplace L0=" << L0 << endl;
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -243,11 +310,12 @@ int main()
   fail += testBinomial();
   fail += testExponential();
   fail += testGamma();
+  fail += testPhase5VeAndLaplace();
   if(fail)
   {
     cout << "testLikelihoodZoo: " << fail << " failure(s)." << endl;
     return 1;
   }
-  cout << "All Phase-2/3 likelihood zoo tests passed." << endl;
+  cout << "All Phase-2/3/5 likelihood zoo tests passed." << endl;
   return 0;
 }

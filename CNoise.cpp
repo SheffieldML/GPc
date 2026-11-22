@@ -897,6 +897,9 @@ void CNoise::writeParamsToStream(ostream& out) const
   writeToStream(out, "type", getType());
   writeToStream(out, "outputDim", getOutputDim());
   writeToStream(out, "numParams", getNumParams());
+  // CIP-003A: zero-param families (poisson, exponential) must not allocate CMatrix(1,0).
+  if(getNumParams() == 0)
+    return;
   CMatrix par(1, getNumParams());
   getParams(par);
   par.toStream(out);
@@ -912,14 +915,16 @@ void CNoise::readParamsFromStream(istream& in)
 //     throw ndlexceptions::StreamFormatError("type", "Error mismatch between saved type, " + ttype + ", and Class type, " + getType() + ".");
   setOutputDim(readIntFromStream(in, "outputDim"));
   unsigned int numPar = readIntFromStream(in, "numParams");
-  CMatrix par(1, numPar);
-  par.fromStream(in);
   setNumData(1);
   initStoreage();
-  if(numPar==getNumParams())
-    setParams(par);
-  else
+  if(numPar != getNumParams())
     throw ndlexceptions::StreamFormatError("numParams", "Number of parameters in file does not match computed number.");
+  // CIP-003A: skip empty param block for zero-param noise types.
+  if(numPar == 0)
+    return;
+  CMatrix par(1, numPar);
+  par.fromStream(in);
+  setParams(par);
 }
 
 CGaussianNoise::~CGaussianNoise()

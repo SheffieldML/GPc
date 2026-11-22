@@ -1169,6 +1169,63 @@ int main()
       expect(isfinite(rmse) && rmse < 1.5,
              "Phase4 V8: inducing-point deep GP RMSE finite and sane");
     }
+
+    // ---- Hidden width != input width, Adam at lr 0.01 (regressions) ----
+    // (a) hidden CSvgp cores must be built on D_{l-1}-column inputs, not X;
+    // (b) KL in Cholesky mode must use the stored factor: refactorising
+    //     S~ = L L^T failed (non-PD) within a few Adam steps on this problem.
+    {
+      const unsigned int N = 800, d = 10, D = 5, M = 64;
+      mt19937 rng(211);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, d), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        double u1 = 0.0, u2 = 0.0;
+        for(unsigned int j = 0; j < d; j++)
+        {
+          const double x = nd(rng);
+          X.setVal(x, i, j);
+          u1 += x * ((j % 2) ? 0.3 : -0.25);
+          u2 += x * ((j < 5) ? 0.3 : 0.2);
+        }
+        y.setVal(sin(2.0 * u1 + u2 * u2) + 0.1 * nd(rng), i, 0);
+      }
+      CMatrix Xh(N, D);
+      for(unsigned int i = 0; i < N; i++)
+        for(unsigned int j = 0; j < D; j++)
+          Xh.setVal(nd(rng), i, j);
+      ndlutil::init_genrand(213u);
+      CCmpndKern k0(X), k1(Xh), k2(Xh);
+      makeRbfOnly(k0, X, 1.0, 1.0);
+      makeRbfOnly(k1, Xh, 1.0, 1.0);
+      makeRbfOnly(k2, Xh, 1.0, 1.0);
+      bool threw = false;
+      double L0 = 0.0, L1 = 0.0;
+      try
+      {
+        CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1, &k2},
+                    vector<unsigned int>{d, D, D, 1u},
+                    vector<unsigned int>{M, M, M}, 1.0, 1.0, 0);
+        dgp.setNumSamples(1);
+        dgp.setSeed(3);
+        L0 = dgp.elboEstimate();
+        CAdam adam(0.01);
+        adam.setBatchSize(256);
+        adam.setMaxIters(100);
+        adam.setSeed(3);
+        adam.maximise(dgp);
+        L1 = dgp.elboEstimate();
+      }
+      catch(ndlexceptions::Error& e)
+      {
+        threw = true;
+        cout << "  info: hidden-width run threw: " << e.what() << endl;
+      }
+      cout << "  info: hidden-width L0=" << L0 << " L1=" << L1 << endl;
+      expect(!threw, "Hidden width != input width: construct and train at lr 0.01");
+      expect(!threw && isfinite(L1) && L1 > L0, "Hidden width != input width: ELBO improves");
+    }
   }
   catch(ndlexceptions::Error& e)
   {

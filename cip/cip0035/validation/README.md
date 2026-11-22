@@ -2,7 +2,7 @@
 
 Run on 2026-11-21 with `gpc.models.DeepGP` built from `main` at ceb4fb5 plus the two fixes in this branch (below). Same seeded data as the JAX prototype and the MLP baselines (`task_src.py` is `task()` from [`../prototype/dgp_train.py`](../prototype/dgp_train.py)).
 
-Settings: hidden width 5, \(M=64\) per layer (16 on the step task), Adam 0.01, 3000 iterations, batch 256, one sample, 3 seeds. Predictions use the façade's `predict` (mean path: hidden means propagated, final-layer variance plus noise). Reproduce with `python gpc_vs_mlp.py`.
+Settings: hidden width 5, \(M=64\) per layer (16 on the step task), Adam 0.01, 3000 iterations, batch 256, one sample, 3 seeds. Predictions use the façade's `predict` mean path by default (`samples=0`: hidden means propagated, final-layer variance plus noise). Pass `samples=S` for the CIP-0035 mixture. Reproduce with `python gpc_vs_mlp.py`.
 
 ## Composite task (10-D input, target a nonlinear function of a 2-D projection; test RMSE / NLL, standardised targets)
 
@@ -43,5 +43,6 @@ MLP rows: [`../prototype/mlp_baseline.py`](../prototype/mlp_baseline.py) (tuned 
 
 ## Notes
 
-- The façade's `predict` propagates hidden-layer means only; CIP-0035 specifies a sampled mixture. The composite NLLs are good regardless, but the step-task NLLs for deep models (where hidden uncertainty matters near the jump) may be pessimistic or noisy. A `predict(..., samples=S)` mixture path is the obvious follow-on.
-- `jacobian_spread` (V7) finite-differences `forwardSample` under the *current* \(q(\mathbf v)\) with per-point noise at fixed \(\boldsymbol\epsilon\), not prior function draws \(\mathbf v\sim\mathcal N(\mathbf 0,I)\). At initialisation (\(\tilde{\mathbf m}=\mathbf 0\), \(\tilde S=10^{-4}I\)) the hidden layers are the identity, so the test's spread of 0 is trivially below 2. The prototype's V7 used prior draws.
+- Default `predict` is the mean path (`samples=0`); CIP-0035's mixture is `predict(..., samples=S)`. Step-task NLLs for deep models may still differ from the prototype when the mean path under-states hidden uncertainty near the jump.
+- `jacobian_spread` (V7) now matches the prototype: each probe draws whitened \(\mathbf v\sim\mathcal N(\mathbf 0,I)\) per layer and finite-differences \(\mathbf h\mapsto\mathbf m(\mathbf h)+\mathbf A(\mathbf h)^\top\mathbf v\) (Nyström residual off), independent of the trained \(q(\mathbf v)\).
+- Timing vs JAX (same composite settings): after the `marginalsGradAt` GEMM fix, RBF is at or ahead of JAX for \(L\ge2\); MLP remains slower because `getGradParams` / `getGradX` are still scalar. Follow-ups: [MLP bulk grads](../../../backlog/infrastructure/2026-11-22_mlp-kern-bulk-grads.md), [KL from Cholesky](../../../backlog/features/2026-11-22_csvgp-kl-grad-from-chol.md), [shared layer covariance](../../../backlog/features/2026-11-22_cip0035-shared-layer-covariance.md).

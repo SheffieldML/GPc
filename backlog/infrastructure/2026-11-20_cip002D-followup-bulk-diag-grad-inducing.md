@@ -4,7 +4,7 @@ title: "CIP-002D follow-up: bulk diag gradients, inducing ∂Z batching, MLP bul
 status: "Completed"
 priority: "High"
 created: "2026-11-20"
-last_updated: "2026-11-20"
+last_updated: "2026-11-22"
 category: "infrastructure"
 related_cips: ["002D", "0028"]
 owner: "Neil Lawrence"
@@ -77,3 +77,7 @@ Bulk `getDiagGradParams` landed on branch `cip002D-bulk-diag-grad`:
 - Pinned by `testInducingGradZ` (bulk vs per-inducing `getGradX`; MLP compute vs `computeElement`; inducing wire)
 
 CIP-002D timing re-measure / `RELEASE=1` soak remains the last open acceptance tick.
+
+### 2026-11-22
+
+DeepGP profiling showed MLP `getGradParams` / `getGradX` still dominate step time (50–70% with MLP kernel). Bulk `compute` alone is not enough. Remaining work tracked as [2026-11-22_mlp-kern-bulk-grads](./2026-11-22_mlp-kern-bulk-grads.md).

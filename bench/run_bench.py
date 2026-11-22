@@ -94,7 +94,16 @@ def parse_bench_line(line: str) -> dict:
     return out
 
 
-def run_gpc(bench: Path, kind: str, data_dir: Path, N: int, q: int, M: int, reps: int) -> dict:
+def run_gpc(
+    bench: Path,
+    kind: str,
+    data_dir: Path,
+    N: int,
+    q: int,
+    M: int,
+    reps: int,
+    sparse_linalg: str = "lq",
+) -> dict:
     env = os.environ.copy()
     env.setdefault("OPENBLAS_NUM_THREADS", "1")
     cmd = [
@@ -111,6 +120,8 @@ def run_gpc(bench: Path, kind: str, data_dir: Path, N: int, q: int, M: int, reps
         str(M),
         "--reps",
         str(reps),
+        "--sparse-linalg",
+        sparse_linalg,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
     if proc.returncode != 0:
@@ -182,6 +193,12 @@ def main(argv=None) -> int:
     ap.add_argument("--M", type=int, default=50)
     ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--seed", type=int, default=13)
+    ap.add_argument(
+        "--sparse-linalg",
+        default="lq",
+        choices=("lq", "stable", "legacy"),
+        help="GPc sparse factorisation mode (REQ-0007 gate uses default lq)",
+    )
     ap.add_argument("--benchGPc", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=Path("bench.csv"))
     ap.add_argument("--skip-gpy", action="store_true")
@@ -206,7 +223,16 @@ def main(argv=None) -> int:
 
         for kind in kinds:
             sparse = kind != "ftc"
-            gpc = run_gpc(args.benchGPc, kind, data_dir, args.N, args.q, args.M, args.reps)
+            gpc = run_gpc(
+                args.benchGPc,
+                kind,
+                data_dir,
+                args.N,
+                args.q,
+                args.M,
+                args.reps,
+                args.sparse_linalg,
+            )
             gpc_ll = float(gpc["ll"])
 
             gate_ok = True
@@ -245,6 +271,7 @@ def main(argv=None) -> int:
                 "N": args.N,
                 "q": args.q,
                 "M": 0 if kind == "ftc" else args.M,
+                "sparse_linalg": gpc.get("sparse_linalg", args.sparse_linalg),
                 "gpc_ll": f"{gpc_ll:.10g}",
                 "gpy_ll": gpy_ll,
                 "numpy_ll": f"{dense_ll:.10g}" if kind == "ftc" else "",
@@ -260,7 +287,8 @@ def main(argv=None) -> int:
             rows.append(row)
             status = "PASS" if gate_ok else "FAIL"
             print(
-                f"[{status}] {kind}: gpc_ll={gpc_ll:.6g}"
+                f"[{status}] {kind} sparse_linalg={row['sparse_linalg']}:"
+                f" gpc_ll={gpc_ll:.6g}"
                 + (f" gpy_ll={gpy['ll']:.6g}" if gpy else "")
                 + (f" gpc_ms={gpc['median_ms']}" if gate_ok else " timing withheld")
                 + (f" ratio={ratio}" if ratio else "")

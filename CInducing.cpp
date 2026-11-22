@@ -45,7 +45,9 @@ void CInducingPoints::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix&
 void CInducingPoints::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                                     const CKern& kern, const CMatrix& X,
                                     const CMatrix& gKuu, const CMatrix& gKuf,
-                                    bool wantX, bool regulariseKern) const
+                                    bool wantX, bool regulariseKern,
+                                    const CMatrix* KuuCached,
+                                    const CMatrix* KufCached) const
 {
   const unsigned int M = numInducing();
   const unsigned int d = domainDim();
@@ -67,7 +69,8 @@ void CInducingPoints::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix*
   }
 
   // CIP-002D follow-up: batched ∂Z (RBF/Lin GEMM; default per-inducing getGradX).
-  kern.inducingGradZ(gZ, *pZ, X, gKuu, gKuf);
+  // Pass GP-cached K_uu/K_uf when provided (CoE 2026-11-22).
+  kern.inducingGradZ(gZ, *pZ, X, gKuu, gKuf, KuuCached, KufCached);
 
   if(wantX && gXOrNull != 0)
   {
@@ -267,7 +270,9 @@ void CInducingWhiteNoise::gradZFromKuu(CMatrix& gZ, const CMatrix& gKuu, const C
 void CInducingWhiteNoise::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                                         const CKern& kern, const CMatrix& X,
                                         const CMatrix& gKuu, const CMatrix& gKuf,
-                                        bool wantX, bool regulariseKern) const
+                                        bool wantX, bool regulariseKern,
+                                        const CMatrix* /*KuuCached*/,
+                                        const CMatrix* /*KufCached*/) const
 {
   const unsigned int M = numInducing();
   const unsigned int d = domainDim();
@@ -489,7 +494,9 @@ void CInducingGreens::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix&
 void CInducingGreens::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                                      const CKern& kern, const CMatrix& X,
                                      const CMatrix& gKuu, const CMatrix& gKuf,
-                                     bool wantX, bool regulariseKern) const
+                                     bool wantX, bool regulariseKern,
+                                     const CMatrix* /*KuuCached*/,
+                                     const CMatrix* /*KufCached*/) const
 {
   assertOneD();
   const unsigned int M = numInducing();
@@ -1187,7 +1194,9 @@ void CInducingWeightSpace::gradRawFromKuuRidge(CMatrix& gRaw, const CMatrix& gKu
 void CInducingWeightSpace::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
                                          const CKern& kern, const CMatrix& X,
                                          const CMatrix& gKuu, const CMatrix& gKuf,
-                                         bool wantX, bool regulariseKern) const
+                                         bool wantX, bool regulariseKern,
+                                         const CMatrix* /*KuuCached*/,
+                                         const CMatrix* /*KufCached*/) const
 {
   const unsigned int M = numInducing();
   const unsigned int d = domainDim();

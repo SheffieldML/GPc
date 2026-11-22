@@ -937,8 +937,9 @@ void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
                                const CMatrix* KufCached) const
 {
   // K = Σ_c K_c ⇒ ∂L/∂Z = Σ_c ∂L_c/∂Z with the same cotangents.
-  // Forward Kuf cache only to RBF (white K(Z,X)=0 so compound K_uf == K_rbf).
-  // Do not forward Kuu: compound K_uu = K_rbf + white·I.
+  // Do not forward GP K_uu/K_uf caches: compound K includes Bias/Lin/White
+  // terms, while CRbfKern::inducingGradZ needs the RBF slice only
+  // (testGp matfiles are rbf+lin+bias+white).
   const unsigned int M = Z.getRows();
   const unsigned int d = Z.getCols();
   gZ.resize(M, d);
@@ -946,13 +947,11 @@ void CCmpndKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
   CMatrix gZc(M, d);
   for(size_t i=0; i<components.size(); i++)
   {
-    const CMatrix* kufPass = 0;
-    if(KufCached != 0 && dynamic_cast<const CRbfKern*>(components[i].get()) != 0)
-      kufPass = KufCached;
-    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf, 0, kufPass);
+    components[i]->inducingGradZ(gZc, Z, X, gKuu, gKuf, 0, 0);
     gZ.axpy(gZc, 1.0);
   }
   (void)KuuCached;
+  (void)KufCached;
 }
 double CCmpndKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& covGrad) const
 {
@@ -2131,6 +2130,7 @@ void CRbfKern::inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
   }
   else
   {
+    // Caller must pass RBF K(Z,X). CCmpndKern does not forward compound K_uf.
     DIMENSIONMATCH(pKuf->getRows()==M && pKuf->getCols()==N);
   }
   CMatrix Wuf(M, N);

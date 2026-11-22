@@ -31,7 +31,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-0010](./cip0010.md): Dedicated testOptimisable suite (**Closed**)
 - [CIP-0011](./cip0011.md): Drive near-complete line coverage of `CGp.cpp` (**Closed**)
 - [CIP-0012](./cip0012.md): Whitened StableFactor path with reverse-mode adjoint gradients (**Closed** — StableFactor default after soak).
-- [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**Closed**). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md). Close table: [bench/cip0013_close/](../bench/cip0013_close/).
+- [CIP-0013](./cip0013.md): GPy-referenced benchmark harness and kernel/BLAS improvements (**In Progress** — reopened 2026-11-22; 2026-11-21 close table withdrawn as cache-reusing). Implements [REQ-0007](../requirements/req0007_competitive-default-build.md).
 - [CIP-0014](./cip0014.md): GPy-like path façade for parameter get/set and constraints (**Closed**). Implements [REQ-0008](../requirements/req0008_gpy-like-parameter-access.md). See [docs/param-paths.md](../docs/param-paths.md).
 - [CIP-0015](./cip0015.md): Native GPy-tutorial parity via C++ demos and markdown (**Closed**). Implements [REQ-0009](../requirements/req0009_gpy-tutorial-parity-native.md). Tutorials index: [docs/tutorials/README.md](../docs/tutorials/README.md). Notebooks are checklist only.
 - [CIP-0017](./cip0017.md): Psi statistics and Bayesian GP-LVM, GPy-parity subset (**Closed**). CLI: `./bgplvm`.

@@ -54,6 +54,36 @@ class Kern:
         """Serialize to the parts list consumed by the C++ constructor."""
         raise NotImplementedError
 
+    def K(
+        self,
+        X: Any,
+        X2: Any | None = None,
+    ) -> Any:
+        """Evaluate the covariance matrix ``K(X)`` or ``K(X, X2)``.
+
+        Builds a temporary ``CKern`` from ``to_parts()`` (no GP / likelihood).
+        Returns a NumPy ``(n, n)`` or ``(n, n2)`` array. Honours ``active_dims``.
+        """
+        import numpy as np
+
+        from ._gpc import kern_K
+
+        Xa = np.asarray(X, dtype=float)
+        if Xa.ndim == 1:
+            Xa = Xa[:, None]
+        X2a = None
+        if X2 is not None:
+            X2a = np.asarray(X2, dtype=float)
+            if X2a.ndim == 1:
+                X2a = X2a[:, None]
+        return kern_K(self.to_parts(), Xa, X2a)
+
+    def plot(self, *args: Any, **kwargs: Any) -> Any:
+        """Thin GPy-style kernel plot (requires ``gpc[plot]`` / matplotlib)."""
+        from .plot import plot_kern
+
+        return plot_kern(self, *args, **kwargs)
+
     def _flat_sum_leaves(self) -> list[Kern]:
         """Leaves for sum flattening (``Add`` only); products stay intact."""
         return [self]

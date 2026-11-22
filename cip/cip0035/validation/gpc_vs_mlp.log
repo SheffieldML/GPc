@@ -1,0 +1,12 @@
+composite L=1 mlp M= 64 D=5: RMSE 0.915±0.001  NLL  1.328±0.001  ELBO/N  -1.369  24.2 ms/iter
+composite L=2 mlp M= 64 D=5: RMSE 0.336±0.016  NLL -0.005±0.036  ELBO/N  -0.381  23.7 ms/iter
+composite L=3 mlp M= 64 D=5: RMSE 0.226±0.017  NLL -0.251±0.029  ELBO/N  -0.178  39.6 ms/iter
+composite L=1 rbf M= 64 D=5: RMSE 0.892±0.000  NLL  1.304±0.001  ELBO/N  -1.358  14.1 ms/iter
+composite L=2 rbf M= 64 D=5: RMSE 0.249±0.003  NLL -0.171±0.011  ELBO/N  -0.286  19.3 ms/iter
+composite L=3 rbf M= 64 D=5: RMSE 0.193±0.002  NLL -0.344±0.009  ELBO/N  -0.053  32.6 ms/iter
+step      L=1 mlp M= 16 D=1: RMSE 0.057±0.005  NLL -1.673±0.085  ELBO/N   1.475  0.6 ms/iter
+step      L=2 mlp M= 16 D=1: RMSE 0.151±0.082  NLL  2.006±4.911  ELBO/N  -3.364  1.8 ms/iter
+step      L=3 mlp M= 16 D=1: RMSE 0.098±0.026  NLL -1.175±0.463  ELBO/N   0.978  2.6 ms/iter
+step      L=1 rbf M= 16 D=1: RMSE 0.181±0.013  NLL -0.263±0.069  ELBO/N   0.098  0.4 ms/iter
+step      L=2 rbf M= 16 D=1: RMSE 0.111±0.026  NLL -0.830±0.246  ELBO/N   0.497  1.2 ms/iter
+step      L=3 rbf M= 16 D=1: RMSE 0.143±0.083  NLL -0.679±0.671  ELBO/N   0.349  1.7 ms/iter

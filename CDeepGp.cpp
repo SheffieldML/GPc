@@ -123,6 +123,7 @@ void CDeepGp::rebuildLayers(double beta)
   meanP.resize(numLayers);
   Zstore.resize(numLayers);
   hiddenY.resize(numLayers);
+  layerX.resize(numLayers);
   layers.resize(numLayers);
   if(inducingTypes.size() != numLayers)
     inducingTypes.assign(numLayers, "points");
@@ -144,7 +145,16 @@ void CDeepGp::rebuildLayers(double beta)
       hiddenY[ell].zeros();
       pY = &hiddenY[ell];
     }
-    layers[ell].reset(new CSvgp(pkerns[ell], &X, pY, Zstore[ell], beta, verbosity));
+    // Each core needs inputs with D_{ℓ-1} columns (it checks Z against them);
+    // use X pushed through the mean maps. Training uses the explicit-input API.
+    if(ell == 0)
+      layerX[ell].deepCopy(X);
+    else
+    {
+      layerX[ell].resize(nData, layerDims[ell]);
+      layerX[ell].gemm(layerX[ell - 1], meanP[ell - 1], 1.0, 0.0, "n", "n");
+    }
+    layers[ell].reset(new CSvgp(pkerns[ell], &layerX[ell], pY, Zstore[ell], beta, verbosity));
     layers[ell]->setQParamMode(CSvgp::QModeCholesky);
     if(inducingTypes[ell] != "points")
       layers[ell]->setInducingType(inducingTypes[ell]);

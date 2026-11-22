@@ -327,6 +327,17 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
   }
 }
 
+void CSvgp::applyWhitenedAt(const CMatrix& XB, const CMatrix& vWhitened,
+                            CMatrix& fOut) const
+{
+  if(vWhitened.getRows() != numInducing || vWhitened.getCols() != outputDim)
+    throw ndlexceptions::Error(
+        "CSvgp::applyWhitenedAt: vWhitened must be M x outputDim");
+  formABFromX(XB, wsAB, wsDK, wsDQ);
+  fOut.resize(XB.getRows(), outputDim);
+  fOut.gemm(wsAB, vWhitened, 1.0, 0.0, "t", "n");
+}
+
 void CSvgp::fillMarginals(const vector<unsigned int>& batch,
                           CMatrix& muOut, CMatrix& varOut) const
 {

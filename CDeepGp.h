@@ -75,10 +75,20 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   void setDropResidual(bool val);
   bool isDropResidual() const { return dropResidual; }
 
-  // Phase 4 V7: prior Jacobian log-singular-value spread (max−min) at a probe
-  // point under identity mean maps, with one prior sample of layer noise per
-  // probe. Requires square Din==Dout. Returns median over nProbe inputs.
+  // Phase 4 V7: prior Jacobian log-singular-value spread (max−min). Each probe
+  // draws whitened v~N(0,I) per layer and finite-differences the map
+  // h ↦ m(h)+A(h)^T v (residual off). Independent of the trained q(v).
+  // Requires square Din==Dout. Returns median over nProbe inputs.
   double jacobianSpread(unsigned int nProbe = 32, uint64_t probeSeed = 0) const;
+
+  // Predictive mean/variance at Xstar (N* x Din).
+  // samples==0: mean path (hidden means only; final-layer marginal + optional
+  //   Gaussian observation noise). Deterministic.
+  // samples>=1: S-sample mixture through hidden layers (CIP-0035); mixture
+  //   moments of the final-layer Gaussians, plus 1/β when addNoise.
+  void predictMeanVar(const CMatrix& Xstar, CMatrix& mu, CMatrix& var,
+                      unsigned int samples = 0, uint64_t sampleSeed = 0,
+                      bool addNoise = true) const;
 
   // Unbiased ELBO estimate on a batch (K samples).
   double elboEstimate(const std::vector<unsigned int>& batch);
@@ -108,6 +118,10 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   void rebuildLayers(double beta);
   void forwardSample(const CMatrix& Xin, const CMatrix& epsFlat,
                      CMatrix& Hout) const;
+  // Prior probe: h_ℓ = m_ℓ(h)+A_ℓ(h)^T v_ℓ (no residual, ignores q).
+  void forwardPriorDraw(const CMatrix& Xin,
+                        const std::vector<CMatrix>& vs,
+                        CMatrix& Hout) const;
 
   CMatrix X;
   CMatrix Y;

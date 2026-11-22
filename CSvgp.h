@@ -150,6 +150,10 @@ class CSvgp : public CStochasticOptimisable {
   // ---- CIP-0035 Phase 0b: hidden-layer API ----
   // Per-point marginals of q(f) at caller inputs XB (B x q); mean/var are B x p.
   void marginalsAt(const CMatrix& XB, CMatrix& mean, CMatrix& var) const;
+  // f = A(X)^T vWhitened (M x p → B x p). Omits Nyström residual — prior
+  // weight-space / inducing probe used by CDeepGp::jacobianSpread (V7).
+  void applyWhitenedAt(const CMatrix& XB, const CMatrix& vWhitened,
+                       CMatrix& fOut) const;
   // Backward: upstream grads of the objective w.r.t. mean and var (B x p).
   // Fills gKern, gInducing; gQ is packed Cholesky q params (empty if QModeCvi).
   // Optional gX (B x q). Does not include KL(q(v)) — see klQ.

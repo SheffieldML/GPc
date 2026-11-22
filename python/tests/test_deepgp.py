@@ -44,6 +44,22 @@ def test_optimize_and_predict():
     assert var.shape == Y.shape
     assert np.all(np.isfinite(mu))
     assert np.all(var > 0.0)
+    mu_s, var_s = m.predict(X, samples=8, seed=5)
+    assert mu_s.shape == Y.shape
+    assert np.all(np.isfinite(mu_s))
+    assert np.all(var_s > 0.0)
+
+
+def test_jacobian_spread_prior_draws():
+    rng = np.random.default_rng(9)
+    X = rng.normal(size=(12, 2))
+    Y = rng.normal(size=(12, 2))
+    m = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=2, num_inducing=6, chi=0.5, beta=1.0
+    )
+    spread = m.jacobian_spread(n_probe=8, probe_seed=11)
+    assert np.isfinite(spread)
+    assert 0.05 < spread < 5.0
 
 
 def test_probit_likelihood():

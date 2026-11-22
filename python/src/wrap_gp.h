@@ -18,7 +18,7 @@
 
 namespace py = pybind11;
 
-// Owns data + kernel + noise + model for FTC Gaussian regression (CIP-001D Phase B / F).
+// Owns data + kernel + noise + model for FTC regression (CIP-001D / CIP-003A).
 class PyGPRegression
 {
 public:
@@ -26,7 +26,9 @@ public:
                  py::array_t<double, py::array::c_style | py::array::forcecast> Y,
                  py::object kernel = py::str("rbf"),
                  int verbosity = 0,
-                 unsigned int arccos_order = 0);
+                 unsigned int arccos_order = 0,
+                 py::object likelihood = py::str("gaussian"),
+                 const std::string& inference = "exact");
 
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
@@ -50,14 +52,18 @@ public:
   unsigned int input_dim() const { return X.getCols(); }
   unsigned int output_dim() const { return Y.getCols(); }
   const std::string& kernel_type() const { return kernelType; }
+  const std::string& likelihood_type() const { return likelihoodType; }
+  const std::string& inference() const { return inferenceType; }
   std::string approx() const { return "ftc"; }
 
 private:
   CMatrix X;
   CMatrix Y;
   std::string kernelType;
+  std::string likelihoodType;
+  std::string inferenceType;
   std::unique_ptr<CCmpndKern> kern;
-  std::unique_ptr<CGaussianNoise> noise;
+  std::unique_ptr<CNoise> noise;
   std::unique_ptr<CGp> model;
 };
 

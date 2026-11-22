@@ -9,7 +9,7 @@ using namespace std;
 CLaplaceInference::CLaplaceInference()
   : maxIters(30), tol(1e-4), jitter(1e-6),
     itersUsed(0), didConverge(false), logMarginal(0.0),
-    haveGradCache(false)
+    pnoise(0), haveGradCache(false)
 {
 }
 
@@ -28,8 +28,12 @@ void CLaplaceInference::fillDerivs(const CMatrix& f,
   for(unsigned int i = 0; i < n; i++)
   {
     double lp = 0.0, g = 0.0, W = 0.0, dW = 0.0;
-    ndlnoise::bernoulliProbitLaplaceDerivs(lp, g, W, dW,
-                                           Y.getVal(i, 0), f.getVal(i, 0));
+    if(pnoise)
+      ndlnoise::laplacePointDerivs(*pnoise, Y.getVal(i, 0), f.getVal(i, 0),
+                                   lp, g, W, dW);
+    else
+      ndlnoise::bernoulliProbitLaplaceDerivs(lp, g, W, dW,
+                                             Y.getVal(i, 0), f.getVal(i, 0));
     logp.setVal(lp, i, 0);
     d1.setVal(g, i, 0);
     Wdiag.setVal(W, i, 0);

@@ -173,7 +173,8 @@ PyDeepGP::PyDeepGP(
   {
     likelihoodType = "gaussian";
   }
-  else if(likelihood == "probit" || likelihood == "Probit")
+  else if(likelihood == "probit" || likelihood == "Probit"
+          || likelihood == "bernoulli" || likelihood == "Bernoulli")
   {
     if(Dout != 1)
       throw ndlexceptions::Error("probit likelihood needs a single output");
@@ -191,9 +192,67 @@ PyDeepGP::PyDeepGP(
     model->setLikelihood(ownedNoise.get());
     likelihoodType = "ordered";
   }
+  else if(likelihood == "student_t" || likelihood == "StudentT")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("student_t likelihood needs a single output");
+    ownedNoise = std::make_unique<CStudentTNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "student_t";
+  }
+  else if(likelihood == "poisson" || likelihood == "Poisson")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("poisson likelihood needs a single output");
+    ownedNoise = std::make_unique<CPoissonNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "poisson";
+  }
+  else if(likelihood == "binomial" || likelihood == "Binomial")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("binomial likelihood needs a single output");
+    ownedNoise = std::make_unique<CBinomialNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "binomial";
+  }
+  else if(likelihood == "exponential" || likelihood == "Exponential")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("exponential likelihood needs a single output");
+    ownedNoise = std::make_unique<CExponentialNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "exponential";
+  }
+  else if(likelihood == "gamma" || likelihood == "Gamma")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("gamma likelihood needs a single output");
+    ownedNoise = std::make_unique<CGammaNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "gamma";
+  }
+  else if(likelihood == "skew_gaussian" || likelihood == "SkewGaussian")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error("skew_gaussian likelihood needs a single output");
+    ownedNoise = std::make_unique<CSkewGaussianNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "skew_gaussian";
+  }
+  else if(likelihood == "skew_exponential" || likelihood == "SkewExponential")
+  {
+    if(Dout != 1)
+      throw ndlexceptions::Error(
+          "skew_exponential likelihood needs a single output");
+    ownedNoise = std::make_unique<CSkewExponentialNoise>(&Y);
+    model->setLikelihood(ownedNoise.get());
+    likelihoodType = "skew_exponential";
+  }
   else
     throw ndlexceptions::Error(
-        "likelihood must be 'gaussian', 'probit', or 'ordered'");
+        "likelihood must be gaussian, probit, ordered, student_t, poisson, "
+        "binomial, exponential, gamma, skew_gaussian, or skew_exponential");
 }
 
 void PyDeepGP::optimize(unsigned int iters, int batch_size,

@@ -48,6 +48,7 @@ const string NOISEVERSION="0.1";
  * Parameter naming (rule 7): likelihood.variance is canonical;
  * Gaussian_noise.variance is the GPy1 alias (wired in Phase A via CIP-0014).
  */
+class CNoise;  // forward for ndlnoise::laplacePointDerivs
 namespace ndlnoise {
 
 /** Add spherical observation noise σ² to the diagonal of a Gram matrix (FTC Phase A). */
@@ -108,6 +109,91 @@ void bernoulliProbitLaplaceDerivs(double& logp,
                                   double& dWdf,
                                   double y,
                                   double f);
+
+/** Inverse Mills ratio λ(z)=φ(z)/Φ(z) and derivatives (GPy gaussian_special). */
+double invMillsRatio(double z);
+double dInvMillsRatio(double z, double lam);
+double d2InvMillsRatio(double z, double lam);
+inline double dInvMillsRatio(double z) { return dInvMillsRatio(z, invMillsRatio(z)); }
+inline double d2InvMillsRatio(double z) { return d2InvMillsRatio(z, invMillsRatio(z)); }
+
+/** SkewGaussian (O'Hagan / Azzalini) log-density and Laplace pieces at latent f.
+ *  p(y|f) = (2/σ) φ((y-f)/σ) Φ(α (y-f)/σ). Writes logp, d1=∂logp/∂f,
+ *  W=−∂²logp/∂f², dWdf=∂W/∂f. */
+void skewGaussianLaplaceDerivs(double& logp,
+                               double& d1,
+                               double& W,
+                               double& dWdf,
+                               double y,
+                               double f,
+                               double variance,
+                               double alpha);
+
+/** SkewExponential (probit × Laplace base) at latent f.
+ *  p(y|f) = λ exp(−λ |y-f|) Φ(α (y-f)). */
+void skewExponentialLaplaceDerivs(double& logp,
+                                  double& d1,
+                                  double& W,
+                                  double& dWdf,
+                                  double y,
+                                  double f,
+                                  double rate,
+                                  double alpha);
+
+/** Student-t (identity link): scale² σ², degrees of freedom ν. */
+void studentTLaplaceDerivs(double& logp,
+                           double& d1,
+                           double& W,
+                           double& dWdf,
+                           double y,
+                           double f,
+                           double variance,
+                           double degFree);
+
+/** Poisson with log link: λ=exp(f). y ∈ {0,1,2,…}. */
+void poissonLogLaplaceDerivs(double& logp,
+                             double& d1,
+                             double& W,
+                             double& dWdf,
+                             double y,
+                             double f);
+
+/** Binomial with probit link: y successes in numTrials trials. */
+void binomialProbitLaplaceDerivs(double& logp,
+                                 double& d1,
+                                 double& W,
+                                 double& dWdf,
+                                 double y,
+                                 double f,
+                                 double numTrials);
+
+/** Exponential with log link: λ=exp(f), y>0. */
+void exponentialLogLaplaceDerivs(double& logp,
+                                 double& d1,
+                                 double& W,
+                                 double& dWdf,
+                                 double y,
+                                 double f);
+
+/** Gamma with log link: mean λ=exp(f), shape α=βλ, scale 1/β. */
+void gammaLogLaplaceDerivs(double& logp,
+                           double& d1,
+                           double& W,
+                           double& dWdf,
+                           double y,
+                           double f,
+                           double beta);
+
+/** CIP-003A Phase 5: dispatch pointwise Laplace pieces through a typed CNoise.
+ *  Supports probit / student_t / poisson / binomial / exponential / gamma /
+ *  skew_gaussian / skew_exponential. Throws for unsupported types. */
+void laplacePointDerivs(const CNoise& noise,
+                        double y,
+                        double f,
+                        double& logp,
+                        double& d1,
+                        double& W,
+                        double& dWdf);
 
 } // namespace ndlnoise
 
@@ -788,6 +874,329 @@ class COrderedNoise : public CNoise {
   mutable double ellBias;
   
   mutable CMatrix gwidth;
+};
+
+/** CIP-003A: skew-normal observation noise (GPy SkewGaussian). Params: variance, alpha. */
+class CSkewGaussianNoise : public CNoise {
+ public:
+  CSkewGaussianNoise() { _init(); }
+  CSkewGaussianNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CSkewGaussianNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getVariance() const { return variance; }
+  void setVariance(double val) { BOUNDCHECK(val > 0.0); variance = val; }
+  double getAlpha() const { return alpha; }
+  void setAlpha(double val) { alpha = val; }
+
+ private:
+  void _init();
+  double variance;
+  double alpha;
+};
+
+/** CIP-003A: skew-Laplace observation noise (GPy SkewExponential). Params: rate, alpha. */
+class CSkewExponentialNoise : public CNoise {
+ public:
+  CSkewExponentialNoise() { _init(); }
+  CSkewExponentialNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CSkewExponentialNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getRate() const { return rate; }
+  void setRate(double val) { BOUNDCHECK(val > 0.0); rate = val; }
+  double getAlpha() const { return alpha; }
+  void setAlpha(double val) { alpha = val; }
+
+ private:
+  void _init();
+  double rate;
+  double alpha;
+};
+
+/** CIP-003A: Student-t observation noise (GPy StudentT). Params: variance, deg_free. */
+class CStudentTNoise : public CNoise {
+ public:
+  CStudentTNoise() { _init(); }
+  CStudentTNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CStudentTNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getVariance() const { return variance; }
+  void setVariance(double val) { BOUNDCHECK(val > 0.0); variance = val; }
+  double getDegFree() const { return degFree; }
+  void setDegFree(double val) { BOUNDCHECK(val > 0.0); degFree = val; }
+
+ private:
+  void _init();
+  double variance;
+  double degFree;
+};
+
+/** CIP-003A: Poisson observation noise with log link (GPy Poisson). No free params. */
+class CPoissonNoise : public CNoise {
+ public:
+  CPoissonNoise() { _init(); }
+  CPoissonNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CPoissonNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+ private:
+  void _init();
+};
+
+/** CIP-003A: Binomial + probit link (GPy Binomial). Fixed numTrials; no free params. */
+class CBinomialNoise : public CNoise {
+ public:
+  CBinomialNoise() : numTrials(1) { _init(); }
+  CBinomialNoise(CMatrix* pyin, unsigned int trials = 1) : numTrials(trials)
+  {
+    BOUNDCHECK(trials >= 1);
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CBinomialNoise();
+
+  unsigned int getNumTrials() const { return numTrials; }
+  void setNumTrials(unsigned int t)
+  {
+    BOUNDCHECK(t >= 1);
+    numTrials = t;
+  }
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  unsigned int numTrials;
+};
+
+/** CIP-003A: Exponential observation noise with log link (GPy Exponential). */
+class CExponentialNoise : public CNoise {
+ public:
+  CExponentialNoise() { _init(); }
+  CExponentialNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CExponentialNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+ private:
+  void _init();
+};
+
+/** CIP-003A: Gamma observation noise with log link (GPy Gamma). Param: beta. */
+class CGammaNoise : public CNoise {
+ public:
+  CGammaNoise() { _init(); }
+  CGammaNoise(CMatrix* pyin)
+  {
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CGammaNoise();
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& errorBarOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  double expectedLogLikelihood(double y, double muVal, double var,
+                               double& gMu, double& gVar) const;
+
+  double getBeta() const { return beta; }
+  void setBeta(double val) { BOUNDCHECK(val > 0.0); beta = val; }
+
+ private:
+  void _init();
+  double beta;
 };
 
 

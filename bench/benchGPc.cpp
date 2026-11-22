@@ -1,6 +1,12 @@
 /* CIP-0013: GPc-side objective+gradient timing (q=2 spherical RBF + white).
  * Prints one key=value line for harness aggregation. Shared data comes from
  * run_bench.py (--data-dir); without it, a portable protocol fill is used.
+ *
+ * Protocol metric (cip0013.md): median wall time of setOptParams + one
+ * objective-plus-gradient evaluation, with parameters perturbed between
+ * repeats so CIP-0009 / kernel caches cannot reuse factorisations. The
+ * printed ll is always evaluated at the unperturbed protocol parameters
+ * so run_bench.py's agreement gate stays meaningful.
  */
 #include <algorithm>
 #include <chrono>
@@ -118,6 +124,21 @@ double median(vector<double>& v)
   return 0.5 * (v[n / 2 - 1] + v[n / 2]);
 }
 
+// Cache-busting step: distinct from the base vector on every repeat so
+// invalidate-on-param-change paths recompute K / factorisations.
+void perturbFromBase(CMatrix& p, const CMatrix& p0, unsigned int rep)
+{
+  const unsigned int n = p0.getCols();
+  p.resize(1, n);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double v = p0.getVal(i);
+    const double h = 1e-6 * (1.0 + fabs(v)) * (1.0 + 0.01 * double(rep + 1));
+    const double sign = ((rep + i) % 2 == 0) ? 1.0 : -1.0;
+    p.setVal(v + sign * h, i);
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -228,22 +249,32 @@ int main(int argc, char** argv)
     CMatrix gKern(1, kern.getNumParams());
     CMatrix gZ(M, q);
     double gBeta = 0.0;
+    CMatrix p0(1, sv.getOptNumParams());
+    CMatrix p(1, sv.getOptNumParams());
+    sv.getOptParams(p0);
     for(unsigned int w = 0; w < warm; w++)
+    {
+      perturbFromBase(p, p0, w);
+      sv.setOptParams(p);
       (void)sv.elboGrad(gKern, gZ, gBeta);
+    }
 
     vector<double> times;
     times.reserve(reps);
-    double ll = 0.0;
     unsigned int allocs = 0;
     for(unsigned int r = 0; r < reps; r++)
     {
+      perturbFromBase(p, p0, warm + r);
       CMatrix::resetTotalAlloc();
       auto t0 = chrono::steady_clock::now();
-      ll = sv.elboGrad(gKern, gZ, gBeta);
+      sv.setOptParams(p);
+      (void)sv.elboGrad(gKern, gZ, gBeta);
       auto t1 = chrono::steady_clock::now();
       times.push_back(chrono::duration<double, milli>(t1 - t0).count());
       allocs += CMatrix::getTotalAlloc();
     }
+    sv.setOptParams(p0);
+    const double ll = sv.elboGrad(gKern, gZ, gBeta);
     const double med = median(times);
     cout << "kind=svgp"
          << " kern=" << kernName
@@ -288,22 +319,32 @@ int main(int argc, char** argv)
   }
 
   CMatrix g(1, model->getOptNumParams());
+  CMatrix p0(1, model->getOptNumParams());
+  CMatrix p(1, model->getOptNumParams());
+  model->getOptParams(p0);
   for(unsigned int w = 0; w < warm; w++)
+  {
+    perturbFromBase(p, p0, w);
+    model->setOptParams(p);
     (void)model->computeObjectiveGradParams(g);
+  }
 
   vector<double> times;
   times.reserve(reps);
-  double ll = 0.0;
   unsigned int allocs = 0;
   for(unsigned int r = 0; r < reps; r++)
   {
+    perturbFromBase(p, p0, warm + r);
     CMatrix::resetTotalAlloc();
     auto t0 = chrono::steady_clock::now();
-    ll = -model->computeObjectiveGradParams(g);
+    model->setOptParams(p);
+    (void)model->computeObjectiveGradParams(g);
     auto t1 = chrono::steady_clock::now();
     times.push_back(chrono::duration<double, milli>(t1 - t0).count());
     allocs += CMatrix::getTotalAlloc();
   }
+  model->setOptParams(p0);
+  const double ll = -model->computeObjectiveGradParams(g);
   double med = median(times);
 
   cout << "kind=" << kind

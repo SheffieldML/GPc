@@ -55,3 +55,7 @@ P1/P2 + `benchGPc` on PR #60. P3: direct-loop `dist2Row`/`dist2Col` landed. Next
 ### 2026-11-22
 
 2026-11-21 close used cache-reusing timings (params unchanged between repeats). CIP-0013 reopened. Next: delivery branch for harness fidelity + CoE + REQ-0007 status + reference-Mac rebench; then either meet 1.3× or revise the bar.
+
+### 2026-11-22 (profile — ordered fixes)
+
+Honest sparse gap is structural, not language: (1) harness perturb — this delivery; (2) LQ default / drop `dorglq`+redundant work — CIP-001B; (3) stop Legacy `A`/`Ainv` in whitened `updateAD` — CIP-0012/001B; (4) reuse `Kuf`/`Kuu` in `inducingGradZ` — CIP-002D; (5) bulk vectorised `exp` — CIP-0013. StableFactor already ≈ GPy on VarDTC 10k/200 when measured with param changes.

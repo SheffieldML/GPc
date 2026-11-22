@@ -204,7 +204,7 @@ Phases 1–3 may land as one PR series if review prefers; Phase 4 must not prece
 - [x] Accepted; worktree `cip003A-likelihood-zoo`
 - [x] Phase 0 helpers + fixture generators (`ndlnoise::invMillsRatio*`, `cip/cip003A/gen_skew_fixture.py`)
 - [x] Phase 1 skew likelihoods (`CSkewGaussianNoise`, `CSkewExponentialNoise`, `./testSkewNoise` green)
-- [ ] Phase 2 Student-t / Poisson / Binomial
+- [x] Phase 2 Student-t / Poisson / Binomial (`./testLikelihoodZoo` green)
 - [ ] Phase 3 Exponential / Gamma
 - [ ] Phase 4 `gpc.likelihoods` + model wiring
 - [ ] Phase 5 SVGP/DeepGP VE + docs

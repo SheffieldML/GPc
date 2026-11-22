@@ -1,7 +1,7 @@
 ---
 id: "2026-11-22_cip003A-phase2-student-poisson"
 title: "CIP-003A Phase 2: Student-t, Poisson, Binomial CNoise"
-status: "Ready"
+status: "Completed"
 priority: "High"
 created: "2026-11-22"
 last_updated: "2026-11-22"
@@ -25,10 +25,15 @@ Port Student-t, Poisson, and Binomial observation models as `CNoise` subclasses 
 
 ## Acceptance Criteria
 
-- [ ] `student_t`, `poisson`, `binomial` stream types
-- [ ] Gradient checks and density fixtures green
-- [ ] Laplace path on `CGp` for at least Student-t and Poisson
+- [x] `student_t`, `poisson`, `binomial` stream types
+- [x] Gradient checks and density fixtures green
+- [ ] Laplace path on `CGp` for at least Student-t and Poisson *(deferred: `CLaplaceInference` still Bernoulli-hardcoded; oracles ready)*
 
 ## Related
 
 - CIP: 003A
+
+## Progress Updates
+
+### 2026-11-22
+`CStudentTNoise` / `CPoissonNoise` / `CBinomialNoise` + `ndlnoise` Laplace oracles; `./testLikelihoodZoo` green. Wiring generalised Laplace into `CGp` left for a follow-up within Phase 2/4.

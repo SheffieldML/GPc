@@ -41,7 +41,8 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   CKern(const CMatrix& X) : updateXused(false), inputDim(0), stationary(false) {}
   CKern(unsigned int inDim) : updateXused(false), inputDim(0), stationary(false) {}
   CKern(const CKern& kern)
-    : nParams(kern.nParams),
+    : CRegularisable(kern),
+      nParams(kern.nParams),
       kernName(kern.kernName),
       type(kern.type),
       paramNames(kern.paramNames),

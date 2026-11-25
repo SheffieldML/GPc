@@ -183,6 +183,37 @@ int main()
     }
   }
 
+  // Cloning a kernel (as CCmpndKern::addKern(const CKern*) does) must keep priors.
+  {
+    std::unique_ptr<CKern> kc(kernP.clone());
+    CCmpndKern* kcc = dynamic_cast<CCmpndKern*>(kc.get());
+    if(kcc==0 || !kcc->paramHasPrior(0) || !kcc->paramHasPrior(1))
+    {
+      cout << "FAIL: cloned compound kernel lost its priors" << endl;
+      fail++;
+    }
+    else if(fabs(kcc->priorLogProb() - kernP.priorLogProb()) > 1e-12)
+    {
+      cout << "FAIL: cloned kernel prior log prob differs" << endl;
+      fail++;
+    }
+    else
+      cout << "PASS cloned kernel keeps its priors" << endl;
+    // Add via the const-pointer overload (clones the component) as well.
+    CCmpndKern viaClone(X);
+    CRbfKern templ(X);
+    CGammaDist* tp = new CGammaDist();
+    templ.addPrior(tp, 0);
+    CRbfKern templCopy(templ);
+    if(templCopy.getNumPriors()!=1 || templCopy.getPrior(0)==tp)
+    {
+      cout << "FAIL: copied kernel should hold its own copy of the prior" << endl;
+      fail++;
+    }
+    else
+      cout << "PASS copied prior is a distinct deep copy" << endl;
+    delete tp;
+  }
   // Sparse approximations must refuse rather than silently drop the prior.
   cout << "Number of failures: " << fail << endl;
   return fail > 0 ? 1 : 0;

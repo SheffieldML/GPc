@@ -121,7 +121,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testNoisePrior
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testNoisePrior testHmc
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -131,7 +131,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
 # testNoiseBatched / testNoiseInLikelihood / testCip0027Perf / testIvmSoftener are CIP-0027 (no .mat).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testNoisePrior
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testNoisePrior testHmc
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -150,6 +150,7 @@ run-matio-tests: matio-tests
 	./testDiagGradParams
 	./testInducingGradZ
 	./testNoisePrior
+	./testHmc
 	./testMatrix
 	./testOptimisable
 	./testParamPaths
@@ -432,6 +433,16 @@ testNoisePrior: testNoisePrior.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o C
 
 testNoisePrior.o: testNoisePrior.cpp CPosteriorTarget.h CGp.h CKern.h CNoise.h CDist.h CMatrix.h
 	$(CC) -c testNoisePrior.cpp -o testNoisePrior.o $(CCFLAGS)
+
+# CIP-003B: HMC verification (analytic Gaussian, energy error, GP grid check).
+testHmc: testHmc.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testHmc testHmc.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testHmc.o: testHmc.cpp CHmc.h CPosteriorTarget.h CGp.h CKern.h CNoise.h CDist.h CMatrix.h
+	$(CC) -c testHmc.cpp -o testHmc.o $(CCFLAGS)
+
+CHmc.o: CHmc.cpp CHmc.h CPosteriorTarget.h COptimisable.h CMatrix.h
+	$(CC) -c CHmc.cpp -o CHmc.o $(CCFLAGS)
 
 # CIP-0028: FTC vs DTCVAR ridge free/fixed centres (tighter bound demo).
 diagWeightSpaceRidge: tools/diagWeightSpaceRidge.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o

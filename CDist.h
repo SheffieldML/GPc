@@ -8,6 +8,7 @@
 #ifndef CDIST_H
 #define CDIST_H
 #include <cmath>
+#include <memory>
 #include <vector>
 #include "CMatrix.h"
 #include "CNdlInterfaces.h"
@@ -39,6 +40,8 @@ class CDist : public CMatInterface, public CStreamInterface, public CTransformab
     cerr << "getGradParams should not be used in CDist" << endl;
     exit(1);
   }
+  // CIP-003B: needed so that copying a kernel or noise model copies its priors.
+  virtual CDist* clone() const=0;
   string getBaseType() const
   {
     return "dist";
@@ -241,7 +244,22 @@ class CParamPriors : CMatInterface {
 class CRegularisable {
 
  public:
-   virtual ~CRegularisable() {}
+  CRegularisable() {}
+  // CIP-003B: copies deep-copy the priors, so cloning a kernel or noise model
+  // keeps its priors (the compiler-generated copy used to drop them). Copied
+  // priors are owned by the copy; priors passed to addPrior stay owned by the
+  // caller, as before.
+  CRegularisable(const CRegularisable& rhs)
+    {
+      copyPriorsFrom(rhs);
+    }
+  CRegularisable& operator=(const CRegularisable& rhs)
+    {
+      if(this!=&rhs)
+	copyPriorsFrom(rhs);
+      return *this;
+    }
+  virtual ~CRegularisable() {}
 
   // these are the pure virtual functions.
   virtual unsigned int getNumParams() const=0;
@@ -370,7 +388,21 @@ class CRegularisable {
     }
 #endif
  private:
+  void copyPriorsFrom(const CRegularisable& rhs)
+    {
+      std::vector<std::unique_ptr<CDist> > fresh;
+      CParamPriors copied;
+      for(unsigned int i=0; i<rhs.distArray.dists.size(); i++)
+	{
+	  fresh.push_back(std::unique_ptr<CDist>(rhs.distArray.dists[i]->clone()));
+	  copied.addDist(fresh.back().get(), rhs.distArray.distIndex[i]);
+	}
+      ownedPriors.swap(fresh);
+      distArray.dists = copied.dists;
+      distArray.distIndex = copied.distIndex;
+    }
   CParamPriors distArray;
+  std::vector<std::unique_ptr<CDist> > ownedPriors;
 
 };
 

@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-25"
 id: "003B"
 last_updated: "2026-11-25"
-status: "Proposed"
+status: "In Progress"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0015", "0017", "002A", "0033", "0035"]
@@ -25,8 +25,8 @@ title: "Hamiltonian Monte Carlo over COptimisable parameters"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
 - [ ] Implemented - Code changes complete
 - [ ] Closed - Verified and merged
 - [ ] Rejected - Will not be implemented
@@ -127,13 +127,22 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 
 ## Implementation Status
 
-- [ ] Phase 0: requirement drafted
-- [ ] Phase 1: core sampler and analytic-target tests
-- [ ] Phase 2: transform Jacobian
-- [ ] Phase 3: adaptation and diagnostics
-- [ ] Phase 4: model enablement
-- [ ] Phase 5: CLI and Python surface
+- [ ] Phase 0: requirement drafted (still outstanding)
+- [x] Phase 1: core sampler `CHmc` with analytic-target, energy-error and rejection tests (`testHmc`)
+- [x] Phase 2: transform Jacobian (`CTransform::logJacobian`, `gradLogJacobian`, `isBounded`) with finite-difference tests
+- [x] Phase 3 (partial): dual-averaging step size. ESS is computed in the tests, not in the sampler
+- [x] Priors on `likelihood.variance`: `CNoise` is `CRegularisable`, as GPy allows a prior on any parameter
+- [x] `CPosteriorTarget`: Jacobian switch (`setIncludeJacobian`, default on; off reproduces GPy) and improper-posterior check (`setAllowImproper` overrides)
+- [x] Fix: kernel copies keep their priors (`CRegularisable` deep-copies; `CDist::clone` is now pure virtual)
+- [x] Phase 4 (partial): exact FTC `CGp` with kernel parameters and `likelihood.variance`. Other models throw `NotImplementedError`
+- [ ] Phase 4: `CGplvm`, sparse and variational models; noise priors for sparse (beta) parameterisation
+- [ ] Priors on noise in the `.model` stream (needs a format version bump)
+- [ ] Phase 5: CSV sample output, CLI mode, Python wrapper
 - [ ] Phase 6: tutorial
+
+## GPy comparison
+
+GPy attaches priors to any parameter (including `likelihood.variance`) on the constrained value and, as far as we recall, samples in transformed space without a Jacobian and without a properness check. GPc follows the same prior model but adds the Jacobian by default and refuses improper targets.
 
 ## References
 

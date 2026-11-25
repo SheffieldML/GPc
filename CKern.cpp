@@ -326,6 +326,26 @@ void CComponentKern::syncTransformsFromComponents()
   }
 }
 
+string CKern::getSampleParamName(unsigned int index) const
+{
+  if(getParamName(index)=="inverseWidth")
+    return "inv_lengthscale";
+  return canonicalLeafName(*this, index);
+}
+
+string CComponentKern::getSampleParamName(unsigned int paramNo) const
+{
+  unsigned int start=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int end=start+components[i]->getNumParams()-1;
+    if(paramNo<=end)
+      return componentPathLabel(static_cast<unsigned int>(i))+string(".")+components[i]->getSampleParamName(paramNo-start);
+    start=end+1;
+  }
+  return "";
+}
+
 string CComponentKern::getParamName(unsigned int paramNo) const
 {
   unsigned int start=0;

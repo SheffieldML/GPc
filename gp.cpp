@@ -733,46 +733,6 @@ void CClgp::relearn()
 }
 
 // CIP-003B: parse "gamma:a,b" or "gaussian:precision" into a prior.
-static CDist* parsePriorSpec(const string& spec)
-{
-  const size_t colon=spec.find(':');
-  if(colon==string::npos)
-    throw ndlexceptions::Error("prior spec must look like gamma:a,b or gaussian:precision, got: "+spec);
-  const string kind=spec.substr(0, colon);
-  vector<double> vals;
-  string rest=spec.substr(colon+1);
-  size_t pos=0;
-  while(pos<=rest.size())
-  {
-    const size_t comma=rest.find(',', pos);
-    const string tok=rest.substr(pos, comma==string::npos ? string::npos : comma-pos);
-    if(tok.empty())
-      throw ndlexceptions::Error("empty prior parameter in: "+spec);
-    vals.push_back(atof(tok.c_str()));
-    if(comma==string::npos)
-      break;
-    pos=comma+1;
-  }
-  if(kind=="gamma")
-  {
-    if(vals.size()!=2 || !(vals[0]>0.0) || !(vals[1]>0.0))
-      throw ndlexceptions::Error("gamma prior needs positive shape and rate: gamma:a,b");
-    CGammaDist* d=new CGammaDist();
-    d->setParam(vals[0], 0);
-    d->setParam(vals[1], 1);
-    return d;
-  }
-  if(kind=="gaussian")
-  {
-    if(vals.size()!=1 || !(vals[0]>0.0))
-      throw ndlexceptions::Error("gaussian prior needs a positive precision: gaussian:precision");
-    CGaussianDist* d=new CGaussianDist();
-    d->setParam(vals[0], 0);
-    return d;
-  }
-  throw ndlexceptions::Error("unknown prior type '"+kind+"' (use gamma or gaussian)");
-}
-
 void CClgp::sample()
 {
   incrementArgument();
@@ -871,7 +831,7 @@ void CClgp::sample()
     const size_t eq=priorSpecs[i].find('=');
     if(eq==string::npos || eq==0 || eq+1>=priorSpecs[i].size())
       exitError("--prior expects path=gamma:a,b or path=gaussian:precision, got: "+priorSpecs[i]);
-    pmodel->addPriorByPath(priorSpecs[i].substr(0, eq), parsePriorSpec(priorSpecs[i].substr(eq+1)));
+    pmodel->addPriorByPath(priorSpecs[i].substr(0, eq), priorFromSpec(priorSpecs[i].substr(eq+1)));
   }
   for(size_t i=0; i<fixPaths.size(); i++)
     pmodel->fix(fixPaths[i]);
@@ -1369,7 +1329,7 @@ void CClgp::helpInfo()
     helpArgument("-b, --burn-in int", "Transitions used to adapt the step size (dual averaging, target acceptance 0.8) and then discarded. Default 200; 0 keeps the step size fixed.");
     helpArgument("-e, --step-size float", "Initial leapfrog step size. Default 0.1.");
     helpArgument("-l, --leapfrog int", "Leapfrog steps per transition. Default 10.");
-    helpArgument("-p, --prior path=spec", "Attach a prior to a kernel parameter or likelihood.variance, e.g. rbf.lengthscale=gamma:2,1 or likelihood.variance=gamma:2,3. spec is gamma:shape,rate or gaussian:precision. Repeatable.");
+    helpArgument("-p, --prior path=spec", "Attach a prior to a kernel parameter or likelihood.variance, e.g. rbf.inv_lengthscale=gamma:2,1 or likelihood.variance=gamma:2,3 (priors attach to the native inverse width; rbf.lengthscale is refused). spec is gamma:shape,rate or gaussian:precision. Repeatable.");
     helpArgument("-F, --fix path", "Hold a parameter fixed (same paths as --prior). Repeatable.");
     helpArgument("-J, --no-jacobian", "Omit the log-Jacobian of the constraining transforms (GPy-style: samples the transformed-space density). Default includes it, so priors mean what they say on the constrained value.");
     helpArgument("-I, --allow-improper", "Run even if some parameter has neither a prior nor a bounded transform.");

@@ -332,7 +332,7 @@ int main()
     for(int i=0; i<noise.getOutputDim(); i++) noise.setBiasVal(0.0, i);
     CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
     bool improperBefore = !model.improperReason().empty();
-    const char* paths[3] = {"rbf.lengthscale", "rbf.variance", "likelihood.variance"};
+    const char* paths[3] = {"rbf.inv_lengthscale", "rbf.variance", "likelihood.variance"};
     for(int k=0; k<3; k++)
     {
       CGammaDist* g = new CGammaDist();
@@ -344,6 +344,12 @@ int main()
     bool threw = false;
     try { model.addPriorByPath("nonsense.path", new CGammaDist()); }
     catch(...) { threw = true; }
+    // rbf.lengthscale is a GPy-unit view of the native inverse width; a prior on
+    // it would silently land on the wrong quantity, so it must be refused.
+    bool refusedLengthscale = false;
+    try { model.addPriorByPath("rbf.lengthscale", new CGammaDist()); }
+    catch(const ndlexceptions::Error& e) { refusedLengthscale = string(e.getMessage()).find("inv_lengthscale")!=string::npos; }
+    threw = threw && refusedLengthscale;
     if(improperBefore && properAfter && threw)
       cout << "PASS addPriorByPath removes improperness and rejects unknown paths" << endl;
     else { cout << "FAIL addPriorByPath: before " << improperBefore << " after " << properAfter << " threw " << threw << endl; fail++; }
@@ -378,7 +384,7 @@ int main()
         CGammaDist* g = new CGammaDist();
         g->setParam(2.0, 0);
         g->setParam(k==2 ? 10.0 : 1.0, 1);
-        model.addPriorByPath(k==0 ? "rbf.lengthscale" : (k==1 ? "rbf.variance" : "likelihood.variance"), g);
+        model.addPriorByPath(k==0 ? "rbf.inv_lengthscale" : (k==1 ? "rbf.variance" : "likelihood.variance"), g);
       }
       CMatrix a(1, model.getOptNumParams());
       model.getOptParams(a);

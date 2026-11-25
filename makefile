@@ -104,12 +104,12 @@ gp: gp.o CHmc.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.
 	$(LD) ${XLINKERFLAGS} -o gp gp.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 # CIP-001D / CIP-0035: GPLVM façades + DeepGP (SVGP/Adam) in libgp.
-LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
+LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o
 
-libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
+libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o
 	$(LIBSCOMMAND) libgp$(LIBSEXT) $(LIBGP_OBJS)
 
-libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o
+libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o
 	$(LIBDCOMMAND) libgp$(LIBDEXT) $(LIBGP_OBJS) $(LDFLAGS)
 
 gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \

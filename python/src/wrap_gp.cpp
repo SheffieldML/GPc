@@ -6,6 +6,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
+#include "CHmc.h"
 #include "matrix_numpy.h"
 #include "ndlexceptions.h"
 
@@ -872,6 +873,126 @@ PyGPRegression::PyGPRegression(
   }
 }
 
+// ---- CIP-003B sampling helpers (outside the anonymous namespace so templates see CGp) ----
+namespace {
+
+// CIP-003B: restores everything hmc() touches, including when sampling throws.
+struct HmcStateGuard
+{
+  CGp& gp;
+  CMatrix start;
+  std::vector<std::string> fixedByUs;
+  bool jacobian;
+  HmcStateGuard(CGp& g) : gp(g), start(1, g.getOptNumParams()), jacobian(g.getIncludeJacobian())
+  {
+    gp.getOptParams(start);
+  }
+  ~HmcStateGuard()
+  {
+    try
+    {
+      for(size_t i = 0; i < fixedByUs.size(); i++)
+        gp.unfix(fixedByUs[i]);
+      gp.setIncludeJacobian(jacobian);
+      gp.setAllowImproper(false);
+      gp.setOptParams(start);
+    }
+    catch(...)
+    {
+    }
+  }
+};
+
+py::dict hmcSampleGp(CGp& gp,
+                     unsigned int num_samples,
+                     unsigned int burn_in,
+                     double step_size,
+                     unsigned int num_leapfrog,
+                     unsigned long seed,
+                     bool include_jacobian,
+                     bool allow_improper,
+                     const std::vector<std::string>& fix)
+{
+  HmcStateGuard guard(gp);
+  for(size_t i = 0; i < fix.size(); i++)
+  {
+    if(!gp.isFixed(fix[i]))
+    {
+      gp.fix(fix[i]);
+      guard.fixedByUs.push_back(fix[i]);
+    }
+  }
+  gp.setIncludeJacobian(include_jacobian);
+  gp.setAllowImproper(allow_improper);
+  CHmc hmc(gp, gp, seed);
+  hmc.setStepSize(step_size);
+  hmc.setNumLeapfrog(num_leapfrog);
+  if(burn_in > 0)
+    hmc.adaptStepSize(burn_in);
+  CMatrix samples, logPost;
+  hmc.sample(num_samples, samples, logPost);
+  std::vector<SampledParam> params;
+  gp.sampledParams(params);
+  CMatrix constrained(samples.getRows(), samples.getCols());
+  std::vector<std::string> names;
+  for(size_t j = 0; j < params.size(); j++)
+    names.push_back(params[j].name);
+  for(unsigned int i = 0; i < samples.getRows(); i++)
+    for(unsigned int j = 0; j < samples.getCols(); j++)
+    {
+      double v = samples.getVal(i, j);
+      if(params[j].transform != 0)
+        v = params[j].transform->atox(v);
+      constrained.setVal(v, i, j);
+    }
+  py::dict out;
+  out["names"] = names;
+  out["samples"] = matrixToNumpy(constrained);
+  out["log_posterior"] = matrixToNumpy(logPost);
+  out["accept_rate"] = hmc.acceptRate();
+  out["step_size"] = hmc.getStepSize();
+  return out;
+}
+
+template <class PyModel>
+void defineSampling(py::class_<PyModel>& cls)
+{
+  cls.def("set_prior",
+          [](PyModel& self, const std::string& path, const std::string& spec) {
+            self.gp().addPriorByPath(path, priorFromSpec(spec));
+          },
+          py::arg("path"),
+          py::arg("spec"),
+          "Add a prior on a parameter by path, on its natural (constrained) value.\n"
+          "spec is 'gamma:shape,rate' or 'gaussian:precision'. Prefer\n"
+          "gpc.models wrappers set_prior(path, 'gamma', shape, rate). CIP-003B.")
+      .def("hmc",
+           [](PyModel& self, unsigned int num_samples, unsigned int burn_in,
+              double step_size, unsigned int num_leapfrog, unsigned long seed,
+              bool include_jacobian, bool allow_improper,
+              const std::vector<std::string>& fix) {
+             return hmcSampleGp(self.gp(), num_samples, burn_in, step_size,
+                                num_leapfrog, seed, include_jacobian,
+                                allow_improper, fix);
+           },
+           py::arg("num_samples") = 1000,
+           py::arg("burn_in") = 200,
+           py::arg("step_size") = 0.1,
+           py::arg("num_leapfrog") = 10,
+           py::arg("seed") = 1,
+           py::arg("include_jacobian") = true,
+           py::arg("allow_improper") = false,
+           py::arg("fix") = std::vector<std::string>(),
+           "Hamiltonian Monte Carlo over the unfixed hyperparameters (CIP-003B).\n\n"
+           "Returns a dict with names, samples (n x P, natural units), log_posterior,\n"
+           "accept_rate and step_size. Refuses a target with no proper posterior\n"
+           "(every sampled parameter needs a prior; see set_prior) unless\n"
+           "allow_improper=True. include_jacobian=False reproduces GPy, which samples\n"
+           "the transformed space without the change-of-variables term. Parameters\n"
+           "named in fix are held fixed for the run; the model is restored afterwards.");
+}
+}  // namespace
+
 void PyGPRegression::set_by_path(const std::string& path, double val)
 {
   model->setByPath(path, val);
@@ -1416,7 +1537,7 @@ void bind_gp(py::module_& m)
       .def_readonly("log_likelihood", &ModelDescription::logLikelihood)
       .def_readonly("opt_num_params", &ModelDescription::optNumParams);
 
-  py::class_<PyGPRegression>(
+  auto clsGp = py::class_<PyGPRegression>(
       m,
       "GPRegression",
       "Full / FTC Gaussian process regression (CIP-001D / CIP-001E).\n\n"
@@ -1492,6 +1613,7 @@ void bind_gp(py::module_& m)
                              &PyGPRegression::inference,
                              "Inference mode: 'exact' or 'laplace'.")
       .def_property_readonly("approx", &PyGPRegression::approx, "Approximation type ('ftc').");
+  defineSampling(clsGp);
 
   py::class_<PyGPClassification>(
       m,
@@ -1549,7 +1671,7 @@ void bind_gp(py::module_& m)
       .def_property_readonly("inference", &PyGPClassification::inference)
       .def_property_readonly("approx", &PyGPClassification::approx);
 
-  py::class_<PySparseGPRegression>(
+  auto clsSparse = py::class_<PySparseGPRegression>(
       m,
       "SparseGPRegression",
       "Sparse Gaussian process regression (DTCVAR / FITC / DTC; CIP-001D / CIP-001E).\n\n"
@@ -1668,6 +1790,7 @@ void bind_gp(py::module_& m)
           "window_widths",
           &PySparseGPRegression::window_widths,
           "Per-unit weight-space window widths as a length-M array (CIP-0032).");
+  defineSampling(clsSparse);
 
   m.def(
       "kern_K",

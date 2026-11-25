@@ -77,4 +77,10 @@ void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
                      const CMatrix& logPost, std::ostream& out,
                      bool constrained=true);
 
+// CIP-003B: build a prior from a text spec shared by the CLI and the Python
+// façade: "gamma:shape,rate" or "gaussian:precision". The caller owns the
+// returned distribution unless it hands it to a model (models keep the pointer).
+class CDist;
+CDist* priorFromSpec(const std::string& spec);
+
 #endif

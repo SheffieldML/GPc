@@ -637,7 +637,7 @@ void CGp::sampledParams(std::vector<SampledParam>& params) const
     if(isKernParamFixed(i))
       continue;
     SampledParam sp;
-    sp.name = pkern->getParamName(i);
+    sp.name = pkern->getSampleParamName(i);
     sp.transform = pkern->getParamTransform(i);
     sp.hasPrior = pkern->paramHasPrior(i);
     sp.constrainedValue = pkern->getParam(i);
@@ -983,7 +983,21 @@ void CGp::addPriorByPath(const string& path, CDist* dist)
   unsigned int index=0;
   resolveFixPath(path, kind, index);
   if(kind==0)
+  {
+    // rbf.lengthscale is a GPy-unit view of the native inverse width. A prior is
+    // evaluated on the native value, so refuse the misleading name.
+    const string sampleName=pkern->getSampleParamName(index);
+    const string suffix=".lengthscale";
+    const string plain=(path.compare(0, 5, "kern.")==0) ? path.substr(5) : path;
+    const bool nameIsLengthscale=(plain=="lengthscale")
+      || (plain.size()>suffix.size() && plain.compare(plain.size()-suffix.size(), suffix.size(), suffix)==0);
+    if(nameIsLengthscale && sampleName.find("inv_lengthscale")!=string::npos)
+    {
+      delete dist;
+      throw ndlexceptions::Error("priors attach to the native inverse width, not the lengthscale: use '"+sampleName+"' (rbf.lengthscale is a GPy-unit view, lengthscale = 1/sqrt(inv_lengthscale)).");
+    }
     pkern->addPriorAt(dist, index);
+  }
   else if(kind==3)
   {
     if(!isGaussianNoise())

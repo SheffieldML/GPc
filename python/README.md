@@ -245,3 +245,17 @@ Defaults follow GPy’s `kern.RBF` (not `ExpQuad` path names). Native tutorials 
 ## Later / not in the Python notebook subset yet
 
 Notebook ports of the oil / SVI GPLVM / MRD tutorials are still outstanding. Other GPy-online topics we have **not** mirrored as `gpc` notebooks (coregionalization, sparse EP / IVM, SVGP, SVI BGPLVM, Poisson/hetero/HMC) are listed with owning CIPs in [`docs/subset_checklist.md`](docs/subset_checklist.md). Deep GP is available as `gpc.models.DeepGP` ([CIP-0035](../cip/cip0035.md)). SVI Bayesian GPLVM remains CLI-first today (`./bgplvm --inference svi`); see [docs/tutorials/bgplvm_svi.md](../docs/tutorials/bgplvm_svi.md) and backlog `2026-11-20_cip0030-phase4b-python-facade`.
+
+## Posterior samples of hyperparameters (CIP-003B / REQ-001C)
+
+`gpc.inference` draws Hamiltonian Monte Carlo samples of the free hyperparameters of `GPRegression` and `SparseGPRegression` (sparse models need fixed inducing points). Priors sit on the native parameter value; for the RBF kernel that is `rbf.inv_lengthscale`, and a prior on `rbf.lengthscale` is refused with a message (lengthscale is a GPy-unit view of the inverse width). An improper target (a sampled parameter without a prior) is refused unless `allow_improper=True`.
+
+```python
+import gpc
+m = gpc.models.GPRegression(X, Y, kernel=gpc.kern.RBF(1))
+for path in ("rbf.inv_lengthscale", "rbf.variance", "likelihood.variance"):
+    gpc.inference.set_prior(m, path, "gamma", 2.0, 1.0)
+res = gpc.inference.hmc(m, num_samples=2000, burn_in=300)
+res.to_csv("samples.csv")   # same layout as `gp sample`
+```
+

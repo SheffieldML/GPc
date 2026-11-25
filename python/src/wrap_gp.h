@@ -33,6 +33,8 @@ public:
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
   std::vector<std::string> param_paths() const;
+  // CIP-003B: access for the sampling bindings.
+  CGp& gp() { return *model; }
 
   void optimize(unsigned int iters = 100,
                 bool messages = false,
@@ -145,6 +147,8 @@ public:
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;
   std::vector<std::string> param_paths() const;
+  // CIP-003B: access for the sampling bindings.
+  CGp& gp() { return *model; }
 
   void optimize(unsigned int iters = 100,
                 bool messages = false,

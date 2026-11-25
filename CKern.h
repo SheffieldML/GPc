@@ -400,6 +400,11 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
       BOUNDCHECK(index<paramNames.size());
       return paramNames[index];
     }
+  // CIP-003B: name of the quantity a prior or sample actually refers to. Paths
+  // such as rbf.lengthscale are GPy units converted from the native inverse
+  // width; priors and samples live on the native value, so they are named
+  // rbf.inv_lengthscale. Other parameters use their path name.
+  virtual string getSampleParamName(unsigned int index) const;
 
   // GPy-aligned path façade (CIP-0014 / REQ-0008). Indexed setParam remains
   // native storage; these methods use GPy names/units at the boundary.
@@ -623,6 +628,7 @@ class CComponentKern : public CKern
     return -1;
   }
   virtual string getParamName(unsigned int paramNo) const;
+  virtual string getSampleParamName(unsigned int paramNo) const;
   virtual vector<string> paramPaths() const;
   virtual unsigned int paramIndex(const string& path) const;
   virtual double getByPath(const string& path) const;

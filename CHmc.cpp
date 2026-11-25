@@ -2,7 +2,9 @@
 #include <cmath>
 #include <iomanip>
 #include <limits>
+#include <cstdlib>
 #include "CHmc.h"
+#include "CDist.h"
 #include "ndlutil.h"
 #include "ndlexceptions.h"
 
@@ -207,4 +209,44 @@ void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
     out << "\n";
   }
   out.precision(oldPrecision);
+}
+
+CDist* priorFromSpec(const std::string& spec)
+{
+  const size_t colon=spec.find(':');
+  if(colon==std::string::npos)
+    throw ndlexceptions::Error("prior spec must look like gamma:a,b or gaussian:precision, got: "+spec);
+  const std::string kind=spec.substr(0, colon);
+  std::vector<double> vals;
+  std::string rest=spec.substr(colon+1);
+  size_t pos=0;
+  while(pos<=rest.size())
+  {
+    const size_t comma=rest.find(',', pos);
+    const std::string tok=rest.substr(pos, comma==std::string::npos ? std::string::npos : comma-pos);
+    if(tok.empty())
+      throw ndlexceptions::Error("empty prior parameter in: "+spec);
+    vals.push_back(std::atof(tok.c_str()));
+    if(comma==std::string::npos)
+      break;
+    pos=comma+1;
+  }
+  if(kind=="gamma")
+  {
+    if(vals.size()!=2 || !(vals[0]>0.0) || !(vals[1]>0.0))
+      throw ndlexceptions::Error("gamma prior needs positive shape and rate: gamma:a,b");
+    CGammaDist* d=new CGammaDist();
+    d->setParam(vals[0], 0);
+    d->setParam(vals[1], 1);
+    return d;
+  }
+  if(kind=="gaussian")
+  {
+    if(vals.size()!=1 || !(vals[0]>0.0))
+      throw ndlexceptions::Error("gaussian prior needs a positive precision: gaussian:precision");
+    CGaussianDist* d=new CGaussianDist();
+    d->setParam(vals[0], 0);
+    return d;
+  }
+  throw ndlexceptions::Error("unknown prior type '"+kind+"' (use gamma or gaussian)");
 }

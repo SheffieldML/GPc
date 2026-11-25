@@ -1,5 +1,6 @@
 #ifndef CGP_H
 #define CGP_H
+#include "CPosteriorTarget.h"
 #include "CMltools.h"
 #include "CInducing.h"
 #include "CEpInference.h"
@@ -11,7 +12,7 @@ using namespace std;
 
 const string GPVERSION="0.1";
 
-class CGp : public CMapModel, public CProbabilisticOptimisable, public CStreamInterface, public CMatInterface
+class CGp : public CMapModel, public CProbabilisticOptimisable, public CPosteriorTarget, public CStreamInterface, public CMatInterface
 {
 public:
   enum 
@@ -418,6 +419,17 @@ public:
   // CIP-0027: Gaussian observation noise on the likelihood.
   bool isGaussianNoise() const;
   double getLikelihoodVariance() const;
+  // CIP-003B: attach a prior to a parameter named as in fix()/setByPath
+  // (kernel paths such as rbf.lengthscale, or likelihood.variance). The model
+  // does not take ownership of dist; it must outlive the model.
+  void addPriorByPath(const string& path, CDist* dist);
+  // CIP-003B: log prior and its gradient (log-likelihood convention) for likelihood.variance.
+  // CIP-003B: sampling target (exact FTC, Gaussian likelihood only for now).
+  void sampledParams(std::vector<SampledParam>& params) const;
+  const COptimisable& optimisable() const { return *this; }
+  double noisePriorLogProb() const;
+  double noisePriorGradBeta() const;
+  double noisePriorGradVariance() const;
   void setLikelihoodVariance(double val);
   bool addsLikelihoodVarianceToGram() const;
   // Phase C: permit free White and free likelihood.variance together (FTC).

@@ -9,6 +9,7 @@
 #include "CNoise.h"
 #include "CNoiseSiteWorkspace.h"
 #include "CKern.h"
+#include "CPosteriorTarget.h"
 #include <cassert>
 
 using namespace std;
@@ -16,7 +17,7 @@ using namespace std;
 const double NULOW=1e-16;
 const string PPAVERSION="0.2";
 
-class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamInterface {
+class CPpa : public CMapModel, public CProbabilisticOptimisable, public CPosteriorTarget, public CStreamInterface {
  public:
   CPpa(const CMatrix& inData, const CMatrix& targetData,
        CKern& kernel, CNoise& noiseModel, int verbos=2);
@@ -84,6 +85,20 @@ class CPpa : public CMapModel, public CProbabilisticOptimisable, public CStreamI
   void kernelLogLikelihoodGradient(CMatrix& g) const;
 
   void optimise(int maxIters=15, int kernIters=100, int noiseIters=100);
+
+  // CIP-003B: HMC over the kernel parameters. The target is the PPA M-step
+  // objective (kernelLogLikelihood: a Gaussian marginal likelihood of the site
+  // expectations <f> with noise 1/beta, plus kernel priors) with the sites held
+  // at their current values, so run eStep/optimise first. The outer
+  // approxLogLikelihood has no exact gradient here (approxLogLikelihoodGradient
+  // is a stand-in), so it cannot drive HMC. The result is a conditional
+  // generalised posterior given the sites, not a PPA posterior over sites too.
+  // Call setKernelObjective(true) before sampling; sampledParams refuses
+  // otherwise.
+  void setKernelObjective(bool val) { optimisingKernel = val; }
+  bool isKernelObjective() const { return optimisingKernel; }
+  void sampledParams(std::vector<SampledParam>& params) const;
+  const COptimisable& optimisable() const { return *this; }
   bool equals(const CPpa& model, double tol=ndlutil::MATCHTOL) const;
   void display(ostream& os) const;
 

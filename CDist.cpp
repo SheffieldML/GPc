@@ -222,6 +222,78 @@ double CGammaDist::getGradInput(double x) const
   return (a-1.0)/x - b;
 }
 
+// Prior on y = x^(-c) of the stored parameter x (CIP-003B).
+CPowerViewDist::CPowerViewDist() : c(0.5)
+{
+  inner.reset(new CGammaDist());
+  _init();
+}
+CPowerViewDist::CPowerViewDist(CDist* in, double exponent) : inner(in), c(exponent)
+{
+  if(!inner)
+    throw ndlexceptions::Error("CPowerViewDist needs an inner distribution.");
+  if(!(c>0.0))
+    throw ndlexceptions::Error("CPowerViewDist needs a positive exponent.");
+  _init();
+}
+CPowerViewDist::CPowerViewDist(const CPowerViewDist& dist) : inner(dist.inner->clone()), c(dist.c)
+{
+  _init();
+}
+CPowerViewDist::~CPowerViewDist()
+{
+}
+void CPowerViewDist::_init()
+{
+  setNumParams(1+inner->getNumParams());
+  setType("powerview");
+  setName("prior on x^(-c)");
+  setParamName("exponent", 0);
+  for(unsigned int i=0; i<inner->getNumParams(); i++)
+    setParamName(inner->getParamName(i), i+1);
+}
+void CPowerViewDist::setInitParam()
+{
+  c=0.5;
+  inner->setInitParam();
+}
+double CPowerViewDist::getParam(unsigned int index) const
+{
+  BOUNDCHECK(index<getNumParams());
+  return index==0 ? c : inner->getParam(index-1);
+}
+void CPowerViewDist::setParam(double val, unsigned int index)
+{
+  BOUNDCHECK(index<getNumParams());
+  if(index==0)
+    c=val;
+  else
+    inner->setParam(val, index-1);
+}
+double CPowerViewDist::logProb(double x) const
+{
+  const double y=pow(x, -c);
+  return inner->logProb(y)+log(c)-(c+1.0)*log(x);
+}
+double CPowerViewDist::getGradInput(double x) const
+{
+  const double y=pow(x, -c);
+  return inner->getGradInput(y)*(-c*y/x)-(c+1.0)/x;
+}
+void CPowerViewDist::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "exponent", c);
+  writeDistToStream(*inner, out);
+}
+void CPowerViewDist::readParamsFromStream(istream& in)
+{
+  c=readDoubleFromStream(in, "exponent");
+  inner.reset(readDistFromStream(in));
+  _init();
+}
+
 // Wang's unusual prior from the GPDM thesis.
 CWangDist::CWangDist()
 {
@@ -349,6 +421,8 @@ CDist* readDistFromStream(istream& in)
     pdist = new CGammaDist();
   else if(type=="wang")
     pdist = new CWangDist();
+  else if(type=="powerview")
+    pdist = new CPowerViewDist();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown distribution type " + type + ".");
   pdist->readParamsFromStream(in);  

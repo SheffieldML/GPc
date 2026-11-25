@@ -326,6 +326,59 @@ void CComponentKern::syncTransformsFromComponents()
   }
 }
 
+string CKern::getSampleParamName(unsigned int index) const
+{
+  if(getParamName(index)=="inverseWidth")
+    return "inv_lengthscale";
+  return canonicalLeafName(*this, index);
+}
+
+CDist* CKern::addPriorInPathUnits(CDist* prior, unsigned int index, const string& path)
+{
+  const string suffix=".lengthscale";
+  const string plain=(path.compare(0, 5, "kern.")==0) ? path.substr(5) : path;
+  const bool nameIsLengthscale=(plain=="lengthscale")
+    || (plain.size()>suffix.size() && plain.compare(plain.size()-suffix.size(), suffix.size(), suffix)==0);
+  const double c=lengthscalePower(index);
+  if(nameIsLengthscale && c>0.0)
+    prior=new CPowerViewDist(prior, c); // takes ownership of the inner prior
+  addPriorAt(prior, index);
+  return prior;
+}
+
+double CKern::lengthscalePower(unsigned int index) const
+{
+  if(getParamName(index)!="inverseWidth")
+    return 0.0;
+  return getType()=="exp" ? 1.0 : 0.5;
+}
+
+double CComponentKern::lengthscalePower(unsigned int paramNo) const
+{
+  unsigned int start=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int end=start+components[i]->getNumParams()-1;
+    if(paramNo<=end)
+      return components[i]->lengthscalePower(paramNo-start);
+    start=end+1;
+  }
+  return 0.0;
+}
+
+string CComponentKern::getSampleParamName(unsigned int paramNo) const
+{
+  unsigned int start=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int end=start+components[i]->getNumParams()-1;
+    if(paramNo<=end)
+      return componentPathLabel(static_cast<unsigned int>(i))+string(".")+components[i]->getSampleParamName(paramNo-start);
+    start=end+1;
+  }
+  return "";
+}
+
 string CComponentKern::getParamName(unsigned int paramNo) const
 {
   unsigned int start=0;

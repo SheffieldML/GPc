@@ -39,6 +39,8 @@ int main(int argc, char* argv[])
 	  command.learn();	  
 	else if(argument=="relearn") // initialise with an old model.
 	  command.relearn();	  
+	else if(argument=="sample") // HMC samples of the hyperparameter posterior (CIP-003B).
+	  command.sample();
 	//else if(argument=="test") // test with a model.
 	//	  command.test();	  
 	//else if(argument=="log-likelihood") // compute model log likelihood.
@@ -730,6 +732,140 @@ void CClgp::relearn()
   exitNormal();
 }
 
+// CIP-003B: parse "gamma:a,b" or "gaussian:precision" into a prior.
+void CClgp::sample()
+{
+  incrementArgument();
+  setMode("sample");
+  int numSamples=1000;
+  int burnIn=200;
+  int leapfrog=10;
+  double stepSize=0.1;
+  bool jacobian=true;
+  bool allowImproper=false;
+  bool constrained=true;
+  vector<string> priorSpecs;
+  vector<string> fixPaths;
+  string modelFileName="gp_model";
+  string samplesFileName="gp_samples.csv";
+
+  while(isFlags()) {
+    if(isCurrentArgumentFlag()) {
+      if(isCurrentArg("-?", "--?") || isCurrentArg("-h", "--help")) {
+	helpInfo();
+	exitNormal();
+      }
+      else if(isCurrentArg("-n", "--num-samples")) {
+	incrementArgument();
+	numSamples=getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("-b", "--burn-in")) {
+	incrementArgument();
+	burnIn=getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("-e", "--step-size")) {
+	incrementArgument();
+	stepSize=getDoubleFromCurrentArgument();
+      }
+      else if(isCurrentArg("-l", "--leapfrog")) {
+	incrementArgument();
+	leapfrog=getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("-p", "--prior")) {
+	incrementArgument();
+	priorSpecs.push_back(getCurrentArgument());
+      }
+      else if(isCurrentArg("-F", "--fix")) {
+	incrementArgument();
+	fixPaths.push_back(getCurrentArgument());
+      }
+      else if(isCurrentArg("-J", "--no-jacobian")) {
+	jacobian=false;
+      }
+      else if(isCurrentArg("-I", "--allow-improper")) {
+	allowImproper=true;
+      }
+      else if(isCurrentArg("-U", "--unconstrained")) {
+	constrained=false;
+      }
+      else {
+	unrecognisedFlag();
+      }
+      incrementArgument();
+    }
+    else {
+      setFlags(false);
+    }
+  }
+  if(getCurrentArgumentNo()>=argc)
+    exitError("There are not enough input parameters.");
+  if(numSamples<1 || burnIn<0 || leapfrog<1 || !(stepSize>0.0))
+    exitError("sample: need num-samples>=1, burn-in>=0, leapfrog>=1 and step-size>0.");
+
+  string trainDataFileName=getCurrentArgument();
+  if((getCurrentArgumentNo()+1)<argc)
+    modelFileName=argv[getCurrentArgumentNo()+1];
+  if((getCurrentArgumentNo()+2)<argc)
+    samplesFileName=argv[getCurrentArgumentNo()+2];
+
+  CMatrix X;
+  CMatrix y;
+  readData(X, y, trainDataFileName);
+  CGp* pmodel=readGpFromFile(modelFileName, getVerbosity());
+  // setTargetVals also points the noise model at y; relearn only sets pmodel->py,
+  // which leaves the Gaussian noise gradient reading a stale target (pre-existing
+  // segfault in relearn with a free likelihood.variance).
+  pmodel->setTargetVals(y);
+  pmodel->updateM();
+  pmodel->pX = &X;
+  // Inducing inputs have no prior, so sparse models are sampled over kernel and
+  // noise parameters with the inducing points held at their learned values.
+  if(pmodel->isSparseApproximation())
+    pmodel->setInducingFixed(true);
+  if(pmodel->getInputDim()!=X.getCols())
+    throw ndlexceptions::Error(trainDataFileName + ": input data is not of correct dimension");
+
+  // Priors are not stored for noise in the model stream, so they come from the command line.
+  for(size_t i=0; i<priorSpecs.size(); i++)
+  {
+    const size_t eq=priorSpecs[i].find('=');
+    if(eq==string::npos || eq==0 || eq+1>=priorSpecs[i].size())
+      exitError("--prior expects path=gamma:a,b or path=gaussian:precision, got: "+priorSpecs[i]);
+    pmodel->addPriorByPath(priorSpecs[i].substr(0, eq), priorFromSpec(priorSpecs[i].substr(eq+1)));
+  }
+  for(size_t i=0; i<fixPaths.size(); i++)
+    pmodel->fix(fixPaths[i]);
+  pmodel->setIncludeJacobian(jacobian);
+  pmodel->setAllowImproper(allowImproper);
+
+  // CHmc refuses improper targets, naming the parameters that lack priors.
+  CHmc hmc(*pmodel, *pmodel, getSeed());
+  hmc.setStepSize(stepSize);
+  hmc.setNumLeapfrog((unsigned int)leapfrog);
+  const bool toStdout=(samplesFileName=="-");
+  ostream& info=toStdout ? cerr : cout;
+  if(burnIn>0)
+    hmc.adaptStepSize((unsigned int)burnIn);
+  CMatrix samples, logPost;
+  hmc.sample((unsigned int)numSamples, samples, logPost);
+  if(getVerbosity()>0)
+    info << "HMC: " << numSamples << " samples, step size " << hmc.getStepSize()
+	 << ", " << leapfrog << " leapfrog steps, acceptance rate "
+	 << hmc.acceptRate() << (jacobian ? "" : " (no Jacobian)") << endl;
+  if(toStdout)
+    writeSamplesCsv(*pmodel, samples, logPost, cout, constrained);
+  else
+  {
+    ofstream out(samplesFileName.c_str());
+    if(!out)
+      throw ndlexceptions::FileWriteError(samplesFileName);
+    writeSamplesCsv(*pmodel, samples, logPost, out, constrained);
+    if(getVerbosity()>0)
+      info << "Samples written to " << samplesFileName << endl;
+  }
+  exitNormal();
+}
+
 void CClgp::display()
 {
   incrementArgument();
@@ -1129,6 +1265,7 @@ void CClgp::helpInfo()
     helpUsage("gp [options] command [command-options]");
     cout << "Commands:" << endl;
     helpArgument("learn", "For learning the GP model.");
+    helpArgument("sample", "For drawing HMC samples of the hyperparameter posterior of a learned GP (exact or sparse with inducing points held fixed; CIP-003B).");
     helpArgument("display", "For displaying the parameters of a learned GP model.");
     helpArgument("gnuplot", "For plotting the results in gnuplot.");
     helpDescriptor("For help on a specific command type gp command --h");
@@ -1178,6 +1315,26 @@ void CClgp::helpInfo()
     helpArgument("-d, --degree int", "Degree parameter for polynomial covariance function.");
     helpArgument("-P, --set path=value", "Also listed under learn: GPy-style path set after model construction (rbf.variance, Mat32.lengthscale, ExpQuad.lengthscale, beta, scale.j).");
   }    
+  else if(command=="sample") {
+    helpHeader();
+    helpUsage("gp [options] sample example_file [model_file] [samples_file]");
+    helpDescriptor("Hamiltonian Monte Carlo over the free parameters of a learned exact (FTC) GP, sampled in the optimiser's unconstrained space. Priors on kernel parameters stored in the model are used; priors on likelihood.variance (and any others) are given with --prior. Every sampled parameter needs a prior or a bounded transform, otherwise the posterior is improper and the command refuses to run.");
+    cout << "Arguments:" << endl;
+    helpArgument("example_file", "Training data (dense CSV/TSV or SVM-light), as for learn.");
+    helpArgument("model_file", "Learned model. Default gp_model.");
+    helpArgument("samples_file", "Output CSV (iteration, log_posterior, one column per parameter), or - for standard output. Default gp_samples.csv.");
+    cout << "Command Options:" << endl;
+    helpArgument("-?, -h, --help", "This help.");
+    helpArgument("-n, --num-samples int", "Number of samples after burn-in. Default 1000.");
+    helpArgument("-b, --burn-in int", "Transitions used to adapt the step size (dual averaging, target acceptance 0.8) and then discarded. Default 200; 0 keeps the step size fixed.");
+    helpArgument("-e, --step-size float", "Initial leapfrog step size. Default 0.1.");
+    helpArgument("-l, --leapfrog int", "Leapfrog steps per transition. Default 10.");
+    helpArgument("-p, --prior path=spec", "Attach a prior to a kernel parameter or likelihood.variance, e.g. rbf.lengthscale=gamma:2,1 or likelihood.variance=gamma:2,3. A prior on rbf.lengthscale is stated on the lengthscale (GPy units) and samples are reported as lengthscales; rbf.inv_lengthscale puts the prior on the stored inverse width instead (samples are still reported as lengthscales). spec is gamma:shape,rate or gaussian:precision. Repeatable.");
+    helpArgument("-F, --fix path", "Hold a parameter fixed (same paths as --prior). Repeatable.");
+    helpArgument("-J, --no-jacobian", "Omit the log-Jacobian of the constraining transforms (GPy-style: samples the transformed-space density). Default includes it, so priors mean what they say on the constrained value.");
+    helpArgument("-I, --allow-improper", "Run even if some parameter has neither a prior nor a bounded transform.");
+    helpArgument("-U, --unconstrained", "Write the optimiser's unconstrained values rather than constrained ones.");
+  }
   else if(command=="display") {
     helpHeader();
     helpUsage("gp [options] display [model_file]");

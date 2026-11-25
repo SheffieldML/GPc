@@ -41,7 +41,8 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   CKern(const CMatrix& X) : updateXused(false), inputDim(0), stationary(false) {}
   CKern(unsigned int inDim) : updateXused(false), inputDim(0), stationary(false) {}
   CKern(const CKern& kern)
-    : nParams(kern.nParams),
+    : CRegularisable(kern),
+      nParams(kern.nParams),
       kernName(kern.kernName),
       type(kern.type),
       paramNames(kern.paramNames),
@@ -292,6 +293,13 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   {
     updateXused = val;
   }
+  // CIP-003B: add a prior to parameter `index` of this kernel, where for a
+  // compound kernel the index runs over the concatenated component parameters
+  // (the same indexing as getParam). Plain addPrior refuses on compounds.
+  virtual void addPriorAt(CDist* prior, unsigned int index)
+  {
+    CRegularisable::addPrior(prior, index);
+  }
   // For compound kernels when a new kernel is added.
   virtual unsigned int addKern(const CKern* kern)
   {
@@ -392,6 +400,21 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
       BOUNDCHECK(index<paramNames.size());
       return paramNames[index];
     }
+  // CIP-003B: name of the quantity a prior or sample actually refers to. Paths
+  // such as rbf.lengthscale are GPy units converted from the native inverse
+  // width; priors and samples live on the native value, so they are named
+  // rbf.inv_lengthscale. Other parameters use their path name.
+  virtual string getSampleParamName(unsigned int index) const;
+  // CIP-003B: c > 0 if parameter `index` is an inverse width whose GPy view is
+  // the lengthscale x^(-c) (RBF family 1/2, exponential 1); 0 otherwise.
+  virtual double lengthscalePower(unsigned int index) const;
+  // CIP-003B: attach a prior to parameter `index`, stated in the units of the
+  // path it was named by. A path ending in `lengthscale` on an inverse-width
+  // parameter wraps the prior in CPowerViewDist so it is stated on the
+  // lengthscale; any other path attaches to the stored value. Returns the
+  // distribution actually attached (the wrapper if one was made). The caller
+  // keeps ownership of the returned object for as long as the kernel lives.
+  CDist* addPriorInPathUnits(CDist* prior, unsigned int index, const string& path);
 
   // GPy-aligned path façade (CIP-0014 / REQ-0008). Indexed setParam remains
   // native storage; these methods use GPy names/units at the boundary.
@@ -615,6 +638,8 @@ class CComponentKern : public CKern
     return -1;
   }
   virtual string getParamName(unsigned int paramNo) const;
+  virtual string getSampleParamName(unsigned int paramNo) const;
+  virtual double lengthscalePower(unsigned int paramNo) const;
   virtual vector<string> paramPaths() const;
   virtual unsigned int paramIndex(const string& path) const;
   virtual double getByPath(const string& path) const;
@@ -635,6 +660,35 @@ class CComponentKern : public CKern
   virtual void addPrior(CDist* prior, unsigned int index) 
   {
     throw ndlexceptions::Error("Error cannot add priors to component kernels directly, please add to the components.");
+  }
+  virtual void addPriorAt(CDist* prior, unsigned int index)
+  {
+    unsigned int start = 0;
+    for(size_t i=0; i<components.size(); i++)
+    {
+      const unsigned int n = components[i]->getNumParams();
+      if(index < start+n)
+      {
+        components[i]->addPriorAt(prior, index-start);
+        return;
+      }
+      start += n;
+    }
+    throw ndlexceptions::Error("addPriorAt: parameter index out of range.");
+  }
+
+  // CIP-003B: priors live on the components; map the compound index.
+  virtual bool paramHasPrior(unsigned int paramNo) const
+  {
+    unsigned int start = 0;
+    for(size_t i=0; i<components.size(); i++)
+    {
+      const unsigned int n = components[i]->getNumParams();
+      if(paramNo < start+n)
+        return components[i]->paramHasPrior(paramNo-start);
+      start += n;
+    }
+    return false;
   }
 
   virtual double priorLogProb() const

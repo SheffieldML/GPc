@@ -9,13 +9,14 @@
 #ifndef CGPLVM_H
 #define CGPLVM_H
 #include "CMltools.h"
+#include "CPosteriorTarget.h"
 
 using namespace std;
 
 const double NULOW=1e-16;
 const string GPLVMVERSION="0.2";
 
-class CGplvm : public CDataModel, public CProbabilisticOptimisable, public CStreamInterface, public CMatInterface
+class CGplvm : public CDataModel, public CProbabilisticOptimisable, public CPosteriorTarget, public CStreamInterface, public CMatInterface
 {
 public:
   CGplvm();
@@ -67,6 +68,13 @@ public:
   bool equals(const CGplvm& model, const double tol=ndlutil::MATCHTOL) const;
   void display(ostream& os) const;
   
+  // CIP-003B: posterior-sampling description of the optimiser parameters
+  // (kernel parameters, then latent positions X[i,j] in getOptParams order).
+  // Supports the plain MAP GPLVM only; the N(0, I) latent regulariser is the
+  // prior on X. Dynamics, back constraints and learnt input scales refuse.
+  void sampledParams(std::vector<SampledParam>& params) const;
+  const COptimisable& optimisable() const { return *this; }
+
   virtual unsigned int getOptNumParams() const;
   virtual void getOptParams(CMatrix& param) const;
   virtual void setOptParams(const CMatrix& param);

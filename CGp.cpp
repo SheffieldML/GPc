@@ -143,6 +143,7 @@ void CGp::_init()
   sparseLinalgMode = SparseLinalgLQ;
   QlqReady = false;
   setApproximationType(FTC);
+  betaTransform = 0;
   numActive = 0;
   pInducing = 0;
   epInference = false;
@@ -583,6 +584,103 @@ bool CGp::addsLikelihoodVarianceToGram() const
   return true;
 }
 
+// CIP-003B: log prior on likelihood.variance (last Gaussian noise parameter, after the biases), included in
+// the objective alongside the kernel prior. Sparse approximations optimise
+// beta = 1/variance and are not wired yet, so refuse rather than drop it.
+double CGp::noisePriorLogProb() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  if(isSparseApproximation())
+  {
+    // Sparse approximations optimise beta = 1/variance and keep the variance in
+    // beta, not in the noise model; evaluate the prior at variance = 1/beta.
+    const unsigned int varIndex = pnoise->getNumParams()-1;
+    const double var = 1.0/beta.getVal(0, 0);
+    double L = 0.0;
+    for(unsigned int i=0; i<pnoise->getNumPriors(); i++)
+    {
+      if(pnoise->getPriorIndex(i)!=varIndex)
+        throw ndlexceptions::NotImplementedError("Sparse approximations support priors on likelihood.variance only (CIP-003B).");
+      L += pnoise->getPrior(i)->logProb(var);
+    }
+    return L;
+  }
+  return pnoise->priorLogProb();
+}
+// d/dbeta of the noise prior evaluated at variance = 1/beta (sparse only).
+double CGp::noisePriorGradBeta() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  const double b = beta.getVal(0, 0);
+  const double var = 1.0/b;
+  double dVar = 0.0;
+  for(unsigned int i=0; i<pnoise->getNumPriors(); i++)
+    dVar += pnoise->getPriorGradInput(var, i);
+  return -dVar/(b*b);
+}
+
+// CIP-003B: describe each optimiser parameter (in getOptParams order) for the
+// sampler. Phase 1 covers exact (FTC) models whose optimised parameters are
+// kernel parameters and likelihood.variance; anything else refuses so that a
+// sampler never runs on parameters we cannot describe.
+void CGp::sampledParams(std::vector<SampledParam>& params) const
+{
+  params.clear();
+  if(isOptimiseX() || isOutputScaleLearnt() || isEpInference() || isLaplaceInference())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams supports only exact or sparse models with kernel and likelihood.variance parameters (CIP-003B).");
+  if(isSparseApproximation() && !isInducingFixed())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams for sparse models requires fixed inducing points (call setInducingFixed(true)); inducing inputs have no prior (CIP-003B).");
+  for(unsigned int i=0; i<pkern->getNumParams(); i++)
+  {
+    if(isKernParamFixed(i))
+      continue;
+    SampledParam sp;
+    describeKernParam(sp, *pkern, i);
+    sp.transform = pkern->getParamTransform(i);
+    sp.hasPrior = pkern->paramHasPrior(i);
+    sp.constrainedValue = pkern->getParam(i);
+    params.push_back(sp);
+  }
+  if(isSparseApproximation())
+  {
+    if(!betaFixed)
+    {
+      // The optimiser parameter is log(beta); report the variance 1/beta.
+      static const CReciprocalExpTransform varianceFromLogBeta;
+      SampledParam sp;
+      sp.name = "likelihood.variance";
+      sp.transform = &varianceFromLogBeta;
+      sp.hasPrior = pnoise->paramHasPrior(pnoise->getNumParams()-1);
+      sp.constrainedValue = 1.0/beta.getVal(0, 0);
+      params.push_back(sp);
+    }
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    SampledParam sp;
+    sp.name = "likelihood.variance";
+    sp.transform = betaTransform;
+    sp.hasPrior = pnoise->paramHasPrior(pnoise->getNumParams()-1);
+    sp.constrainedValue = getLikelihoodVariance();
+    params.push_back(sp);
+  }
+  if(params.size()!=getOptNumParams())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams disagrees with getOptNumParams.");
+}
+
+double CGp::noisePriorGradVariance() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  CMatrix g(1, pnoise->getNumParams());
+  g.zeros();
+  pnoise->addPriorGrad(g);
+  // Gaussian noise parameters are [bias_0..bias_{D-1}, variance].
+  return g.getVal(0, pnoise->getNumParams()-1);
+}
+
 double CGp::getLikelihoodVariance() const
 {
   if(!isGaussianNoise())
@@ -877,6 +975,26 @@ void CGp::clearFixes()
   likelihoodVarianceFixed=false;
   for(size_t i=0; i<scaleParamFixed.size(); i++)
     scaleParamFixed[i]=false;
+}
+
+void CGp::addPriorByPath(const string& path, CDist* dist)
+{
+  int kind=0;
+  unsigned int index=0;
+  resolveFixPath(path, kind, index);
+  if(kind==0)
+  {
+    // A prior named for the lengthscale is stated on the lengthscale (CPowerViewDist).
+    pkern->addPriorInPathUnits(dist, index, path);
+  }
+  else if(kind==3)
+  {
+    if(!isGaussianNoise())
+      throw ndlexceptions::Error("likelihood.variance priors require a Gaussian noise model.");
+    pnoise->addPrior(dist, pnoise->getNumParams()-1);
+  }
+  else
+    throw ndlexceptions::Error("addPriorByPath: priors are supported on kernel parameters and likelihood.variance, not '"+path+"'.");
 }
 
 void CGp::fix(const string& path)
@@ -2210,6 +2328,7 @@ double CGp::logLikelihood() const
   }
   L*=-0.5;
   L+=pkern->priorLogProb();
+  L+=noisePriorLogProb();
   L-=(double)getOutputDim()*(double)getNumData()*ndlutil::HALFLOGTWOPI;
   return L;
 }
@@ -2391,6 +2510,7 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
     if(!betaFixed)
     {
       double gBetaVal = gBeta.getVal(0);
+      gBetaVal += noisePriorGradBeta();
       g.setVal(gBetaVal*betaTransform->gradfact(getBetaVal(0,0)), 0, counter);
       counter++;
     }
@@ -2398,7 +2518,8 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
   {
     // gBeta holds ∂L/∂σ² before the positive-transform factor.
-    const double gVar = gBeta.getVal(0);
+    double gVar = gBeta.getVal(0);
+    gVar += noisePriorGradVariance();
     g.setVal(gVar*betaTransform->gradfact(getLikelihoodVariance()), 0, counter);
     counter++;
   }
@@ -3759,9 +3880,13 @@ void CGp::readParamsFromStream(istream& in)
   // have all the info for resizing storage.
   initStoreage();
 
+  // The positive transform is needed whenever beta or likelihood.variance is
+  // optimised (FTC owns likelihood.variance since CIP-0027), so set it for every
+  // approximation. Previously it was left unset for FTC models read from a
+  // stream, and getOptParams crashed (e.g. gp relearn with a free variance).
+  betaTransform = CTransform::defaultPositive();
   if(isSparseApproximation()) 
   {
-    betaTransform = CTransform::defaultPositive();
     beta.fromStream(in);
   }
 

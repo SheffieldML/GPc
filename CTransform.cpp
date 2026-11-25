@@ -51,6 +51,55 @@ double CExpTransform::gradfact(double x) const
 {
   return x;
 }
+// x = exp(a): log|dx/da| = a = log x, derivative 1.
+double CExpTransform::logJacobian(double x) const
+{
+  SANITYCHECK(x>0);
+  return log(x);
+}
+double CExpTransform::gradLogJacobian(double x) const
+{
+  return 1.0;
+}
+
+CReciprocalExpTransform::CReciprocalExpTransform()
+{
+  setType("reciprocalexp");
+}
+double CReciprocalExpTransform::atox(double a) const
+{
+  double x=0;
+  if(a<-limVal)
+    x = exp(limVal);
+  else if(a<limVal)
+    x = exp(-a);
+  else
+    x = exp(-limVal);
+  SANITYCHECK(!isnan(x));
+  return x;
+}
+double CReciprocalExpTransform::xtoa(double x) const
+{
+  SANITYCHECK(x>0);
+  double a=-log(x);
+  SANITYCHECK(!isnan(a));
+  return a;
+}
+// dx/da = -x, so the magnitude is x.
+double CReciprocalExpTransform::gradfact(double x) const
+{
+  return -x;
+}
+// log|dx/da| = log x = -a, derivative -1.
+double CReciprocalExpTransform::logJacobian(double x) const
+{
+  SANITYCHECK(x>0);
+  return log(x);
+}
+double CReciprocalExpTransform::gradLogJacobian(double x) const
+{
+  return -1.0;
+}
 
 CNegLogLogitTransform::CNegLogLogitTransform()
 {
@@ -89,6 +138,18 @@ double CNegLogLogitTransform::gradfact(double x) const
   return g;
 }
 
+// x = log(1+exp(a)): dx/da = 1-exp(-x), so log|dx/da| = log(-expm1(-x))
+// and its derivative with respect to a is exp(-x).
+double CNegLogLogitTransform::logJacobian(double x) const
+{
+  SANITYCHECK(x>0);
+  return log(-expm1(-x));
+}
+double CNegLogLogitTransform::gradLogJacobian(double x) const
+{
+  return exp(-x);
+}
+
 CSigmoidTransform::CSigmoidTransform()
 {
   transform = 1;
@@ -111,6 +172,16 @@ double CSigmoidTransform::xtoa(double x) const
 double CSigmoidTransform::gradfact(double x) const
 {
   return x*(1-x);
+}
+// x = sigmoid(a): log|dx/da| = log x + log(1-x), derivative 1-2x.
+double CSigmoidTransform::logJacobian(double x) const
+{
+  SANITYCHECK(x>0 && x<1);
+  return log(x) + log1p(-x);
+}
+double CSigmoidTransform::gradLogJacobian(double x) const
+{
+  return 1.0 - 2.0*x;
 }
 
 void CParamTransforms::writeParamsToStream(ostream& out) const

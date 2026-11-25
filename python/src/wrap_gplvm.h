@@ -99,7 +99,16 @@ public:
   const std::string& kernel_type() const { return kernelType; }
   std::string approx() const { return "vardtc"; }
 
+  // CIP-003B: HMC over kernel parameters and likelihood.variance with q(X) and
+  // Z held at their current values (generalised posterior under the bound).
+  void set_prior(const std::string& path, const std::string& spec);
+  py::dict hmc(unsigned int num_samples, unsigned int burn_in, double step_size,
+               unsigned int num_leapfrog, unsigned long seed, bool include_jacobian,
+               bool allow_improper, const std::vector<std::string>& fix);
+
 private:
+  std::vector<std::unique_ptr<CDist> > priors;
+  std::unique_ptr<CDist> variancePrior;
   CMatrix Y;
   unsigned int latentDim = 2;
   unsigned int numActive = 10;
@@ -154,7 +163,16 @@ public:
   const std::string& kernel_type() const { return kernelType; }
   std::string approx() const { return "vardtc"; }
 
+  // CIP-003B: as for BayesianGPLVM; kernel paths are prefixed viewK.
+  // `likelihood.variance` (or viewK.likelihood.variance) sets the variance prior.
+  void set_prior(const std::string& path, const std::string& spec);
+  py::dict hmc(unsigned int num_samples, unsigned int burn_in, double step_size,
+               unsigned int num_leapfrog, unsigned long seed, bool include_jacobian,
+               bool allow_improper, const std::vector<std::string>& fix);
+
 private:
+  std::vector<std::unique_ptr<CDist> > priors;
+  std::unique_ptr<CDist> variancePrior;
   unsigned int latentDim = 2;
   unsigned int numActive = 10;
   std::string kernelType;

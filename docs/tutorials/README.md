@@ -9,6 +9,7 @@ Build `gp` / `ivm` / `gplvm` / `bgplvm` first (see [README](../../README.md) and
 | Tutorial | Executable | Data | GPy counterpart |
 |---|---|---|---|
 | [1D regression (sinc)](./regression_1d.md) | `gp` (+ `demo_regression_1d`) | `examples/sinc.csv` (`.svml` legacy) | `basic_gp` / `toy_rbf_1d` |
+| [Hyperparameter posterior samples (sinc)](./hmc_sinc.md) | `gp sample` (+ `gpc.inference.hmc`) | `examples/sinc.csv` | `GPy.inference.mcmc.HMC` ([CIP-003B](../../cip/cip003B.md)) |
 | [Sparse 1D (DTCVAR)](./sparse_regression_1d.md) | `gp` (+ `demo_sparse_dtcvar`) | `examples/spgp1d.csv` (`.svml` legacy) | `sparse_gp_regression` |
 | [Compound + paths](./compound_paths.md) | `demo_compound_paths` (+ `gp -k`) | `examples/sinc.csv` | `basic_kernels` / `models_basic` |
 | [Coregionalization toy](./coregionalization_toy.md) | `demo_coregionalization_toy` | synthesised in-process | `coregionalization_toy` |

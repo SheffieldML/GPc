@@ -244,6 +244,38 @@ void CGplvm::updateX()
   invalidateCache();
 }
 
+void CGplvm::sampledParams(std::vector<SampledParam>& params) const
+{
+  params.clear();
+  if(isDynamicModelLearnt() || isBackConstrained() || isInputScaleLearnt() || isSparseApproximation())
+    throw ndlexceptions::NotImplementedError("CGplvm::sampledParams supports only the plain MAP GPLVM (no dynamics, back constraints, input scales or sparse approximation) (CIP-003B).");
+  for(unsigned int i=0; i<pkern->getNumParams(); i++)
+  {
+    SampledParam sp;
+    describeKernParam(sp, *pkern, i);
+    sp.transform = pkern->getParamTransform(i);
+    sp.hasPrior = pkern->paramHasPrior(i);
+    sp.constrainedValue = pkern->getParam(i);
+    params.push_back(sp);
+  }
+  // Latent positions are unconstrained (identity transform). They have a proper
+  // prior only when the Gaussian latent regulariser is on.
+  for(int j=0; j<getLatentDim(); j++)
+  {
+    for(unsigned int i=0; i<getNumData(); i++)
+    {
+      SampledParam sp;
+      sp.name = "X." + ndlstrutil::itoa(i) + "." + ndlstrutil::itoa(j);
+      sp.transform = 0;
+      sp.hasPrior = isLatentRegularised();
+      sp.constrainedValue = pX->getVal(i, j);
+      params.push_back(sp);
+    }
+  }
+  if(params.size()!=getOptNumParams())
+    throw ndlexceptions::NotImplementedError("CGplvm::sampledParams disagrees with getOptNumParams.");
+}
+
 unsigned int CGplvm::getOptNumParams() const
 {
   unsigned int tot = pkern->getNumParams() + getNumData()*getLatentDim();

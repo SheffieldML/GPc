@@ -31,6 +31,27 @@ class CTransform
   virtual double atox(double x) const=0;
   virtual double xtoa(double x) const=0;
   virtual double gradfact(double x) const=0;
+  // CIP-003B: change-of-variables terms for sampling in the unconstrained
+  // space a, where x = atox(a) is the constrained value (the argument here,
+  // matching gradfact). The density of a is p_x(x(a)) |dx/da|, so
+  //   logJacobian(x)     = log |dx/da|
+  //   gradLogJacobian(x) = d/da log |dx/da|
+  // Transforms that do not override these refuse rather than silently
+  // sampling the wrong density.
+  virtual double logJacobian(double x) const
+  {
+    throw ndlexceptions::NotImplementedError("logJacobian not implemented for transform type " + getType());
+  }
+  virtual double gradLogJacobian(double x) const
+  {
+    throw ndlexceptions::NotImplementedError("gradLogJacobian not implemented for transform type " + getType());
+  }
+  // True if the image of atox is bounded on both sides, so that a flat
+  // prior over the constrained value is still proper.
+  virtual bool isBounded() const
+  {
+    return false;
+  }
   virtual void setType(const string name) 
   {
     type = name;
@@ -65,10 +86,27 @@ class CExpTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
   
  private:
   bool transform;
 
+};
+// CIP-003B: x = exp(-a). Describes a variance x whose optimiser parameter is
+// a = log(beta) = -log(x), as in the sparse approximations that optimise the
+// noise precision. Used by the sampler only; it is not a streamed type.
+class CReciprocalExpTransform : public CTransform  
+{
+ public:
+  CReciprocalExpTransform();
+  CReciprocalExpTransform(const CReciprocalExpTransform& rhs) : CTransform(rhs) {}
+  CTransform* clone() const {return new CReciprocalExpTransform(*this);}
+  double atox(double a) const;
+  double xtoa(double x) const;
+  double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
 };
 // This transform transforms from real to positive numbers.
 class CNegLogLogitTransform : public CTransform  
@@ -80,6 +118,8 @@ class CNegLogLogitTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
   
  private:
   bool transform;
@@ -109,6 +149,14 @@ class CLinearTransform : public CTransform
   double gradfact(double x) const
   {
     return 1/m;
+  }
+  double logJacobian(double x) const
+  {
+    return -log(fabs(m));
+  }
+  double gradLogJacobian(double x) const
+  {
+    return 0.0;
   }
   void setM(double val)
   {
@@ -143,6 +191,9 @@ class CSigmoidTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
+  bool isBounded() const {return true;}
   
  private:
   bool transform;
@@ -310,6 +361,14 @@ class CTransformable
     }  
   }
   
+  // CIP-003B: transform attached to parameter paramNo, or null if none.
+  const CTransform* getParamTransform(unsigned int paramNo) const
+  {
+    for(size_t i=0; i<transArray.transIndex.size(); i++)
+      if(transArray.transIndex[i]==paramNo)
+        return transArray.transforms[i];
+    return 0;
+  }
   // These are non-modifiable methods.
   inline unsigned int getNumTransforms() const 
   {

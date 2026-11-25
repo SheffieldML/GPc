@@ -73,6 +73,22 @@ void CPpa::likelihoods(CMatrix& pout, CMatrix& yTest, const CMatrix& Xin) const
   latentMeanVar(muout, varSigmaOut, Xin);
   noise.likelihoods(pout, muout, varSigmaOut, yTest);
 }
+void CPpa::sampledParams(std::vector<SampledParam>& params) const
+{
+  params.clear();
+  if(!optimisingKernel)
+    throw ndlexceptions::Error("CPpa::sampledParams: call setKernelObjective(true) first; HMC targets the M-step objective with sites held fixed (CIP-003B).");
+  for(unsigned int i=0; i<kern.getNumParams(); i++)
+  {
+    SampledParam sp;
+    describeKernParam(sp, kern, i);
+    sp.transform = kern.getParamTransform(i);
+    sp.hasPrior = kern.paramHasPrior(i);
+    sp.constrainedValue = kern.getParam(i);
+    params.push_back(sp);
+  }
+}
+
 double CPpa::logLikelihood() const
 {
   if(optimisingKernel)

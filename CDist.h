@@ -8,6 +8,7 @@
 #ifndef CDIST_H
 #define CDIST_H
 #include <cmath>
+#include <memory>
 #include <vector>
 #include "CMatrix.h"
 #include "CNdlInterfaces.h"
@@ -39,6 +40,8 @@ class CDist : public CMatInterface, public CStreamInterface, public CTransformab
     cerr << "getGradParams should not be used in CDist" << endl;
     exit(1);
   }
+  // CIP-003B: needed so that copying a kernel or noise model copies its priors.
+  virtual CDist* clone() const=0;
   string getBaseType() const
   {
     return "dist";
@@ -174,6 +177,38 @@ class CGammaDist : public CDist {
   double a;
   double b;
 };
+// CIP-003B: a prior stated on y = x^(-c) of the stored parameter x, for a
+// positive x. With c = 1/2 and x the RBF inverse width this is a prior on the
+// GPy lengthscale. The density on x is inner(y) |dy/dx|, so logProb and the
+// gradient carry the change of variables.
+class CPowerViewDist : public CDist {
+
+ public:
+  CPowerViewDist();
+  // Takes ownership of inner.
+  CPowerViewDist(CDist* inner, double exponent);
+  CPowerViewDist(const CPowerViewDist&);
+  ~CPowerViewDist();
+  CPowerViewDist* clone() const
+    {
+      return new CPowerViewDist(*this);
+    }
+  // Parameter 0 is the exponent c; parameters 1.. are the inner distribution's.
+  double getParam(unsigned int paramNo) const;
+  void setParam(double val, unsigned int paramNo);
+  double getGradInput(double x) const;
+  void setInitParam();
+  double logProb(double val) const;
+  const CDist& getInner() const { return *inner; }
+  double getExponent() const { return c; }
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  std::unique_ptr<CDist> inner;
+  double c;
+};
 // A class which stores distributions in a container for priors over parameters.
 // An unusual prior used by Wang in the GPDM thesis.
 class CWangDist : public CDist {
@@ -241,7 +276,22 @@ class CParamPriors : CMatInterface {
 class CRegularisable {
 
  public:
-   virtual ~CRegularisable() {}
+  CRegularisable() {}
+  // CIP-003B: copies deep-copy the priors, so cloning a kernel or noise model
+  // keeps its priors (the compiler-generated copy used to drop them). Copied
+  // priors are owned by the copy; priors passed to addPrior stay owned by the
+  // caller, as before.
+  CRegularisable(const CRegularisable& rhs)
+    {
+      copyPriorsFrom(rhs);
+    }
+  CRegularisable& operator=(const CRegularisable& rhs)
+    {
+      if(this!=&rhs)
+	copyPriorsFrom(rhs);
+      return *this;
+    }
+  virtual ~CRegularisable() {}
 
   // these are the pure virtual functions.
   virtual unsigned int getNumParams() const=0;
@@ -316,6 +366,14 @@ class CRegularisable {
     }
 
   // These are non-modifiable methods.
+  // CIP-003B: true if parameter paramNo carries at least one prior.
+  virtual bool paramHasPrior(unsigned int paramNo) const
+    {
+      for(unsigned int i=0; i<distArray.distIndex.size(); i++)
+	if(distArray.distIndex[i]==paramNo)
+	  return true;
+      return false;
+    }
   inline unsigned int getNumPriors() const
     {
       return distArray.getNumDists();
@@ -362,7 +420,21 @@ class CRegularisable {
     }
 #endif
  private:
+  void copyPriorsFrom(const CRegularisable& rhs)
+    {
+      std::vector<std::unique_ptr<CDist> > fresh;
+      CParamPriors copied;
+      for(unsigned int i=0; i<rhs.distArray.dists.size(); i++)
+	{
+	  fresh.push_back(std::unique_ptr<CDist>(rhs.distArray.dists[i]->clone()));
+	  copied.addDist(fresh.back().get(), rhs.distArray.distIndex[i]);
+	}
+      ownedPriors.swap(fresh);
+      distArray.dists = copied.dists;
+      distArray.distIndex = copied.distIndex;
+    }
   CParamPriors distArray;
+  std::vector<std::unique_ptr<CDist> > ownedPriors;
 
 };
 

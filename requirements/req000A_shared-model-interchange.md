@@ -1,10 +1,10 @@
 ---
 id: "000A"
-title: "Users can exchange GP models with GPy and GPmat via a shared inspectable format"
+title: "Users can exchange GP models across GP toolboxes via a shared inspectable format"
 status: "Proposed"
 priority: "Medium"
 created: "2026-11-16"
-last_updated: "2026-11-16"
+last_updated: "2026-11-25"
 related_tenets: ["ecosystem-interoperability", "compose-through-interfaces", "assert-and-verify", "flexibility-with-performance"]
 stakeholders: ["maintainers", "modellers", "GPy users", "GPmat users"]
 tags: ["interop", "yaml", "json", "gpy", "gpmat", "serialization", "model-files"]
@@ -33,6 +33,7 @@ Native GPc `.model` streams remain valid. Training-data formats are out of scope
 - [ ] Golden fixtures demonstrate GPy → GPc and GPc → GPy reconstruction for that subset (likelihood / predictions agree within documented tolerances)
 - [ ] Existing `.model` load/save behaviour is unchanged; old `.model` files still load
 - [ ] Unsupported constructs fail loudly with typed/stream errors; no silent truncation of kernel trees or parameter vectors
+- [ ] The registry covers GPyTorch, GPflow and GPJax; each is either verified by a golden round-trip or explicitly marked unsupported/provisional, and unsupported constructs raise
 - [ ] GPmat support is either delivered or explicitly deferred with a migration note and external tracking link
 - [ ] Non-goals for the first delivery are explicit: pickle; full GPy model zoo (EP, SVGP, Bayesian GPLVM, …); replacing `.model` as GPc’s native format; putting interchange I/O in the SCG loop; keeping the schema only inside GPc
 
@@ -52,3 +53,6 @@ Requirement created alongside CIP-0016 sketch after positioning review of GPc `.
 
 ### 2026-11-16 (locks)
 Shared `gp-scuderia` home first; YAML primary / JSON isomorphic; portable tags derived from GPy class strings.
+
+### 2026-11-25
+Scope widened beyond GPy/GPmat to GPyTorch, GPflow and GPJax; wire format stays framework-neutral.

@@ -3,6 +3,8 @@
    that the analytic gradient matches finite differences in the optimiser's
    transformed space. No .mat fixtures. */
 #include <cmath>
+#include "ndlstrutil.h"
+#include <sstream>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -224,8 +226,46 @@ int main()
     CMatrix a2(1, reread->getOptNumParams());
     reread->getOptParams(a2);
     cout << "PASS model read from stream reports " << a2.getCols() << " optimiser parameters" << endl;
+    // The noise prior must survive the stream: likelihood.variance is no longer
+    // reported as improper, while the (unprior-ed) kernel parameters still are.
+    const string reason = reread->improperReason();
+    if(reason.find("likelihood.variance")==string::npos && reason.find("rbf")!=string::npos)
+      cout << "PASS noise prior persisted through the model stream" << endl;
+    else { cout << "FAIL noise prior lost in model stream: " << reason << endl; fail++; }
     remove(fileName.c_str());
     delete reread;
+  }
+  // Noise stream: priors round trip; files without priors are unchanged and the
+  // optional-key peek leaves following content readable.
+  {
+    CGaussianNoise n1(&y);
+    for(int i=0; i<n1.getOutputDim(); i++) n1.setBiasVal(0.0, i);
+    stringstream plain;
+    n1.toStream(plain);
+    plain << "sentinel=1\n";
+    const bool noKey = plain.str().find("numPriors")==string::npos;
+    CNoise* r1 = readNoiseFromStream(plain);
+    string sline;
+    ndlstrutil::getline(plain, sline);
+    if(noKey && r1->getNumPriors()==0 && sline=="sentinel=1")
+      cout << "PASS prior-free noise stream is unchanged and the peek restores the stream" << endl;
+    else { cout << "FAIL prior-free noise stream (key " << !noKey << ", priors " << r1->getNumPriors() << ", next '" << sline << "')" << endl; fail++; }
+    delete r1;
+
+    CGammaDist* gp = new CGammaDist();
+    gp->setParam(2.0, 0);
+    gp->setParam(10.0, 1);
+    n1.addPrior(gp, n1.getNumParams()-1);
+    stringstream withPrior;
+    n1.toStream(withPrior);
+    withPrior << "sentinel=1\n";
+    CNoise* r2 = readNoiseFromStream(withPrior);
+    ndlstrutil::getline(withPrior, sline);
+    if(r2->getNumPriors()==1 && r2->paramHasPrior(r2->getNumParams()-1)
+       && fabs(r2->priorLogProb()-n1.priorLogProb())<=ndlutil::MATCHTOL && sline=="sentinel=1")
+      cout << "PASS noise prior round trips through the noise stream" << endl;
+    else { cout << "FAIL noise prior round trip (priors " << r2->getNumPriors() << ", next '" << sline << "')" << endl; fail++; }
+    delete r2;
   }
   // Sparse approximations must refuse rather than silently drop the prior.
   cout << "Number of failures: " << fail << endl;

@@ -903,6 +903,35 @@ void CNoise::writeParamsToStream(ostream& out) const
   CMatrix par(1, getNumParams());
   getParams(par);
   par.toStream(out);
+  // CIP-003B: additive key. Priors are written only when present, so files
+  // without noise priors are byte-identical to the old format and old files
+  // load unchanged. (Old readers cannot load files that do carry noise priors.)
+  if(getNumPriors()>0)
+  {
+    writeToStream(out, "numPriors", getNumPriors());
+    writePriorsToStream(out);
+  }
+}
+void CNoise::readOptionalPriorsFromStream(istream& in)
+{
+  if(!in.good() || in.eof())
+    return;
+  streampos pos = in.tellg();
+  if(pos==streampos(-1))
+    return;
+  string line;
+  if(ndlstrutil::getline(in, line) && line.size()>0)
+  {
+    vector<string> tokens;
+    ndlstrutil::tokenise(tokens, line, "=");
+    if(tokens.size()==2 && tokens[0]=="numPriors")
+    {
+      readPriorsFromStream(in, (unsigned int)atol(tokens[1].c_str()));
+      return;
+    }
+  }
+  in.clear();
+  in.seekg(pos);
 }
 void CNoise::readParamsFromStream(istream& in)
 {
@@ -920,11 +949,12 @@ void CNoise::readParamsFromStream(istream& in)
   if(numPar != getNumParams())
     throw ndlexceptions::StreamFormatError("numParams", "Number of parameters in file does not match computed number.");
   // CIP-003A: skip empty param block for zero-param noise types.
-  if(numPar == 0)
-    return;
-  CMatrix par(1, numPar);
-  par.fromStream(in);
-  setParams(par);
+  if(numPar > 0) {
+    CMatrix par(1, numPar);
+    par.fromStream(in);
+    setParams(par);
+  }
+  readOptionalPriorsFromStream(in);
 }
 
 CGaussianNoise::~CGaussianNoise()

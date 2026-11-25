@@ -136,8 +136,9 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 - [x] Fix: kernel copies keep their priors (`CRegularisable` deep-copies; `CDist::clone` is now pure virtual)
 - [x] Phase 4 (partial): exact FTC `CGp` with kernel parameters and `likelihood.variance`. Other models throw `NotImplementedError`
 - [ ] Phase 4: `CGplvm`, sparse and variational models; noise priors for sparse (beta) parameterisation
-- [ ] Priors on noise in the `.model` stream (needs a format version bump)
-- [ ] Phase 5: CSV sample output, CLI mode, Python wrapper
+- [x] Priors on noise in the `.model` stream: additive optional `numPriors` key written only when noise priors exist, so prior-free files are byte-identical and old files load unchanged (no version bump needed; old readers cannot load files that carry noise priors)
+- [x] Phase 5 (partial): CSV sample output and `gp sample` CLI mode
+- [ ] Phase 5: Python wrapper
 - [ ] Phase 6: tutorial
 
 ## GPy comparison

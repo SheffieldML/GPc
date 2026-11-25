@@ -261,6 +261,8 @@ class CNoise : public CTransformable, public CRegularisable, public COptimisable
                                        double& gMu, double& gVar) const;
   virtual void writeParamsToStream(ostream& out) const;
   virtual void readParamsFromStream(istream& in);
+  // CIP-003B: reads an optional trailing numPriors block; leaves the stream untouched if absent.
+  void readOptionalPriorsFromStream(istream& in);
 #ifdef _NDLMATLAB
   virtual mxArray* toMxArray() const;
   virtual void fromMxArray(const mxArray* matlabArray);

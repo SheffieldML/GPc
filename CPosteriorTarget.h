@@ -17,6 +17,7 @@
 #define CPOSTERIORTARGET_H
 
 #include <string>
+#include <cmath>
 #include <vector>
 #include "CMatrix.h"
 #include "CTransform.h"
@@ -29,7 +30,40 @@ struct SampledParam
   const CTransform* transform; // null if sampled directly
   bool hasPrior;
   double constrainedValue;     // x = atox(a)
+  // CIP-003B: some parameters are reported in GPy units. The sampler works on
+  // the stored value x; the reported value is x^(-lengthscalePower) (0 means
+  // report x itself), named `name`. `nativeName` labels x when it is written
+  // unconstrained or when no view applies.
+  std::string nativeName;
+  double lengthscalePower;
+  SampledParam() : transform(0), hasPrior(false), constrainedValue(0.0), lengthscalePower(0.0) {}
+  double reportValue(double x) const
+  {
+    return lengthscalePower>0.0 ? std::pow(x, -lengthscalePower) : x;
+  }
+  const std::string& rawName() const
+  {
+    return nativeName.empty() ? name : nativeName;
+  }
 };
+
+// Fill the naming fields of a kernel parameter: the inverse width of the RBF
+// family is reported as the GPy lengthscale, and the stored value keeps its
+// native name.
+template <class Kern>
+void describeKernParam(SampledParam& sp, const Kern& kern, unsigned int index)
+{
+  const std::string native = kern.getSampleParamName(index);
+  sp.nativeName = native;
+  sp.name = native;
+  const double c = kern.lengthscalePower(index);
+  const std::string tag = "inv_lengthscale";
+  if(c>0.0 && native.size()>=tag.size() && native.compare(native.size()-tag.size(), tag.size(), tag)==0)
+  {
+    sp.lengthscalePower = c;
+    sp.name = native.substr(0, native.size()-tag.size()) + "lengthscale";
+  }
+}
 
 class CPosteriorTarget
 {

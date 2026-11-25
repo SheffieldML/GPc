@@ -141,7 +141,8 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 - [x] Priors on noise in the `.model` stream: additive optional `numPriors` key written only when noise priors exist, so prior-free files are byte-identical and old files load unchanged (no version bump needed; old readers cannot load files that carry noise priors)
 - [x] Phase 5 (partial): CSV sample output and `gp sample` CLI mode
 - [x] Phase 5: Python wrapper `gpc.inference` (`set_prior`, `hmc`, `HmcResult.to_csv`) for `GPRegression` and `SparseGPRegression`; verified against grid integration in `python/tests/test_hmc.py`
-- [ ] Follow-up: priors and samples in GPy lengthscale units (today they live on the native inverse width, named `rbf.inv_lengthscale`; a prior on `rbf.lengthscale` is refused). See backlog `2026-11-25_cip003b-lengthscale-prior-units`
+- [x] Follow-up: priors and samples in GPy lengthscale units: `CPowerViewDist` wraps a prior stated on the lengthscale, samples are reported as lengthscales, `rbf.inv_lengthscale` still attaches to the stored width. See backlog `2026-11-25_cip003b-lengthscale-prior-units`
+- [x] Fix: Python extension aborted at interpreter exit (static `py::exception` destroyed after finalisation); now intentionally leaked
 - [x] Phase 6: tutorial [hmc_sinc](../docs/tutorials/hmc_sinc.md) (CLI and Python), numbers taken from an actual run
 
 ## GPy comparison

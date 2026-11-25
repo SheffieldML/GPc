@@ -252,7 +252,7 @@ void CGplvm::sampledParams(std::vector<SampledParam>& params) const
   for(unsigned int i=0; i<pkern->getNumParams(); i++)
   {
     SampledParam sp;
-    sp.name = pkern->getSampleParamName(i);
+    describeKernParam(sp, *pkern, i);
     sp.transform = pkern->getParamTransform(i);
     sp.hasPrior = pkern->paramHasPrior(i);
     sp.constrainedValue = pkern->getParam(i);

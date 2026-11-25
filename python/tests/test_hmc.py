@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -20,8 +22,8 @@ def _model():
     return gpc.models.GPRegression(X, Y, kernel=gpc.kern.RBF(1))
 
 
-def _prior_all(m):
-    for path in ("rbf.inv_lengthscale", "rbf.variance", "likelihood.variance"):
+def _prior_all(m, width_path="rbf.lengthscale"):
+    for path in (width_path, "rbf.variance", "likelihood.variance"):
         gpc.inference.set_prior(m, path, "gamma", 2.0, 1.0)
 
 
@@ -43,7 +45,7 @@ def test_samples_shape_names_positivity_and_acceptance():
     res = gpc.inference.hmc(m, num_samples=400, burn_in=150, seed=3)
     assert set(res.names) == {
         "rbf.variance",
-        "rbf.inv_lengthscale",
+        "rbf.lengthscale",
         "likelihood.variance",
     }
     assert res.samples.shape == (400, 3)
@@ -96,10 +98,15 @@ def test_csv_round_trip(tmp_path):
     np.testing.assert_allclose(data[:, 1], res.log_posterior, rtol=1e-14)
 
 
-def test_length_scale_posterior_matches_grid():
-    """Verify against a grid of exp(-objective) over the native inverse width."""
+@pytest.mark.parametrize("width_path", ["rbf.lengthscale", "rbf.inv_lengthscale"])
+def test_length_scale_posterior_matches_grid(width_path):
+    """Samples are reported as lengthscales whichever name carries the prior.
+
+    The stored width is gamma = l**-2 and exp(-objective) is the density in
+    gamma, so the density of l on a grid is exp(-objective(gamma(l))) |dgamma/dl|.
+    """
     m = _model()
-    _prior_all(m)
+    _prior_all(m, width_path)
     m.set_by_path("rbf.variance", 1.0)
     m.set_by_path("likelihood.variance", 0.01)
     res = gpc.inference.hmc(
@@ -109,12 +116,12 @@ def test_length_scale_posterior_matches_grid():
         seed=11,
         fix=["rbf.variance", "likelihood.variance"],
     )
-    ls = res.samples[:, res.names.index("rbf.inv_lengthscale")]
-    grid = np.linspace(0.005, 8.0, 4000)
+    ls = res.samples[:, res.names.index("rbf.lengthscale")]
+    grid = np.linspace(0.3, 15.0, 6000)
     logp = np.empty_like(grid)
-    for i, g in enumerate(grid):
-        m.set_by_path("rbf.inv_lengthscale", g)
-        logp[i] = -m.objective()
+    for i, l in enumerate(grid):
+        m.set_by_path("rbf.lengthscale", l)
+        logp[i] = -m.objective() + np.log(2.0) - 3.0 * np.log(l)
     p = np.exp(logp - logp.max())
     p /= np.trapezoid(p, grid)
     gm = np.trapezoid(grid * p, grid)
@@ -137,10 +144,20 @@ def test_sparse_model_samples():
     assert "likelihood.variance" in res.names
 
 
-def test_lengthscale_prior_is_refused_with_guidance():
+def test_lengthscale_prior_is_stated_on_the_lengthscale():
+    """A gamma prior on rbf.lengthscale differs from one on the stored width."""
     m = _model()
-    with pytest.raises(gpc.GpcError, match="inv_lengthscale"):
-        gpc.inference.set_prior(m, "rbf.lengthscale", "gamma", 2.0, 1.0)
+    m.set_by_path("rbf.lengthscale", 2.0)
+    gpc.inference.set_prior(m, "rbf.lengthscale", "gamma", 3.0, 2.0)
+    with_prior = m.objective()
+    m2 = _model()
+    m2.set_by_path("rbf.lengthscale", 2.0)
+    base = m2.objective()
+    # The prior on gamma is q(l) |dl/dgamma| with |dl/dgamma| = 0.5 l**3.
+    a, b, l = 3.0, 2.0, 2.0
+    log_q = a * np.log(b) - math.lgamma(a) + (a - 1) * np.log(l) - b * l
+    expected = -(log_q + np.log(0.5 * l**3))
+    assert abs((with_prior - base) - expected) < 1e-8, (with_prior - base, expected)
 
 
 def test_prior_spec_validation():

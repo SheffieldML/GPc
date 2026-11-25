@@ -637,7 +637,7 @@ void CGp::sampledParams(std::vector<SampledParam>& params) const
     if(isKernParamFixed(i))
       continue;
     SampledParam sp;
-    sp.name = pkern->getSampleParamName(i);
+    describeKernParam(sp, *pkern, i);
     sp.transform = pkern->getParamTransform(i);
     sp.hasPrior = pkern->paramHasPrior(i);
     sp.constrainedValue = pkern->getParam(i);
@@ -984,18 +984,17 @@ void CGp::addPriorByPath(const string& path, CDist* dist)
   resolveFixPath(path, kind, index);
   if(kind==0)
   {
-    // rbf.lengthscale is a GPy-unit view of the native inverse width. A prior is
-    // evaluated on the native value, so refuse the misleading name.
-    const string sampleName=pkern->getSampleParamName(index);
+    // rbf.lengthscale is a GPy-unit view of the stored inverse width. A prior
+    // named for the lengthscale is wrapped so that it is stated on the
+    // lengthscale and carries the change of variables to the stored value;
+    // rbf.inv_lengthscale attaches directly to the stored value.
     const string suffix=".lengthscale";
     const string plain=(path.compare(0, 5, "kern.")==0) ? path.substr(5) : path;
     const bool nameIsLengthscale=(plain=="lengthscale")
       || (plain.size()>suffix.size() && plain.compare(plain.size()-suffix.size(), suffix.size(), suffix)==0);
-    if(nameIsLengthscale && sampleName.find("inv_lengthscale")!=string::npos)
-    {
-      delete dist;
-      throw ndlexceptions::Error("priors attach to the native inverse width, not the lengthscale: use '"+sampleName+"' (rbf.lengthscale is a GPy-unit view, lengthscale = 1/sqrt(inv_lengthscale)).");
-    }
+    const double c=pkern->lengthscalePower(index);
+    if(nameIsLengthscale && c>0.0)
+      dist=new CPowerViewDist(dist, c); // takes ownership of dist
     pkern->addPriorAt(dist, index);
   }
   else if(kind==3)

@@ -193,7 +193,7 @@ void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
   const std::streamsize oldPrecision = out.precision();
   out << "iteration,log_posterior";
   for(size_t j=0; j<params.size(); j++)
-    out << "," << params[j].name;
+    out << "," << (constrained ? params[j].name : params[j].rawName());
   out << "\n";
   out << std::setprecision(17);
   for(unsigned int i=0; i<samples.getRows(); i++)
@@ -204,6 +204,8 @@ void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
       double v = samples.getVal(i, (unsigned int)j);
       if(constrained && params[j].transform!=0)
         v = params[j].transform->atox(v);
+      if(constrained)
+        v = params[j].reportValue(v);
       out << "," << v;
     }
     out << "\n";

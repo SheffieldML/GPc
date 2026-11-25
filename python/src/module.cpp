@@ -18,7 +18,10 @@ namespace {
 
 void registerExceptions(py::module_& m)
 {
-  static py::exception<ndlexceptions::Error> exc(m, "GpcError");
+  // Deliberately leaked: a function-local static would be destroyed after
+  // interpreter finalisation and call dec_ref without the GIL (abort on exit).
+  static py::exception<ndlexceptions::Error>& exc =
+      *new py::exception<ndlexceptions::Error>(m, "GpcError");
   py::register_exception_translator([](std::exception_ptr p) {
     try
     {

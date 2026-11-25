@@ -177,6 +177,38 @@ class CGammaDist : public CDist {
   double a;
   double b;
 };
+// CIP-003B: a prior stated on y = x^(-c) of the stored parameter x, for a
+// positive x. With c = 1/2 and x the RBF inverse width this is a prior on the
+// GPy lengthscale. The density on x is inner(y) |dy/dx|, so logProb and the
+// gradient carry the change of variables.
+class CPowerViewDist : public CDist {
+
+ public:
+  CPowerViewDist();
+  // Takes ownership of inner.
+  CPowerViewDist(CDist* inner, double exponent);
+  CPowerViewDist(const CPowerViewDist&);
+  ~CPowerViewDist();
+  CPowerViewDist* clone() const
+    {
+      return new CPowerViewDist(*this);
+    }
+  // Parameter 0 is the exponent c; parameters 1.. are the inner distribution's.
+  double getParam(unsigned int paramNo) const;
+  void setParam(double val, unsigned int paramNo);
+  double getGradInput(double x) const;
+  void setInitParam();
+  double logProb(double val) const;
+  const CDist& getInner() const { return *inner; }
+  double getExponent() const { return c; }
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  std::unique_ptr<CDist> inner;
+  double c;
+};
 // A class which stores distributions in a container for priors over parameters.
 // An unusual prior used by Wang in the GPDM thesis.
 class CWangDist : public CDist {

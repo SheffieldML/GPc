@@ -1329,7 +1329,7 @@ void CClgp::helpInfo()
     helpArgument("-b, --burn-in int", "Transitions used to adapt the step size (dual averaging, target acceptance 0.8) and then discarded. Default 200; 0 keeps the step size fixed.");
     helpArgument("-e, --step-size float", "Initial leapfrog step size. Default 0.1.");
     helpArgument("-l, --leapfrog int", "Leapfrog steps per transition. Default 10.");
-    helpArgument("-p, --prior path=spec", "Attach a prior to a kernel parameter or likelihood.variance, e.g. rbf.inv_lengthscale=gamma:2,1 or likelihood.variance=gamma:2,3 (priors attach to the native inverse width; rbf.lengthscale is refused). spec is gamma:shape,rate or gaussian:precision. Repeatable.");
+    helpArgument("-p, --prior path=spec", "Attach a prior to a kernel parameter or likelihood.variance, e.g. rbf.lengthscale=gamma:2,1 or likelihood.variance=gamma:2,3. A prior on rbf.lengthscale is stated on the lengthscale (GPy units) and samples are reported as lengthscales; rbf.inv_lengthscale puts the prior on the stored inverse width instead (samples are still reported as lengthscales). spec is gamma:shape,rate or gaussian:precision. Repeatable.");
     helpArgument("-F, --fix path", "Hold a parameter fixed (same paths as --prior). Repeatable.");
     helpArgument("-J, --no-jacobian", "Omit the log-Jacobian of the constraining transforms (GPy-style: samples the transformed-space density). Default includes it, so priors mean what they say on the constrained value.");
     helpArgument("-I, --allow-improper", "Run even if some parameter has neither a prior nor a bounded transform.");

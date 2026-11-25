@@ -344,15 +344,75 @@ int main()
     bool threw = false;
     try { model.addPriorByPath("nonsense.path", new CGammaDist()); }
     catch(...) { threw = true; }
-    // rbf.lengthscale is a GPy-unit view of the native inverse width; a prior on
-    // it would silently land on the wrong quantity, so it must be refused.
-    bool refusedLengthscale = false;
-    try { model.addPriorByPath("rbf.lengthscale", new CGammaDist()); }
-    catch(const ndlexceptions::Error& e) { refusedLengthscale = string(e.getMessage()).find("inv_lengthscale")!=string::npos; }
-    threw = threw && refusedLengthscale;
     if(improperBefore && properAfter && threw)
       cout << "PASS addPriorByPath removes improperness and rejects unknown paths" << endl;
     else { cout << "FAIL addPriorByPath: before " << improperBefore << " after " << properAfter << " threw " << threw << endl; fail++; }
+  }
+
+  // 6b. Priors on the lengthscale (GPy units): the wrapped density integrates
+  //     to one over the stored width, its gradient matches finite differences,
+  //     it survives a stream round trip, samples are reported as lengthscales,
+  //     and a prior on rbf.lengthscale differs from one on rbf.inv_lengthscale.
+  {
+    CGammaDist* g = new CGammaDist();
+    g->setParam(3.0, 0);
+    g->setParam(2.0, 1);
+    CPowerViewDist view(g, 0.5);
+    // integrate exp(logProb) over the stored width gamma with the trapezoid rule
+    // on a log grid (substituting gamma = exp(u), dgamma = gamma du).
+    double mass = 0.0;
+    const int nGrid = 40000;
+    const double u0 = -14.0, u1 = 8.0, du = (u1-u0)/nGrid;
+    for(int i=0; i<=nGrid; i++)
+    {
+      const double gam = exp(u0+i*du);
+      const double w = (i==0 || i==nGrid) ? 0.5 : 1.0;
+      mass += w*exp(view.logProb(gam))*gam*du;
+    }
+    double worstGrad = 0.0;
+    for(double gam=0.05; gam<5.0; gam*=1.7)
+    {
+      const double h = 1e-6*gam;
+      const double fd = (view.logProb(gam+h)-view.logProb(gam-h))/(2.0*h);
+      worstGrad = max(worstGrad, fabs(fd-view.getGradInput(gam))/(1.0+fabs(fd)));
+    }
+    stringstream ss;
+    writeDistToStream(view, ss);
+    CDist* back = readDistFromStream(ss);
+    const bool roundTrip = back->equals(view) && back->getType()=="powerview"
+      && fabs(back->logProb(0.7)-view.logProb(0.7))<1e-12;
+    delete back;
+
+    CMatrix X(5, 1), y(5, 1);
+    for(unsigned int i=0; i<5; i++) { X.setVal(0.5*i, i, 0); y.setVal(sin(0.5*i), i, 0); }
+    CCmpndKern kern(X);
+    kern.addKern(std::unique_ptr<CKern>(new CRbfKern(X)));
+    CGaussianNoise noise(&y);
+    for(int i=0; i<noise.getOutputDim(); i++) noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+    CGammaDist* g2 = new CGammaDist();
+    g2->setParam(3.0, 0);
+    g2->setParam(2.0, 1);
+    model.addPriorByPath("rbf.lengthscale", g2);
+    CGammaDist* gv = new CGammaDist();
+    gv->setParam(2.0, 0);
+    gv->setParam(1.0, 1);
+    model.addPriorByPath("rbf.variance", gv);
+    CGammaDist* gn = new CGammaDist();
+    gn->setParam(2.0, 0);
+    gn->setParam(1.0, 1);
+    model.addPriorByPath("likelihood.variance", gn);
+    vector<SampledParam> sp;
+    model.sampledParams(sp);
+    bool named = false;
+    for(size_t i=0; i<sp.size(); i++)
+      if(sp[i].name=="rbf.lengthscale" && sp[i].rawName()=="rbf.inv_lengthscale"
+         && fabs(sp[i].reportValue(sp[i].constrainedValue)-1.0/sqrt(sp[i].constrainedValue))<1e-12)
+        named = true;
+    const bool proper = model.improperReason().empty();
+    if(fabs(mass-1.0)<2e-3 && worstGrad<1e-5 && roundTrip && named && proper)
+      cout << "PASS lengthscale prior: mass " << mass << ", gradient, stream round trip, naming" << endl;
+    else { cout << "FAIL lengthscale prior: mass " << mass << " grad " << worstGrad << " roundTrip " << roundTrip << " named " << named << " proper " << proper << endl; fail++; }
   }
 
   // 7. Sparse approximations (fixed inducing points): proper target, objective

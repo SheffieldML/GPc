@@ -333,6 +333,26 @@ string CKern::getSampleParamName(unsigned int index) const
   return canonicalLeafName(*this, index);
 }
 
+double CKern::lengthscalePower(unsigned int index) const
+{
+  if(getParamName(index)!="inverseWidth")
+    return 0.0;
+  return getType()=="exp" ? 1.0 : 0.5;
+}
+
+double CComponentKern::lengthscalePower(unsigned int paramNo) const
+{
+  unsigned int start=0;
+  for(size_t i=0; i<components.size(); i++)
+  {
+    const unsigned int end=start+components[i]->getNumParams()-1;
+    if(paramNo<=end)
+      return components[i]->lengthscalePower(paramNo-start);
+    start=end+1;
+  }
+  return 0.0;
+}
+
 string CComponentKern::getSampleParamName(unsigned int paramNo) const
 {
   unsigned int start=0;

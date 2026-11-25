@@ -943,7 +943,7 @@ py::dict hmcSampleGp(CGp& gp,
       double v = samples.getVal(i, j);
       if(params[j].transform != 0)
         v = params[j].transform->atox(v);
-      constrained.setVal(v, i, j);
+      constrained.setVal(params[j].reportValue(v), i, j);
     }
   py::dict out;
   out["names"] = names;

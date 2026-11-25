@@ -405,6 +405,9 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // width; priors and samples live on the native value, so they are named
   // rbf.inv_lengthscale. Other parameters use their path name.
   virtual string getSampleParamName(unsigned int index) const;
+  // CIP-003B: c > 0 if parameter `index` is an inverse width whose GPy view is
+  // the lengthscale x^(-c) (RBF family 1/2, exponential 1); 0 otherwise.
+  virtual double lengthscalePower(unsigned int index) const;
 
   // GPy-aligned path façade (CIP-0014 / REQ-0008). Indexed setParam remains
   // native storage; these methods use GPy names/units at the boundary.
@@ -629,6 +632,7 @@ class CComponentKern : public CKern
   }
   virtual string getParamName(unsigned int paramNo) const;
   virtual string getSampleParamName(unsigned int paramNo) const;
+  virtual double lengthscalePower(unsigned int paramNo) const;
   virtual vector<string> paramPaths() const;
   virtual unsigned int paramIndex(const string& path) const;
   virtual double getByPath(const string& path) const;

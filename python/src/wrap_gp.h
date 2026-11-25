@@ -40,6 +40,9 @@ public:
                 bool messages = false,
                 py::object callback = py::none());
   double objective() const;
+  // CIP-0016: opt in to K + white + sigma^2 I (GPy semantics); see CGp.
+  void set_allow_white_and_noise(bool val);
+  bool allow_white_and_noise() const;
 
   // CIP-0031: predict → predictiveMeanVar (y_*); predict_noiseless → latent (f_*).
   std::pair<py::array_t<double>, py::array_t<double>> predict(

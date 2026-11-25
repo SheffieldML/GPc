@@ -15,6 +15,8 @@ Conventions
   We write the canonical split ``inputScale_j = (min(l)/l_j)**2`` (largest
   scale is 1); reading inverts it exactly.
 * Gaussian noise: ``likelihood.variance`` (FTC) or ``beta = 1/variance`` (sparse).
+* A ``kern.white`` part in an FTC model turns on ``set_allow_white_and_noise`` so
+  the Gram is K + white + sigma^2 I, as on the wire.
 """
 from __future__ import annotations
 
@@ -93,6 +95,15 @@ def from_wire(doc):
     approx = doc.get("approximation", "ftc")
     if approx == "ftc":
         model = M.GPRegression(X, Y, kern)
+        if any(l["type"] == "kern.white" for l in _leaves(doc["kernel"])):
+            # Wire semantics are K + white + sigma^2 I (GPy, GPmat, GPflow, GPJax).
+            # GPc's default (CIP-0027) lets a trainable White own the noise, so
+            # opt in explicitly.
+            if not hasattr(model, "set_allow_white_and_noise"):
+                raise InterchangeError(
+                    "this GPc build cannot add White and likelihood.variance "
+                    "(needs set_allow_white_and_noise, CIP-0016)")
+            model.set_allow_white_and_noise(True)
         model.set_by_path("likelihood.variance", var)
     else:
         Z = np.asarray(doc["inducing_inputs"], float)

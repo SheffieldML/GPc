@@ -567,6 +567,10 @@ bool CGp::addsLikelihoodVarianceToGram() const
     return false;
   if(hasWhiteComponent())
   {
+    // CIP-0016: with the opt-in, White and likelihood.variance both add to the
+    // Gram diagonal (K + white + sigma^2 I), as in GPy, GPmat, GPflow and GPJax.
+    if(allowWhiteAndLikelihoodNoise)
+      return true;
     if(likelihoodVarianceFixed)
       return false;
     // Migrating: White fixed, variance free → likelihood owns the Gram noise.

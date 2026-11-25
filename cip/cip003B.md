@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-25"
 id: "003B"
 last_updated: "2026-11-25"
-status: "In Progress"
+status: "Implemented"
 compressed: false
 related_requirements: ["0002", "001C"]
 related_cips: ["0015", "0017", "002A", "0033", "0035"]
@@ -27,7 +27,7 @@ title: "Hamiltonian Monte Carlo over COptimisable parameters"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
-- [ ] Implemented - Code changes complete
+- [x] Implemented - Code changes complete
 - [ ] Closed - Verified and merged
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed

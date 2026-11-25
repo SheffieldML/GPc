@@ -1,7 +1,7 @@
 ---
 id: "001C"
 title: "Users can obtain verified posterior samples of GP hyperparameters"
-status: "In Progress"
+status: "Implemented"
 priority: "Medium"
 created: "2026-11-25"
 last_updated: "2026-11-25"

@@ -19,7 +19,7 @@ tags:
 
 ## Description
 
-Verify the provisional registry entries against current releases of GPyTorch, GPflow and GPJax; write adapters; round-trip the goldens; confirm supported approximations (currently provisional: ftc and dtcvar only); GPyTorch must reject kern.white; GPJax uses sqrt for obs_stddev; document gaps.
+Verify the provisional registry entries against current releases of GPyTorch, GPflow and GPJax; write adapters; round-trip the goldens; confirm supported approximations (names checked against upstream 2026-11-25; GPflow supports ftc, dtcvar, fitc; GPyTorch and GPJax ftc, dtcvar; no round-trip yet); GPyTorch must reject kern.white and record/disable its default sgpr_diagonal_correction; GPJax adapter must pin a version (ConjugatePosterior vs ConjugateModel) and reject non-positive Constant; GPJax uses sqrt for obs_stddev; document gaps.
 
 ## Acceptance Criteria
 

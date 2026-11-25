@@ -19,7 +19,7 @@ tags:
 
 ## Description
 
-Fix `gh` authentication (`gh auth login -h github.com`), create `SheffieldML/gp-scuderia`, push, add CI running `scripts/validate.py`, tag schema 0.1 draft. Local scaffold, strict schema, 12-type registry, two goldens and four negative fixtures are done.
+Fix `gh` authentication (`gh auth login -h github.com`), create `SheffieldML/gp-scuderia`, push, add CI running `scripts/validate.py`, tag schema 0.1 draft. Local scaffold, strict schema, 11-type registry, two goldens and four negative fixtures are done.
 
 ## Acceptance Criteria
 

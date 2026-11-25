@@ -31,6 +31,27 @@ class CTransform
   virtual double atox(double x) const=0;
   virtual double xtoa(double x) const=0;
   virtual double gradfact(double x) const=0;
+  // CIP-003B: change-of-variables terms for sampling in the unconstrained
+  // space a, where x = atox(a) is the constrained value (the argument here,
+  // matching gradfact). The density of a is p_x(x(a)) |dx/da|, so
+  //   logJacobian(x)     = log |dx/da|
+  //   gradLogJacobian(x) = d/da log |dx/da|
+  // Transforms that do not override these refuse rather than silently
+  // sampling the wrong density.
+  virtual double logJacobian(double x) const
+  {
+    throw ndlexceptions::NotImplementedError("logJacobian not implemented for transform type " + getType());
+  }
+  virtual double gradLogJacobian(double x) const
+  {
+    throw ndlexceptions::NotImplementedError("gradLogJacobian not implemented for transform type " + getType());
+  }
+  // True if the image of atox is bounded on both sides, so that a flat
+  // prior over the constrained value is still proper.
+  virtual bool isBounded() const
+  {
+    return false;
+  }
   virtual void setType(const string name) 
   {
     type = name;
@@ -65,6 +86,8 @@ class CExpTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
   
  private:
   bool transform;
@@ -80,6 +103,8 @@ class CNegLogLogitTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
   
  private:
   bool transform;
@@ -109,6 +134,14 @@ class CLinearTransform : public CTransform
   double gradfact(double x) const
   {
     return 1/m;
+  }
+  double logJacobian(double x) const
+  {
+    return -log(fabs(m));
+  }
+  double gradLogJacobian(double x) const
+  {
+    return 0.0;
   }
   void setM(double val)
   {
@@ -143,6 +176,9 @@ class CSigmoidTransform : public CTransform
   double atox(double a) const;
   double xtoa(double x) const;
   double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
+  bool isBounded() const {return true;}
   
  private:
   bool transform;

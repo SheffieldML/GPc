@@ -104,6 +104,30 @@ int testTransform(string transType)
       cout << "Gradient check passed: a: " << a[i] << endl;
     else
       cout << "Gradient check skipped (clamped): a: " << a[i] << endl;
+
+    // CIP-003B: Jacobian terms. Probe a moderate range where the closed forms
+    // are well conditioned (deep tails lose digits in the finite difference).
+    if(!clamped && fabs(a[i])<=100 && fabs(a[i])>1e-6)
+    {
+      double lj = trans->logJacobian(x);
+      if(fabs(lj - log(g)) > roundTol*(1.0+fabs(lj)))
+      {
+        cout << "FAIL: logJacobian " << lj << " != log(gradfact) " << log(g) << " at a=" << a[i] << endl;
+        fail++;
+      }
+      double h = 1e-5*(1.0+fabs(a[i]));
+      double ljPlus = trans->logJacobian(trans->atox(a[i]+h));
+      double ljMinus = trans->logJacobian(trans->atox(a[i]-h));
+      double ljGrad = (ljPlus-ljMinus)/(2*h);
+      double glj = trans->gradLogJacobian(x);
+      if(fabs(ljGrad-glj) > 1e-5*(1.0+fabs(glj)))
+      {
+        cout << "FAIL: gradLogJacobian " << glj << " vs finite difference " << ljGrad << " at a=" << a[i] << endl;
+        fail++;
+      }
+      else
+        cout << "Jacobian check passed: a: " << a[i] << endl;
+    }
   }
   ptransforms->addTransform(trans, 1);
   ptransforms->addTransform(trans, 2);

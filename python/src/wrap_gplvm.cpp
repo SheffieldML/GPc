@@ -6,6 +6,8 @@
 #include <pybind11/stl.h>
 
 #include "COptimisable.h"
+#include "CHmc.h"
+#include "CVariationalTarget.h"
 #include "matrix_numpy.h"
 #include "ndlexceptions.h"
 #include "ndlutil.h"
@@ -811,6 +813,132 @@ unsigned int PyMRD::output_dim(unsigned int view) const
   return model->getView(view)->getOutputDim();
 }
 
+
+namespace {
+
+// CIP-003B: run HMC on a bound target and return names / samples / diagnostics.
+// The model's parameters are restored afterwards, also when sampling throws.
+py::dict hmcBoundTarget(COptimisable& model, CBoundHyperTarget& target,
+                        unsigned int num_samples, unsigned int burn_in,
+                        double step_size, unsigned int num_leapfrog,
+                        unsigned long seed, bool include_jacobian,
+                        bool allow_improper, const std::vector<std::string>& fix)
+{
+  CMatrix start(1, model.getOptNumParams());
+  model.getOptParams(start);
+  struct Restore
+  {
+    COptimisable& m;
+    const CMatrix& p;
+    ~Restore()
+    {
+      try { m.setOptParams(p); } catch(...) {}
+    }
+  } restore{model, start};
+  for(size_t i = 0; i < fix.size(); i++)
+    target.fix(fix[i]);
+  target.setIncludeJacobian(include_jacobian);
+  target.setAllowImproper(allow_improper);
+  CHmc hmc(target, target, seed);
+  hmc.setStepSize(step_size);
+  hmc.setNumLeapfrog(num_leapfrog);
+  if(burn_in > 0)
+    hmc.adaptStepSize(burn_in);
+  CMatrix samples, logPost;
+  hmc.sample(num_samples, samples, logPost);
+  std::vector<SampledParam> params;
+  target.sampledParams(params);
+  CMatrix reported(samples.getRows(), samples.getCols());
+  std::vector<std::string> names;
+  for(size_t j = 0; j < params.size(); j++)
+    names.push_back(params[j].name);
+  for(unsigned int i = 0; i < samples.getRows(); i++)
+    for(unsigned int j = 0; j < samples.getCols(); j++)
+    {
+      double v = samples.getVal(i, j);
+      if(params[j].transform != 0)
+        v = params[j].transform->atox(v);
+      reported.setVal(params[j].reportValue(v), i, j);
+    }
+  py::dict out;
+  out["names"] = names;
+  out["samples"] = matrixToNumpy(reported);
+  out["log_posterior"] = matrixToNumpy(logPost);
+  out["accept_rate"] = hmc.acceptRate();
+  out["step_size"] = hmc.getStepSize();
+  return out;
+}
+
+bool isVariancePath(const std::string& path)
+{
+  const std::string tag = "likelihood.variance";
+  return path.size() >= tag.size() && path.compare(path.size() - tag.size(), tag.size(), tag) == 0;
+}
+
+void addKernelPrior(CKern& kern, const std::string& path, const std::string& spec,
+                    std::vector<std::unique_ptr<CDist> >& owned)
+{
+  const std::string plain = (path.compare(0, 5, "kern.") == 0) ? path.substr(5) : path;
+  const unsigned int index = kern.paramIndex(plain);
+  CDist* attached = kern.addPriorInPathUnits(priorFromSpec(spec), index, plain);
+  owned.push_back(std::unique_ptr<CDist>(attached));
+}
+
+}  // namespace
+
+void PyBayesianGPLVM::set_prior(const std::string& path, const std::string& spec)
+{
+  if(isVariancePath(path))
+  {
+    variancePrior.reset(priorFromSpec(spec));
+    return;
+  }
+  addKernelPrior(*model->getKern(), path, spec, priors);
+}
+
+py::dict PyBayesianGPLVM::hmc(unsigned int num_samples, unsigned int burn_in,
+                              double step_size, unsigned int num_leapfrog,
+                              unsigned long seed, bool include_jacobian,
+                              bool allow_improper, const std::vector<std::string>& fix)
+{
+  std::unique_ptr<CBoundHyperTarget> target = makeBoundHyperTarget(*model, variancePrior.get());
+  return hmcBoundTarget(*model, *target, num_samples, burn_in, step_size, num_leapfrog,
+                        seed, include_jacobian, allow_improper, fix);
+}
+
+void PyMRD::set_prior(const std::string& path, const std::string& spec)
+{
+  if(path == "likelihood.variance")
+  {
+    variancePrior.reset(priorFromSpec(spec));
+    return;
+  }
+  if(path.compare(0, 4, "view") != 0)
+    throw ndlexceptions::Error("MRD priors need a view prefix, e.g. view0.lengthscale (got '" + path + "').");
+  const size_t dot = path.find('.');
+  if(dot == std::string::npos || dot <= 4)
+    throw ndlexceptions::Error("MRD prior path must look like view0.lengthscale (got '" + path + "').");
+  const unsigned int v = static_cast<unsigned int>(atoi(path.substr(4, dot - 4).c_str()));
+  if(v >= model->getNumViews())
+    throw ndlexceptions::Error("MRD prior path names a view that does not exist: '" + path + "'.");
+  const std::string rest = path.substr(dot + 1);
+  if(rest == "likelihood.variance")
+  {
+    throw ndlexceptions::Error("per-view variance priors are not supported; use 'likelihood.variance' for all views.");
+  }
+  addKernelPrior(*model->getView(v)->getKern(), rest, spec, priors);
+}
+
+py::dict PyMRD::hmc(unsigned int num_samples, unsigned int burn_in,
+                    double step_size, unsigned int num_leapfrog,
+                    unsigned long seed, bool include_jacobian,
+                    bool allow_improper, const std::vector<std::string>& fix)
+{
+  std::unique_ptr<CBoundHyperTarget> target = makeBoundHyperTarget(*model, variancePrior.get());
+  return hmcBoundTarget(*model, *target, num_samples, burn_in, step_size, num_leapfrog,
+                        seed, include_jacobian, allow_improper, fix);
+}
+
 void bind_gplvm(py::module_& m)
 {
   py::class_<PyGPLVM>(
@@ -867,6 +995,17 @@ void bind_gplvm(py::module_& m)
            py::arg("callback") = py::none(),
            "Optimise variational q(X), Z, kernel, and β (SCG).")
       .def("objective", &PyBayesianGPLVM::objective, "Negative ELBO.")
+      .def("set_prior", &PyBayesianGPLVM::set_prior, py::arg("path"), py::arg("spec"),
+           "Prior on a kernel parameter or likelihood.variance ('gamma:a,b' or 'gaussian:prec'). CIP-003B.")
+      .def("hmc", &PyBayesianGPLVM::hmc,
+           py::arg("num_samples") = 1000, py::arg("burn_in") = 200,
+           py::arg("step_size") = 0.1, py::arg("num_leapfrog") = 10,
+           py::arg("seed") = 1, py::arg("include_jacobian") = true,
+           py::arg("allow_improper") = false,
+           py::arg("fix") = std::vector<std::string>(),
+           "HMC over kernel parameters and likelihood.variance under the VarDTC bound with q(X) and Z\n"
+           "held fixed (a generalised posterior; CIP-003B). Returns names, samples, log_posterior, accept_rate, step_size.")
+
       .def("elbo", &PyBayesianGPLVM::elbo, "Evidence lower bound (logLikelihood).")
       .def("predict", &PyBayesianGPLVM::predict, py::arg("Xtest"),
            "Predictive y_* mean/variance at latent Xtest (includes 1/β).")
@@ -906,6 +1045,16 @@ void bind_gplvm(py::module_& m)
            py::arg("callback") = py::none(),
            "Optimise shared q(X), Z, and per-view kernels / β (SCG).")
       .def("objective", &PyMRD::objective, "Negative ELBO.")
+      .def("set_prior", &PyMRD::set_prior, py::arg("path"), py::arg("spec"),
+           "Prior on viewK.<kernel parameter> or likelihood.variance (all views). CIP-003B.")
+      .def("hmc", &PyMRD::hmc,
+           py::arg("num_samples") = 1000, py::arg("burn_in") = 200,
+           py::arg("step_size") = 0.1, py::arg("num_leapfrog") = 10,
+           py::arg("seed") = 1, py::arg("include_jacobian") = true,
+           py::arg("allow_improper") = false,
+           py::arg("fix") = std::vector<std::string>(),
+           "HMC over per-view kernel parameters and variances under the shared-latent bound with\n"
+           "q(X) and Z held fixed (CIP-003B).")
       .def("elbo", &PyMRD::elbo, "Evidence lower bound (single KL).")
       .def("predict", &PyMRD::predict, py::arg("view"), py::arg("Xtest"),
            "Predictive y_* for view at latent Xtest.")

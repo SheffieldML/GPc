@@ -48,8 +48,9 @@ def set_prior(model: Any, path: str, family: str, *params: float) -> None:
     """Attach a prior to the parameter at ``path`` (natural units).
 
     ``path`` is a GPy-like path such as ``rbf.lengthscale`` or
-    ``likelihood.variance``. Supported by ``GPRegression`` and
-    ``SparseGPRegression``.
+    ``likelihood.variance``. Supported by ``GPRegression``,
+    ``SparseGPRegression``, ``BayesianGPLVM`` (kernel paths and
+    ``likelihood.variance``) and ``MRD`` (``view0.lengthscale`` and so on).
     """
     model.set_prior(path, prior_spec(family, *params))
 
@@ -104,6 +105,13 @@ def hmc(
     :class:`gpc.GpcError` if the target is improper (add priors with
     :func:`set_prior`, or pass ``allow_improper=True``).
     """
+    if not hasattr(model, "hmc"):
+        raise TypeError(
+            f"{type(model).__name__} does not support HMC. Mini-batch ELBOs "
+            "(DeepGP, SVGP, stochastic Bayesian GPLVM) are noisy, which breaks "
+            "the accept step; use GPRegression, SparseGPRegression, GPLVM, "
+            "BayesianGPLVM or MRD."
+        )
     raw = model.hmc(
         num_samples=num_samples,
         burn_in=burn_in,

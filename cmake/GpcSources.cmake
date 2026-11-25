@@ -35,6 +35,7 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CStochasticOptimisable.cpp
   ${GPC_ROOT}/CDeepGp.cpp
   ${GPC_ROOT}/CHmc.cpp
+  ${GPC_ROOT}/CVariationalTarget.cpp
 )
 
 set(GPC_LIBGP_FORTRAN_SOURCES

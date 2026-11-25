@@ -248,12 +248,14 @@ Notebook ports of the oil / SVI GPLVM / MRD tutorials are still outstanding. Oth
 
 ## Posterior samples of hyperparameters (CIP-003B / REQ-001C)
 
-`gpc.inference` draws Hamiltonian Monte Carlo samples of the free hyperparameters of `GPRegression` and `SparseGPRegression` (sparse models need fixed inducing points). Priors sit on the native parameter value; for the RBF kernel that is `rbf.inv_lengthscale`, and a prior on `rbf.lengthscale` is refused with a message (lengthscale is a GPy-unit view of the inverse width). An improper target (a sampled parameter without a prior) is refused unless `allow_improper=True`.
+`gpc.inference` draws Hamiltonian Monte Carlo samples of the free hyperparameters of `GPRegression`, `SparseGPRegression` (sparse models need fixed inducing points), `BayesianGPLVM` and `MRD`. A prior on `rbf.lengthscale` is stated on the lengthscale and samples are reported as lengthscales; `rbf.inv_lengthscale` puts the prior on the stored inverse width instead. An improper target (a sampled parameter without a prior) is refused unless `allow_improper=True`.
+
+For `BayesianGPLVM` and `MRD` the target is the variational bound as a function of the hyperparameters, with q(X) and the inducing inputs held at their current values (optimise first). That is a generalised posterior, not a posterior over q. MRD paths carry a view prefix (`view0.lengthscale`); `likelihood.variance` sets one prior for all views. Mini-batch models (`DeepGP`, SVGP, stochastic Bayesian GPLVM) are refused: their noisy ELBO breaks the accept step.
 
 ```python
 import gpc
 m = gpc.models.GPRegression(X, Y, kernel=gpc.kern.RBF(1))
-for path in ("rbf.inv_lengthscale", "rbf.variance", "likelihood.variance"):
+for path in ("rbf.lengthscale", "rbf.variance", "likelihood.variance"):
     gpc.inference.set_prior(m, path, "gamma", 2.0, 1.0)
 res = gpc.inference.hmc(m, num_samples=2000, burn_in=300)
 res.to_csv("samples.csv")   # same layout as `gp sample`

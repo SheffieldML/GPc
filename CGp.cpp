@@ -984,18 +984,8 @@ void CGp::addPriorByPath(const string& path, CDist* dist)
   resolveFixPath(path, kind, index);
   if(kind==0)
   {
-    // rbf.lengthscale is a GPy-unit view of the stored inverse width. A prior
-    // named for the lengthscale is wrapped so that it is stated on the
-    // lengthscale and carries the change of variables to the stored value;
-    // rbf.inv_lengthscale attaches directly to the stored value.
-    const string suffix=".lengthscale";
-    const string plain=(path.compare(0, 5, "kern.")==0) ? path.substr(5) : path;
-    const bool nameIsLengthscale=(plain=="lengthscale")
-      || (plain.size()>suffix.size() && plain.compare(plain.size()-suffix.size(), suffix.size(), suffix)==0);
-    const double c=pkern->lengthscalePower(index);
-    if(nameIsLengthscale && c>0.0)
-      dist=new CPowerViewDist(dist, c); // takes ownership of dist
-    pkern->addPriorAt(dist, index);
+    // A prior named for the lengthscale is stated on the lengthscale (CPowerViewDist).
+    pkern->addPriorInPathUnits(dist, index, path);
   }
   else if(kind==3)
   {

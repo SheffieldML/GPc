@@ -166,3 +166,56 @@ def test_prior_spec_validation():
         gpc.inference.prior_spec("cauchy", 1)
     with pytest.raises(ValueError):
         gpc.inference.prior_spec("gamma", 1)
+
+
+def _latent_data():
+    return np.sin(np.linspace(0, 3, 12)[:, None] * np.arange(1, 4)[None, :])
+
+
+def test_bayesian_gplvm_hyperparameter_samples():
+    m = gpc.models.BayesianGPLVM(
+        _latent_data(), input_dim=2, num_inducing=4, kernel="rbf", ard=False
+    )
+    m.optimize(30)
+    with pytest.raises(gpc.GpcError, match="improper"):
+        gpc.inference.hmc(m, num_samples=5, burn_in=0)
+    for path in ("rbf.lengthscale", "rbf.variance", "likelihood.variance"):
+        gpc.inference.set_prior(m, path, "gamma", 2.0, 1.0)
+    mu, objective = m.latent_mean().copy(), m.objective()
+    res = gpc.inference.hmc(m, num_samples=200, burn_in=100, seed=2)
+    assert res.names == ["rbf.lengthscale", "rbf.variance", "likelihood.variance"]
+    assert res.samples.shape == (200, 3)
+    assert np.all(res.samples > 0.0)
+    assert res.accept_rate > 0.5
+    # q(X) is held fixed and the hyperparameters are restored afterwards.
+    np.testing.assert_array_equal(mu, m.latent_mean())
+    assert m.objective() == objective
+
+
+def test_mrd_hyperparameter_samples_are_named_per_view():
+    Y = _latent_data()
+    m = gpc.models.MRD(
+        [Y[:, :2], Y[:, 1:]], input_dim=2, num_inducing=4, kernel="rbf", ard=False
+    )
+    for v in (0, 1):
+        gpc.inference.set_prior(m, f"view{v}.lengthscale", "gamma", 2.0, 1.0)
+        gpc.inference.set_prior(m, f"view{v}.variance", "gamma", 2.0, 1.0)
+    gpc.inference.set_prior(m, "likelihood.variance", "gamma", 2.0, 1.0)
+    res = gpc.inference.hmc(m, num_samples=100, burn_in=60, seed=4)
+    assert res.names == [
+        "view0.lengthscale",
+        "view0.variance",
+        "view0.likelihood.variance",
+        "view1.lengthscale",
+        "view1.variance",
+        "view1.likelihood.variance",
+    ]
+    assert np.all(res.samples > 0.0)
+
+
+def test_unsupported_models_are_refused_with_the_reason():
+    class Stochastic:
+        pass
+
+    with pytest.raises(TypeError, match="Mini-batch"):
+        gpc.inference.hmc(Stochastic())

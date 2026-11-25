@@ -333,6 +333,19 @@ string CKern::getSampleParamName(unsigned int index) const
   return canonicalLeafName(*this, index);
 }
 
+CDist* CKern::addPriorInPathUnits(CDist* prior, unsigned int index, const string& path)
+{
+  const string suffix=".lengthscale";
+  const string plain=(path.compare(0, 5, "kern.")==0) ? path.substr(5) : path;
+  const bool nameIsLengthscale=(plain=="lengthscale")
+    || (plain.size()>suffix.size() && plain.compare(plain.size()-suffix.size(), suffix.size(), suffix)==0);
+  const double c=lengthscalePower(index);
+  if(nameIsLengthscale && c>0.0)
+    prior=new CPowerViewDist(prior, c); // takes ownership of the inner prior
+  addPriorAt(prior, index);
+  return prior;
+}
+
 double CKern::lengthscalePower(unsigned int index) const
 {
   if(getParamName(index)!="inverseWidth")

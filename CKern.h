@@ -408,6 +408,13 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // CIP-003B: c > 0 if parameter `index` is an inverse width whose GPy view is
   // the lengthscale x^(-c) (RBF family 1/2, exponential 1); 0 otherwise.
   virtual double lengthscalePower(unsigned int index) const;
+  // CIP-003B: attach a prior to parameter `index`, stated in the units of the
+  // path it was named by. A path ending in `lengthscale` on an inverse-width
+  // parameter wraps the prior in CPowerViewDist so it is stated on the
+  // lengthscale; any other path attaches to the stored value. Returns the
+  // distribution actually attached (the wrapper if one was made). The caller
+  // keeps ownership of the returned object for as long as the kernel lives.
+  CDist* addPriorInPathUnits(CDist* prior, unsigned int index, const string& path);
 
   // GPy-aligned path façade (CIP-0014 / REQ-0008). Indexed setParam remains
   // native storage; these methods use GPy names/units at the boundary.

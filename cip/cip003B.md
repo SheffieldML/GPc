@@ -142,7 +142,7 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 - [x] Phase 5 (partial): CSV sample output and `gp sample` CLI mode
 - [x] Phase 5: Python wrapper `gpc.inference` (`set_prior`, `hmc`, `HmcResult.to_csv`) for `GPRegression` and `SparseGPRegression`; verified against grid integration in `python/tests/test_hmc.py`
 - [ ] Follow-up: priors and samples in GPy lengthscale units (today they live on the native inverse width, named `rbf.inv_lengthscale`; a prior on `rbf.lengthscale` is refused). See backlog `2026-11-25_cip003b-lengthscale-prior-units`
-- [ ] Phase 6: tutorial
+- [x] Phase 6: tutorial [hmc_sinc](../docs/tutorials/hmc_sinc.md) (CLI and Python), numbers taken from an actual run
 
 ## GPy comparison
 

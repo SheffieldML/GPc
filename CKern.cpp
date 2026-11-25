@@ -769,11 +769,17 @@ double CKern::dist2Active(const CMatrix& X1, unsigned int i1,
 }
 unsigned int CKern::indexFromDouble(double x, unsigned int outputDim)
 {
-  long long rounded = llround(x);
-  BOUNDCHECK(fabs(x - static_cast<double>(rounded)) < ndlutil::MATCHTOL);
-  BOUNDCHECK(rounded >= 0);
-  unsigned int i = static_cast<unsigned int>(rounded);
-  BOUNDCHECK(i < outputDim);
+  // Always reject bad casts (CIP-000D). Do not use BOUNDCHECK: at the default
+  // GPC_CHECKS=1 level that macro is a no-op (CIP-002D), and index validation
+  // is an API-boundary invariant like indexToSlices.
+  const long long rounded = llround(x);
+  if(fabs(x - static_cast<double>(rounded)) >= ndlutil::MATCHTOL)
+    throw ndlexceptions::Error("indexFromDouble: non-integer index");
+  if(rounded < 0)
+    throw ndlexceptions::Error("indexFromDouble: negative index");
+  const unsigned int i = static_cast<unsigned int>(rounded);
+  if(i >= outputDim)
+    throw ndlexceptions::Error("indexFromDouble: index out of range");
   return i;
 }
 // The Component kernel

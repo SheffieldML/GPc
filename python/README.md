@@ -13,7 +13,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install gpc                  # from PyPI once published
 # or, until the first PyPI release (pin a version that includes the features you need):
 #   pip install --no-cache-dir --index-url https://test.pypi.org/simple/ \
-#     --extra-index-url https://pypi.org/simple/ "gpc==0.1.0a9"
+#     --extra-index-url https://pypi.org/simple/ "gpc==0.1.0a10"
 export OPENBLAS_NUM_THREADS=1
 python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 # optional clean-venv checklist (from a repo checkout):
@@ -23,8 +23,8 @@ python -c "import gpc; print(gpc.__file__); print(gpc.__version__)"
 **Colab / TestPyPI:**
 
 - Keep `--extra-index-url https://pypi.org/simple/` so NumPy resolves from real PyPI (do not point both indexes at TestPyPI).
-- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a8` while `0.1.0a9` is already published).
-- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface; `0.1.0a3` frees sparse inducing by default and adds optional `learn_window_width` for weight-space; `0.1.0a4` adds CIP-0031 `predict` / `predict_noiseless` and notebook teaching. `0.1.0a5` adds CIP-0032 per-unit weight-space window widths. `0.1.0a6` adds CIP-0036 GPClassification Laplace predict + GPy naming aliases / basic_classification notebook. `0.1.0a7` adds CIP-0038 GPy kern inventory and CIP-0039 GPLVM / BayesianGPLVM / MRD façades. `0.1.0a8` adds CIP-0035 `gpc.models.DeepGP` (DSVI deep GP). `0.1.0a9` adds CIP-0035 DeepGP predict/V7 Jacobian and hidden-width fixes.
+- Use `--no-cache-dir` after a new TestPyPI upload: pip can keep a stale simple index and report only older alphas (e.g. `from versions: 0.1.0a9` while `0.1.0a10` is already published).
+- `0.1.0a1` (2026-11-19) is RBF/ExpQuad only; `0.1.0a2` adds `mlp` / `arccos` and the GPy-form `gpc.kern` surface; `0.1.0a3` frees sparse inducing by default and adds optional `learn_window_width` for weight-space; `0.1.0a4` adds CIP-0031 `predict` / `predict_noiseless` and notebook teaching. `0.1.0a5` adds CIP-0032 per-unit weight-space window widths. `0.1.0a6` adds CIP-0036 GPClassification Laplace predict + GPy naming aliases / basic_classification notebook. `0.1.0a7` adds CIP-0038 GPy kern inventory and CIP-0039 GPLVM / BayesianGPLVM / MRD façades. `0.1.0a8` adds CIP-0035 `gpc.models.DeepGP` (DSVI deep GP). `0.1.0a9` adds CIP-0035 DeepGP predict/V7 Jacobian and hidden-width fixes. `0.1.0a10` adds CIP-003A `gpc.likelihoods`, Kern.K/plot, and DeepGP wrap updates.
 
 macOS wheels from CI currently require a recent macOS (deployment target follows Homebrew bottle `minOS` on `macos-15`). Linux wheels are manylinux.
 

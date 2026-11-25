@@ -293,6 +293,13 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   {
     updateXused = val;
   }
+  // CIP-003B: add a prior to parameter `index` of this kernel, where for a
+  // compound kernel the index runs over the concatenated component parameters
+  // (the same indexing as getParam). Plain addPrior refuses on compounds.
+  virtual void addPriorAt(CDist* prior, unsigned int index)
+  {
+    CRegularisable::addPrior(prior, index);
+  }
   // For compound kernels when a new kernel is added.
   virtual unsigned int addKern(const CKern* kern)
   {
@@ -636,6 +643,21 @@ class CComponentKern : public CKern
   virtual void addPrior(CDist* prior, unsigned int index) 
   {
     throw ndlexceptions::Error("Error cannot add priors to component kernels directly, please add to the components.");
+  }
+  virtual void addPriorAt(CDist* prior, unsigned int index)
+  {
+    unsigned int start = 0;
+    for(size_t i=0; i<components.size(); i++)
+    {
+      const unsigned int n = components[i]->getNumParams();
+      if(index < start+n)
+      {
+        components[i]->addPriorAt(prior, index-start);
+        return;
+      }
+      start += n;
+    }
+    throw ndlexceptions::Error("addPriorAt: parameter index out of range.");
   }
 
   // CIP-003B: priors live on the components; map the compound index.

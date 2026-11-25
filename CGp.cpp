@@ -143,6 +143,7 @@ void CGp::_init()
   sparseLinalgMode = SparseLinalgLQ;
   QlqReady = false;
   setApproximationType(FTC);
+  betaTransform = 0;
   numActive = 0;
   pInducing = 0;
   epInference = false;
@@ -933,6 +934,23 @@ void CGp::clearFixes()
   likelihoodVarianceFixed=false;
   for(size_t i=0; i<scaleParamFixed.size(); i++)
     scaleParamFixed[i]=false;
+}
+
+void CGp::addPriorByPath(const string& path, CDist* dist)
+{
+  int kind=0;
+  unsigned int index=0;
+  resolveFixPath(path, kind, index);
+  if(kind==0)
+    pkern->addPriorAt(dist, index);
+  else if(kind==3)
+  {
+    if(!isGaussianNoise())
+      throw ndlexceptions::Error("likelihood.variance priors require a Gaussian noise model.");
+    pnoise->addPrior(dist, pnoise->getNumParams()-1);
+  }
+  else
+    throw ndlexceptions::Error("addPriorByPath: priors are supported on kernel parameters and likelihood.variance, not '"+path+"'.");
 }
 
 void CGp::fix(const string& path)
@@ -3817,9 +3835,13 @@ void CGp::readParamsFromStream(istream& in)
   // have all the info for resizing storage.
   initStoreage();
 
+  // The positive transform is needed whenever beta or likelihood.variance is
+  // optimised (FTC owns likelihood.variance since CIP-0027), so set it for every
+  // approximation. Previously it was left unset for FTC models read from a
+  // stream, and getOptParams crashed (e.g. gp relearn with a free variance).
+  betaTransform = CTransform::defaultPositive();
   if(isSparseApproximation()) 
   {
-    betaTransform = CTransform::defaultPositive();
     beta.fromStream(in);
   }
 

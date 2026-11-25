@@ -9,6 +9,8 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <sstream>
+#include <algorithm>
 #include <vector>
 #include "CHmc.h"
 #include "CGp.h"
@@ -287,6 +289,63 @@ int main()
       fail += checkMoment("GP length-scale posterior mean vs grid", m, gm, sqrt(gv/effectiveSampleSize(x)));
       fail += checkMoment("GP length-scale posterior variance vs grid", v, gv, sqrt(2.0*gv*gv/effectiveSampleSize(xv)));
     }
+  }
+
+  // 5. CSV output round-trips the in-memory samples (constrained space).
+  {
+    GaussTarget t;
+    CHmc hmc(t, t, 3);
+    hmc.setStepSize(0.3);
+    hmc.setNumLeapfrog(5);
+    CMatrix S, lp;
+    hmc.sample(50, S, lp);
+    stringstream ss;
+    writeSamplesCsv(t, S, lp, ss);
+    string line;
+    getline(ss, line);
+    bool ok = (line == "iteration,log_posterior,x0,x1");
+    double maxErr = 0.0;
+    unsigned int rows = 0;
+    while(getline(ss, line))
+    {
+      for(size_t k=0; k<line.size(); k++) if(line[k]==',') line[k]=' ';
+      istringstream ls(line);
+      unsigned int it; double l, x0, x1;
+      ls >> it >> l >> x0 >> x1;
+      ok = ok && it==rows;
+      maxErr = max(maxErr, max(fabs(l-lp.getVal(rows,0)), max(fabs(x0-S.getVal(rows,0)), fabs(x1-S.getVal(rows,1)))));
+      rows++;
+    }
+    if(ok && rows==50 && maxErr<=ndlutil::MATCHTOL)
+      cout << "PASS CSV round trip (max error " << maxErr << ")" << endl;
+    else { cout << "FAIL CSV round trip: rows " << rows << " max error " << maxErr << endl; fail++; }
+  }
+
+  // 6. addPriorByPath makes every sampled parameter proper.
+  {
+    CMatrix X(5, 1), y(5, 1);
+    for(unsigned int i=0; i<5; i++) { X.setVal(0.5*i, i, 0); y.setVal(sin(0.5*i), i, 0); }
+    CCmpndKern kern(X);
+    kern.addKern(std::unique_ptr<CKern>(new CRbfKern(X)));
+    CGaussianNoise noise(&y);
+    for(int i=0; i<noise.getOutputDim(); i++) noise.setBiasVal(0.0, i);
+    CGp model(&kern, &noise, &X, CGp::FTC, 0, 0);
+    bool improperBefore = !model.improperReason().empty();
+    const char* paths[3] = {"rbf.lengthscale", "rbf.variance", "likelihood.variance"};
+    for(int k=0; k<3; k++)
+    {
+      CGammaDist* g = new CGammaDist();
+      g->setParam(2.0, 0);
+      g->setParam(1.0, 1);
+      model.addPriorByPath(paths[k], g);
+    }
+    bool properAfter = model.improperReason().empty();
+    bool threw = false;
+    try { model.addPriorByPath("nonsense.path", new CGammaDist()); }
+    catch(...) { threw = true; }
+    if(improperBefore && properAfter && threw)
+      cout << "PASS addPriorByPath removes improperness and rejects unknown paths" << endl;
+    else { cout << "FAIL addPriorByPath: before " << improperBefore << " after " << properAfter << " threw " << threw << endl; fail++; }
   }
 
   cout << "Number of failures: " << fail << endl;

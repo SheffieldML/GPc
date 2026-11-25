@@ -419,6 +419,10 @@ public:
   // CIP-0027: Gaussian observation noise on the likelihood.
   bool isGaussianNoise() const;
   double getLikelihoodVariance() const;
+  // CIP-003B: attach a prior to a parameter named as in fix()/setByPath
+  // (kernel paths such as rbf.lengthscale, or likelihood.variance). The model
+  // does not take ownership of dist; it must outlive the model.
+  void addPriorByPath(const string& path, CDist* dist);
   // CIP-003B: log prior and its gradient (log-likelihood convention) for likelihood.variance.
   // CIP-003B: sampling target (exact FTC, Gaussian likelihood only for now).
   void sampledParams(std::vector<SampledParam>& params) const;

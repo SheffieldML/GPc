@@ -3,6 +3,7 @@
    that the analytic gradient matches finite differences in the optimiser's
    transformed space. No .mat fixtures. */
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include "CGp.h"
@@ -213,6 +214,18 @@ int main()
     else
       cout << "PASS copied prior is a distinct deep copy" << endl;
     delete tp;
+  }
+  // A model read back from a stream must be optimisable with a free
+  // likelihood.variance (regression: betaTransform was left unset for FTC).
+  {
+    const string fileName = "testNoisePrior_model.tmp";
+    writeGpToFile(model, fileName, "testNoisePrior round trip");
+    CGp* reread = readGpFromFile(fileName, 0);
+    CMatrix a2(1, reread->getOptNumParams());
+    reread->getOptParams(a2);
+    cout << "PASS model read from stream reports " << a2.getCols() << " optimiser parameters" << endl;
+    remove(fileName.c_str());
+    delete reread;
   }
   // Sparse approximations must refuse rather than silently drop the prior.
   cout << "Number of failures: " << fail << endl;

@@ -12,6 +12,7 @@
 #ifndef CHMC_H
 #define CHMC_H
 
+#include <iostream>
 #include <vector>
 #include "CMatrix.h"
 #include "COptimisable.h"
@@ -65,5 +66,15 @@ class CHmc
   double lastAlpha;
   double lastEnergyErr;
 };
+
+// CIP-003B: write samples as dense CSV (readable by pandas / NumPy / arviz).
+// Header: iteration,log_posterior,<parameter names>. Rows hold one draw each.
+// log_posterior is the log density of the sampled target (it includes the
+// log-Jacobian when that is switched on). If constrained is true the
+// parameter columns are the model's own (constrained) values, e.g. positive
+// length scales; otherwise they are the unconstrained optimiser values.
+void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
+                     const CMatrix& logPost, std::ostream& out,
+                     bool constrained=true);
 
 #endif

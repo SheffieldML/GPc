@@ -9,6 +9,7 @@
 #include "CKern.h"
 #include "CGp.h"
 #include "CClctrl.h"
+#include "CHmc.h"
 
 int main(int argc, char* argv[]);
 
@@ -17,6 +18,7 @@ class CClgp : public CClctrl {
   CClgp(int argc, char** argv);
   void learn();
   void relearn();
+  void sample();
   void display();
   void gnuplot();
 

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include "CHmc.h"
 #include "ndlutil.h"
@@ -178,4 +179,32 @@ void CHmc::sample(unsigned int n, CMatrix& samples, CMatrix& logPost)
 double CHmc::acceptRate() const
 {
   return nSteps==0 ? 0.0 : (double)nAccepted/(double)nSteps;
+}
+
+void writeSamplesCsv(const CPosteriorTarget& target, const CMatrix& samples,
+                     const CMatrix& logPost, std::ostream& out, bool constrained)
+{
+  std::vector<SampledParam> params;
+  target.sampledParams(params);
+  DIMENSIONMATCH(samples.getCols()==params.size());
+  DIMENSIONMATCH(logPost.getRows()==samples.getRows());
+  const std::streamsize oldPrecision = out.precision();
+  out << "iteration,log_posterior";
+  for(size_t j=0; j<params.size(); j++)
+    out << "," << params[j].name;
+  out << "\n";
+  out << std::setprecision(17);
+  for(unsigned int i=0; i<samples.getRows(); i++)
+  {
+    out << i << "," << logPost.getVal(i, 0);
+    for(size_t j=0; j<params.size(); j++)
+    {
+      double v = samples.getVal(i, (unsigned int)j);
+      if(constrained && params[j].transform!=0)
+        v = params[j].transform->atox(v);
+      out << "," << v;
+    }
+    out << "\n";
+  }
+  out.precision(oldPrecision);
 }

@@ -49,3 +49,6 @@ Task created and started.
 
 ### 2026-11-25
 Implemented and verified: testHmc (CSV round trip, addPriorByPath) passes; end-to-end `gp sample` run on a toy GP gives 3000 samples, acceptance 0.89, positive constrained values. Also fixed unset betaTransform for FTC models read from a stream (gp relearn segfault).
+
+### 2026-11-25
+Implemented and verified: testHmc (CSV round trip, addPriorByPath) passes; end-to-end `gp sample` run on a toy GP gives 3000 samples, acceptance 0.89, positive constrained values. Also fixed unset betaTransform for FTC models read from a stream (gp relearn segfault).

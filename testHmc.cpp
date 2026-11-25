@@ -14,6 +14,7 @@
 #include <vector>
 #include "CHmc.h"
 #include "CGp.h"
+#include "CGplvm.h"
 #include "CKern.h"
 #include "CNoise.h"
 #include "CDist.h"
@@ -441,6 +442,76 @@ int main()
       const double shift = model.logLikelihood() - l0;
       fail += checkMoment("sparse noise prior value at 1/beta", shift, probe.logProb(1.0/8.0), 1e-9);
     }
+  }
+
+  // 8. GPLVM: latent positions are sampled under the N(0, I) regulariser. The
+  //    target is proper only with the regulariser or priors; gradients match
+  //    finite differences; the sampler runs; unsupported configurations refuse.
+  {
+    const unsigned int N = 8, D = 3, Q = 2;
+    CMatrix Y(N, D);
+    for(unsigned int i=0; i<N; i++)
+    {
+      const double th = 2.0*3.14159265358979*i/N;
+      Y.setVal(cos(th), i, 0); Y.setVal(sin(th), i, 1); Y.setVal(0.5*cos(2.0*th), i, 2);
+    }
+    CMatrix Xk(N, Q);
+    CCmpndKern kern(Xk);
+    kern.addKern(std::unique_ptr<CKern>(new CRbfKern(Xk)));
+    kern.addKern(std::unique_ptr<CKern>(new CWhiteKern(Xk)));
+    CScaleNoise noise(&Y);
+    CMatrix np(1, 2*D);
+    for(unsigned int j=0; j<D; j++) { np.setVal(0.0, j); np.setVal(1.0, j+D); }
+    noise.setParams(np);
+    CGplvm model(&kern, &noise, Q, 0);
+    vector<SampledParam> sp;
+    model.sampledParams(sp);
+    const bool countOk = sp.size()==model.getOptNumParams() && sp.size()==kern.getNumParams()+N*Q;
+    const string noPriors = model.improperReason();
+    model.setLatentRegularised(false);
+    const string noReg = model.improperReason();
+    model.setLatentRegularised(true);
+    for(unsigned int j=0; j<kern.getNumParams(); j++)
+    {
+      CGammaDist* g = new CGammaDist();
+      g->setParam(2.0, 0);
+      g->setParam(2.0, 1);
+      kern.addPriorAt(g, j);
+    }
+    const bool proper = model.improperReason().empty();
+    const bool flagged = noPriors.find("rbf")!=string::npos && noPriors.find("X.")==string::npos
+                         && noReg.find("X.0.0")!=string::npos;
+    CMatrix a(1, model.getOptNumParams());
+    model.getOptParams(a);
+    CMatrix g(1, a.getCols());
+    model.computeSamplingObjectiveGrad(g);
+    double maxDiff = 0.0;
+    for(unsigned int j=0; j<a.getCols(); j++)
+    {
+      const double h = 1e-6, a0 = a.getVal(j);
+      a.setVal(a0+h, j); model.setOptParams(a); const double ep = model.computeSamplingObjective();
+      a.setVal(a0-h, j); model.setOptParams(a); const double em = model.computeSamplingObjective();
+      a.setVal(a0, j); model.setOptParams(a);
+      maxDiff = max(maxDiff, fabs((ep-em)/(2.0*h)-g.getVal(j))/(1.0+fabs(g.getVal(j))));
+    }
+    double accept = 0.0;
+    bool ok = countOk && flagged && proper && maxDiff<1e-5;
+    if(ok)
+    {
+      CHmc hmc(model, model, 9);
+      hmc.setStepSize(0.05);
+      hmc.setNumLeapfrog(10);
+      hmc.adaptStepSize(100);
+      CMatrix S, lp;
+      hmc.sample(200, S, lp);
+      accept = hmc.acceptRate();
+      ok = accept>0.4;
+    }
+    model.setInputScaleLearnt(true);
+    bool refused = false;
+    try { vector<SampledParam> s2; model.sampledParams(s2); } catch(...) { refused = true; }
+    if(ok && refused) cout << "PASS GPLVM: gradient max rel diff " << maxDiff << ", acceptance " << accept << endl;
+    else { cout << "FAIL GPLVM: count " << countOk << " flagged " << flagged << " proper " << proper << " grad diff " << maxDiff << " accept " << accept << " refused " << refused << endl; fail++; }
   }
 
   cout << "Number of failures: " << fail << endl;

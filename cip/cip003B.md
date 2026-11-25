@@ -136,7 +136,8 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 - [x] Fix: kernel copies keep their priors (`CRegularisable` deep-copies; `CDist::clone` is now pure virtual)
 - [x] Phase 4 (partial): exact FTC `CGp` with kernel parameters and `likelihood.variance`. Other models throw `NotImplementedError`
 - [x] Phase 4 (sparse): DTC, DTCVAR, FITC and PITC with fixed inducing points. Sampled parameters are kernel parameters and `likelihood.variance`, reported as 1/beta via `CReciprocalExpTransform`; the noise prior is evaluated at variance = 1/beta. Inducing inputs have no prior, so free inducing points are refused. `gp sample` holds them fixed. Verified by finite-difference gradients, prior-value and sampler checks in `testHmc`
-- [ ] Phase 4: `CGplvm`; variational and PPA models
+- [x] Phase 4 (GPLVM): plain MAP `CGplvm` samples kernel parameters and latent positions `X.i.j`; the N(0, I) latent regulariser is the prior on X (without it the target is flagged improper). Dynamics, back constraints and learnt input scales refuse. The latent posterior is multimodal (rotation and sign symmetries), so a chain explores one mode. Verified in `testHmc`
+- [ ] Phase 4: variational and PPA models
 - [x] Priors on noise in the `.model` stream: additive optional `numPriors` key written only when noise priors exist, so prior-free files are byte-identical and old files load unchanged (no version bump needed; old readers cannot load files that carry noise priors)
 - [x] Phase 5 (partial): CSV sample output and `gp sample` CLI mode
 - [ ] Phase 5: Python wrapper

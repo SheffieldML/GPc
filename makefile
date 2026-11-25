@@ -435,10 +435,10 @@ testNoisePrior.o: testNoisePrior.cpp CPosteriorTarget.h CGp.h CKern.h CNoise.h C
 	$(CC) -c testNoisePrior.cpp -o testNoisePrior.o $(CCFLAGS)
 
 # CIP-003B: HMC verification (analytic Gaussian, energy error, GP grid check).
-testHmc: testHmc.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testHmc testHmc.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testHmc: testHmc.o CHmc.o CGplvm.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testHmc testHmc.o CHmc.o CGplvm.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testHmc.o: testHmc.cpp CHmc.h CPosteriorTarget.h CGp.h CKern.h CNoise.h CDist.h CMatrix.h
+testHmc.o: testHmc.cpp CHmc.h CPosteriorTarget.h CGp.h CGplvm.h CKern.h CNoise.h CDist.h CMatrix.h
 	$(CC) -c testHmc.cpp -o testHmc.o $(CCFLAGS)
 
 CHmc.o: CHmc.cpp CHmc.h CPosteriorTarget.h COptimisable.h CMatrix.h

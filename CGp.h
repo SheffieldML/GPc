@@ -418,6 +418,9 @@ public:
   // CIP-0027: Gaussian observation noise on the likelihood.
   bool isGaussianNoise() const;
   double getLikelihoodVariance() const;
+  // CIP-003B: log prior and its gradient (log-likelihood convention) for likelihood.variance.
+  double noisePriorLogProb() const;
+  double noisePriorGradVariance() const;
   void setLikelihoodVariance(double val);
   bool addsLikelihoodVarianceToGram() const;
   // Phase C: permit free White and free likelihood.variance together (FTC).

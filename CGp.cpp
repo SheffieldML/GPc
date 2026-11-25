@@ -583,6 +583,29 @@ bool CGp::addsLikelihoodVarianceToGram() const
   return true;
 }
 
+// CIP-003B: log prior on likelihood.variance (last Gaussian noise parameter, after the biases), included in
+// the objective alongside the kernel prior. Sparse approximations optimise
+// beta = 1/variance and are not wired yet, so refuse rather than drop it.
+double CGp::noisePriorLogProb() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  if(isSparseApproximation())
+    throw ndlexceptions::NotImplementedError("Priors on likelihood.variance are not yet supported for sparse approximations (CIP-003B).");
+  return pnoise->priorLogProb();
+}
+
+double CGp::noisePriorGradVariance() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  CMatrix g(1, pnoise->getNumParams());
+  g.zeros();
+  pnoise->addPriorGrad(g);
+  // Gaussian noise parameters are [bias_0..bias_{D-1}, variance].
+  return g.getVal(0, pnoise->getNumParams()-1);
+}
+
 double CGp::getLikelihoodVariance() const
 {
   if(!isGaussianNoise())
@@ -2210,6 +2233,7 @@ double CGp::logLikelihood() const
   }
   L*=-0.5;
   L+=pkern->priorLogProb();
+  L+=noisePriorLogProb();
   L-=(double)getOutputDim()*(double)getNumData()*ndlutil::HALFLOGTWOPI;
   return L;
 }
@@ -2398,7 +2422,8 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
   else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
   {
     // gBeta holds ∂L/∂σ² before the positive-transform factor.
-    const double gVar = gBeta.getVal(0);
+    double gVar = gBeta.getVal(0);
+    gVar += noisePriorGradVariance();
     g.setVal(gVar*betaTransform->gradfact(getLikelihoodVariance()), 0, counter);
     counter++;
   }

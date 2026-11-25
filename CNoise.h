@@ -23,6 +23,7 @@ This file now also contains the code for ordered categorical noise models.
 #include "ndlstrutil.h"
 #include "CMatrix.h"
 #include "CTransform.h"
+#include "CDist.h"
 #include "COptimisable.h"
 #include "CDist.h"
 #include "CKern.h"
@@ -198,7 +199,10 @@ void laplacePointDerivs(const CNoise& noise,
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
-class CNoise : public CTransformable, public COptimisable, public CStreamInterface, public CMatInterface {
+// CIP-003B: noise parameters carry priors through CRegularisable, exactly as
+// kernel parameters do (and as GPy allows a prior on any parameter, e.g.
+// likelihood.variance).
+class CNoise : public CTransformable, public CRegularisable, public COptimisable, public CStreamInterface, public CMatInterface {
  public:
   // constructors
   CNoise() {  }
@@ -215,6 +219,10 @@ class CNoise : public CTransformable, public COptimisable, public CStreamInterfa
   virtual void initVals()=0;
   virtual void initParams()=0;
   virtual ostream& display(ostream& os)=0;
+  // Re-declared so that name lookup is unambiguous between CTransformable and
+  // CRegularisable (CIP-003B). Concrete noise models override these once.
+  virtual double getParam(unsigned int paramNo) const=0;
+  virtual void setParam(double val, unsigned int paramNo)=0;
   virtual void setParams(const CMatrix& X)=0;
   virtual void getParams(CMatrix& X) const=0;
   virtual void getGradParams(CMatrix& g) const=0;

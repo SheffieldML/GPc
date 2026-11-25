@@ -637,6 +637,20 @@ class CComponentKern : public CKern
     throw ndlexceptions::Error("Error cannot add priors to component kernels directly, please add to the components.");
   }
 
+  // CIP-003B: priors live on the components; map the compound index.
+  virtual bool paramHasPrior(unsigned int paramNo) const
+  {
+    unsigned int start = 0;
+    for(size_t i=0; i<components.size(); i++)
+    {
+      const unsigned int n = components[i]->getNumParams();
+      if(paramNo < start+n)
+        return components[i]->paramHasPrior(paramNo-start);
+      start += n;
+    }
+    return false;
+  }
+
   virtual double priorLogProb() const
   {
     double L = 0.0;

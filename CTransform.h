@@ -346,6 +346,14 @@ class CTransformable
     }  
   }
   
+  // CIP-003B: transform attached to parameter paramNo, or null if none.
+  const CTransform* getParamTransform(unsigned int paramNo) const
+  {
+    for(size_t i=0; i<transArray.transIndex.size(); i++)
+      if(transArray.transIndex[i]==paramNo)
+        return transArray.transforms[i];
+    return 0;
+  }
   // These are non-modifiable methods.
   inline unsigned int getNumTransforms() const 
   {

@@ -4,6 +4,7 @@
    transformed space. No .mat fixtures. */
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include "CGp.h"
 #include "CKern.h"
 #include "CMatrix.h"
@@ -63,7 +64,8 @@ int main()
     y.setVal(sin(2.0 * xv), i, 0);
   }
   CCmpndKern kern(X);
-  kern.addKern(new CRbfKern(X));
+  CRbfKern rbf(X);
+  kern.addKern(&rbf); // CCmpndKern clones its components
   CGaussianNoise noise(&y);
   for(int i = 0; i < noise.getOutputDim(); i++)
     noise.setBiasVal(0.0, i);
@@ -92,6 +94,94 @@ int main()
   else
     cout << "PASS objective shifts by -log prior(variance)" << endl;
   fail += checkFiniteDifference(model, "Gamma prior on likelihood.variance");
+
+  // CIP-003B: sampling target. Kernel parameters have no priors yet, so the
+  // target must be reported improper and must refuse to run.
+  {
+    const string why = model.improperReason();
+    if(why.empty() || why.find("rbf")==string::npos)
+    {
+      cout << "FAIL: expected improper target naming kernel params, got '" << why << "'" << endl;
+      fail++;
+    }
+    else
+      cout << "PASS improper target detected: " << why << endl;
+    bool threw = false;
+    try { CMatrix gg(1, P); gg.zeros(); model.computeSamplingObjectiveGrad(gg); }
+    catch(ndlexceptions::Error&) { threw = true; }
+    if(!threw) { cout << "FAIL: improper target did not throw" << endl; fail++; }
+    else cout << "PASS improper target refuses to run" << endl;
+  }
+  // Priors live on the compound's own (cloned) component: add them there by
+  // rebuilding the kernel with priors on the template before cloning.
+  CCmpndKern kernP(X);
+  std::unique_ptr<CRbfKern> rbfP(new CRbfKern(X));
+  for(unsigned int j=0; j<rbfP->getNumParams(); j++)
+  {
+    CGammaDist* kp = new CGammaDist();
+    kp->setParam(2.0, 0);
+    kp->setParam(1.0, 1);
+    rbfP->addPrior(kp, j);
+  }
+  // Take ownership without cloning: CKern's copy constructor does not copy priors.
+  kernP.addKern(std::unique_ptr<CKern>(std::move(rbfP)));
+  CGp modelP(&kernP, &noise, &X, CGp::FTC, 0, 0);
+  modelP.setLikelihoodVariance(0.3);
+  CGp& modelRef = modelP;
+  if(!modelRef.improperReason().empty())
+  {
+    cout << "FAIL: still improper: " << modelRef.improperReason() << endl;
+    fail++;
+  }
+  else
+    cout << "PASS target proper once every parameter has a prior" << endl;
+
+  // The sampling objective's gradient must match finite differences with and
+  // without the Jacobian, and the two objectives must differ by exactly the
+  // log-Jacobian.
+  for(int withJac = 0; withJac < 2; withJac++)
+  {
+    modelRef.setIncludeJacobian(withJac==1);
+    CMatrix a(1, P);
+    modelRef.getOptParams(a);
+    CMatrix g(1, P);
+    g.zeros();
+    const double E = modelRef.computeSamplingObjectiveGrad(g);
+    const double h = 1e-6;
+    for(unsigned int p = 0; p < P; p++)
+    {
+      CMatrix ap(a), am(a);
+      ap.setVal(a.getVal(p)+h, p);
+      am.setVal(a.getVal(p)-h, p);
+      modelRef.setOptParams(ap);
+      const double fp = modelRef.computeSamplingObjective();
+      modelRef.setOptParams(am);
+      const double fm = modelRef.computeSamplingObjective();
+      const double fd = (fp-fm)/(2*h);
+      if(fabs(fd-g.getVal(p)) > 1e-5*(1.0+fabs(fd)))
+      {
+        cout << "FAIL sampling gradient (jacobian=" << withJac << ") param " << p
+             << " analytic " << g.getVal(p) << " fd " << fd << endl;
+        fail++;
+      }
+    }
+    modelRef.setOptParams(a);
+    cout << "checked sampling-objective gradient (jacobian=" << withJac << ")" << endl;
+    if(withJac==1)
+    {
+      modelRef.setIncludeJacobian(false);
+      const double Eplain = modelRef.computeSamplingObjective();
+      const double lj = modelRef.logJacobian(0);
+      if(fabs((E-Eplain) + lj) > 1e-9*(1.0+fabs(E)))
+      {
+        cout << "FAIL objective differs from plain by " << (E-Eplain) << ", expected " << -lj << endl;
+        fail++;
+      }
+      else
+        cout << "PASS Jacobian term equals sum log|dx/da| (" << lj << ")" << endl;
+      modelRef.setIncludeJacobian(true);
+    }
+  }
 
   // Sparse approximations must refuse rather than silently drop the prior.
   cout << "Number of failures: " << fail << endl;

@@ -316,6 +316,14 @@ class CRegularisable {
     }
 
   // These are non-modifiable methods.
+  // CIP-003B: true if parameter paramNo carries at least one prior.
+  virtual bool paramHasPrior(unsigned int paramNo) const
+    {
+      for(unsigned int i=0; i<distArray.distIndex.size(); i++)
+	if(distArray.distIndex[i]==paramNo)
+	  return true;
+      return false;
+    }
   inline unsigned int getNumPriors() const
     {
       return distArray.getNumDists();

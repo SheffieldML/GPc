@@ -1,5 +1,6 @@
 #ifndef CGP_H
 #define CGP_H
+#include "CPosteriorTarget.h"
 #include "CMltools.h"
 #include "CInducing.h"
 #include "CEpInference.h"
@@ -11,7 +12,7 @@ using namespace std;
 
 const string GPVERSION="0.1";
 
-class CGp : public CMapModel, public CProbabilisticOptimisable, public CStreamInterface, public CMatInterface
+class CGp : public CMapModel, public CProbabilisticOptimisable, public CPosteriorTarget, public CStreamInterface, public CMatInterface
 {
 public:
   enum 
@@ -419,6 +420,9 @@ public:
   bool isGaussianNoise() const;
   double getLikelihoodVariance() const;
   // CIP-003B: log prior and its gradient (log-likelihood convention) for likelihood.variance.
+  // CIP-003B: sampling target (exact FTC, Gaussian likelihood only for now).
+  void sampledParams(std::vector<SampledParam>& params) const;
+  const COptimisable& optimisable() const { return *this; }
   double noisePriorLogProb() const;
   double noisePriorGradVariance() const;
   void setLikelihoodVariance(double val);

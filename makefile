@@ -430,7 +430,7 @@ testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
 testNoisePrior: testNoisePrior.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testNoisePrior testNoisePrior.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testNoisePrior.o: testNoisePrior.cpp CGp.h CKern.h CNoise.h CDist.h CMatrix.h
+testNoisePrior.o: testNoisePrior.cpp CPosteriorTarget.h CGp.h CKern.h CNoise.h CDist.h CMatrix.h
 	$(CC) -c testNoisePrior.cpp -o testNoisePrior.o $(CCFLAGS)
 
 # CIP-0028: FTC vs DTCVAR ridge free/fixed centres (tighter bound demo).

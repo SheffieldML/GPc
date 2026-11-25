@@ -595,6 +595,39 @@ double CGp::noisePriorLogProb() const
   return pnoise->priorLogProb();
 }
 
+// CIP-003B: describe each optimiser parameter (in getOptParams order) for the
+// sampler. Phase 1 covers exact (FTC) models whose optimised parameters are
+// kernel parameters and likelihood.variance; anything else refuses so that a
+// sampler never runs on parameters we cannot describe.
+void CGp::sampledParams(std::vector<SampledParam>& params) const
+{
+  params.clear();
+  if(isSparseApproximation() || isOptimiseX() || isOutputScaleLearnt() || isEpInference() || isLaplaceInference())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams supports only exact FTC models with kernel and likelihood.variance parameters (CIP-003B Phase 1).");
+  for(unsigned int i=0; i<pkern->getNumParams(); i++)
+  {
+    if(isKernParamFixed(i))
+      continue;
+    SampledParam sp;
+    sp.name = pkern->getParamName(i);
+    sp.transform = pkern->getParamTransform(i);
+    sp.hasPrior = pkern->paramHasPrior(i);
+    sp.constrainedValue = pkern->getParam(i);
+    params.push_back(sp);
+  }
+  if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  {
+    SampledParam sp;
+    sp.name = "likelihood.variance";
+    sp.transform = betaTransform;
+    sp.hasPrior = pnoise->paramHasPrior(pnoise->getNumParams()-1);
+    sp.constrainedValue = getLikelihoodVariance();
+    params.push_back(sp);
+  }
+  if(params.size()!=getOptNumParams())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams disagrees with getOptNumParams.");
+}
+
 double CGp::noisePriorGradVariance() const
 {
   if(pnoise==0 || pnoise->getNumPriors()==0)

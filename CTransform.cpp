@@ -62,6 +62,45 @@ double CExpTransform::gradLogJacobian(double x) const
   return 1.0;
 }
 
+CReciprocalExpTransform::CReciprocalExpTransform()
+{
+  setType("reciprocalexp");
+}
+double CReciprocalExpTransform::atox(double a) const
+{
+  double x=0;
+  if(a<-limVal)
+    x = exp(limVal);
+  else if(a<limVal)
+    x = exp(-a);
+  else
+    x = exp(-limVal);
+  SANITYCHECK(!isnan(x));
+  return x;
+}
+double CReciprocalExpTransform::xtoa(double x) const
+{
+  SANITYCHECK(x>0);
+  double a=-log(x);
+  SANITYCHECK(!isnan(a));
+  return a;
+}
+// dx/da = -x, so the magnitude is x.
+double CReciprocalExpTransform::gradfact(double x) const
+{
+  return -x;
+}
+// log|dx/da| = log x = -a, derivative -1.
+double CReciprocalExpTransform::logJacobian(double x) const
+{
+  SANITYCHECK(x>0);
+  return log(x);
+}
+double CReciprocalExpTransform::gradLogJacobian(double x) const
+{
+  return -1.0;
+}
+
 CNegLogLogitTransform::CNegLogLogitTransform()
 {
   transform = 1;

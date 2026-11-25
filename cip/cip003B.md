@@ -135,7 +135,8 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 - [x] `CPosteriorTarget`: Jacobian switch (`setIncludeJacobian`, default on; off reproduces GPy) and improper-posterior check (`setAllowImproper` overrides)
 - [x] Fix: kernel copies keep their priors (`CRegularisable` deep-copies; `CDist::clone` is now pure virtual)
 - [x] Phase 4 (partial): exact FTC `CGp` with kernel parameters and `likelihood.variance`. Other models throw `NotImplementedError`
-- [ ] Phase 4: `CGplvm`, sparse and variational models; noise priors for sparse (beta) parameterisation
+- [x] Phase 4 (sparse): DTC, DTCVAR, FITC and PITC with fixed inducing points. Sampled parameters are kernel parameters and `likelihood.variance`, reported as 1/beta via `CReciprocalExpTransform`; the noise prior is evaluated at variance = 1/beta. Inducing inputs have no prior, so free inducing points are refused. `gp sample` holds them fixed. Verified by finite-difference gradients, prior-value and sampler checks in `testHmc`
+- [ ] Phase 4: `CGplvm`; variational and PPA models
 - [x] Priors on noise in the `.model` stream: additive optional `numPriors` key written only when noise priors exist, so prior-free files are byte-identical and old files load unchanged (no version bump needed; old readers cannot load files that carry noise priors)
 - [x] Phase 5 (partial): CSV sample output and `gp sample` CLI mode
 - [ ] Phase 5: Python wrapper

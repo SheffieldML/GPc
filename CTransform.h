@@ -93,6 +93,21 @@ class CExpTransform : public CTransform
   bool transform;
 
 };
+// CIP-003B: x = exp(-a). Describes a variance x whose optimiser parameter is
+// a = log(beta) = -log(x), as in the sparse approximations that optimise the
+// noise precision. Used by the sampler only; it is not a streamed type.
+class CReciprocalExpTransform : public CTransform  
+{
+ public:
+  CReciprocalExpTransform();
+  CReciprocalExpTransform(const CReciprocalExpTransform& rhs) : CTransform(rhs) {}
+  CTransform* clone() const {return new CReciprocalExpTransform(*this);}
+  double atox(double a) const;
+  double xtoa(double x) const;
+  double gradfact(double x) const;
+  double logJacobian(double x) const;
+  double gradLogJacobian(double x) const;
+};
 // This transform transforms from real to positive numbers.
 class CNegLogLogitTransform : public CTransform  
 {

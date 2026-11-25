@@ -428,6 +428,7 @@ public:
   void sampledParams(std::vector<SampledParam>& params) const;
   const COptimisable& optimisable() const { return *this; }
   double noisePriorLogProb() const;
+  double noisePriorGradBeta() const;
   double noisePriorGradVariance() const;
   void setLikelihoodVariance(double val);
   bool addsLikelihoodVarianceToGram() const;

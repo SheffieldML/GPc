@@ -348,6 +348,101 @@ int main()
     else { cout << "FAIL addPriorByPath: before " << improperBefore << " after " << properAfter << " threw " << threw << endl; fail++; }
   }
 
+  // 7. Sparse approximations (fixed inducing points): proper target, objective
+  //    equals the prior evaluated at variance = 1/beta, gradient matches finite
+  //    differences (Jacobian on), sampler runs, and free inducing points refuse.
+  {
+    const int approx[4] = {CGp::DTC, CGp::DTCVAR, CGp::FITC, CGp::PITC};
+    const char* approxName[4] = {"DTC", "DTCVAR", "FITC", "PITC"};
+    for(int ai=0; ai<4; ai++)
+    {
+      const unsigned int N = 30, M = 6;
+      CMatrix X(N, 1), y(N, 1), Xu(M, 1);
+      for(unsigned int i=0; i<N; i++) { const double xv = 6.0*i/(N-1.0); X.setVal(xv, i, 0); y.setVal(sin(xv)+0.1*cos(7.0*xv), i, 0); }
+      for(unsigned int i=0; i<M; i++) Xu.setVal(6.0*i/(M-1.0), i, 0);
+      CCmpndKern kern(X);
+      kern.addKern(std::unique_ptr<CKern>(new CRbfKern(X)));
+      CGaussianNoise noise(&y);
+      for(int i=0; i<noise.getOutputDim(); i++) noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, approx[ai], M, 0);
+      model.setInducingVals(Xu);
+      model.setBetaVal(10.0);
+      model.setInducingFixed(false);
+      bool refused = false;
+      try { vector<SampledParam> sp; model.sampledParams(sp); } catch(...) { refused = true; }
+      model.setInducingFixed(true);
+      const string before = model.improperReason();
+      for(int k=0; k<3; k++)
+      {
+        CGammaDist* g = new CGammaDist();
+        g->setParam(2.0, 0);
+        g->setParam(k==2 ? 10.0 : 1.0, 1);
+        model.addPriorByPath(k==0 ? "rbf.lengthscale" : (k==1 ? "rbf.variance" : "likelihood.variance"), g);
+      }
+      CMatrix a(1, model.getOptNumParams());
+      model.getOptParams(a);
+      CMatrix g(1, a.getCols()), gFd(1, a.getCols());
+      model.computeSamplingObjectiveGrad(g);
+      double maxDiff = 0.0;
+      for(unsigned int j=0; j<a.getCols(); j++)
+      {
+        const double h = 1e-6, a0 = a.getVal(j);
+        a.setVal(a0+h, j); model.setOptParams(a); const double ep = model.computeSamplingObjective();
+        a.setVal(a0-h, j); model.setOptParams(a); const double em = model.computeSamplingObjective();
+        a.setVal(a0, j); model.setOptParams(a);
+        gFd.setVal((ep-em)/(2.0*h), j);
+        maxDiff = max(maxDiff, fabs(gFd.getVal(j)-g.getVal(j))/(1.0+fabs(g.getVal(j))));
+      }
+      const bool proper = model.improperReason().empty();
+      bool ok = refused && !before.empty() && before.find("likelihood.variance")!=string::npos
+                && proper && maxDiff<1e-5;
+      double accept = 0.0;
+      bool positive = true;
+      if(ok)
+      {
+        CHmc hmc(model, model, 5);
+        hmc.setStepSize(0.1);
+        hmc.setNumLeapfrog(8);
+        hmc.adaptStepSize(150);
+        CMatrix S, lp;
+        hmc.sample(300, S, lp);
+        accept = hmc.acceptRate();
+        vector<SampledParam> sp;
+        model.sampledParams(sp);
+        for(unsigned int i=0; i<S.getRows(); i++)
+          for(unsigned int j=0; j<S.getCols(); j++)
+            positive = positive && sp[j].transform->atox(S.getVal(i, j))>0.0;
+        ok = accept>0.4 && positive;
+      }
+      if(ok) cout << "PASS sparse " << approxName[ai] << ": gradient max rel diff " << maxDiff << ", acceptance " << accept << endl;
+      else { cout << "FAIL sparse " << approxName[ai] << ": refused " << refused << " before '" << before << "' proper " << proper << " grad diff " << maxDiff << " accept " << accept << " positive " << positive << endl; fail++; }
+    }
+    // The noise prior value itself: objective shift equals logProb at variance 1/beta.
+    {
+      CMatrix X(10, 1), y(10, 1), Xu(4, 1);
+      for(unsigned int i=0; i<10; i++) { X.setVal(0.5*i, i, 0); y.setVal(sin(0.5*i), i, 0); }
+      for(unsigned int i=0; i<4; i++) Xu.setVal(1.5*i, i, 0);
+      CCmpndKern kern(X);
+      kern.addKern(std::unique_ptr<CKern>(new CRbfKern(X)));
+      CGaussianNoise noise(&y);
+      for(int i=0; i<noise.getOutputDim(); i++) noise.setBiasVal(0.0, i);
+      CGp model(&kern, &noise, &X, CGp::FITC, 4, 0);
+      model.setInducingVals(Xu);
+      model.setBetaVal(8.0);
+      model.setInducingFixed(true);
+      const double l0 = model.logLikelihood();
+      CGammaDist* g = new CGammaDist();
+      g->setParam(2.0, 0);
+      g->setParam(10.0, 1);
+      CGammaDist probe;
+      probe.setParam(2.0, 0);
+      probe.setParam(10.0, 1);
+      model.addPriorByPath("likelihood.variance", g);
+      const double shift = model.logLikelihood() - l0;
+      fail += checkMoment("sparse noise prior value at 1/beta", shift, probe.logProb(1.0/8.0), 1e-9);
+    }
+  }
+
   cout << "Number of failures: " << fail << endl;
   return fail > 0 ? 1 : 0;
 }

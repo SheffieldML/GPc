@@ -592,8 +592,33 @@ double CGp::noisePriorLogProb() const
   if(pnoise==0 || pnoise->getNumPriors()==0)
     return 0.0;
   if(isSparseApproximation())
-    throw ndlexceptions::NotImplementedError("Priors on likelihood.variance are not yet supported for sparse approximations (CIP-003B).");
+  {
+    // Sparse approximations optimise beta = 1/variance and keep the variance in
+    // beta, not in the noise model; evaluate the prior at variance = 1/beta.
+    const unsigned int varIndex = pnoise->getNumParams()-1;
+    const double var = 1.0/beta.getVal(0, 0);
+    double L = 0.0;
+    for(unsigned int i=0; i<pnoise->getNumPriors(); i++)
+    {
+      if(pnoise->getPriorIndex(i)!=varIndex)
+        throw ndlexceptions::NotImplementedError("Sparse approximations support priors on likelihood.variance only (CIP-003B).");
+      L += pnoise->getPrior(i)->logProb(var);
+    }
+    return L;
+  }
   return pnoise->priorLogProb();
+}
+// d/dbeta of the noise prior evaluated at variance = 1/beta (sparse only).
+double CGp::noisePriorGradBeta() const
+{
+  if(pnoise==0 || pnoise->getNumPriors()==0)
+    return 0.0;
+  const double b = beta.getVal(0, 0);
+  const double var = 1.0/b;
+  double dVar = 0.0;
+  for(unsigned int i=0; i<pnoise->getNumPriors(); i++)
+    dVar += pnoise->getPriorGradInput(var, i);
+  return -dVar/(b*b);
 }
 
 // CIP-003B: describe each optimiser parameter (in getOptParams order) for the
@@ -603,8 +628,10 @@ double CGp::noisePriorLogProb() const
 void CGp::sampledParams(std::vector<SampledParam>& params) const
 {
   params.clear();
-  if(isSparseApproximation() || isOptimiseX() || isOutputScaleLearnt() || isEpInference() || isLaplaceInference())
-    throw ndlexceptions::NotImplementedError("CGp::sampledParams supports only exact FTC models with kernel and likelihood.variance parameters (CIP-003B Phase 1).");
+  if(isOptimiseX() || isOutputScaleLearnt() || isEpInference() || isLaplaceInference())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams supports only exact or sparse models with kernel and likelihood.variance parameters (CIP-003B).");
+  if(isSparseApproximation() && !isInducingFixed())
+    throw ndlexceptions::NotImplementedError("CGp::sampledParams for sparse models requires fixed inducing points (call setInducingFixed(true)); inducing inputs have no prior (CIP-003B).");
   for(unsigned int i=0; i<pkern->getNumParams(); i++)
   {
     if(isKernParamFixed(i))
@@ -616,7 +643,21 @@ void CGp::sampledParams(std::vector<SampledParam>& params) const
     sp.constrainedValue = pkern->getParam(i);
     params.push_back(sp);
   }
-  if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
+  if(isSparseApproximation())
+  {
+    if(!betaFixed)
+    {
+      // The optimiser parameter is log(beta); report the variance 1/beta.
+      static const CReciprocalExpTransform varianceFromLogBeta;
+      SampledParam sp;
+      sp.name = "likelihood.variance";
+      sp.transform = &varianceFromLogBeta;
+      sp.hasPrior = pnoise->paramHasPrior(pnoise->getNumParams()-1);
+      sp.constrainedValue = 1.0/beta.getVal(0, 0);
+      params.push_back(sp);
+    }
+  }
+  else if(addsLikelihoodVarianceToGram() && !likelihoodVarianceFixed)
   {
     SampledParam sp;
     sp.name = "likelihood.variance";
@@ -2466,6 +2507,7 @@ double CGp::logLikelihoodGradient(CMatrix& g) const
     if(!betaFixed)
     {
       double gBetaVal = gBeta.getVal(0);
+      gBetaVal += noisePriorGradBeta();
       g.setVal(gBetaVal*betaTransform->gradfact(getBetaVal(0,0)), 0, counter);
       counter++;
     }

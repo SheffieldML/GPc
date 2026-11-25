@@ -858,6 +858,10 @@ void CClgp::sample()
   pmodel->setTargetVals(y);
   pmodel->updateM();
   pmodel->pX = &X;
+  // Inducing inputs have no prior, so sparse models are sampled over kernel and
+  // noise parameters with the inducing points held at their learned values.
+  if(pmodel->isSparseApproximation())
+    pmodel->setInducingFixed(true);
   if(pmodel->getInputDim()!=X.getCols())
     throw ndlexceptions::Error(trainDataFileName + ": input data is not of correct dimension");
 
@@ -1301,7 +1305,7 @@ void CClgp::helpInfo()
     helpUsage("gp [options] command [command-options]");
     cout << "Commands:" << endl;
     helpArgument("learn", "For learning the GP model.");
-    helpArgument("sample", "For drawing HMC samples of the hyperparameter posterior of a learned exact GP (CIP-003B).");
+    helpArgument("sample", "For drawing HMC samples of the hyperparameter posterior of a learned GP (exact or sparse with inducing points held fixed; CIP-003B).");
     helpArgument("display", "For displaying the parameters of a learned GP model.");
     helpArgument("gnuplot", "For plotting the results in gnuplot.");
     helpDescriptor("For help on a specific command type gp command --h");

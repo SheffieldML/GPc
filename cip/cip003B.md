@@ -5,7 +5,7 @@ id: "003B"
 last_updated: "2026-11-25"
 status: "In Progress"
 compressed: false
-related_requirements: ["0002"]
+related_requirements: ["0002", "001C"]
 related_cips: ["0015", "0017", "002A", "0033", "0035"]
 tags:
 - cip
@@ -20,7 +20,7 @@ title: "Hamiltonian Monte Carlo over COptimisable parameters"
 
 # CIP-003B: Hamiltonian Monte Carlo over `COptimisable` parameters
 
-> CIPs describe HOW to achieve requirements (WHAT). No requirement yet covers sampling; Phase 0 below proposes one.
+> CIPs describe HOW to achieve requirements (WHAT). REQ-001C covers sampling.
 
 ## Status
 
@@ -123,11 +123,11 @@ Verification is against known answers, in keeping with the assert-and-verify ten
 
 ## Related Requirements
 
-- [REQ-0002](../requirements/req0002_runnable-verification.md): runnable verification. A new sampling requirement is proposed in Phase 0.
+- [REQ-0002](../requirements/req0002_runnable-verification.md): runnable verification. [REQ-001C](../requirements/req001C_posterior-samples-of-gp-hyperparameters.md) covers sampling.
 
 ## Implementation Status
 
-- [ ] Phase 0: requirement drafted (still outstanding)
+- [x] Phase 0: requirement drafted (REQ-001C)
 - [x] Phase 1: core sampler `CHmc` with analytic-target, energy-error and rejection tests (`testHmc`)
 - [x] Phase 2: transform Jacobian (`CTransform::logJacobian`, `gradLogJacobian`, `isBounded`) with finite-difference tests
 - [x] Phase 3 (partial): dual-averaging step size. ESS is computed in the tests, not in the sampler

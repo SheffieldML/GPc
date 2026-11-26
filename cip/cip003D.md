@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-26"
 id: "003D"
 last_updated: "2026-11-26"
-status: "Accepted"
+status: "In Progress"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0028", "0032", "0035", "0037", "003C"]
@@ -24,7 +24,7 @@ title: "Hermite ridge windows as a fixed weight-space inducing family"
 
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
+- [x] In Progress - Actively being implemented
 - [ ] Implemented - Code changes complete
 - [ ] Closed - Verified and merged
 - [ ] Rejected - Will not be implemented
@@ -98,6 +98,23 @@ A new class `CInducingHermite : public CInducing` in `CInducing.h/.cpp`, not a s
 
 `inducing='hermite'` on `DeepGP` (kernel `'mlp'` required, as for `'weightspace'`) and on `SparseGPRegression`. `learn_window_width(s)` is rejected for Hermite with an error that says why.
 
+### Phase 1 measurement: conditioning against fill (2026-11-26)
+
+`\(\kappa(K_{uu})\)` over 20 seeds per cell, from `CInducingHermite::makeLayout`. The backlog task's "tens to hundreds" holds only up to about half capacity:
+
+| d | fill | geometric-mean \(\kappa\) | worst of 20 |
+|---|---|---|---|
+| 1 | 50% (M=8) | 11 | 239 |
+| 1 | 75% (M=12) | 78 | 3.5e5 |
+| 1 | 100% (M=16) | 2.0e3 | 3.7e7 |
+| 2 | 50% (M=31) | 157 | 1.9e3 |
+| 2 | 75% (M=47) | 1.1e3 | 2.1e4 |
+| 2 | 100% (M=63) | 5.9e3 | 1.4e5 |
+| 3 | 50% (M=106) | 586 | 1.2e4 |
+| 3 | 100% (M=212) | 6.4e3 | 2.9e4 |
+
+Consequences. (1) The halved capacity keeps every layout positive definite (no E5 in the \(M=1..300\) sweep at \(d\in\{1,2,8\}\)), but it does not keep \(\kappa\) small near the limit. (2) W1 (\(\kappa>10^4\)) is therefore the operative guard; W2 at 90% fill fires after \(\kappa\) has already reached \(10^3\) in low dimensions. We keep both, because W2 is cheap and explains *why* W1 fired, and we leave the thresholds as agreed. (3) The d=1 worst case (3.7e7) is a single random draw of five close angles, so a deterministic, well-spread direction rule for \(D'=2\) would remove it; this is a candidate refinement, not part of this CIP, since the prototype's rule is random.
+
 ## Implementation Plan
 
 1. Port `hermite_layout` and `c_k` to C++ (`CInducingHermite::makeLayout`); unit tests for allocation, capacity and the \(\kappa(K_{uu})\) range.
@@ -148,8 +165,8 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 ## Implementation Status
 
-- [ ] Layout and \(c_k\) in C++ (re-derived for GPc's kernel convention)
-- [ ] Ask-versus-delivered errors E1-E6 and warnings W1-W4
+- [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1; `c_k` arrives with phase 2)
+- [ ] Ask-versus-delivered: E1, E5, W1, W2 done and tested (phase 1); E2-E4, E6, W3, W4 follow in phases 2, 4, 5
 - [ ] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates
 - [ ] Kernel-parameter gradients and `checkGradients`
 - [ ] `CGp` / `CDeepGp` / stream / CLI wiring

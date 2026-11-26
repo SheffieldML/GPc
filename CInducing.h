@@ -2,6 +2,7 @@
 #define CINDUCING_H
 
 #include <string>
+#include <vector>
 #include "CMatrix.h"
 #include "CKern.h"
 #include "ndlexceptions.h"
@@ -308,6 +309,96 @@ class CInducingWeightSpace : public CInducing
   mutable CMatrix tempG;
   mutable CMatrix Vtmp;
   mutable CMatrix atmp;
+};
+
+// CIP-003D: what a Hermite layout actually delivered, against what was asked.
+// Recorded at construction so callers (C++ verbosity, Python warnings.warn,
+// describe()) can surface it; nothing here changes the layout.
+struct HermiteLayoutReport
+{
+  unsigned int numInducing;                // delivered M
+  unsigned int weightDim;                  // D' = d + 1
+  std::vector<unsigned int> degrees;       // 1, 3, 5, ... kmax
+  std::vector<unsigned int> count;         // windows allocated per degree
+  std::vector<unsigned int> capacity;      // capacity per degree
+  unsigned int totalCapacity;              // sum of capacity (saturates at UINT_MAX)
+  double fillFraction;                     // numInducing / totalCapacity
+  double kappa;                            // condition number of the K_uu block
+  bool warnConditioning;                   // W1: kappa > kappaWarnThreshold()
+  bool warnNearCapacity;                   // W2: fillFraction > nearCapacityFraction()
+
+  // Human-readable warning lines (empty when none fire). "Warning (CIP-003D) ..."
+  std::vector<std::string> warnings() const;
+  // Degree histogram, kappa and fill, one line, for describe()/str(model).
+  std::string summary() const;
+};
+
+// CIP-003D: fixed Hermite ridge windows (odd degrees), no width, no offset, no
+// learnable parameters. K_uu = delta_{kl} (v_m . v_n)^k is kernel-free.
+// Phase 1: layout, capacity, audit and K_uu. K_uf / K_ux / gradients throw
+// NotImplementedError until phases 2 and 3.
+class CInducingHermite : public CInducing
+{
+ public:
+  // V is M x D' with unit rows; ks has M odd degrees >= 1. Audited here
+  // (error E5): shapes, odd degrees, unit norm, K_uu block positive definite.
+  CInducingHermite(const CMatrix& VIn, const std::vector<unsigned int>& ksIn);
+  virtual ~CInducingHermite() {}
+
+  unsigned int numInducing() const { return V.getRows(); }
+  unsigned int domainDim() const { return V.getCols(); }
+  unsigned int weightDim() const { return V.getCols(); }
+  bool kuuDependsOnKernel() const { return false; }
+  std::string typeName() const { return "hermite"; }
+
+  const CMatrix& directions() const { return V; }
+  const std::vector<unsigned int>& degrees() const { return ks; }
+  const HermiteLayoutReport& report() const { return layoutReport; }
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
+
+  // Fixed windows: nothing to optimise.
+  unsigned int getNumParams() const { return 0; }
+  void getParams(CMatrix& /*param*/, unsigned int /*offset*/) const {}
+  void setParams(const CMatrix& /*param*/, unsigned int /*offset*/) {}
+
+  const CMatrix& centres() const { return V; }
+  // Windows are fixed (error E4 territory): refuse rather than ignore.
+  void setCentres(const CMatrix& Z);
+
+  // Capacity rule (CIP-003D, kept fixed): degree 1 holds D' windows; odd
+  // degree k >= 3 holds floor(C(D'+k-1, k)/2). Saturates at UINT_MAX.
+  static unsigned int degreeCapacity(unsigned int weightDim, unsigned int k);
+  static unsigned int totalCapacity(unsigned int weightDim, unsigned int kmax = 9);
+
+  // Layout of M windows for inputDim d (D' = d+1): degree 1 takes min(D', M)
+  // with an orthonormal frame; the rest are dealt round-robin to degrees
+  // 3, 5, ..., kmax up to capacity, with random unit directions. Throws
+  // (error E1) if M exceeds totalCapacity, and (E5) if what was built differs
+  // from what was asked. Deterministic for a given seed.
+  static void makeLayout(CMatrix& VOut, std::vector<unsigned int>& ksOut,
+                         unsigned int M, unsigned int inputDim,
+                         unsigned int rngSeed = 7u, unsigned int kmax = 9);
+
+  static double kappaWarnThreshold() { return 1e4; }       // CIP-0028 budget
+  static double nearCapacityFraction() { return 0.9; }
+  static double kuuMinEigenvalue() { return 1e-12; }       // below: not PD (E5)
+
+ private:
+  void fillKuu(CMatrix& Kuu) const;
+  void audit();
+
+  CMatrix V;                         // M x D', unit rows
+  std::vector<unsigned int> ks;      // M odd degrees
+  HermiteLayoutReport layoutReport;
 };
 
 #endif /* CINDUCING_H */

@@ -1497,3 +1497,353 @@ void CInducingWeightSpace::setCentres(const CMatrix& Z)
   DIMENSIONMATCH(Z.getCols() == W.getCols());
   W.deepCopy(Z);
 }
+
+// ---- CInducingHermite (CIP-003D) ----
+
+namespace {
+
+// Orthonormal frame of n <= Dp random directions in R^Dp (Gram-Schmidt, applied
+// twice for stability; a degenerate draw is redrawn, never padded).
+void hermiteOrthFrame(vector<vector<double> >& rows, unsigned int n, unsigned int Dp)
+{
+  rows.assign(n, vector<double>(Dp, 0.0));
+  for(unsigned int b = 0; b < n; b++)
+  {
+    for(unsigned int attempt = 0; attempt < 100; attempt++)
+    {
+      for(unsigned int j = 0; j < Dp; j++)
+        rows[b][j] = ndlutil::randn();
+      for(unsigned int pass = 0; pass < 2; pass++)
+        for(unsigned int p = 0; p < b; p++)
+        {
+          double dot = 0.0;
+          for(unsigned int j = 0; j < Dp; j++)
+            dot += rows[b][j] * rows[p][j];
+          for(unsigned int j = 0; j < Dp; j++)
+            rows[b][j] -= dot * rows[p][j];
+        }
+      double nrm = 0.0;
+      for(unsigned int j = 0; j < Dp; j++)
+        nrm += rows[b][j] * rows[b][j];
+      nrm = sqrt(nrm);
+      if(nrm > 1e-8)
+      {
+        for(unsigned int j = 0; j < Dp; j++)
+          rows[b][j] /= nrm;
+        break;
+      }
+      if(attempt == 99)
+        throw ndlexceptions::Error(
+            "CInducingHermite: could not draw an orthonormal degree-1 frame.");
+    }
+  }
+}
+
+void hermiteRandomUnit(vector<double>& v, unsigned int Dp)
+{
+  v.assign(Dp, 0.0);
+  for(unsigned int attempt = 0; attempt < 100; attempt++)
+  {
+    double nrm = 0.0;
+    for(unsigned int j = 0; j < Dp; j++)
+    {
+      v[j] = ndlutil::randn();
+      nrm += v[j] * v[j];
+    }
+    nrm = sqrt(nrm);
+    if(nrm > 1e-8)
+    {
+      for(unsigned int j = 0; j < Dp; j++)
+        v[j] /= nrm;
+      return;
+    }
+  }
+  throw ndlexceptions::Error("CInducingHermite: could not draw a random direction.");
+}
+
+string hermiteUInt(unsigned int x)
+{
+  return (x == numeric_limits<unsigned int>::max()) ? string(">=UINT_MAX")
+                                                      : to_string(x);
+}
+
+} // namespace
+
+vector<string> HermiteLayoutReport::warnings() const
+{
+  vector<string> out;
+  if(warnConditioning)
+  {
+    ostringstream os;
+    os << "Warning (CIP-003D W1): Hermite K_uu condition number " << kappa
+       << " exceeds " << CInducingHermite::kappaWarnThreshold()
+       << " (M=" << numInducing << ", D'=" << weightDim << ").";
+    out.push_back(os.str());
+  }
+  if(warnNearCapacity)
+  {
+    ostringstream os;
+    os << "Warning (CIP-003D W2): Hermite layout uses " << 100.0 * fillFraction
+       << "% of its capacity (M=" << numInducing << " of "
+       << hermiteUInt(totalCapacity) << ", D'=" << weightDim
+       << "); conditioning degrades near capacity.";
+    out.push_back(os.str());
+  }
+  return out;
+}
+
+string HermiteLayoutReport::summary() const
+{
+  ostringstream os;
+  os << "hermite M=" << numInducing << " D'=" << weightDim << " degrees";
+  for(size_t i = 0; i < degrees.size(); i++)
+    if(count[i] > 0)
+      os << " " << degrees[i] << ":" << count[i] << "/" << hermiteUInt(capacity[i]);
+  os << " fill=" << 100.0 * fillFraction << "% kappa=" << kappa;
+  return os.str();
+}
+
+unsigned int CInducingHermite::degreeCapacity(unsigned int weightDim, unsigned int k)
+{
+  if(k == 0 || (k % 2) == 0)
+    throw ndlexceptions::Error("CInducingHermite: degrees must be odd and >= 1.");
+  if(k == 1)
+    return weightDim;
+  // floor(C(D'+k-1, k) / 2), in long double, saturating.
+  long double c = 1.0L;
+  const unsigned int n = weightDim + k - 1;
+  for(unsigned int i = 1; i <= k; i++)
+    c = c * (long double)(n - k + i) / (long double)i;
+  c = floorl(c / 2.0L);
+  const long double cap = (long double)numeric_limits<unsigned int>::max();
+  return (c >= cap) ? numeric_limits<unsigned int>::max() : (unsigned int)c;
+}
+
+unsigned int CInducingHermite::totalCapacity(unsigned int weightDim, unsigned int kmax)
+{
+  unsigned long long total = 0;
+  const unsigned long long cap = numeric_limits<unsigned int>::max();
+  for(unsigned int k = 1; k <= kmax; k += 2)
+  {
+    total += degreeCapacity(weightDim, k);
+    if(total >= cap)
+      return numeric_limits<unsigned int>::max();
+  }
+  return (unsigned int)total;
+}
+
+void CInducingHermite::makeLayout(CMatrix& VOut, vector<unsigned int>& ksOut,
+                                  unsigned int M, unsigned int inputDim,
+                                  unsigned int rngSeed, unsigned int kmax)
+{
+  if(M == 0)
+    throw ndlexceptions::Error("CInducingHermite::makeLayout requires M > 0.");
+  if(inputDim == 0)
+    throw ndlexceptions::Error("CInducingHermite::makeLayout requires inputDim > 0.");
+  if(kmax == 0 || (kmax % 2) == 0)
+    throw ndlexceptions::Error("CInducingHermite::makeLayout: kmax must be odd and >= 1.");
+  const unsigned int Dp = inputDim + 1;
+
+  // E1: ask more than the rule can hold -> refuse, naming what is available.
+  const unsigned int total = totalCapacity(Dp, kmax);
+  if(M > total)
+  {
+    ostringstream os;
+    os << "CInducingHermite (E1): requested M=" << M << " windows but capacity is "
+       << hermiteUInt(total) << " for input dim d=" << inputDim << " (D'=" << Dp
+       << ", odd degrees up to " << kmax << "); per-degree capacities:";
+    for(unsigned int k = 1; k <= kmax; k += 2)
+      os << " " << k << ":" << hermiteUInt(degreeCapacity(Dp, k));
+    os << ". Lower M, or use inducing='points' / 'weightspace'.";
+    throw ndlexceptions::Error(os.str());
+  }
+
+  vector<unsigned int> degs;
+  for(unsigned int k = 1; k <= kmax; k += 2)
+    degs.push_back(k);
+  vector<unsigned int> alloc(degs.size(), 0);
+  alloc[0] = min(Dp, M);
+  unsigned int rest = M - alloc[0];
+  while(rest > 0)
+  {
+    bool moved = false;
+    for(size_t i = 1; i < degs.size() && rest > 0; i++)
+      if(alloc[i] < degreeCapacity(Dp, degs[i]))
+      {
+        alloc[i]++;
+        rest--;
+        moved = true;
+      }
+    if(!moved)
+      break;
+  }
+  if(rest > 0) // unreachable given the total check; assert, never truncate.
+    throw ndlexceptions::Error(
+        "CInducingHermite (E5): allocation left windows unassigned despite capacity check.");
+
+  ndlutil::init_genrand(rngSeed);
+  VOut.resize(M, Dp);
+  VOut.zeros();
+  ksOut.assign(M, 0);
+  unsigned int row = 0;
+  for(size_t i = 0; i < degs.size(); i++)
+  {
+    if(alloc[i] == 0)
+      continue;
+    vector<vector<double> > frame;
+    if(degs[i] == 1)
+      hermiteOrthFrame(frame, alloc[i], Dp);
+    else
+    {
+      frame.resize(alloc[i]);
+      for(unsigned int b = 0; b < alloc[i]; b++)
+        hermiteRandomUnit(frame[b], Dp);
+    }
+    for(unsigned int b = 0; b < alloc[i]; b++, row++)
+    {
+      for(unsigned int j = 0; j < Dp; j++)
+        VOut.setVal(frame[b][j], row, j);
+      ksOut[row] = degs[i];
+    }
+  }
+
+  // E5: delivered must equal asked, and the layout must pass the full audit.
+  if(row != M || VOut.getRows() != M || ksOut.size() != M)
+    throw ndlexceptions::Error("CInducingHermite (E5): delivered window count differs from requested M.");
+  CInducingHermite audited(VOut, ksOut);
+  (void)audited;
+}
+
+CInducingHermite::CInducingHermite(const CMatrix& VIn, const vector<unsigned int>& ksIn)
+  : V(VIn), ks(ksIn)
+{
+  audit();
+}
+
+void CInducingHermite::audit()
+{
+  const unsigned int M = V.getRows();
+  const unsigned int Dp = V.getCols();
+  if(M == 0 || Dp == 0)
+    throw ndlexceptions::Error("CInducingHermite (E5): empty windows.");
+  if(ks.size() != M)
+    throw ndlexceptions::Error(
+        "CInducingHermite (E5): " + to_string(ks.size()) + " degrees for " +
+        to_string(M) + " direction rows.");
+  unsigned int maxK = 1;
+  for(unsigned int m = 0; m < M; m++)
+  {
+    if(ks[m] == 0 || (ks[m] % 2) == 0)
+      throw ndlexceptions::Error(
+          "CInducingHermite (E5): window " + to_string(m) + " has degree " +
+          to_string(ks[m]) + "; degrees must be odd and >= 1.");
+    maxK = max(maxK, ks[m]);
+    double nrm = 0.0;
+    for(unsigned int j = 0; j < Dp; j++)
+      nrm += V.getVal(m, j) * V.getVal(m, j);
+    if(!(fabs(sqrt(nrm) - 1.0) < 1e-9))
+      throw ndlexceptions::Error(
+          "CInducingHermite (E5): direction " + to_string(m) +
+          " is not a unit vector (norm " + to_string(sqrt(nrm)) + ").");
+  }
+
+  // Report: degree histogram against the capacity rule.
+  const unsigned int kTop = max(9u, maxK);
+  HermiteLayoutReport& r = layoutReport;
+  r.numInducing = M;
+  r.weightDim = Dp;
+  r.degrees.clear();
+  r.count.clear();
+  r.capacity.clear();
+  for(unsigned int k = 1; k <= kTop; k += 2)
+  {
+    r.degrees.push_back(k);
+    r.count.push_back(0);
+    r.capacity.push_back(degreeCapacity(Dp, k));
+  }
+  for(unsigned int m = 0; m < M; m++)
+    r.count[(ks[m] - 1) / 2]++;
+  for(size_t i = 0; i < r.degrees.size(); i++)
+    if(r.count[i] > r.capacity[i])
+      throw ndlexceptions::Error(
+          "CInducingHermite (E5): degree " + to_string(r.degrees[i]) + " holds " +
+          to_string(r.count[i]) + " windows; capacity is " +
+          hermiteUInt(r.capacity[i]) + " (D'=" + to_string(Dp) + ").");
+  r.totalCapacity = totalCapacity(Dp, kTop);
+  r.fillFraction = (double)M / (double)r.totalCapacity;
+
+  // K_uu block: must be positive definite or the layout is unusable.
+  CMatrix Kuu(M, M);
+  fillKuu(Kuu);
+  CMatrix lam(1, M);
+  Kuu.syev(lam, "n", "u");
+  double lmin = lam.getVal(0), lmax = lam.getVal(0);
+  for(unsigned int i = 1; i < M; i++)
+  {
+    lmin = min(lmin, lam.getVal(i));
+    lmax = max(lmax, lam.getVal(i));
+  }
+  if(!(lmin > kuuMinEigenvalue()))
+  {
+    ostringstream os;
+    os << "CInducingHermite (E5): K_uu block is not positive definite (min eigenvalue "
+       << lmin << " <= " << kuuMinEigenvalue()
+       << "); duplicate or near-parallel directions of the same degree.";
+    throw ndlexceptions::Error(os.str());
+  }
+  r.kappa = lmax / lmin;
+  r.warnConditioning = r.kappa > kappaWarnThreshold();
+  r.warnNearCapacity = r.fillFraction > nearCapacityFraction();
+}
+
+void CInducingHermite::fillKuu(CMatrix& Kuu) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int Dp = weightDim();
+  Kuu.resize(M, M);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < M; n++)
+    {
+      double val = 0.0;
+      if(ks[m] == ks[n])
+      {
+        double dot = 0.0;
+        for(unsigned int j = 0; j < Dp; j++)
+          dot += V.getVal(m, j) * V.getVal(n, j);
+        val = pow(dot, (int)ks[m]);
+      }
+      Kuu.setVal(val, m, n);
+    }
+  Kuu.setSymmetric(true);
+}
+
+void CInducingHermite::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
+{
+  fillKuu(Kuu);
+}
+
+void CInducingHermite::computeKuf(CMatrix&, const CKern&, const CMatrix&) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingHermite::computeKuf is not implemented until CIP-003D phase 2.");
+}
+
+void CInducingHermite::computeKux(CMatrix&, const CKern&, const CMatrix&) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingHermite::computeKux is not implemented until CIP-003D phase 2.");
+}
+
+void CInducingHermite::gradFromKuuKuf(CMatrix&, CMatrix&, CMatrix*, const CKern&,
+                                      const CMatrix&, const CMatrix&, const CMatrix&,
+                                      bool, bool, const CMatrix*, const CMatrix*) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CInducingHermite::gradFromKuuKuf is not implemented until CIP-003D phase 3.");
+}
+
+void CInducingHermite::setCentres(const CMatrix&)
+{
+  throw ndlexceptions::Error(
+      "CInducingHermite: windows are fixed; setCentres is not supported.");
+}

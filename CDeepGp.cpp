@@ -271,17 +271,9 @@ void CDeepGp::initKernVariances(double chi)
   const double hidVar = chi / (double)(numLayers - 1);
   for(unsigned int ell = 0; ell + 1 < numLayers; ell++)
   {
-    CKern* k = pkerns[ell];
-    if(k->getNumParams() >= 2)
-    {
-      try { k->setParam(hidVar, 1); }
-      catch(...) {}
-    }
-    else if(k->getNumParams() == 1)
-    {
-      try { k->setParam(hidVar, 0); }
-      catch(...) {}
-    }
+    // Signal strength via the kernel's own accessor. Writing to a parameter index
+    // instead is wrong for MLP ([weight, bias, variance]), where index 1 is the bias.
+    pkerns[ell]->setVariance(hidVar);
   }
 }
 

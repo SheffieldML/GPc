@@ -1075,11 +1075,9 @@ void CMatrix::readParamsFromStream(istream& in)
       throw ndlexceptions::StreamFormatError("matrix", "Incorrect number of columns in row " + ndlstrutil::itoa(i) + " of matrix.");
     for(unsigned int j=0; j<tokens.size(); j++) 
     {
-      int ind = tokens[j].find('.');
-      if(ind==std::string::npos||ind<0)
-	setVal((double)atoi(tokens[j].c_str()), i, j);
-      else
-	setVal(atof(tokens[j].c_str()), i, j);
+      // strtod, not atoi: values are written as integers or hex floats, and a hex float
+      // without a '.' (0x1p-1 == 0.5) used to be truncated to 0 by atoi.
+      setVal(strtod(tokens[j].c_str(), 0), i, j);
     }
   }
 }
@@ -1133,11 +1131,7 @@ void CMatrix::fromUnheadedStream(istream& in)
       throw ndlexceptions::StreamFormatError("numCols");
     for(unsigned int j=0; j<tokens.size(); j++) 
     {
-      int ind = tokens[j].find('.');
-      if(ind==std::string::npos||ind<0)
-	setVal((double)atoi(tokens[j].c_str()), rowNo, j);
-      else
-	setVal(atof(tokens[j].c_str()), rowNo, j);
+      setVal(strtod(tokens[j].c_str(), 0), rowNo, j); // see fromStream: atoi dropped hex floats
     }
     rowNo++;
   }

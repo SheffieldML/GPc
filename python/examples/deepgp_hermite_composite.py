@@ -36,7 +36,23 @@ def composite_task(seed: int = 0):
     return X, ((y - mu) / sd)[:, None], Xt, ((yt - mu) / sd)[:, None]
 
 
-def run(M: int, inducing: str, seed: int, steps: int, quiet: bool = False):
+def prototype_equivalent_init(m, layers: int, d_in: int, hidden: int, chi: float = 1.0):
+    """Start GPc's MLP kernels where the CIP-0035 prototype starts.
+
+    The prototype kernel is (2/pi) s2 asin(2 xh.xh' / sqrt((1+2|xh|^2)(1+2|xh'|^2))) with
+    xh = (h sqrt(w/D), sqrt(b)), w = 1, b = 0.1, s2 = chi/(L-1) hidden and 1 final. That is
+    GPc's MLP kernel with weightVariance = 2 w / D, biasVariance = 2 b, variance = (2/pi) s2.
+    """
+    import math
+    for ell in range(layers):
+        D = d_in if ell == 0 else hidden
+        s2 = 1.0 if ell == layers - 1 else chi / max(layers - 1, 1)
+        m.set_layer_param(ell, "weightVariance", 2.0 * 1.0 / D)
+        m.set_layer_param(ell, "biasVariance", 2.0 * 0.1)
+        m.set_layer_param(ell, "variance", (2.0 / math.pi) * s2)
+
+
+def run(M: int, inducing: str, seed: int, steps: int, quiet: bool = False, init: str = "default"):
     X, y, Xt, yt = composite_task(0)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -44,6 +60,8 @@ def run(M: int, inducing: str, seed: int, steps: int, quiet: bool = False):
             X, y, layers=3, hidden=5, num_inducing=M, kernel="mlp",
             inducing=inducing, chi=1.0, beta=10.0,
         )
+    if init == "proto":
+        prototype_equivalent_init(m, 3, X.shape[1], 5)
     t0 = time.time()
     m.optimize(iters=steps, batch_size=256, samples=1, adam_lr=0.01, seed=seed)
     sec = time.time() - t0
@@ -55,7 +73,7 @@ def run(M: int, inducing: str, seed: int, steps: int, quiet: bool = False):
     if not quiet:
         for w in caught:
             print("  warning:", str(w.message)[:110])
-    return dict(M=M, inducing=inducing, seed=seed, rmse=rmse, nll_moment=nll_moment,
+    return dict(M=M, inducing=inducing, seed=seed, init=init, rmse=rmse, nll_moment=nll_moment,
                 elbo_per_n=elbo, sec=sec, warnings=[str(w.message) for w in caught])
 
 
@@ -65,9 +83,10 @@ if __name__ == "__main__":
     ap.add_argument("--inducing", default="hermite")
     ap.add_argument("--seeds", type=int, nargs="*", default=[0])
     ap.add_argument("--steps", type=int, default=2500)
+    ap.add_argument("--init", choices=["default", "proto"], default="default")
     a = ap.parse_args()
     for M in a.M:
         for s in a.seeds:
-            r = run(M, a.inducing, s, a.steps)
-            print(f"{a.inducing} M={M} seed={s}: RMSE {r['rmse']:.3f}  NLL(moment) "
+            r = run(M, a.inducing, s, a.steps, init=a.init)
+            print(f"{a.inducing} init={a.init} M={M} seed={s}: RMSE {r['rmse']:.3f}  NLL(moment) "
                   f"{r['nll_moment']:.3f}  ELBO/N {r['elbo_per_n']:.3f}  [{r['sec']:.0f}s]", flush=True)

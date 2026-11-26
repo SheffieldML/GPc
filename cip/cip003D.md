@@ -177,11 +177,16 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 
 | model | GPc RMSE (3 seeds) | GPc NLL | GPc ELBO/N | CIP-0035 RMSE / NLL / ELBO |
 |---|---|---|---|---|
-| Hermite, \(M=64\) | 0.410, 0.461, 0.458 | 0.53-0.62 | -0.91 to -0.95 | 0.546 / 0.79 / -1.01 |
-| Hermite, \(M=128\) | 0.449, 0.486, 0.451 | 0.68-0.75 | -2.48 to -2.52 | 0.315 / 0.21 / -0.63 |
-| inducing points, \(M=64\) (control, 2 seeds) | 0.257, 0.255 | -0.15 to -0.17 | -0.44, -0.38 | 0.229 / -0.25 / -0.08 |
+| Hermite, \(M=64\) | 0.403, 0.386, 0.403 | 0.48-0.51 | -0.86 to -0.90 | 0.546 / 0.79 / -1.01 |
+| Hermite, \(M=64\), prototype-equivalent init | 0.462, 0.430, 0.513 | 0.57-0.72 | -0.92 to -0.96 | 0.546 / 0.79 / -1.01 |
+| Hermite, \(M=128\) | 0.467, 0.484, 0.477 | 0.72-0.75 | -2.51 to -2.58 | 0.315 / 0.21 / -0.63 |
+| inducing points, \(M=64\) (control), prototype-equivalent init | 0.251, 0.274, 0.262 | -0.17 to -0.14 | -0.25 to -0.32 | 0.229 / -0.25 / -0.08 |
 
-*Not reproduced within seed noise.* Seed spread is about 0.05 in RMSE, smaller than the gaps to the prototype (Hermite \(M=64\) better by about 0.1, \(M=128\) worse by about 0.14). The control shows the GPc-versus-prototype difference is not specific to Hermite: points reach V8's \(\le0.26\) bound, but the ELBO per point is lower by about 0.3 and the NLL is higher. The cause is not identified. One untested candidate is initialisation: the prototype starts hidden-layer \(q(\mathbf v)\) at scale 0.01 and GPc's layers do not expose that choice. What the experiment does support is the qualitative finding: fixed Hermite windows in hidden layers stay well behind inducing points (0.41-0.49 against 0.256), which is the case W4 warns about.
+*Partly reproduced.* The \(M=64\) Hermite result is now at or better than the prototype's (the seed spread is about 0.05 in RMSE). The inducing-points control sits at V8's \(\le0.26\) bound but about 0.03 RMSE and 0.2 ELBO/N short of the prototype. The \(M=128\) result is *not* reproduced: GPc does not improve on \(M=64\) (RMSE 0.47-0.48 against the prototype's 0.315) and its ELBO per point falls to about -2.5. A larger \(M\) giving a worse bound is an optimisation or conditioning symptom, not a representational one, and remains unexplained.
+
+*Two defects found while chasing the gap, both fixed.* (1) `CDeepGp::initKernVariances` applied \(\chi/(L-1)\) with `setParam(.., 1)`, which is the bias (second parameter) of an MLP kernel, not its signal variance; hidden layers therefore started at signal variance 1 instead of 0.5. It now uses `setVariance`, with regression expects on the hidden variance, the untouched hidden bias and the unscaled final layer. (2) `CMatrix::readParamsFromStream` and `fromUnheadedStream` read values with `atoi` whenever the token had no `.`; hex floats such as `0x1p-1` (0.5) have none, so any exactly representable non-integer power of two was silently read as 0 on model load. Both now use `strtod`, with a round-trip regression test. The second defect was latent in all stream I/O, not only Hermite.
+
+*Initialisation does not explain the remainder.* Starting every layer at the prototype's kernel (\(w_g=2w/D\), \(b_g=2b\), \(\sigma_g=(2/\pi)s^2\), via `set_layer_param`) made the Hermite \(M=64\) result slightly worse, not better (0.46 against 0.40). The earlier hypothesis that GPc layers cannot expose a small initial hidden \(q(\mathbf v)\) was wrong: `CDeepGp::rebuildLayers` already starts hidden \(S\) at \(10^{-4}I\), matching the prototype's 0.01 scale. Untested candidates for what remains: the sampling mode (prototype "local" reparameterisation), the positive-parameter transform against the prototype's softplus, and ELBO accounting at large \(M\).
 
 **Truncation check.** The prototype's `hermite_layout` stops allocating silently at capacity. No saved Hermite run in any `cip/cip0035/prototype/*.json` has `Meff != M` (the prototype records `Meff`), and the composite task at \(D'=6\) has capacity 1557, so no reference number in this CIP was affected. The step task (\(d=1\), capacity 16) is the only place it could occur and its Hermite runs requested at most \(M=16\).
 
@@ -198,7 +203,7 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 - [x] `CGp` / `CDeepGp` / stream / CLI wiring (phase 4): `CGp::setInducingType("hermite")` (E4 if inducing not fixed, E2 probe, E1, E5 before any state changes), `CSvgp` and `CDeepGp::setLayerInducingType`, `hermiteDirections` / `hermiteDegrees` stream blocks in `CGp` and per-layer in `CDeepGp` (V and ks explicit; E6 via `CInducingHermite::fromStreamData`), E3 on `setWindowWidth` / `setLearnWindowWidth(true)` / window-width paths, `gp --inducing hermite` and `deepgp --inducing hermite`. Phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector
 - [x] Python façade and tests (phase 5: `inducing='hermite'`, `inducing_fixed=None` default, `hermite_warnings()`, layout in `str(model)`)
 - [x] Docs: trade-off against Gaussian ridges (`docs/tutorials/deepgp.md`)
-- [~] Prototype composite-task reproduction: run and recorded, not reproduced within seed noise (see Phase 6 results); notebook re-run outstanding
+- [~] Prototype composite-task reproduction: Hermite M=64 reproduced, points control close, Hermite M=128 not reproduced (see Phase 6 results); notebook re-run outstanding
 
 ## References
 

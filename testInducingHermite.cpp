@@ -932,6 +932,26 @@ bool anyHas(const vector<string>& v, const string& needle)
   return false;
 }
 
+void testMatrixStreamRoundTrip()
+{
+  // Regression: hex floats with no '.' (0x1p-1 == 0.5) were read by atoi() as 0, so any
+  // model holding an exact non-integer power of two lost that value on load.
+  const double vals[] = {0.5, -0.5, 0.25, 0.125, 0.3, -2.5, 1.0, 10.0, 3.0, 1e-5, 1e5, 0.0};
+  const unsigned int n = sizeof(vals) / sizeof(vals[0]);
+  CMatrix m(1, n);
+  for(unsigned int j = 0; j < n; j++)
+    m.setVal(vals[j], 0, j);
+  ostringstream os;
+  m.toStream(os);
+  istringstream is(os.str());
+  CMatrix r;
+  r.fromStream(is);
+  double worst = 0.0;
+  for(unsigned int j = 0; j < n; j++)
+    worst = max(worst, fabs(r.getVal(0, j) - vals[j]));
+  expect(worst == 0.0, "CMatrix stream round trip is exact, including 0.5 and 0.25");
+}
+
 void testPhase5Warnings()
 {
   { // Well-conditioned control: nothing to warn about, layout always described.
@@ -999,6 +1019,15 @@ void testPhase5Warnings()
     CMlpKern k0(1), k1(1);
     CDeepGp two(X, y, vector<CKern*>{&k0, &k1}, vector<unsigned int>{1u, 1u, 1u},
                 vector<unsigned int>{6, 6}, 4.0, 0.5, 0);
+    { // chi scales the hidden layer's signal variance, not its bias variance.
+      CMlpKern fresh(1);
+      expect(fabs(k0.getVariance() - 0.5 / 1.0) < 1e-12,
+             "chi/(L-1) lands on the hidden MLP layer's signal variance");
+      expect(fabs(k0.getParam(1) - fresh.getParam(1)) < 1e-12,
+             "hidden MLP layer bias variance is left at its initial value");
+      expect(fabs(k1.getVariance() - fresh.getVariance()) < 1e-12,
+             "final layer variance is not scaled by chi");
+    }
     expect(two.hermiteWarnings().empty(), "deep GP with points layers: no hermite warnings");
     two.setLayerInducingType(0, "hermite");
     two.setLayerInducingType(1, "hermite");
@@ -1037,6 +1066,7 @@ int main()
     testCGpWiring();
     testCGpStream();
     testDeepWiring();
+    testMatrixStreamRoundTrip();
     testPhase5Warnings();
     testGating();
     cout << "Number of failures: " << fails << "." << endl;

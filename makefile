@@ -13,6 +13,14 @@ else
 include make.linux
 endif
 
+# Optional YAML reading (CIP-0016, gp-scuderia CIP-0001): make YAML=1 [YAMLROOT=prefix].
+# Off by default: without it a .yaml path fails with a message that says how to convert.
+ifeq ($(YAML),1)
+YAMLROOT ?= $(BREW)
+CCFLAGS += -DGPC_YAML -I$(YAMLROOT)/include
+LDFLAGS += -L$(YAMLROOT)/lib -lyaml-cpp -Wl,-rpath,$(YAMLROOT)/lib
+endif
+
 all: gplvm bgplvm deepgp ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).

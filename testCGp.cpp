@@ -2259,6 +2259,31 @@ int testWeightSpaceInducingCip0032()
     fail += failTrue(!anyNeg, "makeRidgeInit offsets are one-sided (a>0)");
   }
 
+  // CIP-003C item 1: every row of makeRidgeInit has a non-zero direction for
+  // all (M, d); ridgeFactors must not throw. Sweep M in 1..300, d in {1,2,8}.
+  {
+    const unsigned int dims[3] = {1, 2, 8};
+    unsigned int bad = 0;
+    for(unsigned int di = 0; di < 3; di++)
+      for(unsigned int M = 1; M <= 300; M++)
+      {
+        CMatrix W;
+        const double s = CInducingWeightSpace::makeRidgeInit(W, M, dims[di], 7u);
+        try
+        {
+          CInducingWeightSpace ind(W, s, false, true);
+          CMatrix V, a;
+          ind.ridgeFactors(V, a);
+        }
+        catch(ndlexceptions::Error&)
+        {
+          bad++;
+          cout << "  ridge init failed: d=" << dims[di] << " M=" << M << endl;
+        }
+      }
+    fail += failTrue(bad == 0, "makeRidgeInit sweep M=1..300: no zero-norm rows");
+  }
+
   // CIP-0037: one-sided layout avoids ±a column collapse (exact rank M/2).
   {
     const unsigned int d = 8;

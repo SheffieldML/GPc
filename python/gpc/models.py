@@ -536,6 +536,23 @@ class DeepGP(_DeepGP):
         ``'gaussian'``, ``'probit'``, or ``'ordered'``.
     num_categories :
         Categories for ordered likelihood.
+    learn_window_width, learn_window_widths :
+        Weight-space only. Optimise a tied window width ``s`` per layer, or
+        untied per-unit widths ``s_m`` (mutually exclusive; see
+        :class:`SparseGPRegression`).
+
+    Notes
+    -----
+    ``predict`` returns the variance of a new observation (for a Gaussian
+    likelihood it includes the noise ``1/beta``); ``predict_noiseless`` returns
+    the latent-function variance. Both take ``samples`` and ``seed``.
+
+    ``hidden`` may exceed the input dimension: the PCA mean path then uses all
+    input directions and zero-pads the remaining hidden units, which the GP
+    layer alone drives.
+
+    Repeated ``optimize`` calls continue the same Adam state (moments and step
+    count); call ``reset_optimizer`` to restart it.
     """
 
     def __init__(
@@ -553,6 +570,8 @@ class DeepGP(_DeepGP):
         likelihood: str = "gaussian",
         num_categories: int = 3,
         verbosity: int = 0,
+        learn_window_width: bool = False,
+        learn_window_widths: bool = False,
     ) -> None:
         super().__init__(
             X,
@@ -568,6 +587,8 @@ class DeepGP(_DeepGP):
             likelihood=likelihood,
             num_categories=num_categories,
             verbosity=verbosity,
+            learn_window_width=learn_window_width,
+            learn_window_widths=learn_window_widths,
         )
 
     def __str__(self) -> str:  # noqa: D105

@@ -102,3 +102,109 @@ def test_residual_off_and_str():
     text = str(m)
     assert "Deep GP" in text
     assert "deepgp" in m.approx
+
+
+# ---- CIP-003C façade items -------------------------------------------------
+
+
+def test_predict_noiseless_removes_gaussian_noise():
+    X, Y = _sinc_toy()
+    beta = 5.0
+    m = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=1, num_inducing=6, chi=0.5, beta=beta
+    )
+    mu, var = m.predict(X)
+    mu_f, var_f = m.predict_noiseless(X)
+    assert np.allclose(mu, mu_f)
+    assert np.all(var_f > 0.0)
+    # Gaussian predict = latent variance + 1/beta (mean path).
+    assert np.allclose(var - var_f, 1.0 / beta, rtol=1e-6, atol=1e-6)
+    # Sampled path too.
+    mu_s, var_s = m.predict(X, samples=6, seed=2)
+    mu_sf, var_sf = m.predict_noiseless(X, samples=6, seed=2)
+    assert np.all(var_s > var_sf)
+
+
+def test_jacobian_spread_rectangular():
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(14, 3))
+    for dout in (1, 2, 5):
+        Y = rng.normal(size=(14, dout))
+        m = gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=6, chi=0.5, beta=1.0
+        )
+        s = m.jacobian_spread(n_probe=6, probe_seed=1)
+        assert np.isfinite(s) and s >= 0.0
+    # One singular value => zero spread.
+    m1 = gpc.models.DeepGP(
+        X, rng.normal(size=(14, 1)), layers=2, hidden=3, num_inducing=6
+    )
+    assert m1.jacobian_spread(n_probe=4, probe_seed=1) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_hidden_width_above_input_dim():
+    rng = np.random.default_rng(4)
+    X = rng.normal(size=(20, 2))
+    Y = np.sin(X[:, :1]) + 0.05 * rng.normal(size=(20, 1))
+    m = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=5, num_inducing=6, chi=0.5, beta=5.0
+    )
+    assert m.hidden_dim == 5
+    assert np.isfinite(m.elbo())
+    m.optimize(iters=10, adam_lr=0.05, seed=1)
+    mu, var = m.predict(X)
+    assert np.all(np.isfinite(mu)) and np.all(var > 0.0)
+
+
+def test_adam_state_persists_across_optimize_calls():
+    X, Y = _sinc_toy()
+
+    # Full-batch gradients are deterministic only without hidden-layer noise;
+    # use layers=1 so chunked and single runs are comparable exactly.
+    def build1():
+        return gpc.models.DeepGP(X, Y, layers=1, num_inducing=6, beta=5.0)
+
+    a, b, c = build1(), build1(), build1()
+    a.optimize(iters=10, adam_lr=0.05, seed=3)
+    b.optimize(iters=5, adam_lr=0.05, seed=3)
+    assert b.optimizer_steps == 5
+    b.optimize(iters=5, adam_lr=0.05, seed=3)
+    assert b.optimizer_steps == 10
+    # Equal up to summation order of the (shuffled) full batch.
+    assert b.elbo() == pytest.approx(a.elbo(), rel=1e-6)
+    # Resetting restarts the moments, so the chunked run differs.
+    c.optimize(iters=5, adam_lr=0.05, seed=3)
+    c.reset_optimizer()
+    assert c.optimizer_steps == 0
+    c.optimize(iters=5, adam_lr=0.05, seed=3)
+    assert abs(c.elbo() - a.elbo()) > 1e-3
+
+
+def test_learn_window_widths_on_deepgp():
+    rng = np.random.default_rng(5)
+    X = rng.normal(size=(24, 1))
+    Y = np.tanh(2 * X) + 0.05 * rng.normal(size=(24, 1))
+    m = gpc.models.DeepGP(
+        X, Y, layers=1, num_inducing=8, kernel="mlp", inducing="weightspace",
+        beta=10.0, learn_window_width=True,
+    )
+    assert m.learn_window_width is True and m.learn_window_widths is False
+    plain = gpc.models.DeepGP(
+        X, Y, layers=1, num_inducing=8, kernel="mlp", inducing="weightspace",
+        beta=10.0,
+    )
+    assert m.describe().opt_num_params == plain.describe().opt_num_params + 1
+    untied = gpc.models.DeepGP(
+        X, Y, layers=1, num_inducing=8, kernel="mlp", inducing="weightspace",
+        beta=10.0, learn_window_widths=True,
+    )
+    assert untied.describe().opt_num_params == plain.describe().opt_num_params + 8
+    m.optimize(iters=5, adam_lr=0.02, seed=1)
+    assert np.isfinite(m.elbo())
+    with pytest.raises(Exception):
+        gpc.models.DeepGP(X, Y, layers=1, learn_window_width=True)
+    with pytest.raises(Exception):
+        gpc.models.DeepGP(
+            X, Y, layers=1, kernel="mlp", inducing="weightspace",
+            learn_window_width=True, learn_window_widths=True,
+        )

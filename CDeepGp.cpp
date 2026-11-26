@@ -14,9 +14,22 @@ namespace {
 void pcaTop(const CMatrix& X, unsigned int D, CMatrix& P)
 {
   const unsigned int d = X.getCols();
-  P.resize(d, D);
   if(D > d)
-    throw ndlexceptions::Error("CDeepGp: PCA width cannot exceed input dim");
+  {
+    // CIP-003C: hidden width above the input dimension. Take all d principal
+    // directions (an orthonormal basis of R^d) and pad the extra D-d columns
+    // with zeros: those hidden units carry no mean-path signal and are driven
+    // by the GP layer alone. d orthonormal vectors is the most R^d admits.
+    CMatrix Pd;
+    pcaTop(X, d, Pd);
+    P.resize(d, D);
+    P.zeros();
+    for(unsigned int i = 0; i < d; i++)
+      for(unsigned int j = 0; j < d; j++)
+        P.setVal(Pd.getVal(i, j), i, j);
+    return;
+  }
+  P.resize(d, D);
   if(D == d)
   {
     P.zeros();
@@ -727,10 +740,11 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
 {
   if(nProbe == 0)
     throw ndlexceptions::Error("CDeepGp::jacobianSpread: nProbe >= 1");
-  if(inputDim != outputDim)
-    throw ndlexceptions::Error(
-        "CDeepGp::jacobianSpread: requires square input/output dims");
+  // Rectangular maps (CIP-003C): J is Dout x Din with min(Din,Dout) singular
+  // values, taken from the smaller of J^T J (Din x Din) and J J^T.
   const unsigned int Din = inputDim;
+  const unsigned int Dout = outputDim;
+  const unsigned int k = min(Din, Dout);
   mt19937_64 prng(probeSeed);
   normal_distribution<double> nd(0.0, 1.0);
   vector<double> spreads;
@@ -755,7 +769,7 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
           vs[ell].setVal(nd(prng), r, c);
     }
 
-    CMatrix J(Din, Din);
+    CMatrix J(Dout, Din);
     for(unsigned int d = 0; d < Din; d++)
     {
       CMatrix xp(x0), xm(x0);
@@ -764,17 +778,20 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
       CMatrix yp, ym;
       forwardPriorDraw(xp, vs, yp);
       forwardPriorDraw(xm, vs, ym);
-      for(unsigned int o = 0; o < Din; o++)
+      for(unsigned int o = 0; o < Dout; o++)
         J.setVal((yp.getVal(0, o) - ym.getVal(0, o)) / (2.0 * h), o, d);
     }
-    // Singular values via eigenvalues of J^T J.
-    CMatrix G(Din, Din);
-    G.gemm(J, J, 1.0, 0.0, "t", "n");
+    // Singular values via eigenvalues of the smaller Gram matrix.
+    CMatrix G(k, k);
+    if(Din <= Dout)
+      G.gemm(J, J, 1.0, 0.0, "t", "n");
+    else
+      G.gemm(J, J, 1.0, 0.0, "n", "t");
     G.setSymmetric(true);
-    CMatrix lam(1, Din);
+    CMatrix lam(1, k);
     G.syev(lam, "n", "l");
     double lmin = 1e300, lmax = 0.0;
-    for(unsigned int i = 0; i < Din; i++)
+    for(unsigned int i = 0; i < k; i++)
     {
       const double s = sqrt(max(fabs(lam.getVal(i)), 0.0));
       lmin = min(lmin, s);

@@ -8,7 +8,8 @@ using namespace std;
 
 CAdam::CAdam(double learningRate, double b1, double b2, double epsilon)
   : alpha(learningRate), beta1(b1), beta2(b2), eps(epsilon), lrDecay(1.0),
-    batchSize(32), maxIters(100), seed(0)
+    batchSize(32), maxIters(100), seed(0), mState(1, 1), vState(1, 1),
+    stateParams(0), stepCount(0)
 {
   if(!(alpha > 0.0) || !(beta1 >= 0.0 && beta1 < 1.0) || !(beta2 >= 0.0 && beta2 < 1.0)
      || !(eps > 0.0))
@@ -25,10 +26,17 @@ double CAdam::maximise(CStochasticOptimisable& model)
 
   CMatrix param(1, P);
   model.getStochasticParams(param);
-  CMatrix m(1, P);
-  CMatrix v(1, P);
-  m.zeros();
-  v.zeros();
+  if(stateParams != P)
+  {
+    mState.resize(1, P);
+    vState.resize(1, P);
+    mState.zeros();
+    vState.zeros();
+    stateParams = P;
+    stepCount = 0;
+  }
+  CMatrix& m = mState;
+  CMatrix& v = vState;
   CMatrix g(1, P);
 
   vector<unsigned int> order(N);
@@ -39,8 +47,9 @@ double CAdam::maximise(CStochasticOptimisable& model)
   double lastObj = 0.0;
   double lr = alpha;
 
-  for(unsigned int t = 1; t <= maxIters; t++)
+  for(unsigned int it = 1; it <= maxIters; it++)
   {
+    const unsigned long t = ++stepCount;
     if(cursor + B > N)
     {
       shuffle(order.begin(), order.end(), rng);
@@ -68,13 +77,19 @@ double CAdam::maximise(CStochasticOptimisable& model)
     model.afterBatchStep(batch);
 
     StochasticOptimiserEvent ev;
-    ev.iteration = t;
+    ev.iteration = it;
     ev.objectiveEstimate = lastObj;
     ev.batchSize = B;
-    ev.terminal = (t == maxIters);
+    ev.terminal = (it == maxIters);
     model.notifyProgress(ev);
 
     lr *= lrDecay;
   }
   return lastObj;
+}
+
+void CAdam::resetState()
+{
+  stateParams = 0;
+  stepCount = 0;
 }

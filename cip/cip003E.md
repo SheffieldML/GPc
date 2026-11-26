@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-26"
 id: "003E"
 last_updated: "2026-11-26"
-status: "Proposed"
+status: "Accepted"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["002A", "003A", "0035", "0036"]
@@ -24,7 +24,7 @@ title: "Multi-class likelihoods (robust-max, softmax) for SVGP and deep GP"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
+- [x] Accepted - Approved, ready to start work
 - [ ] In Progress - Actively being implemented
 - [ ] Implemented - Code changes complete
 - [ ] Closed - Verified and merged

@@ -27,7 +27,7 @@ Pin gp-scuderia; write/read FTC Gaussian regression with compound kernels via th
 - [x] A1: C++ `CInterchange` reads and writes the JSON twin; `testInterchange` checks both goldens against `x-reference` and rejects unknown type, wrong dimension, wrong schema version, missing data, truncated parameters
 - [x] A1: no new required dependency (vendored header-only parser; YAML optional); load off the SCG path
 - [x] A2: `gp learn --from model.json`, `gp export`, `gp import`; `.model` untouched
-- [ ] A3: Python delegates to A1; `gp-scuderia/scripts/conformance.sh` covers the C++ path
+- [x] A3: Python delegates to A1; `gp-scuderia/scripts/conformance.sh` covers the C++ path
 
 ## Implementation Notes
 
@@ -51,3 +51,6 @@ A1 complete: `CJson.{h,cpp}`, `CInterchange.{h,cpp}`, `testInterchange.cpp`; con
 
 ### 2026-11-26
 A2 complete: CLI commands in `gp.cpp`, export in `CInterchange`. Fixed `.model` hex-float read bug in `CMatrix`. A3 remains.
+
+### 2026-11-26
+A3 complete: `gpc.interchange` delegates to `CInterchange` through `_gpc.InterchangeModel`; conformance covers the CLI.

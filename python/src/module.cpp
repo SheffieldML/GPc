@@ -10,6 +10,7 @@
 #include "wrap_deepgp.h"
 #include "wrap_gp.h"
 #include "wrap_gplvm.h"
+#include "wrap_interchange.h"
 #include "wrap_likelihood.h"
 
 namespace py = pybind11;
@@ -87,4 +88,5 @@ PYBIND11_MODULE(_gpc, m)
   bind_gplvm(m);
   bind_deepgp(m);
   bind_likelihood(m);
+  bind_interchange(m);
 }

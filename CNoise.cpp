@@ -462,6 +462,106 @@ void laplacePointDerivs(const CNoise& noise,
 }
 
 } // namespace ndlnoise
+// ---- CIP-003E Phase 1: block oracles. Defaults = the element-wise code. ----
+
+unsigned int CNoise::capabilities() const
+{
+  // Table keyed on type, as ndlnoise::laplacePointDerivs is. Entries record what
+  // each likelihood implements exactly; new likelihoods override capabilities().
+  const string t = getType();
+  unsigned int caps = CapPredictive;  // out()/likelihoods() are pure virtual
+  if(t == "gaussian" || t == "probit" || t == "ordered" || t == "skew_gaussian"
+     || t == "skew_exponential" || t == "student_t" || t == "poisson"
+     || t == "binomial" || t == "exponential" || t == "gamma")
+    caps |= CapExpectedLogLik;
+  if(t == "probit" || t == "student_t" || t == "poisson" || t == "binomial"
+     || t == "exponential" || t == "gamma" || t == "skew_gaussian"
+     || t == "skew_exponential")
+    caps |= CapPointDerivs;
+  // Exact cavity (moment-matching) derivatives. The zoo likelihoods' getGradInputs
+  // is a Laplace-point approximation, so they do not claim this capability.
+  if(t == "gaussian" || t == "probit" || t == "ncnm" || t == "ordered")
+    caps |= CapCavityMoments;
+  return caps;
+}
+
+void CNoise::requireCapability(unsigned int cap, const string& consumer) const
+{
+  if((capabilities() & cap) == 0)
+    throw ndlexceptions::NotImplementedError(
+      consumer + " requires a likelihood capability that noise type '" + getType()
+      + "' does not provide.");
+}
+
+void CNoise::requireScalarBlocks(const string& consumer) const
+{
+  if(blockSize() != 1)
+    throw ndlexceptions::NotImplementedError(
+      consumer + " supports only independent (blockSize 1) likelihoods; noise type '"
+      + getType() + "' couples " + to_string(blockSize()) + " outputs.");
+}
+
+void CNoise::cavityMomentsElement(double /*y*/, double /*mu*/, double /*var*/,
+                                  unsigned int /*j*/, double& /*gmu*/,
+                                  double& /*gvs*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "cavityMomentsElement not implemented for noise type " + getType());
+}
+
+double CNoise::expectedLogLikelihoodBlock(const double* y, const double* mu,
+                                          const double* var, unsigned int j0,
+                                          double* gMu, double* gVar) const
+{
+  BOUNDCHECK(j0 + blockSize() <= getOutputDim());
+  double total = 0.0;
+  for(unsigned int k = 0; k < blockSize(); k++)
+  {
+    // Probit and ordered select the bias of the output being evaluated.
+    if(const CProbitNoise* pn = dynamic_cast<const CProbitNoise*>(this))
+      pn->setExpectedLogLikBias(pn->getBiasVal(j0 + k));
+    else if(const COrderedNoise* on = dynamic_cast<const COrderedNoise*>(this))
+      on->setExpectedLogLikBias(on->getBiasVal(j0 + k));
+    total += expectedLogLikelihood(y[k], mu[k], var[k], gMu[k], gVar[k]);
+  }
+  return total;
+}
+
+void CNoise::pointDerivsBlock(const double* y, const double* f, unsigned int j0,
+                              double* logp, double* g, CMatrix& negHessian,
+                              CMatrix* dNegHessian) const
+{
+  BOUNDCHECK(j0 + blockSize() <= getOutputDim());
+  requireScalarBlocks("CNoise::pointDerivsBlock default");
+  double lp = 0.0, d1 = 0.0, W = 0.0, dW = 0.0;
+  ndlnoise::laplacePointDerivs(*this, y[0], f[0], lp, d1, W, dW);
+  *logp = lp;
+  g[0] = d1;
+  negHessian.resize(1, 1);
+  negHessian.setVal(W, 0, 0);
+  if(dNegHessian != 0)
+  {
+    dNegHessian->resize(1, 1);
+    dNegHessian->setVal(dW, 0, 0);
+  }
+}
+
+void CNoise::cavityMomentsBlock(const double* y, const double* mu, const double* var,
+                                unsigned int j0, double* dMu, double* dVar) const
+{
+  BOUNDCHECK(j0 + blockSize() <= getOutputDim());
+  for(unsigned int k = 0; k < blockSize(); k++)
+    cavityMomentsElement(y[k], mu[k], var[k], j0 + k, dMu[k], dVar[k]);
+}
+
+void CNoise::predictBlock(const double* /*mu*/, const double* /*var*/,
+                          unsigned int /*j0*/, double* /*prob*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "predictBlock not implemented for noise type " + getType()
+    + " (use out()/likelihoods() for independent likelihoods)");
+}
+
 
 double CNoise::expectedLogLikelihood(double /*y*/, double /*mu*/, double /*var*/,
                                      double& /*gMu*/, double& /*gVar*/) const
@@ -1075,13 +1175,19 @@ void CGaussianNoise::getGradParams(CMatrix& g) const
   g.setVal(-0.5*gsigma2, 0, getNumParams()-1);
 }
 
-void CGaussianNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+void CGaussianNoise::cavityMomentsElement(double y, double mu, double var,
+                                      unsigned int j, double& gmu, double& gvs) const
 {
   gmu = -bias.getVal(j);
-  gvs = 1/(sigma2+getVarSigma(i, j));
-  gmu += getTarget(i, j)-getMu(i, j);
+  gvs = 1/(sigma2+var);
+  gmu += y-mu;
   gmu *= gvs;
   gvs = 0.5*(gmu*gmu - gvs);
+}
+
+void CGaussianNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+{
+  cavityMomentsElement(getTarget(i, j), getMu(i, j), getVarSigma(i, j), j, gmu, gvs);
 }
   
 void CGaussianNoise::getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const
@@ -1571,13 +1677,19 @@ void CProbitNoise::getGradParams(CMatrix& g) const
     g.setVal(gbias, 0, j);
   }
 }
-void CProbitNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+void CProbitNoise::cavityMomentsElement(double y, double mu, double var,
+                                      unsigned int j, double& gmu, double& gvs) const
 {
   double b = bias.getVal(j);
-  double c = getTarget(i, j)/sqrt(sigma2+getVarSigma(i, j));
-  double u = c*(getMu(i, j) + b);
+  double c = y/sqrt(sigma2+var);
+  double u = c*(mu + b);
   gmu = ndlutil::gradLnCumGaussian(u)*c;
   gvs = -0.5*c*u*gmu;
+}
+
+void CProbitNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+{
+  cavityMomentsElement(getTarget(i, j), getMu(i, j), getVarSigma(i, j), j, gmu, gvs);
 }
 
 void CProbitNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const
@@ -1858,12 +1970,13 @@ void CNcnmNoise::getGradParams(CMatrix& g) const
     g.setVal(ggamman+ggammap, 0, getOutputDim());
 
 }
-void CNcnmNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+void CNcnmNoise::cavityMomentsElement(double y, double mu, double var,
+                                      unsigned int j, double& gmu, double& gvs) const
 {
   double b = bias.getVal(j);
-  double c = 1.0/sqrt(sigma2+getVarSigma(i, j));
-  double muAdj = getMu(i, j)+b;
-  double targ = getTarget(i, j);
+  double c = 1.0/sqrt(sigma2+var);
+  double muAdj = mu+b;
+  double targ = y;
   double halfWidth = width/2.0;
   if(targ==-1.0)
   {
@@ -1897,6 +2010,11 @@ void CNcnmNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigne
     throw ndlexceptions::Error("gmu is NaN");
   if(isnan(gvs))
     throw ndlexceptions::Error("gvs is NaN");
+}
+
+void CNcnmNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+{
+  cavityMomentsElement(getTarget(i, j), getMu(i, j), getVarSigma(i, j), j, gmu, gvs);
 }  
 void CNcnmNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const
 {
@@ -2228,20 +2346,21 @@ void COrderedNoise::getGradParams(CMatrix& g) const
   for(unsigned int j=0; j<getNumCategories()-2; j++)
     g.setVal(gwidth.getVal(j), j+getOutputDim());
 }
-void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+void COrderedNoise::cavityMomentsElement(double y, double mu, double var,
+                                      unsigned int j, double& gmu, double& gvs) const
 {
   double b = bias.getVal(j);
-  double c = 1.0/sqrt(sigma2+getVarSigma(i, j));
-  double muAdj = getMu(i, j)+b;
+  double c = 1.0/sqrt(sigma2+var);
+  double muAdj = mu+b;
   // Test NaN before casting: on ARM, (int)NaN is 0 and would look like category 0.
-  if(isnan(getTarget(i, j)))
+  if(isnan(y))
   {
     gmu = 0.0;
     gvs = 0.0;
     return;
   }
-  int targ = (int)getTarget(i, j);
-  SANITYCHECK(getTarget(i, j)==(double)targ);
+  int targ = (int)y;
+  SANITYCHECK(y==(double)targ);
   if(targ==0)
   {
     muAdj*=c;
@@ -2271,6 +2390,11 @@ void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsi
   }
   else
     throw ndlexceptions::Error("This point should never be reached in COrderedNoise::getGradInputs");
+}
+
+void COrderedNoise::getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const
+{
+  cavityMomentsElement(getTarget(i, j), getMu(i, j), getVarSigma(i, j), j, gmu, gvs);
 }  
 void COrderedNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const
 {

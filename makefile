@@ -100,8 +100,8 @@ ppa: ppa.o CClctrl.o CPpa.o CSparsePpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdj
 ppa.o: ppa.cpp CPpa.h CSparsePpa.h CKern.h CMatrix.h ppa.h CClctrl.h
 	$(CC) -c ppa.cpp -o ppa.o $(CCFLAGS)
 
-gp: gp.o CHmc.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o gp gp.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+gp: gp.o CJson.o CInterchange.o CHmc.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o gp gp.o CJson.o CInterchange.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 # CIP-001D / CIP-0035: GPLVM façades + DeepGP (SVGP/Adam) in libgp.
 LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o
@@ -112,7 +112,7 @@ libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix
 libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o
 	$(LIBDCOMMAND) libgp$(LIBDEXT) $(LIBGP_OBJS) $(LDFLAGS)
 
-gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
+gp.o: gp.cpp gp.h CInterchange.h CJson.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h CTransform.h \
   CDataModel.h CDist.h CGp.h CMltools.h COptimisable.h CNoise.h CClctrl.h CHmc.h CPosteriorTarget.h CVariationalTarget.h
 	$(CC) -c gp.cpp -o gp.o $(CCFLAGS)

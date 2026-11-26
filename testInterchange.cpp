@@ -180,6 +180,34 @@ void testNegative()
   }
 }
 
+void testModelStreamRoundTrip()
+{
+  // A bias variance of exactly 0.5 is written as the hex float 0x1p-1, which the
+  // matrix reader once turned into 0 (CIP-0016 A2 finding).
+  CJson d = CJson::parse(kAnalytic);
+  CJson parts = CJson::makeArray();
+  parts.push(d.at("kernel"));
+  CJson b = CJson::makeObject();
+  b.set("type", CJson::makeString("kern.bias"));
+  b.set("variance", CJson::makeNumber(0.5));
+  parts.push(b);
+  CJson sum = CJson::makeObject();
+  sum.set("type", CJson::makeString("kern.add"));
+  sum.set("parts", parts);
+  d.set("kernel", sum);
+  auto m = CInterchange::fromJson(d);
+  const string path = "testInterchange_tmp.model";
+  m->writeGpModel(path);
+  CGp* g = readGpFromFile(path, 0);
+  CMatrix Xn = m->inputs(), Yn = m->targets();
+  g->setTargetVals(Yn);
+  g->updateM();
+  g->pX = &Xn;
+  expectNear(-g->computeObjectiveVal(), m->logLikelihood(), 1e-12, ".model round trip keeps bias variance 0.5");
+  remove(path.c_str());
+  delete g;
+}
+
 void checkGolden(const string& path)
 {
   auto m = CInterchange::fromFile(path);
@@ -222,6 +250,7 @@ int main(int argc, char** argv)
     testAnalytic();
     testWhiteIsAdditive();
     testNegative();
+    testModelStreamRoundTrip();
     checkGolden(dir + "/ftc_rbf_white.json");
     checkGolden(dir + "/dtcvar_ard_data.json");
   }

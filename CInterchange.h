@@ -37,6 +37,18 @@ class CInterchange
   CJson toJson() const;
   void writeFile(const std::string& path) const;
 
+  // Describe an existing GPc model (e.g. read from a .model file) as a document.
+  // Refuses anything the wire format cannot carry exactly: unsupported kernels,
+  // White components (their noise semantics differ from the wire format in
+  // .model files), centred or scaled targets, multi-output, PITC. The result is
+  // verified by rebuilding it and comparing log likelihoods.
+  static CJson exportModel(const CGp& model);
+
+  // Write the model as a GPc .model stream. Refuses exact models with a White
+  // kernel: the stream does not record the additive-noise opt-in, so reading it
+  // back would change the likelihood.
+  void writeGpModel(const std::string& path, const std::string& comment = "") const;
+
   CGp& gp() { return *pgp; }
   const CGp& gp() const { return *pgp; }
   const CMatrix& inputs() const { return X; }
@@ -60,6 +72,7 @@ class CInterchange
   CMatrix X, Y, Z;
   std::unique_ptr<CCmpndKern> kern;
   std::unique_ptr<CGaussianNoise> noise;
+  bool hasWhite = false;
   std::vector<CKern*> leaves;  // atomic kernels in document order (owned by kern)
   std::unique_ptr<CGp> pgp;    // declared last: destroyed first
 

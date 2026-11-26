@@ -253,6 +253,7 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
   bool hasWhite = false;
   buildKernelTree(need(doc, "kernel", "document"), inputDim, "kernel",
                   *m->kern, m->leaves, hasWhite);
+  m->hasWhite = hasWhite;
 
   // Noise: zero mean, so the bias is fixed to zero (GPy semantics).
   m->noise.reset(new CGaussianNoise(&m->Y));
@@ -353,10 +354,127 @@ CJson CInterchange::toJson() const
   writeKernelParams(out.at("kernel"), leafIndex);
   out.at("likelihood").set("variance",
       CJson::makeNumber(pgp->getByPath("likelihood.variance")));
+  // Inducing inputs move during optimisation unless fixed.
+  if(pgp->isSparseApproximation())
+  {
+    CMatrix Z(pgp->getNumActive(), X.getCols());
+    for(unsigned int i = 0; i < Z.getRows(); ++i)
+      for(unsigned int j = 0; j < Z.getCols(); ++j)
+        Z.setVal(pgp->X_u.getVal(i, j), i, j);
+    out.set("inducing_inputs", matrixToJson(Z));
+  }
   return out;
 }
 
 void CInterchange::writeFile(const string& path) const
 {
   toJson().dumpFile(path);
+}
+
+void CInterchange::writeGpModel(const string& path, const string& comment) const
+{
+  if(hasWhite && !pgp->isSparseApproximation())
+    fail("writeGpModel", "an exact model with kern.white cannot be written as a .model file: "
+         "the stream does not record that White and likelihood.variance both add, so the "
+         "likelihood would change on reload. Keep it as JSON (gp learn --from).");
+  writeGpToFile(*pgp, path, comment);
+}
+
+namespace {
+
+CJson exportKernel(const CKern* k, unsigned int inDim, const string& where)
+{
+  const string type = k->getType();
+  CJson node = CJson::makeObject();
+  if(const CCmpndKern* c = dynamic_cast<const CCmpndKern*>(k))
+  {
+    node.set("type", CJson::makeString("kern.add"));
+    CJson parts = CJson::makeArray();
+    for(unsigned int i = 0; i < c->getNumKerns(); ++i)
+      parts.push(exportKernel(c->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]"));
+    node.set("parts", parts);
+    return node;
+  }
+  if(type == "white")
+    fail(where, "kern.white cannot be exported from a .model file: its noise semantics there "
+         "(White-owned or sparse-jitter) differ from the wire format's additive rule");
+  if(type == "rbf" || type == "matern32")
+  {
+    node.set("type", CJson::makeString(type == "rbf" ? "kern.rbf" : "kern.matern32"));
+    node.set("variance", CJson::makeNumber(k->getByPath("variance")));
+    node.set("lengthscale", CJson::makeNumber(k->getByPath("lengthscale")));
+    return node;
+  }
+  if(type == "rbfard")
+  {
+    node.set("type", CJson::makeString("kern.rbf"));
+    node.set("variance", CJson::makeNumber(k->getByPath("variance")));
+    const double base = k->getByPath("lengthscale");
+    CJson ls = CJson::makeArray();
+    for(unsigned int j = 0; j < inDim; ++j)
+      ls.push(CJson::makeNumber(base / std::sqrt(k->getByPath("inputScale_" + to_string(j)))));
+    node.set("lengthscale", ls);
+    node.set("ARD", CJson::makeBool(true));
+    return node;
+  }
+  if(type == "bias")
+  {
+    node.set("type", CJson::makeString("kern.bias"));
+    node.set("variance", CJson::makeNumber(k->getByPath("variance")));
+    return node;
+  }
+  fail(where, "kernel type '" + type + "' has no wire-format mapping yet");
+}
+
+}  // namespace
+
+CJson CInterchange::exportModel(const CGp& model)
+{
+  if(model.getOutputDim() != 1)
+    fail("export", "only single-output models are supported");
+  if(!model.isGaussianNoise())
+    fail("export", "only Gaussian likelihoods are supported");
+  if(model.getApproximationType() == CGp::PITC)
+    fail("export", "PITC is not supported");
+  if(model.getScaleVal(0) != 1.0 || model.getBiasVal(0) != 0.0)
+    fail("export", "the model centres or scales its targets (bias/scale); the wire format is "
+         "zero-mean and unscaled. Learn with --Centre-data 0 and --Scale-data 0.");
+  const bool sparse = model.isSparseApproximation();
+
+  CJson doc = CJson::makeObject();
+  doc.set("schema_version", CJson::makeString(schemaVersion()));
+  doc.set("type", CJson::makeString(sparse ? "models.sparse_gp_regression" : "models.gp_regression"));
+  doc.set("input_dim", CJson::makeNumber(model.getInputDim()));
+  doc.set("output_dim", CJson::makeNumber(1));
+  if(sparse)
+  {
+    const char* names[] = {"ftc", "dtc", "fitc", "pitc", "dtcvar"};
+    doc.set("approximation", CJson::makeString(names[model.getApproximationType()]));
+    const char* linalg = model.getSparseLinalgMode() == CGp::SparseLinalgLQ ? "lq"
+        : model.getSparseLinalgMode() == CGp::SparseLinalgStableFactor ? "stable" : "legacy";
+    doc.set("sparse_linalg", CJson::makeString(linalg));
+    CMatrix Z(model.getNumActive(), model.getInputDim());
+    for(unsigned int i = 0; i < Z.getRows(); ++i)
+      for(unsigned int j = 0; j < Z.getCols(); ++j)
+        Z.setVal(model.X_u.getVal(i, j), i, j);
+    doc.set("inducing_inputs", matrixToJson(Z));
+  }
+  doc.set("kernel", exportKernel(model.getKernel(), model.getInputDim(), "kernel"));
+  CJson lik = CJson::makeObject();
+  lik.set("type", CJson::makeString("likelihoods.gaussian"));
+  lik.set("variance", CJson::makeNumber(model.getByPath("likelihood.variance")));
+  doc.set("likelihood", lik);
+  CJson data = CJson::makeObject();
+  data.set("X", matrixToJson(*model.pX));
+  data.set("Y", matrixToJson(*model.py));
+  doc.set("data", data);
+
+  // Verify: the document must reproduce the source model's log likelihood.
+  const double want = -model.computeObjectiveVal();
+  const double got = fromJson(doc)->logLikelihood();
+  if(!(std::fabs(got - want) <= 1e-8 * (1.0 + std::fabs(want))))
+    fail("export", "verification failed: source log likelihood " + to_string(want)
+         + " but the exported document gives " + to_string(got)
+         + " (a semantic difference the mapping cannot express)");
+  return doc;
 }

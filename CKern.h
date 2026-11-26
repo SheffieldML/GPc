@@ -707,6 +707,11 @@ class CComponentKern : public CKern
   {
     return components.size();
   }
+  // Read-only access to a component (CIP-0016 export walks the kernel tree).
+  const CKern* getComponent(unsigned int i) const
+  {
+    return components.at(i).get();
+  }
 
   
   

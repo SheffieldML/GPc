@@ -61,7 +61,7 @@ With `--residual off`, each layer’s predictive variance omits the Nyström lef
 
 ## Jacobian diagnostic (V7)
 
-`CDeepGp::jacobianSpread` reports the median log singular-value spread of the prior map under identity mean maps. With \(\chi=1/L\) on every layer the spread stays \(O(1)\) in depth (CIP-0035 table; `testDeepGp` Phase 4 V7).
+`CDeepGp::jacobianSpread` reports the median log singular-value spread of the prior map under identity mean maps. Rectangular maps (\(D_\mathrm{in}\neq D_\mathrm{out}\)) are allowed; the spread is over the \(\min(D_\mathrm{in},D_\mathrm{out})\) singular values. With \(\chi=1/L\) on every layer the spread stays \(O(1)\) in depth (CIP-0035 table; `testDeepGp` Phase 4 V7).
 
 ## Python façade
 
@@ -72,6 +72,8 @@ m.optimize(iters=100, adam_lr=1e-2, seed=1)
 mu, var = m.predict(X)
 m.save("sinc_deep.model")
 ```
+
+`predict` returns the variance of a new observation (for a Gaussian likelihood it includes \(1/\beta\)); `predict_noiseless` returns the latent-function variance. `hidden` may exceed the input dimension: the PCA mean path uses every input direction and zero-pads the extra hidden units, which the GP layer alone drives. Successive `optimize` calls continue the same Adam state (`reset_optimizer()` restarts it), so time-to-target curves can be recorded in chunks. For weight-space layers, `learn_window_width=True` (tied) or `learn_window_widths=True` (per-unit) learns the window widths.
 
 See [`python/examples/deepgp_sinc.py`](../../python/examples/deepgp_sinc.py) and `python/tests/test_deepgp.py`. Probit / ordered finals: `likelihood='probit'` or `'ordered'`.
 

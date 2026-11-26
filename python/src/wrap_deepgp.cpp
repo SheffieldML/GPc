@@ -111,11 +111,22 @@ PyDeepGP::PyDeepGP(
     bool drop_residual,
     const std::string& likelihood,
     unsigned int num_categories,
-    int verbosity)
+    int verbosity,
+    bool learn_window_width,
+    bool learn_window_widths)
   : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)),
-    inducingType(inducing), likelihoodType(likelihood)
+    inducingType(inducing), likelihoodType(likelihood),
+    learnWindowWidth(learn_window_width),
+    learnWindowWidths(learn_window_widths)
 {
   checkXY(X, Y);
+  if(learn_window_width && learn_window_widths)
+    throw ndlexceptions::Error(
+        "Pass only one of learn_window_width=True (tied) or "
+        "learn_window_widths=True (untied).");
+  if((learn_window_width || learn_window_widths) && inducing != "weightspace")
+    throw ndlexceptions::Error(
+        "learn_window_width(s) is only supported with inducing='weightspace'.");
   if(layers < 1)
     throw ndlexceptions::Error("layers must be >= 1");
   if(inducing != "points" && inducing != "weightspace")
@@ -166,6 +177,9 @@ PyDeepGP::PyDeepGP(
     if(inducing != "points")
       model->setLayerInducingType(ell, inducing);
   }
+  if(learn_window_width || learn_window_widths)
+    for(unsigned int ell = 0; ell < layers; ++ell)
+      model->setLayerLearnWindowWidth(ell, true, learn_window_widths);
   if(drop_residual)
     model->setDropResidual(true);
 
@@ -289,13 +303,17 @@ void PyDeepGP::optimize(unsigned int iters, int batch_size,
     });
   }
 
-  CAdam adam(adam_lr);
-  adam.setBatchSize(B);
-  adam.setMaxIters(iters);
-  adam.setSeed(seed);
+  // CIP-003C: one CAdam per model so moments and step count survive across
+  // calls (chunked optimize == one long run for fixed seed schedule).
+  if(!adam)
+    adam = std::make_unique<CAdam>(adam_lr);
+  adam->setLearningRate(adam_lr);
+  adam->setBatchSize(B);
+  adam->setMaxIters(iters);
+  adam->setSeed(seed);
   {
     py::gil_scoped_release release;
-    adam.maximise(*model);
+    adam->maximise(*model);
   }
   model->clearProgressObserver();
 }
@@ -322,6 +340,27 @@ std::pair<py::array_t<double>, py::array_t<double>> PyDeepGP::predict(
   const bool addNoise = (likelihoodType == "gaussian");
   model->predictMeanVar(Xt, mu, var, samples, seed, addNoise);
   return {matrixToNumpy(mu), matrixToNumpy(var)};
+}
+
+std::pair<py::array_t<double>, py::array_t<double>> PyDeepGP::predict_noiseless(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+    unsigned int samples,
+    uint64_t seed) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  CMatrix Xt = matrixFromNumpy(Xtest);
+  if(Xt.getCols() != model->getInputDim())
+    throw ndlexceptions::Error("Xtest input dimension does not match training X");
+  CMatrix mu, var;
+  model->predictMeanVar(Xt, mu, var, samples, seed, false);
+  return {matrixToNumpy(mu), matrixToNumpy(var)};
+}
+
+void PyDeepGP::reset_optimizer()
+{
+  if(adam)
+    adam->resetState();
 }
 
 void PyDeepGP::save(const std::string& path) const
@@ -461,7 +500,9 @@ void bind_deepgp(py::module_& m)
                     bool,
                     const std::string&,
                     unsigned int,
-                    int>(),
+                    int,
+                    bool,
+                    bool>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("layers") = 2,
@@ -474,7 +515,9 @@ void bind_deepgp(py::module_& m)
            py::arg("drop_residual") = false,
            py::arg("likelihood") = "gaussian",
            py::arg("num_categories") = 3,
-           py::arg("verbosity") = 0)
+           py::arg("verbosity") = 0,
+           py::arg("learn_window_width") = false,
+           py::arg("learn_window_widths") = false)
       .def("optimize",
            &PyDeepGP::optimize,
            py::arg("iters") = 100,
@@ -495,8 +538,23 @@ void bind_deepgp(py::module_& m)
            py::arg("Xtest"),
            py::arg("samples") = 0,
            py::arg("seed") = 0,
-           "Predictive mean/variance at Xtest. samples=0 uses the mean path; "
-           "samples>=1 mixes S hidden-layer draws (CIP-0035).")
+           "Predictive mean/variance at Xtest of a new observation: for a Gaussian "
+           "likelihood the variance includes 1/beta; other likelihoods return "
+           "the latent variance. samples=0 uses the mean path; samples>=1 mixes "
+           "S hidden-layer draws (CIP-0035). See predict_noiseless().")
+      .def("predict_noiseless",
+           &PyDeepGP::predict_noiseless,
+           py::arg("Xtest"),
+           py::arg("samples") = 0,
+           py::arg("seed") = 0,
+           "Latent-function predictive mean/variance (no observation noise); "
+           "otherwise as predict().")
+      .def("reset_optimizer", &PyDeepGP::reset_optimizer,
+           "Discard Adam moments and step count (kept between optimize calls "
+           "by default).")
+      .def_property_readonly("optimizer_steps", &PyDeepGP::optimizer_steps)
+      .def_property_readonly("learn_window_width", &PyDeepGP::learn_window_width)
+      .def_property_readonly("learn_window_widths", &PyDeepGP::learn_window_widths)
       .def("save", &PyDeepGP::save, py::arg("path"), "Write deepgp .model stream.")
       .def_static("load", &PyDeepGP::load, py::arg("path"),
                   "Load a deepgp .model stream.")

@@ -78,7 +78,8 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   // Phase 4 V7: prior Jacobian log-singular-value spread (max−min). Each probe
   // draws whitened v~N(0,I) per layer and finite-differences the map
   // h ↦ m(h)+A(h)^T v (residual off). Independent of the trained q(v).
-  // Requires square Din==Dout. Returns median over nProbe inputs.
+  // Rectangular Din!=Dout allowed (min(Din,Dout) singular values).
+  // Returns median over nProbe inputs.
   double jacobianSpread(unsigned int nProbe = 32, uint64_t probeSeed = 0) const;
 
   // Predictive mean/variance at Xstar (N* x Din).

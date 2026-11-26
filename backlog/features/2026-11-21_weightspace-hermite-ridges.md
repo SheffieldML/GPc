@@ -1,12 +1,12 @@
 ---
 id: "2026-11-21_weightspace-hermite-ridges"
 title: "Hermite ridge windows as CIP-0028 follow-on (stable K_uu)"
-status: "Proposed"
+status: "In Progress"
 priority: "Medium"
 created: "2026-11-21"
-last_updated: "2026-11-21"
+last_updated: "2026-11-26"
 category: "features"
-related_cips: ["0028", "0032"]
+related_cips: ["0028", "0032", "003D"]
 owner: "Neil Lawrence"
 dependencies: []
 tags:
@@ -26,7 +26,7 @@ Gaussian ridge windows in whitened weight space ([CIP-0028](../../cip/cip0028.md
 
 ## Acceptance Criteria
 
-- [ ] Separate CIP drafted (optional inducing type alongside Gaussian ridge)
+- [x] Separate CIP drafted (optional inducing type alongside Gaussian ridge): [CIP-003D](../../cip/cip003D.md)
 - [ ] Closed forms + MC/quadrature gates; capacity rule per degree
 - [ ] Document trade-off vs Gaussian ridges (large \(\|\hat{\mathbf x}\|\), no MLP mean story)
 
@@ -40,3 +40,7 @@ Gaussian ridge windows in whitened weight space ([CIP-0028](../../cip/cip0028.md
 ### 2026-11-21
 
 Task created after ridge \(K_{uu}\) stability diagnosis; Gaussian guards land with CIP-0032 follow-on commits.
+
+### 2026-11-26
+
+Superseded by [CIP-003D](../../cip/cip003D.md) (Accepted). Implementation is tracked in `2026-11-26_cip003d-phase1-layout` through `phase6-reproduction`; the closed-form and capacity acceptance criteria above are covered there.

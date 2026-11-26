@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-26"
 id: "003D"
 last_updated: "2026-11-26"
-status: "Proposed"
+status: "Accepted"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0028", "0032", "0035", "0037", "003C"]
@@ -23,7 +23,7 @@ title: "Hermite ridge windows as a fixed weight-space inducing family"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
+- [x] Accepted - Approved, ready to start work
 - [ ] In Progress - Actively being implemented
 - [ ] Implemented - Code changes complete
 - [ ] Closed - Verified and merged
@@ -62,6 +62,32 @@ Work in the MLP kernel's augmented input \(\hat{\mathbf x}=(\sqrt{w/D_\text{in}}
 
 Degree 1 takes `min(D', M)` windows with an orthonormal frame of directions (reusing the Gram–Schmidt blocks of `makeRidgeInit`). Remaining windows are dealt round-robin to degrees 3, 5, 7, 9 up to a per-degree capacity \(\lfloor\binom{D'+k-1}{k}/2\rfloor\), with random unit directions. `kmax=9` as in the prototype. If \(M\) exceeds total capacity, construction throws rather than truncating (assert, do not silently shrink).
 
+### Ask versus delivered: errors and warnings
+
+Principle: if what we build differs from what the caller asked for, we say so. We never adjust a request silently, and we never catch our own assertion to continue with a default (project tenet: assert invariants and verify against reference). Two classes:
+
+**Errors (throw; nothing is adjusted).**
+
+| Id | Condition | Error |
+|---|---|---|
+| E1 | `M` exceeds total capacity for \(D'\) | `ndlexceptions::Error` naming `d`, `M`, total capacity and per-degree capacities |
+| E2 | Kernel is not `CMlpKern` / `CMlpardKern` (including a compound with no MLP signal) | `NotImplementedError` naming the kernel type |
+| E3 | Window-width options (`window_width`, `learn_window_width(s)`) passed with Hermite | `Error` saying Hermite windows have no width |
+| E4 | `inducing_fixed=False` passed *explicitly* with Hermite (windows have no free parameters) | `Error`; if the argument is left at its default, Hermite resolves to fixed and `str(model)` says so |
+| E5 | Post-construction audit fails: delivered `numInducing() != M`, any degree even or below 1, any \(\mathbf v\) not unit norm, or the \(K_{uu}\) block Cholesky fails | `Error` (an internal-invariant assert, kept in release builds because the checks are \(O(M^2)\) once at construction) |
+| E6 | Stream load: `V` rows, `ks` length and `numActive` disagree, or `ks` invalid | `StreamFormatError` |
+
+**Warnings (proceed, but loudly).** C++ records a `HermiteLayoutReport` on the object (degree histogram, fill fraction per degree, \(\kappa(K_{uu})\), captured-variance fraction on the training inputs) and writes the warnings to `cerr` when verbosity is at least 1, as `CGp::maybeWarnDualObservationNoise` does. The Python façade reads the report and calls `warnings.warn` unconditionally, because stderr from C++ is easy to miss in a notebook.
+
+| Id | Condition | Warning |
+|---|---|---|
+| W1 | \(\kappa(K_{uu})>10^4\) (the CIP-0028 budget) | conditioning, with the value |
+| W2 | Total fill above 90% of capacity | `M` is near the capacity limit; conditioning degrades |
+| W3 | Captured-variance fraction on the training inputs below a threshold | windows capture little of the prior variance (the CIP-0028 low-dimension plateau). The threshold is a placeholder at 0.5; phase 6 calibrates it against the prototype sweeps |
+| W4 | Hermite used in a hidden layer of a multi-layer `DeepGP` | CIP-0035 finds fixed windows underfit in hidden layers; allowed for reproduction |
+
+`describe()` / `str(model)` always show the delivered layout (degree histogram, \(\kappa\), captured variance) so a user who never reads warnings can still see what they got.
+
 ### C++ interface
 
 A new class `CInducingHermite : public CInducing` in `CInducing.h/.cpp`, not a subclass of `CInducingWeightSpace`: it has no \(s\), no offset, and no learnable parameters, so inheriting the ridge's width machinery would be misleading. State is `V` (M×D') and `ks` (M). `typeName()` is `"hermite"`; `kuuDependsOnKernel()` is false; `getNumParams()` is 0 (fixed windows, as in the prototype). `computeKuu` is kernel-free; `computeKuf` / `computeKux` use the MLP kernel's \(w\), \(b\), \(\sigma^2\) the same way the ridge hooks do; `gradFromKuuKuf` routes gradients to the kernel parameters only, and leaves `gZ` empty. It requires `CMlpKern`; any other kernel throws.
@@ -92,6 +118,7 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 - Regression sweep over \(M\) and \(d\) (the lesson of CIP-003C item 1): construction succeeds or throws a named capacity error for every \((M,d)\), with no zero rows.
 - Reference: reproduce the prototype's fixed-Hermite figures from CIP-0035 within stated tolerance; where they differ, say so in the CIP rather than loosening the test.
 - Stream round-trip: write, read, and compare `K_{uu}` and predictions with `equals`.
+- Ask-versus-delivered: one test per error E1-E6 (each must throw, with the named fields in the message) and per warning W1-W4 (each must fire from a constructed case, and must not fire on a well-conditioned control). A test also asserts that `numInducing()` equals the requested `M` whenever construction succeeds.
 
 ## Related Requirements
 
@@ -103,7 +130,7 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 **Convention mismatch (new, must be handled in phase 2).** The prototype kernel is \(\sigma^2\tfrac2\pi\arcsin\!\big(2\hat x\!\cdot\!\hat x'/\sqrt{(1+2\|\hat x\|^2)(1+2\|\hat x'\|^2)}\big)\). GPc's `CMlpKern::computeElement` is \(\sigma^2\arcsin\!\big(\hat x\!\cdot\!\hat x'/\sqrt{(1+\|\hat x\|^2)(1+\|\hat x'\|^2)}\big)\): no \(2/\pi\) prefactor, and the factor 2 is absorbed in the weight and bias variances. So \(\rho\), \(c_k\) and the \(\sqrt{\sigma^2}\) prefactor above cannot be copied from the prototype; they must be re-derived for GPc's form (the ridge code's \(B=\sqrt{\sigma^2\pi/2}\) shows the same adjustment). The quadrature gate in phase 2 is what settles this; the prototype's figures are compared only after rescaling.
 
-**Per-degree capacity (decision: keep fixed for now, store `ks` in the stream).** The rule is \(\lfloor\binom{D'+k-1}{k}/2\rfloor\) per odd degree \(k\le9\), degree 1 capped at \(D'\). Implications:
+**Per-degree capacity (decision, agreed 2026-11-26: keep fixed for now, store `ks` in the stream; over-capacity and near-capacity are error E1 and warning W2).** The rule is \(\lfloor\binom{D'+k-1}{k}/2\rfloor\) per odd degree \(k\le9\), degree 1 capped at \(D'\). Implications:
 
 | input dim \(d\) | total capacity (\(k\le 9\)) | without the \(/2\) |
 |---|---|---|
@@ -113,7 +140,7 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 | 5 | 1557 | 3108 |
 | 8 | 16106 | 32206 |
 
-- *Low-dimensional inputs run out.* A 1-D problem (the sinc tutorials) cannot use more than 16 Hermite windows, a 2-D problem more than 63. The paper-scale \(M=64,128\) with hidden width 5 (\(D'=6\), capacity 1557) is unaffected. We assert on this: `M` above capacity throws a named error. The prototype instead leaves its allocation loop with `rest > 0` and silently returns fewer than `M` windows (`self.M = len(ks)`), so reference runs at low \(d\) may have used fewer windows than requested; check before comparing.
+- *Low-dimensional inputs run out.* A 1-D problem (the sinc tutorials) cannot use more than 16 Hermite windows, a 2-D problem more than 63. The paper-scale \(M=64,128\) with hidden width 5 (\(D'=6\), capacity 1557) is unaffected. We assert on this: `M` above capacity throws a named error (E1). The prototype instead leaves its allocation loop with `rest > 0` and silently returns fewer than `M` windows (`self.M = len(ks)`), so reference runs at low \(d\) may have used fewer windows than requested; check before comparing.
 - *The \(/2\) is a conservative margin, not a theorem.* Distinct non-parallel unit directions give a positive-definite degree-\(k\) block up to \(\binom{D'+k-1}{k}\) (the dimension of symmetric \(k\)-tensors), so the true rank bound is twice the stated capacity. Random directions near the true bound give a poorly conditioned block; halving keeps \(\kappa(K_{uu})\) in the tens to hundreds. We have not derived the factor, so the CIP should test \(\kappa\) against fill fraction rather than assert it.
 - *High degrees carry little variance.* \(K_{fu}\propto c_k\rho^k\) with \(|\rho|<1\), so degree 7 and 9 windows add little unless \(\|\hat x\|\) is large. Above a few hundred windows in low \(d\), extra \(M\) buys little captured variance; this is the low-dimension plateau CIP-0028 describes for fixed windows.
 - *Fixed means reproducible.* With a seed, the layout is deterministic and matches the prototype's design, which is what the reproduction gate wants. Users cannot trade degree mix against conditioning.
@@ -121,7 +148,8 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 ## Implementation Status
 
-- [ ] Layout and \(c_k\) in C++
+- [ ] Layout and \(c_k\) in C++ (re-derived for GPc's kernel convention)
+- [ ] Ask-versus-delivered errors E1-E6 and warnings W1-W4
 - [ ] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates
 - [ ] Kernel-parameter gradients and `checkGradients`
 - [ ] `CGp` / `CDeepGp` / stream / CLI wiring

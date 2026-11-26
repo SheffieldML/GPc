@@ -155,6 +155,25 @@ void testNegative()
   }
   {
     CJson d = CJson::parse(kAnalytic);
+    d.set("mean", CJson::parse("{\"type\": \"mean.constant\", \"value\": 1.0}"));
+    d.set("normalizer", CJson::parse("{\"type\": \"normalizer.center\", \"mean\": 1.0}"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "cannot both be present"),
+           "negative: mean together with normalizer");
+  }
+  {
+    CJson d = CJson::parse(kAnalytic);
+    d.set("normalizer", CJson::parse("{\"type\": \"normalizer.standardize\", \"mean\": 0.0, \"std\": 0.0}"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "must be positive"),
+           "negative: non-positive normalizer std");
+  }
+  {
+    CJson d = CJson::parse(kAnalytic);
+    d.set("mean", CJson::parse("{\"type\": \"mean.linear\"}"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "only mean.constant"),
+           "negative: unsupported mean type");
+  }
+  {
+    CJson d = CJson::parse(kAnalytic);
     d.at("kernel").erase("lengthscale");
     expect(throwsWith([&] { CInterchange::fromJson(d); }, "lengthscale"),
            "negative: missing lengthscale (truncated parameters)");

@@ -289,6 +289,33 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
   m->noise.reset(new CGaussianNoise(&m->Y));
   m->noise->setBiasVal(0.0, 0);
 
+  // Target transform. mean.constant c and normalizer both map onto GPc's stored
+  // bias/scale (m = (y - bias)/scale). They are exclusive in 0.1: the order in
+  // which a mean function and a normalizer apply is not yet specified.
+  double bias = 0.0, scale = 1.0;
+  if(doc.has("mean") && doc.has("normalizer"))
+    fail("document", "'mean' and 'normalizer' cannot both be present in schema 0.1");
+  if(doc.has("mean"))
+  {
+    const CJson& mn = doc.at("mean");
+    if(need(mn, "type", "mean").asString() != "mean.constant")
+      fail("mean.type", "only mean.constant is supported");
+    bias = numberAt(need(mn, "value", "mean"), "mean.value");
+  }
+  if(doc.has("normalizer"))
+  {
+    const CJson& nz = doc.at("normalizer");
+    const string nt = need(nz, "type", "normalizer").asString();
+    bias = numberAt(need(nz, "mean", "normalizer"), "normalizer.mean");
+    if(nt == "normalizer.standardize")
+      scale = positiveAt(need(nz, "std", "normalizer"), "normalizer.std");
+    else if(nt != "normalizer.center")
+      fail("normalizer.type", "'" + nt + "' is not supported");
+    // Density of y from the density of (y - mean)/std.
+    m->targetJacobian = -static_cast<double>(m->Y.getRows())
+        * static_cast<double>(m->Y.getCols()) * std::log(scale);
+  }
+
   if(!sparse)
   {
     if(doc.has("approximation") && doc.at("approximation").asString() != "ftc")
@@ -321,12 +348,14 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
     m->pgp->setInducingFixed(false);
     m->pgp->setByPath("likelihood.variance", sigma2);
   }
+  m->pgp->setBiasVal(bias, 0);
+  m->pgp->setScaleVal(scale, 0);
   return m;
 }
 
 double CInterchange::logLikelihood() const
 {
-  return -pgp->computeObjectiveVal();
+  return -pgp->computeObjectiveVal() + targetJacobian;
 }
 
 void CInterchange::predict(const CMatrix& Xnew, vector<double>& mean, vector<double>& var) const
@@ -476,9 +505,12 @@ CJson CInterchange::exportModel(const CGp& model)
     fail("export", "only Gaussian likelihoods are supported");
   if(model.getApproximationType() == CGp::PITC)
     fail("export", "PITC is not supported");
-  if(model.getScaleVal(0) != 1.0 || model.getBiasVal(0) != 0.0)
-    fail("export", "the model centres or scales its targets (bias/scale); the wire format is "
-         "zero-mean and unscaled. Learn with --Centre-data 0 and --Scale-data 0.");
+  if(model.isOutputScaleLearnt())
+    fail("export", "the output scale is a learnt parameter with GPc's own prior term; "
+         "the wire format only carries a fixed normalizer");
+  if(!(model.getScaleVal(0) > 0.0))
+    fail("export", "a non-positive output scale cannot be written as a normalizer");
+  const double outBias = model.getBiasVal(0), outScale = model.getScaleVal(0);
   const bool sparse = model.isSparseApproximation();
 
   CJson doc = CJson::makeObject();
@@ -508,9 +540,20 @@ CJson CInterchange::exportModel(const CGp& model)
   data.set("X", matrixToJson(*model.pX));
   data.set("Y", matrixToJson(*model.py));
   doc.set("data", data);
+  double jacobian = 0.0;
+  if(outBias != 0.0 || outScale != 1.0)
+  {
+    CJson nz = CJson::makeObject();
+    nz.set("type", CJson::makeString(outScale == 1.0 ? "normalizer.center" : "normalizer.standardize"));
+    nz.set("mean", CJson::makeNumber(outBias));
+    if(outScale != 1.0)
+      nz.set("std", CJson::makeNumber(outScale));
+    doc.set("normalizer", nz);
+    jacobian = -static_cast<double>(model.getNumData()) * std::log(outScale);
+  }
 
   // Verify: the document must reproduce the source model's log likelihood.
-  const double want = -model.computeObjectiveVal();
+  const double want = -model.computeObjectiveVal() + jacobian;
   const double got = fromJson(doc)->logLikelihood();
   if(!(std::fabs(got - want) <= 1e-8 * (1.0 + std::fabs(want))))
     fail("export", "verification failed: source log likelihood " + to_string(want)

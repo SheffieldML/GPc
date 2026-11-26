@@ -73,6 +73,7 @@ class CInterchange
   std::unique_ptr<CCmpndKern> kern;
   std::unique_ptr<CGaussianNoise> noise;
   bool hasWhite = false;
+  double targetJacobian = 0.0;  // -N log s of a normalizer, added to the reported log likelihood
   std::vector<CKern*> leaves;  // atomic kernels in document order (owned by kern)
   std::unique_ptr<CGp> pgp;    // declared last: destroyed first
 

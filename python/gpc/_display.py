@@ -57,6 +57,10 @@ def format_model_description(
     lines.append(f"Number of Parameters : {n_params}")
     lines.append(f"Number of Optimization Parameters : {n_free}")
     lines.append("Updates : True")
+    # CIP-003D: the delivered Hermite layout is always shown (not only on warning).
+    for hl in getattr(desc, "header_lines", []) or []:
+        if "ermite" in hl:
+            lines.append(hl)
     lines.append("Parameters:")
 
     # Column widths.

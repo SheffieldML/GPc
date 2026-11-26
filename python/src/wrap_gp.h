@@ -137,7 +137,7 @@ public:
       py::array_t<double, py::array::c_style | py::array::forcecast> Y,
       py::array_t<double, py::array::c_style | py::array::forcecast> Z,
       const std::string& approx = "dtcvar",
-      bool inducing_fixed = false,
+      py::object inducing_fixed = py::none(),
       int verbosity = 0,
       py::object kernel = py::str("rbf"),
       const std::string& inducing = "points",
@@ -146,6 +146,11 @@ public:
       bool learn_window_width = false,
       bool learn_window_widths = false,
       const std::string& sparse_linalg = "lq");
+
+  std::vector<std::string> hermite_warnings() const
+  {
+    return model ? model->hermiteWarnings() : std::vector<std::string>();
+  }
 
   void set_by_path(const std::string& path, double val);
   double get_by_path(const std::string& path) const;

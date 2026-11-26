@@ -124,13 +124,17 @@ PyDeepGP::PyDeepGP(
     throw ndlexceptions::Error(
         "Pass only one of learn_window_width=True (tied) or "
         "learn_window_widths=True (untied).");
+  if((learn_window_width || learn_window_widths) && inducing == "hermite")
+    throw ndlexceptions::Error(
+        "Hermite inducing (E3): Hermite windows have no width; learn_window_width(s) "
+        "cannot be used with inducing='hermite'.");
   if((learn_window_width || learn_window_widths) && inducing != "weightspace")
     throw ndlexceptions::Error(
         "learn_window_width(s) is only supported with inducing='weightspace'.");
   if(layers < 1)
     throw ndlexceptions::Error("layers must be >= 1");
-  if(inducing != "points" && inducing != "weightspace")
-    throw ndlexceptions::Error("inducing must be 'points' or 'weightspace'");
+  if(inducing != "points" && inducing != "weightspace" && inducing != "hermite")
+    throw ndlexceptions::Error("inducing must be 'points', 'weightspace' or 'hermite'");
   if(!(chi > 0.0) || !(beta > 0.0))
     throw ndlexceptions::Error("chi and beta must be positive");
 
@@ -139,6 +143,11 @@ PyDeepGP::PyDeepGP(
      && !(kernelType == "mlp" || kernelType == "MLP"))
     throw ndlexceptions::Error(
         "inducing='weightspace' requires kernel='mlp'");
+
+  if(inducing == "hermite"
+     && !(kernelType == "mlp" || kernelType == "MLP"))
+    throw ndlexceptions::Error(
+        "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '" + kernelType + "'.");
 
   const unsigned int Din = X.getCols();
   const unsigned int Dout = Y.getCols();
@@ -391,6 +400,51 @@ std::unique_ptr<PyDeepGP> PyDeepGP::load(const std::string& path)
   return self;
 }
 
+static unsigned int layerParamIndex(const CKern& k, const std::string& name)
+{
+  for(unsigned int i = 0; i < k.getNumParams(); i++)
+    if(k.getParamName(i) == name)
+      return i;
+  throw ndlexceptions::Error("Unknown kernel parameter '" + name + "'.");
+}
+
+std::vector<std::string> PyDeepGP::layer_param_paths(unsigned int ell) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  const CKern* k = model->layer(ell).getKern();
+  std::vector<std::string> out;
+  for(unsigned int i = 0; i < k->getNumParams(); i++)
+    out.push_back(k->getParamName(i));
+  return out;
+}
+
+double PyDeepGP::layer_kl(unsigned int ell) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  if(ell >= model->getNumLayers())
+    throw ndlexceptions::Error("layer index out of range");
+  return model->layer(ell).klQ();
+}
+
+double PyDeepGP::get_layer_param(unsigned int ell, const std::string& path) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  const CKern* k = model->layer(ell).getKern();
+  return k->getParam(layerParamIndex(*k, path));
+}
+
+void PyDeepGP::set_layer_param(unsigned int ell, const std::string& path, double val)
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  CKern* k = model->layer(ell).getKern();
+  k->setParam(val, layerParamIndex(*k, path));
+  model->layer(ell).updateKernelMatrices();
+}
+
 void PyDeepGP::set_drop_residual(bool val)
 {
   if(!model)
@@ -434,6 +488,12 @@ ModelDescription PyDeepGP::describe() const
   for(unsigned int ell = 0; ell <= model->getNumLayers(); ++ell)
     h1 << " " << model->getHiddenDim(ell);
   d.headerLines.push_back(h1.str());
+  // CIP-003D: always show the delivered Hermite layout, so a user who never reads
+  // warnings can still see what was built.
+  for(unsigned int ell = 0; ell < model->getNumLayers(); ++ell)
+    if(model->getLayerInducingType(ell) == "hermite")
+      d.headerLines.push_back("layer " + std::to_string(ell) + " hermite layout: " +
+                              model->layer(ell).hermiteLayoutDescription());
   d.hasLogLikelihood = true;
   d.logLikelihood = model->elboEstimate();
   d.optNumParams = static_cast<int>(model->getStochasticNumParams());
@@ -559,6 +619,13 @@ void bind_deepgp(py::module_& m)
       .def_static("load", &PyDeepGP::load, py::arg("path"),
                   "Load a deepgp .model stream.")
       .def("set_drop_residual", &PyDeepGP::set_drop_residual, py::arg("value"))
+      .def("layer_param_paths", &PyDeepGP::layer_param_paths, py::arg("layer"),
+           "Kernel parameter paths of one layer (as accepted by set_layer_param).")
+      .def("get_layer_param", &PyDeepGP::get_layer_param, py::arg("layer"), py::arg("path"))
+      .def("layer_kl", &PyDeepGP::layer_kl, py::arg("layer"),
+           "KL(q(v) || N(0, I)) summed over the layer outputs (nats).")
+      .def("set_layer_param", &PyDeepGP::set_layer_param, py::arg("layer"), py::arg("path"),
+           py::arg("value"), "Set one kernel parameter of one layer (before optimisation).")
       .def_property_readonly("drop_residual", &PyDeepGP::drop_residual)
       .def("jacobian_spread",
            &PyDeepGP::jacobian_spread,
@@ -566,6 +633,9 @@ void bind_deepgp(py::module_& m)
            py::arg("probe_seed") = 0,
            "Median prior Jacobian log-singular-value spread (V7).")
       .def("describe", &PyDeepGP::describe)
+      .def("hermite_warnings",
+           [](const PyDeepGP& self) { return self.hermite_warnings(); },
+           "W1-W4 (CIP-003D) as strings for Hermite layers; empty otherwise.")
       .def("__str__", &PyDeepGP::to_string)
       .def("__repr__", &PyDeepGP::to_string)
       .def_property_readonly("n", &PyDeepGP::n)

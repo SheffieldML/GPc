@@ -72,6 +72,18 @@ void CSvgp::setInducing(CInducing* pInd)
   updateKernelMatrices();
 }
 
+vector<string> CSvgp::hermiteWarnings() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  return ph ? ph->warnings(*pkern, *pX) : vector<string>();
+}
+
+string CSvgp::hermiteLayoutDescription() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  return ph ? ph->describeLayout(*pkern, *pX) : string();
+}
+
 void CSvgp::setInducingType(const string& typeName)
 {
   if(typeName == "points")
@@ -98,6 +110,16 @@ void CSvgp::setInducingType(const string& typeName)
     const unsigned int d = getInputDim();
     const double s0 = CInducingWeightSpace::makeRidgeInit(W, numInducing, d, 7u);
     setInducing(new CInducingWeightSpace(W, s0, false, true));
+  }
+  else if(typeName == "hermite")
+  {
+    // CIP-003D: fixed Hermite ridge windows. E2 / E1 / E5 raise before anything changes.
+    const unsigned int d = getInputDim();
+    CInducingHermite::checkKernelSupport(*pkern, d);
+    CMatrix V;
+    vector<unsigned int> ks;
+    CInducingHermite::makeLayout(V, ks, numInducing, d);
+    setInducing(new CInducingHermite(V, ks));
   }
   else
     throw ndlexceptions::Error("CSvgp::setInducingType: unknown type \"" + typeName + "\"");
@@ -971,10 +993,14 @@ void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
   unsigned int counter = offset;
   const unsigned int M = gZ.getRows();
   const unsigned int d = gZ.getCols();
+  // Families with fixed windows (e.g. Hermite) have no learnable inducing parameters;
+  // never pack gZ past what the optimiser vector reserves for them.
+  const unsigned int nInd = pInducing->getNumParams();
   for(unsigned int j = 0; j < d; j++)
     for(unsigned int i = 0; i < M; i++)
-      gFlat.setVal(gZ.getVal(i, j), counter++);
-  while(counter < offset + pInducing->getNumParams())
+      if(counter < offset + nInd)
+        gFlat.setVal(gZ.getVal(i, j), counter++);
+  while(counter < offset + nInd)
     gFlat.setVal(0.0, counter++);
 }
 
@@ -1271,26 +1297,12 @@ void CSvgp::qParamsGrad(CMatrix& gQ, const vector<unsigned int>& batch) const
   vector<CMatrix> gS;
   dataTermQGrads(batch, gM, gS);
 
-  // Subtract KL grads: ∂KL/∂m = m, ∂KL/∂S = 0.5 (I - S^{-1}).
-  for(unsigned int j = 0; j < outputDim; j++)
-  {
-    CMatrix cholS;
-    upperCholOfS(j, cholS);
-    CMatrix Sinv(M, M);
-    Sinv.setSymmetric(true);
-    Sinv.pdinv(cholS);
-
-    for(unsigned int r = 0; r < M; r++)
-      gM.setVal(gM.getVal(r, j) - qMean.getVal(r, j), r, j);
-
-    for(unsigned int r = 0; r < M; r++)
-      for(unsigned int s = 0; s < M; s++)
-      {
-        const double dkl = 0.5 * ((r == s ? 1.0 : 0.0) - Sinv.getVal(r, s));
-        gS[j].setVal(gS[j].getVal(r, s) - dkl, r, s);
-      }
-  }
   packQGradsFromMS(gQ, gM, gS);
+  // Subtract the KL gradient analytically (see klGradPackedQ).
+  CMatrix gKl;
+  klGradPackedQ(gKl);
+  for(unsigned int i = 0; i < nQ; i++)
+    gQ.setVal(gQ.getVal(i) - gKl.getVal(i), i);
 }
 
 void CSvgp::packQGradsFromMS(CMatrix& gQ, const CMatrix& gM,
@@ -1438,6 +1450,33 @@ void CSvgp::marginalsGradAt(const CMatrix& XB, const CMatrix& gMean,
   }
 }
 
+// Packed gradient of sum_j KL(q(v_j) || N(0, I)) in the Cholesky parametrisation, in the
+// layout of packQGradsFromMS: per output the means, then the lower factor column by column
+// with the diagonal as log(L_ii). With KL_j = 0.5 (|L|_F^2 - M - 2 sum log L_ii + |m|^2) the
+// gradients are m, L_rc (r > c) and L_ii^2 - 1. Going through S^{-1} instead gives
+// (I - S^{-1}) L = L - L^{-T}, whose below-diagonal part is zero in exact arithmetic; with
+// S = L L^T the explicit inverse loses that to cancellation (condition number squared) when
+// L has a small diagonal, which is how q is initialised in hidden layers.
+void CSvgp::klGradPackedQ(CMatrix& gQ) const
+{
+  if(qParamMode != QModeCholesky)
+    throw ndlexceptions::Error("CSvgp::klGradPackedQ requires QModeCholesky");
+  const unsigned int M = numInducing;
+  gQ.resize(1, getQParamNum());
+  unsigned int counter = 0;
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    for(unsigned int r = 0; r < M; r++)
+      gQ.setVal(qMean.getVal(r, j), counter++);
+    for(unsigned int c = 0; c < M; c++)
+      for(unsigned int r = c; r < M; r++)
+      {
+        const double l = qChol[j].getVal(r, c);
+        gQ.setVal(r == c ? l * l - 1.0 : l, counter++);
+      }
+  }
+}
+
 double CSvgp::klQ(CMatrix* gQOrNull) const
 {
   double kl = 0.0;
@@ -1452,28 +1491,7 @@ double CSvgp::klQ(CMatrix* gQOrNull) const
     return kl;
   }
 
-  const unsigned int M = numInducing;
-  CMatrix gM(M, outputDim);
-  gM.zeros();
-  vector<CMatrix> gS(outputDim, CMatrix(M, M));
-  for(unsigned int j = 0; j < outputDim; j++)
-  {
-    CMatrix cholS;
-    upperCholOfS(j, cholS);
-    CMatrix Sinv(M, M);
-    Sinv.setSymmetric(true);
-    Sinv.pdinv(cholS);
-
-    for(unsigned int r = 0; r < M; r++)
-      gM.setVal(qMean.getVal(r, j), r, j);
-
-    gS[j].zeros();
-    for(unsigned int r = 0; r < M; r++)
-      for(unsigned int s = 0; s < M; s++)
-        gS[j].setVal(0.5 * ((r == s ? 1.0 : 0.0) - Sinv.getVal(r, s)), r, s);
-    gS[j].setSymmetric(true);
-  }
-  packQGradsFromMS(*gQOrNull, gM, gS);
+  klGradPackedQ(*gQOrNull);
   return kl;
 }
 

@@ -824,7 +824,8 @@ vector<string> CGp::paramPaths() const
     paths.push_back("beta");
   if(isSparseApproximation()
      && pInducing!=0
-     && pInducing->typeName()!="points")
+     && pInducing->typeName()!="points"
+     && pInducing->typeName()!="hermite")
   {
     if(pInducing->isWindowWidthUntied())
     {
@@ -862,13 +863,15 @@ double CGp::getByPath(const string& path) const
   }
   if(p=="inducing.window_width" || p=="window_width")
   {
-    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points"
+       || pInducing->typeName()=="hermite")
       throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
     return pInducing->getWindowWidth();
   }
   if(p.compare(0, 22, "inducing.window_width.")==0)
   {
-    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points"
+       || pInducing->typeName()=="hermite")
       throw ndlexceptions::Error("inducing.window_width.* only valid for non-point inducing.");
     const unsigned int index=static_cast<unsigned int>(atoi(p.substr(22).c_str()));
     if(index>=pInducing->numWindowWidths())
@@ -908,7 +911,8 @@ void CGp::setByPath(const string& path, double val)
   }
   if(p=="inducing.window_width" || p=="window_width")
   {
-    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points"
+       || pInducing->typeName()=="hermite")
       throw ndlexceptions::Error("inducing.window_width only valid for non-point inducing.");
     pInducing->setWindowWidth(val);
     invalidateCache();
@@ -916,7 +920,8 @@ void CGp::setByPath(const string& path, double val)
   }
   if(p.compare(0, 22, "inducing.window_width.")==0)
   {
-    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points")
+    if(!isSparseApproximation() || pInducing==0 || pInducing->typeName()=="points"
+       || pInducing->typeName()=="hermite")
       throw ndlexceptions::Error("inducing.window_width.* only valid for non-point inducing.");
     const unsigned int index=static_cast<unsigned int>(atoi(p.substr(22).c_str()));
     if(pInducing->numWindowWidths()==0 || index>=pInducing->numWindowWidths())
@@ -1115,11 +1120,36 @@ void CGp::setInducingType(const string& typeName)
     if(!isInducingFixed())
       gX_u.resize(numActive, Dp + 1);
   }
+  else if(typeName == "hermite")
+  {
+    // CIP-003D. E4: Hermite windows have no free parameters, so inducing must be
+    // fixed; refuse rather than flip the flag behind the caller's back.
+    if(!isInducingFixed())
+      throw ndlexceptions::Error(
+          "Hermite inducing (E4): windows have no free parameters; call "
+          "setInducingFixed(true) before setInducingType(\"hermite\").");
+    const unsigned int d = getInputDim();
+    CInducingHermite::checkKernelSupport(*pkern, d); // E2
+    CMatrix V;
+    vector<unsigned int> ks;
+    CInducingHermite::makeLayout(V, ks, numActive, d); // E1
+    CInducingHermite* ph = new CInducingHermite(V, ks); // E5 audit
+    delete pInducing;
+    pInducing = ph;
+  }
   else
     throw ndlexceptions::Error(
-        "Unknown inducing type (use points, whitenoise, greens, or weightspace): "
+        "Unknown inducing type (use points, whitenoise, greens, weightspace, or hermite): "
         + typeName);
   setKupToDate(false);
+}
+
+vector<string> CGp::hermiteWarnings() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  if(ph == 0 || pX == 0)
+    return vector<string>();
+  return ph->warnings(*pkern, *pX);
 }
 
 string CGp::getInducingType() const
@@ -3717,7 +3747,14 @@ ModelDescription CGp::describe() const
     if(pInducing!=0)
     {
       desc.headerLines.push_back(string("Inducing type: ") + pInducing->typeName());
-      if(pInducing->typeName()!="points")
+      if(const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing))
+      {
+        desc.headerLines.push_back(
+            "Inducing fixed: hermite windows have no free parameters (fixed by construction)");
+        if(pX != 0)
+          desc.headerLines.push_back(string("Hermite layout: ") + ph->describeLayout(*pkern, *pX));
+      }
+      if(pInducing->typeName()!="points" && pInducing->typeName()!="hermite")
         desc.headerLines.push_back(
             string("Learn window width: ")
             + (pInducing->learnsWindowWidth() ? "1" : "0"));
@@ -3771,7 +3808,8 @@ ModelDescription CGp::describe() const
     else
       beta.transform = "exp";
     desc.params.push_back(beta);
-    if(pInducing!=0 && pInducing->typeName()!="points")
+    if(pInducing!=0 && pInducing->typeName()!="points"
+       && pInducing->typeName()!="hermite")
     {
       const bool fixedS = !pInducing->learnsWindowWidth();
       if(pInducing->isWindowWidthUntied() && pInducing->numWindowWidths()>0)
@@ -3921,6 +3959,7 @@ void CGp::readParamsFromStream(istream& in)
     double windowWidth = -1.0;
     CMatrix weightCentres;
     bool haveWeightCentres = false;
+    CMatrix hermiteV, hermiteKs;
     if(in.good() && !in.eof())
     {
       streampos pos = in.tellg();
@@ -3948,6 +3987,24 @@ void CGp::readParamsFromStream(istream& in)
                 in.seekg(pos2);
             }
           }
+          if(inducingType == "hermite")
+          {
+            // CIP-003D: block of two named matrices; absence is an E6 error.
+            for(int blk = 0; blk < 2; blk++)
+            {
+              const string key = (blk == 0) ? "hermiteDirections" : "hermiteDegrees";
+              string lineH;
+              if(!(in.good() && ndlstrutil::getline(in, lineH)))
+                throw ndlexceptions::StreamFormatError(
+                    key, "E6: inducingType=hermite but the " + key + " block is missing.");
+              vector<string> tH;
+              ndlstrutil::tokenise(tH, lineH, "=");
+              if(tH.size() < 1 || tH[0] != key)
+                throw ndlexceptions::StreamFormatError(
+                    key, "E6: expected " + key + " after inducingType=hermite.");
+              (blk == 0 ? hermiteV : hermiteKs).fromStream(in);
+            }
+          }
           if(inducingType == "weightspace" && in.good() && !in.eof())
           {
             streampos pos3 = in.tellg();
@@ -3972,7 +4029,17 @@ void CGp::readParamsFromStream(istream& in)
       else if(pos != streampos(-1))
         in.seekg(pos);
     }
-    if(inducingType == "whitenoise")
+    if(inducingType == "hermite")
+    {
+      if(!isInducingFixed())
+        throw ndlexceptions::StreamFormatError(
+            "fixInducing", "E6: hermite inducing requires fixInducing=1.");
+      CInducingHermite* ph = CInducingHermite::fromStreamData(
+          hermiteV, hermiteKs, numActive, getInputDim());
+      delete pInducing;
+      pInducing = ph;
+    }
+    else if(inducingType == "whitenoise")
     {
       double s0 = windowWidth;
       if(!(s0 > 0.0))
@@ -4126,6 +4193,18 @@ void CGp::writeParamsToStream(ostream& out) const
     if((indType == "whitenoise" || indType == "greens" || indType == "weightspace")
        && pInducing != 0)
       writeToStream(out, "windowWidth", pInducing->getWindowWidth());
+    if(indType == "hermite" && pInducing != 0)
+    {
+      // CIP-003D: V and ks stored explicitly so a later change of the allocation
+      // rule cannot silently change loaded models.
+      const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+      if(ph == 0)
+        throw ndlexceptions::Error("CGp: hermite inducing type with a foreign object");
+      writeToStream(out, "hermiteDirections", "");
+      ph->directions().toStream(out);
+      writeToStream(out, "hermiteDegrees", "");
+      ph->degreesAsRow().toStream(out);
+    }
     if(indType == "weightspace" && pInducing != 0)
     {
       writeToStream(out, "weightCentres", "");

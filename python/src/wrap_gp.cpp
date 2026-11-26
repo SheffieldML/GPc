@@ -1219,7 +1219,7 @@ PySparseGPRegression::PySparseGPRegression(
     py::array_t<double, py::array::c_style | py::array::forcecast> Yin,
     py::array_t<double, py::array::c_style | py::array::forcecast> Zin,
     const std::string& approx,
-    bool inducing_fixed,
+    py::object inducing_fixed,
     int verbosity,
     py::object kernel,
     const std::string& inducing,
@@ -1232,7 +1232,7 @@ PySparseGPRegression::PySparseGPRegression(
       Y(matrixFromNumpy(Yin)),
       Z(matrixFromNumpy(Zin)),
       approxType("dtcvar"),
-      inducingFixed(inducing_fixed),
+      inducingFixed(false),
       learnWindowWidth(learn_window_width),
       learnWindowWidths(learn_window_widths)
 {
@@ -1283,16 +1283,54 @@ PySparseGPRegression::PySparseGPRegression(
     inducingType = "weightspace";
     weightSpace = true;
   }
+  else if(inducing == "hermite")
+  {
+    inducingType = "hermite";
+  }
   else
   {
     throw ndlexceptions::Error(
         "SparseGPRegression inducing='" + inducing
-        + "' is not supported. Use 'points' (default) or 'weightspace'.");
+        + "' is not supported. Use 'points' (default), 'weightspace' or 'hermite'.");
+  }
+  const bool hermite = (inducingType == "hermite");
+
+  // inducing_fixed: None means "left at default". Hermite windows have no free
+  // parameters, so the default resolves to fixed; an explicit False is E4.
+  if(inducing_fixed.is_none())
+    inducingFixed = hermite;
+  else
+  {
+    inducingFixed = py::cast<bool>(inducing_fixed);
+    if(hermite && !inducingFixed)
+      throw ndlexceptions::Error(
+          "Hermite inducing (E4): windows have no free parameters; inducing_fixed=False "
+          "cannot be honoured. Omit inducing_fixed (it resolves to fixed) or pass True.");
+  }
+  // E3: any width option is a request Hermite cannot deliver.
+  if(hermite)
+  {
+    bool widthRequested = learn_window_width || learn_window_widths;
+    if(!window_width.is_none())
+    {
+      if(py::isinstance<py::float_>(window_width) || py::isinstance<py::int_>(window_width))
+        widthRequested = widthRequested || py::cast<double>(window_width) > 0.0;
+      else
+        widthRequested = true;
+    }
+    if(widthRequested)
+      throw ndlexceptions::Error(
+          "Hermite inducing (E3): Hermite windows have no width; window_width and "
+          "learn_window_width(s) cannot be used with inducing='hermite'.");
   }
 
   kern = std::make_unique<CCmpndKern>(X);
   if(kernelIsPartsList(kernel))
   {
+    if(hermite)
+      throw ndlexceptions::Error(
+          "Custom gpc.kern compounds are not supported with inducing='hermite'; "
+          "use kernel='mlp'.");
     if(weightSpace)
       throw ndlexceptions::Error(
           "Custom gpc.kern compounds are not supported with inducing='weightspace'; "
@@ -1305,7 +1343,11 @@ PySparseGPRegression::PySparseGPRegression(
     const std::string kernelName = py::cast<std::string>(kernel);
     const SignalKind kind = parseSignalKind(kernelName);
     kernelType = signalKindLabel(kind);
-    if(weightSpace)
+    if(hermite && kind != SignalKind::Mlp)
+      throw ndlexceptions::Error(
+          "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '" +
+          kernelName + "'.");
+    if(weightSpace || hermite)
       addWeightSpaceCompound(*kern, X, kind, arccos_order);
     else
       addFtcStyleCompound(*kern, X, kind, arccos_order);
@@ -1390,6 +1432,10 @@ PySparseGPRegression::PySparseGPRegression(
             "(s is packed with free inducing parameters).");
       pInd->setLearnWindowWidth(true);
     }
+  }
+  else if(hermite)
+  {
+    model->setInducingType("hermite"); // E1 / E2 / E4 / E5 raised in C++ before any change
   }
   else if(learnWindowWidth || learnWindowWidths)
   {
@@ -1698,7 +1744,7 @@ void bind_gp(py::module_& m)
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
                     py::array_t<double, py::array::c_style | py::array::forcecast>,
                     const std::string&,
-                    bool,
+                    py::object,
                     int,
                     py::object,
                     const std::string&,
@@ -1711,7 +1757,7 @@ void bind_gp(py::module_& m)
            py::arg("Y"),
            py::arg("Z"),
            py::arg("approx") = "dtcvar",
-           py::arg("inducing_fixed") = false,
+           py::arg("inducing_fixed") = py::none(),
            py::arg("verbosity") = 0,
            py::arg("kernel") = py::str("rbf"),
            py::arg("inducing") = "points",
@@ -1725,8 +1771,9 @@ void bind_gp(py::module_& m)
            "sparse_linalg: 'lq' (default), 'stable', or 'legacy' "
            "(inducing-side factor; orthogonal to approx; CIP-001B / CIP-0016).\n"
            "kernel: string name or gpc.kern parts list (parts list needs inducing='points').\n"
-           "inducing: 'points' (default) or 'weightspace' (mlp/arccos string kernels).\n"
-           "inducing_fixed defaults False (matches CGp); pass True to freeze Z/W.\n"
+           "inducing: 'points' (default), 'weightspace' (mlp/arccos string kernels) or 'hermite' (mlp only; CIP-003D).\n"
+           "inducing_fixed defaults to None: False for points/weightspace (matches CGp), True for hermite\n"
+           "(no free parameters; an explicit False raises E4). Pass True to freeze Z/W.\n"
            "window_width: scalar or length-M array (CIP-0032 per-unit s_m).\n"
            "learn_window_width: optimise global tied s; learn_window_widths: untied s_m.")
       .def("set_by_path",
@@ -1786,7 +1833,9 @@ void bind_gp(py::module_& m)
       .def_property_readonly(
           "kernel_type", &PySparseGPRegression::kernel_type, "Kernel label / compound summary.")
       .def_property_readonly(
-          "inducing_type", &PySparseGPRegression::inducing_type, "'points' or 'weightspace'.")
+          "inducing_type", &PySparseGPRegression::inducing_type, "'points', 'weightspace' or 'hermite'.")
+      .def("hermite_warnings", &PySparseGPRegression::hermite_warnings,
+           "W1-W3 (CIP-003D) as strings for Hermite inducing; empty otherwise.")
       .def_property_readonly(
           "inducing_fixed",
           &PySparseGPRegression::inducing_fixed,

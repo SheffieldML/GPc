@@ -417,6 +417,74 @@ int main()
         expect(maxRel < 2e-4, "Phase 2: analytic gradients match finite differences");
       }
 
+      // 6b. KL gradient in the Cholesky parametrisation is exact for a badly scaled factor.
+      // Hidden deep-GP layers start with L_ii = 0.01; after a few Adam steps the off-diagonals
+      // are O(0.01-0.1), so S = L L^T is far from the identity. The old route through S^{-1}
+      // gives (I - S^{-1}) L = L - L^{-T} with the (zero) below-diagonal part lost to
+      // cancellation; that noise is what Adam saw on M^2/2 entries per output. The analytic
+      // gradient is m, L_rc (r > c) and L_ii^2 - 1 (log-diagonal parametrisation).
+      {
+        const unsigned int N = 10, M = 60;
+        mt19937 rng(31);
+        normal_distribution<double> nd(0.0, 1.0);
+        CMatrix X(N, 1), y(N, 1), Z(M, 1);
+        for(unsigned int i = 0; i < N; i++)
+          {
+            X.setVal(-1.0 + 2.0 * (double)i / (double)(N - 1), i, 0);
+            y.setVal(0.0, i, 0);
+          }
+        for(unsigned int k = 0; k < M; k++)
+          Z.setVal(-1.8 + 3.6 * (double)k / (double)(M - 1), k, 0);
+        CCmpndKern kern(X);
+        makeKern(kern, X, false);
+        CSvgp sv(&kern, &X, &y, Z, 10.0, 0);
+        sv.setQParamMode(CSvgp::QModeCholesky);
+        CMatrix q(1, sv.getQParamNum());
+        sv.getQParams(q);
+        unsigned int c = 0;
+        for(unsigned int r = 0; r < M; r++)
+          q.setVal(0.2 * nd(rng), c++);  // means
+        for(unsigned int col = 0; col < M; col++)
+          for(unsigned int r = col; r < M; r++)
+            q.setVal(r == col ? log(0.01) : 0.1 * nd(rng), c++);
+        sv.setQParams(q);
+        CMatrix g;
+        const double kl = sv.klQ(&g);
+        expect(isfinite(kl) && kl > 0.0, "KL gradient test: KL finite and positive");
+        double worst = 0.0;
+        c = 0;
+        for(unsigned int r = 0; r < M; r++)
+          worst = max(worst, fabs(g.getVal(c++) - q.getVal(r)));  // dKL/dm = m
+        for(unsigned int col = 0; col < M; col++)
+          for(unsigned int r = col; r < M; r++)
+            {
+              const double l = (r == col) ? exp(q.getVal(c)) : q.getVal(c);
+              const double exact = (r == col) ? l * l - 1.0 : l;
+              worst = max(worst, fabs(g.getVal(c) - exact));
+              c++;
+            }
+        cout << "  info: KL gradient max |analytic - exact| = " << worst << endl;
+        expect(worst < 1e-12, "KL gradient: m, L_rc and L_ii^2 - 1 exactly, ill-scaled factor");
+        // Cross-check against central differences of the (stable) KL value on a sample of entries.
+        double worstFd = 0.0;
+        for(unsigned int t = 0; t < 40; t++)
+          {
+            const unsigned int i = (unsigned int)((t * 977u) % q.getCols());
+            CMatrix qp(q), qm(q);
+            qp.setVal(q.getVal(i) + 1e-6, i);
+            qm.setVal(q.getVal(i) - 1e-6, i);
+            sv.setQParams(qp);
+            const double Lp = sv.klQ();
+            sv.setQParams(qm);
+            const double Lm = sv.klQ();
+            const double fd = (Lp - Lm) / 2e-6;
+            worstFd = max(worstFd, fabs(fd - g.getVal(i)) / max(1.0, fabs(fd)));
+          }
+        sv.setQParams(q);
+        cout << "  info: KL gradient vs FD max rel = " << worstFd << endl;
+        expect(worstFd < 1e-5, "KL gradient matches finite differences of the KL value");
+      }
+
       // 7. Phase 3: Adam seed reproducibility + interleaved natgrad improves ELBO.
       {
         const unsigned int N = 40, M = 8, D = 1;

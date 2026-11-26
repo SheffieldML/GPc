@@ -73,6 +73,12 @@ public:
   static std::unique_ptr<PyDeepGP> load(const std::string& path);
 
   void set_drop_residual(bool val);
+  // Per-layer kernel parameters, named as CGp::paramPaths (e.g. 'kern.weight_variance').
+  std::vector<std::string> layer_param_paths(unsigned int ell) const;
+  double get_layer_param(unsigned int ell, const std::string& path) const;
+  // KL(q(v) || N(0, I)) summed over the layer's outputs (diagnostic).
+  double layer_kl(unsigned int ell) const;
+  void set_layer_param(unsigned int ell, const std::string& path, double val);
   bool drop_residual() const;
   double jacobian_spread(unsigned int n_probe = 32, uint64_t probe_seed = 0) const;
 
@@ -86,6 +92,10 @@ public:
   unsigned int hidden_dim() const;
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
+  std::vector<std::string> hermite_warnings() const
+  {
+    return model ? model->hermiteWarnings() : std::vector<std::string>();
+  }
   const std::string& likelihood_type() const { return likelihoodType; }
   double chi() const;
   std::string approx() const { return "deepgp"; }

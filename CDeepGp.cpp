@@ -81,9 +81,13 @@ void packOptIntoStochastic(CSvgp& layer, const CMatrix& gKern, const CMatrix& gZ
   unsigned int counter = 0;
   for(unsigned int i = 0; i < gKern.getCols(); i++)
     gOut.setVal(gKern.getVal(i), counter++);
+  // Fixed-window families (Hermite) reserve no inducing parameters: pack gZ only
+  // up to the count the optimiser vector holds.
+  const unsigned int zEnd = counter + layer.getInducing()->getNumParams();
   for(unsigned int j = 0; j < gZ.getCols(); j++)
     for(unsigned int i = 0; i < gZ.getRows(); i++)
-      gOut.setVal(gZ.getVal(i, j), counter++);
+      if(counter < zEnd)
+        gOut.setVal(gZ.getVal(i, j), counter++);
   while(counter < nOpt - 1)
     gOut.setVal(0.0, counter++);
   if(nOpt > 0 && counter == nOpt - 1)
@@ -267,17 +271,9 @@ void CDeepGp::initKernVariances(double chi)
   const double hidVar = chi / (double)(numLayers - 1);
   for(unsigned int ell = 0; ell + 1 < numLayers; ell++)
   {
-    CKern* k = pkerns[ell];
-    if(k->getNumParams() >= 2)
-    {
-      try { k->setParam(hidVar, 1); }
-      catch(...) {}
-    }
-    else if(k->getNumParams() == 1)
-    {
-      try { k->setParam(hidVar, 0); }
-      catch(...) {}
-    }
+    // Signal strength via the kernel's own accessor. Writing to a parameter index
+    // instead is wrong for MLP ([weight, bias, variance]), where index 1 is the bias.
+    pkerns[ell]->setVariance(hidVar);
   }
 }
 
@@ -304,8 +300,10 @@ void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
 {
   if(ell >= numLayers)
     throw ndlexceptions::Error("CDeepGp::setLayerInducingType: layer out of range");
-  inducingTypes[ell] = typeName;
+  // Set on the layer first: a refused type (E1/E2/E5 for Hermite) must leave the
+  // recorded type, and therefore the stream, unchanged.
   layers[ell]->setInducingType(typeName);
+  inducingTypes[ell] = typeName;
   layers[ell]->setQParamMode(CSvgp::QModeCholesky);
   layers[ell]->setDropResidual(dropResidual);
   if(ell + 1 < numLayers)
@@ -323,6 +321,21 @@ void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
     layers[ell]->setWhitenedQ(m, S);
   }
   packLayerOffsets();
+}
+
+vector<string> CDeepGp::hermiteWarnings() const
+{
+  vector<string> out;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    if(inducingTypes[ell] != "hermite")
+      continue;
+    for(const string& w : layers[ell]->hermiteWarnings())
+      out.push_back("layer " + to_string(ell) + ": " + w);
+    if(ell + 1 < numLayers)
+      out.push_back(CInducingHermite::hiddenLayerWarning(ell, numLayers));
+  }
+  return out;
 }
 
 string CDeepGp::getLayerInducingType(unsigned int ell) const
@@ -343,6 +356,9 @@ void CDeepGp::setLayerLearnWindowWidth(unsigned int ell, bool learn, bool untied
 {
   if(ell >= numLayers)
     throw ndlexceptions::Error("CDeepGp::setLayerLearnWindowWidth: layer out of range");
+  if(layers[ell]->getInducing()->typeName() == "hermite" && learn)
+    throw ndlexceptions::Error(
+        "Hermite inducing (E3): Hermite windows have no width; learn_window_width cannot be enabled.");
   CInducingWeightSpace* pWs =
       dynamic_cast<CInducingWeightSpace*>(layers[ell]->getInducing());
   if(pWs == 0)
@@ -846,6 +862,16 @@ void CDeepGp::writeParamsToStream(ostream& os) const
   {
     writeToStream(os, "numInducing", M[ell]);
     writeToStream(os, "inducingType", inducingTypes[ell]);
+    if(inducingTypes[ell] == "hermite")
+    {
+      // CIP-003D: V and ks stored explicitly (see CGp).
+      const CInducingHermite* ph =
+          dynamic_cast<const CInducingHermite*>(layers[ell]->getInducing());
+      if(ph == 0)
+        throw ndlexceptions::Error("CDeepGp: hermite layer without a hermite inducing object");
+      ph->directions().toStream(os);
+      ph->degreesAsRow().toStream(os);
+    }
   }
   X.toStream(os);
   Y.toStream(os);
@@ -888,10 +914,20 @@ void CDeepGp::readParamsFromStream(istream& is)
     layerDims[ell] = (unsigned int)readIntFromStream(is, "dim");
   M.resize(numLayers);
   inducingTypes.resize(numLayers);
+  vector<std::unique_ptr<CInducingHermite> > hermiteLoaded(numLayers);
   for(unsigned int ell = 0; ell < numLayers; ell++)
   {
     M[ell] = (unsigned int)readIntFromStream(is, "numInducing");
     inducingTypes[ell] = readStringFromStream(is, "inducingType");
+    if(inducingTypes[ell] == "hermite")
+    {
+      CMatrix Vh, ksh;
+      Vh.fromStream(is);
+      ksh.fromStream(is);
+      // E6: validated here, before any layer is rebuilt.
+      hermiteLoaded[ell].reset(
+          CInducingHermite::fromStreamData(Vh, ksh, M[ell], layerDims[ell]));
+    }
   }
   X.resize(nData, inputDim);
   Y.resize(nData, outputDim);
@@ -918,7 +954,9 @@ void CDeepGp::readParamsFromStream(istream& is)
   for(unsigned int ell = 0; ell < numLayers; ell++)
   {
     meanP[ell].deepCopy(savedMeanP[ell]);
-    if(inducingTypes[ell] != "points")
+    if(hermiteLoaded[ell])
+      layers[ell]->setInducing(hermiteLoaded[ell].release()); // stored V, ks
+    else if(inducingTypes[ell] != "points")
       layers[ell]->setInducingType(inducingTypes[ell]);
     layers[ell]->setDropResidual(dropResidual);
     layers[ell]->setStochasticParams(savedParams[ell]);

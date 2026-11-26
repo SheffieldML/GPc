@@ -385,6 +385,9 @@ public:
   }
   void setInducingFixed(const bool val) 
   {
+    if(!val && pInducing != 0 && pInducing->typeName() == "hermite")
+      throw ndlexceptions::Error(
+          "Hermite inducing (E4): windows have no free parameters; inducing cannot be unfixed.");
     inducingFixed = val;
   }
 
@@ -392,6 +395,8 @@ public:
   void setInducingType(const string& typeName);
   void setInducing(CInducing* pInd);
   string getInducingType() const;
+  // CIP-003D: W1-W3 for Hermite inducing on this model's data (empty otherwise).
+  vector<string> hermiteWarnings() const;
   CInducing* getInducing() { return pInducing; }
   const CInducing* getInducing() const { return pInducing; }
   // Meff = M - tr(C^{-1}) after ensureAD (whitened path); legacy uses A.

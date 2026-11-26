@@ -51,6 +51,9 @@ class CSvgp : public CStochasticOptimisable {
   void setInducing(CInducing* pInd);
   void setInducingType(const string& typeName);
   CInducing* getInducing() { return pInducing; }
+  // CIP-003D: W1-W3 for Hermite inducing on this layer's inputs (empty otherwise).
+  vector<string> hermiteWarnings() const;
+  string hermiteLayoutDescription() const;
   const CInducing* getInducing() const { return pInducing; }
   // Centres storage for families that need a non-owned CMatrix* (points, WN, greens).
   CMatrix& getCentresStorage() { return Z; }
@@ -162,6 +165,8 @@ class CSvgp : public CStochasticOptimisable {
                        CMatrix* gXOrNull) const;
   // sum_j KL(q(v_j) || N(0,I)); optional ∂KL/∂packed-q into gQOrNull (Cholesky).
   double klQ(CMatrix* gQOrNull = 0) const;
+  // Packed dKL/dq in Cholesky mode without forming S^{-1} (see CSvgp.cpp).
+  void klGradPackedQ(CMatrix& gQ) const;
 
   // Packed unconstrained parameters: kern transforms, then inducing params
   // (CInducing::getParams), then betaTransform(beta).

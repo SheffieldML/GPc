@@ -71,6 +71,9 @@ namespace ndlutil {
   double xlogy(double x, double y);
   // normal deviates from N(0, 1.0)
   double randn();
+  // Discard the cached Box-Muller spare, so a fresh init_genrand() gives a
+  // reproducible randn() stream regardless of earlier randn() calls.
+  void resetRandn();
   // uniform deviates from (0.0, 1.0)
   double rand(); 
 

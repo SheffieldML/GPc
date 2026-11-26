@@ -73,6 +73,7 @@ Code Improvement Proposals (CIPs) document design decisions, track implementatio
 - [CIP-003A](./cip003A.md): GPy-aligned likelihood zoo in `CNoise` and `gpc.likelihoods` — Student-t, Poisson, Binomial, Exponential, Gamma, SkewGaussian, SkewExponential + Python façade (**Implemented** — worktree `GPc-cip003A` / `cip003A-likelihood-zoo`). Implements [REQ-001B](../requirements/req001B_gpy-aligned-likelihood-zoo.md).
 - [CIP-003B](./cip003B.md): Hamiltonian Monte Carlo over `COptimisable` parameters — hyperparameter posterior sampling reusing objective/gradient, priors and transforms (**Implemented**). Implements [REQ-001C](../requirements/req001C_posterior-samples-of-gp-hyperparameters.md). CLI `bgplvm` sampling mode left in backlog.
 - [CIP-003C](./cip003C.md): Fixes and gaps found reproducing the deep GP paper experiments — weight-space `(M, d)` construction defect, `DeepGP` façade gaps (**Proposed**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md).
+- [CIP-003D](./cip003D.md): Hermite ridge windows as a fixed weight-space inducing family (`inducing='hermite'`), porting the CIP-0035 prototype with quadrature and gradient gates and explicit ask-versus-delivered errors and warnings (**Accepted**). Implements [REQ-0002](../requirements/req0002_runnable-verification.md).
 
 ## Creating a Good CIP
 

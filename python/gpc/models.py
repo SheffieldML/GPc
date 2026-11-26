@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+import warnings
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 
@@ -131,8 +132,28 @@ class GPRegression(_GPRegression):
         )
 
 
+def _emit_hermite_warnings(model: Any) -> None:
+    """Surface the CIP-003D layout warnings (W1-W4) as ``UserWarning``.
+
+    The text is generated once in C++; ``warnings.warn`` is used unconditionally
+    because C++ stderr is easy to miss in a notebook.
+    """
+    for text in model.hermite_warnings():
+        warnings.warn(text, UserWarning, stacklevel=3)
+
+
 class SparseGPRegression(_SparseGPRegression):
-    """Sparse Gaussian regression; ``str``/``repr`` use a paramz-inspired table."""
+    """Sparse Gaussian regression; ``str``/``repr`` use a paramz-inspired table.
+
+    ``inducing`` is ``'points'`` (default), ``'weightspace'`` or ``'hermite'``.
+    ``'hermite'`` (CIP-003D, ``kernel='mlp'`` only) uses fixed Hermite ridge
+    windows with no free parameters. Leaving ``inducing_fixed`` unset resolves to
+    fixed for Hermite (and ``str(model)`` says so); an explicit
+    ``inducing_fixed=False`` raises, as do ``window_width`` and
+    ``learn_window_width(s)``, and ``Z`` rows above the capacity for the input
+    dimension. Conditioning, near-capacity and low-captured-variance cases emit a
+    ``UserWarning``; ``describe()`` always shows the delivered layout.
+    """
 
     def __init__(
         self,
@@ -141,7 +162,7 @@ class SparseGPRegression(_SparseGPRegression):
         Z: np.ndarray,
         kernel: Any = "rbf",
         approx: str = "dtcvar",
-        inducing_fixed: bool = False,
+        inducing_fixed: Optional[bool] = None,
         verbosity: int = 0,
         inducing: str = "points",
         window_width: Any = -1.0,
@@ -166,6 +187,7 @@ class SparseGPRegression(_SparseGPRegression):
             learn_window_widths=learn_window_widths,
             sparse_linalg=sparse_linalg,
         )
+        _emit_hermite_warnings(self)
 
     def __str__(self) -> str:  # noqa: D105
         return format_model_description(
@@ -527,7 +549,13 @@ class DeepGP(_DeepGP):
     kernel :
         ``'rbf'``, ``'mlp'``, or ``'lin'`` (same type on every layer).
     inducing :
-        ``'points'`` or ``'weightspace'`` (MLP only).
+        ``'points'``, ``'weightspace'`` or ``'hermite'`` (the last two need
+        ``kernel='mlp'``). ``'hermite'`` uses fixed Hermite ridge windows
+        (CIP-003D): no width, no offset, no learnable inducing parameters. It
+        raises if ``num_inducing`` exceeds the capacity for the layer's input
+        dimension, and warns (``UserWarning``) about conditioning, near-capacity
+        fill, low captured variance and use in hidden layers; see
+        ``describe()`` for the delivered layout.
     chi, beta :
         Hidden variance scale and observation precision init.
     drop_residual :
@@ -537,8 +565,9 @@ class DeepGP(_DeepGP):
     num_categories :
         Categories for ordered likelihood.
     learn_window_width, learn_window_widths :
-        Weight-space only. Optimise a tied window width ``s`` per layer, or
-        untied per-unit widths ``s_m`` (mutually exclusive; see
+        Weight-space only (``inducing='hermite'`` raises: the windows have no
+        width). Optimise a tied window width ``s`` per layer, or untied
+        per-unit widths ``s_m`` (mutually exclusive; see
         :class:`SparseGPRegression`).
 
     Notes
@@ -590,6 +619,7 @@ class DeepGP(_DeepGP):
             learn_window_width=learn_window_width,
             learn_window_widths=learn_window_widths,
         )
+        _emit_hermite_warnings(self)
 
     def __str__(self) -> str:  # noqa: D105
         return format_model_description(

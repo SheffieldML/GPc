@@ -1132,11 +1132,7 @@ void CMatrix::fromUnheadedStream(istream& in)
       throw ndlexceptions::StreamFormatError("numCols");
     for(unsigned int j=0; j<tokens.size(); j++) 
     {
-      int ind = tokens[j].find('.');
-      if(ind==std::string::npos||ind<0)
-	setVal((double)atoi(tokens[j].c_str()), rowNo, j);
-      else
-	setVal(atof(tokens[j].c_str()), rowNo, j);
+      setVal(strtod(tokens[j].c_str(), 0), rowNo, j); // see fromStream: atoi dropped hex floats
     }
     rowNo++;
   }

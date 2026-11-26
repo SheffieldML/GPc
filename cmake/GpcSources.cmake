@@ -36,6 +36,9 @@ set(GPC_LIBGP_CXX_SOURCES
   ${GPC_ROOT}/CDeepGp.cpp
   ${GPC_ROOT}/CHmc.cpp
   ${GPC_ROOT}/CVariationalTarget.cpp
+  # CIP-0016: interchange format reader/writer (gp import/export, gpc.interchange).
+  ${GPC_ROOT}/CJson.cpp
+  ${GPC_ROOT}/CInterchange.cpp
 )
 
 set(GPC_LIBGP_FORTRAN_SOURCES

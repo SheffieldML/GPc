@@ -460,8 +460,8 @@ testNoisePrior.o: testNoisePrior.cpp CPosteriorTarget.h CGp.h CKern.h CNoise.h C
 testHmc: testHmc.o CHmc.o CGplvm.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testHmc testHmc.o CHmc.o CGplvm.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
-testVariationalHmc: testVariationalHmc.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o CPpa.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testVariationalHmc testVariationalHmc.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o CPpa.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
+testVariationalHmc: testVariationalHmc.o CHmc.o CVariationalTarget.o CPpa.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testVariationalHmc testVariationalHmc.o CHmc.o CVariationalTarget.o CPpa.o CMrd.o CBayesGplvm.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o $(LDFLAGS)
 
 testVariationalHmc.o: testVariationalHmc.cpp CHmc.h CVariationalTarget.h CPosteriorTarget.h CBayesGplvm.h CMrd.h CPpa.h CKern.h CNoise.h CDist.h CMatrix.h
 	$(CC) -c testVariationalHmc.cpp -o testVariationalHmc.o $(CCFLAGS)

@@ -171,6 +171,24 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 - *Fixed means reproducible.* With a seed, the layout is deterministic and matches the prototype's design, which is what the reproduction gate wants. Users cannot trade degree mix against conditioning.
 - *Deferral is cheap if `ks` is stored.* The stream block holds `V` and `ks` explicitly, so a later release can change `kmax` or the allocation policy (and expose it as an option) without breaking old `.model` files. If we omitted `ks` and recomputed it from `(M, D')`, any later change to the rule would silently change loaded models.
 
+## Phase 6 results (2026-11-26)
+
+**Composite task through the Python façade** (`python/examples/deepgp_hermite_composite.py`; three layers, hidden width 5, \(\chi=1\), \(\beta_0=10\), Adam 0.01, batch 256, 2500 steps, task seed 0, training seeds 0/1/2; prototype task generator copied verbatim). Test RMSE; NLL is the Gaussian NLL of the 64-sample-averaged moments (the prototype mixes the 64 sample densities, so NLL columns are not strictly comparable); ELBO per point over 8 evaluations.
+
+| model | GPc RMSE (3 seeds) | GPc NLL | GPc ELBO/N | CIP-0035 RMSE / NLL / ELBO |
+|---|---|---|---|---|
+| Hermite, \(M=64\) | 0.410, 0.461, 0.458 | 0.53-0.62 | -0.91 to -0.95 | 0.546 / 0.79 / -1.01 |
+| Hermite, \(M=128\) | 0.449, 0.486, 0.451 | 0.68-0.75 | -2.48 to -2.52 | 0.315 / 0.21 / -0.63 |
+| inducing points, \(M=64\) (control, 2 seeds) | 0.257, 0.255 | -0.15 to -0.17 | -0.44, -0.38 | 0.229 / -0.25 / -0.08 |
+
+*Not reproduced within seed noise.* Seed spread is about 0.05 in RMSE, smaller than the gaps to the prototype (Hermite \(M=64\) better by about 0.1, \(M=128\) worse by about 0.14). The control shows the GPc-versus-prototype difference is not specific to Hermite: points reach V8's \(\le0.26\) bound, but the ELBO per point is lower by about 0.3 and the NLL is higher. The cause is not identified. One untested candidate is initialisation: the prototype starts hidden-layer \(q(\mathbf v)\) at scale 0.01 and GPc's layers do not expose that choice. What the experiment does support is the qualitative finding: fixed Hermite windows in hidden layers stay well behind inducing points (0.41-0.49 against 0.256), which is the case W4 warns about.
+
+**Truncation check.** The prototype's `hermite_layout` stops allocating silently at capacity. No saved Hermite run in any `cip/cip0035/prototype/*.json` has `Meff != M` (the prototype records `Meff`), and the composite task at \(D'=6\) has capacity 1557, so no reference number in this CIP was affected. The step task (\(d=1\), capacity 16) is the only place it could occur and its Hermite runs requested at most \(M=16\).
+
+**W3 calibration.** A first sweep gave fractions near 0.07%: `capturedVariance` divided by the diagonal of the whole compound kernel, so white noise (not representable by any window family) inflated the denominator. Fixed with `CKern::wsSignalDiagElement` (compound: the selected signal component) and a regression test. Corrected sweep: minimum 0.6456 over 1260 configurations with \(M\ge D'\); 8-64% for \(M<D'\). Threshold set to 0.6 (was the 0.5 placeholder). The fraction at initialisation on the composite task (80-93% across \(M=16\)-512) does not track the prototype's outcomes (RMSE 0.664 to 0.315 over \(M=16\)-128), so W3 cannot predict hidden-layer failure; W4 carries that.
+
+**Not done.** The `deepgp-mlp` notebooks have no Hermite notebook (03 and 05 state that Hermite is not exposed), so the `DGP_FAST=0` re-run and comparison with the paper needs notebook changes in that repository first.
+
 ## Implementation Status
 
 - [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1)
@@ -180,7 +198,7 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 - [x] `CGp` / `CDeepGp` / stream / CLI wiring (phase 4): `CGp::setInducingType("hermite")` (E4 if inducing not fixed, E2 probe, E1, E5 before any state changes), `CSvgp` and `CDeepGp::setLayerInducingType`, `hermiteDirections` / `hermiteDegrees` stream blocks in `CGp` and per-layer in `CDeepGp` (V and ks explicit; E6 via `CInducingHermite::fromStreamData`), E3 on `setWindowWidth` / `setLearnWindowWidth(true)` / window-width paths, `gp --inducing hermite` and `deepgp --inducing hermite`. Phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector
 - [x] Python façade and tests (phase 5: `inducing='hermite'`, `inducing_fixed=None` default, `hermite_warnings()`, layout in `str(model)`)
 - [x] Docs: trade-off against Gaussian ridges (`docs/tutorials/deepgp.md`)
-- [ ] Prototype composite-task reproduction
+- [~] Prototype composite-task reproduction: run and recorded, not reproduced within seed noise (see Phase 6 results); notebook re-run outstanding
 
 ## References
 

@@ -955,7 +955,25 @@ void testPhase5Warnings()
       expect(frac > 0.0 && frac <= 1.0 + 1e-9, "captured variance fraction in (0, 1]");
       expect(!anyHas(ph->warnings(t.kern, t.X), "W3"), "W3 silent at the default threshold here");
       expect(anyHas(ph->warnings(t.kern, t.X, 1.01), "W3"), "W3 fires when threshold is above the fraction");
+      expect(frac > CInducingHermite::capturedVarianceWarnThreshold(),
+             "calibrated W3 threshold is below the fraction at M >= D'");
     }
+  }
+  { // White noise is not part of the signal the windows represent: it must not
+    // change the captured-variance fraction (it once inflated the denominator).
+    SparseToy t(20, 2, 8);
+    t.model->setInducingFixed(true);
+    t.model->setInducingType("hermite");
+    const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(t.model->getInducing());
+    CMlpKern mlp(2);
+    CWhiteKern white(2);
+    white.setVariance(5.0);
+    CCmpndKern cmp(2);
+    cmp.addKern(&mlp);
+    cmp.addKern(&white);
+    const double alone = ph->capturedVariance(mlp, t.X);
+    const double withWhite = ph->capturedVariance(cmp, t.X);
+    expect(fabs(alone - withWhite) < 1e-10, "captured variance ignores white-noise components");
   }
   { // W1 and W2 reach CGp::hermiteWarnings at d=1 full capacity.
     SparseToy t(40, 1, 16);

@@ -82,14 +82,14 @@ Each case below either raises or warns, so the layout you asked for is never sil
 | E4 | `inducing_fixed=False` given to `SparseGPRegression` | raises |
 | W1 | \(\kappa(K_{uu})>10^4\) | `UserWarning` |
 | W2 | more than 90% of capacity used | `UserWarning` |
-| W3 | captured-variance fraction below 0.5 | `UserWarning` (see the caveat below) |
+| W3 | captured-variance fraction below 0.6 | `UserWarning` (see the caveat below) |
 | W4 | Hermite in a hidden layer of a multi-layer deep GP | `UserWarning` |
 
 `SparseGPRegression` leaves `inducing_fixed` at `None`, which resolves to fixed for Hermite and to `False` for the other families. `str(model)` always shows the delivered layout (degree allocation, fill, \(\kappa\), captured variance), whether or not a warning fired.
 
 **Hidden layers.** W4 is a caution, not a prohibition: the CIP-0035 comparison that motivates the family was made on the final layer. A hidden layer sees an input distribution that changes during training, and fixed windows cannot follow it.
 
-**Caveat on W3.** The captured-variance fraction compares the Nyström diagonal with the prior diagonal on the training inputs. For the MLP kernel it settles between 0.67 and 0.83 in every case we tried (\(d\) from 1 to 5, input scales from 0.1 to \(10^5\)), because degrees above 9 are absent from the family. The 0.5 threshold is a placeholder that those cases never reach, so W3 is covered by a C++ test with an explicit threshold and not by a Python test. Phase 6 of CIP-003D calibrates it.
+**What W3 does and does not detect.** The captured-variance fraction compares the Nyström diagonal of the signal kernel (white noise is excluded) with its prior diagonal on the training inputs. Over 1260 configurations (\(d\) from 1 to 8, fill from 10% to 90%, kernel variances from \(10^{-4}\) to \(10^{6}\), input scales 0.1 to 10) the fraction never fell below 0.6456 when \(M\ge D'\), because degrees above 9 are absent from the family; with fewer windows than the \(D'\) degree-1 directions it fell to 8–64%. The 0.6 threshold separates the two, so W3 flags a layout that cannot span the linear part of the kernel. It does not detect the hidden-layer failure CIP-0035 reports: there the fraction looks healthy (80–93% at initialisation, rising to 92–99% in the trained near-linear regime) while the network underfits. That failure is what W4 is for.
 
 ```python
 m = gpc.models.DeepGP(X, Y, layers=1, num_inducing=64, kernel="mlp", inducing="hermite")

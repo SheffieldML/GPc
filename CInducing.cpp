@@ -1894,7 +1894,7 @@ double CInducingHermite::capturedVariance(const CKern& kern, const CMatrix& X) c
   for(unsigned int n = 0; n < N; n++)
   {
     captured += A.dotColCol(n, A, n);
-    prior += kern.diagComputeElement(X, n);
+    prior += kern.wsSignalDiagElement(X, n);
   }
   return prior > 0.0 ? captured / prior : 1.0;
 }
@@ -1910,7 +1910,7 @@ vector<string> CInducingHermite::warnings(const CKern& kern, const CMatrix& X,
     os << "Warning (CIP-003D W3): Hermite windows capture " << 100.0 * frac
        << "% of the prior variance on the training inputs (below "
        << 100.0 * capturedThreshold << "%; M=" << numInducing()
-       << ", D'=" << weightDim() << "). More windows may not help at this input dimension.";
+       << ", D'=" << weightDim() << "). Fewer windows than the D' directions of the linear part cannot represent the kernel; increase M.";
     out.push_back(os.str());
   }
   return out;

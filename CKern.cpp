@@ -12566,6 +12566,12 @@ void CCmpndKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMa
   wsSelectCompoundSignal(components)->wsHermiteCrossCompute(Kfu, X, V, ks);
 }
 
+double CCmpndKern::wsSignalDiagElement(const CMatrix& X, unsigned int i) const
+{
+  DIMENSIONMATCH(components.size() > 0);
+  return wsSelectCompoundSignal(components)->diagComputeElement(X, i);
+}
+
 void CCmpndKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                                      const vector<unsigned int>& ks, const CMatrix& gKfu) const
 {

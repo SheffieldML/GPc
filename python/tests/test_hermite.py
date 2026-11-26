@@ -111,15 +111,16 @@ def test_W2_near_capacity_warns():
     assert "W2" in _tags(rec)
 
 
-def test_W3_text_is_wired_through_C_plus_plus_only():
-    # The captured fraction of an MLP layout bottoms out near 0.67 (degree-9
-    # truncation), so the placeholder threshold of 0.5 cannot be reached from
-    # Python. W3 is exercised directly in testInducingHermite; phase 6
-    # calibrates the threshold. Here we check the number is reported.
-    m = _build(2, 20)
-    line = next(h for h in m.describe().header_lines if h.startswith("Hermite layout"))
-    frac = float(line.split("captured_variance=")[1].rstrip("%")) / 100.0
-    assert 0.5 < frac <= 1.0
+def test_W3_fires_below_the_degree_one_set_and_not_at_or_above_it():
+    # d=5 has D'=6 degree-1 directions. With M < D' the windows cannot span the
+    # linear part of the kernel (captured fraction 8-64% in the sweep); with
+    # M >= D' the fraction never falls below 0.645, so the 0.6 threshold is silent.
+    with pytest.warns(UserWarning, match=r"W3") as rec:
+        _build(5, 3)
+    assert "W3" in _tags(rec)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _build(5, 6)
 
 
 def test_deepgp_hermite_layout_and_W4():

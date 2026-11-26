@@ -381,7 +381,11 @@ class CInducingHermite : public CInducing
   // W3: fraction of the prior variance sum_n k(x_n,x_n) that the windows capture on X,
   // i.e. sum_n |L^{-1} K_u,n|^2 / sum_n k(x_n,x_n) with K_uu = L L^T.
   double capturedVariance(const CKern& kern, const CMatrix& X) const;
-  static double capturedVarianceWarnThreshold() { return 0.5; } // placeholder; phase 6 calibrates
+  // 0.6 sits below every configuration with M >= D' windows (minimum 0.6456 over 1260
+  // sweeps of d, fill, kernel variances and input scale; CIP-003D phase 6) and above the
+  // under-complete cases M < D' (8-64%), so W3 flags a layout that cannot span the
+  // linear part of the kernel. It cannot flag the hidden-layer failure CIP-0035 reports.
+  static double capturedVarianceWarnThreshold() { return 0.6; }
   // W1-W3 as text (empty when none fire); W3 evaluated on X with the given kernel.
   std::vector<std::string> warnings(const CKern& kern, const CMatrix& X,
                                     double capturedThreshold = capturedVarianceWarnThreshold()) const;

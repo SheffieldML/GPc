@@ -281,6 +281,13 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // V is M x (d+1) with unit rows; ks holds the M odd degrees.
   virtual void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                                      const std::vector<unsigned int>& ks) const;
+  // Prior variance k(x_i,x_i) of the part that K_fu represents. Equals the kernel's own
+  // diagonal except for compounds, where noise components (white) are excluded because
+  // no window family can express them.
+  virtual double wsSignalDiagElement(const CMatrix& X, unsigned int i) const
+  {
+    return diagComputeElement(X, i);
+  }
   // Gradients of <gKfu, Kfu> for the Hermite windows: wsHermiteGradParams fills a
   // 1 x nParams row (overwritten, in kernel-parameter order); wsHermiteGradX fills N x d.
   virtual void wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
@@ -820,6 +827,7 @@ class CCmpndKern: public CComponentKern {
                            const CMatrix& a, double s) const;
   void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                              const std::vector<unsigned int>& ks) const;
+  double wsSignalDiagElement(const CMatrix& X, unsigned int i) const;
   void wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                            const std::vector<unsigned int>& ks, const CMatrix& gKfu) const;
   void wsHermiteGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,

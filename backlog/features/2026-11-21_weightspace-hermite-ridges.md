@@ -1,7 +1,7 @@
 ---
 id: "2026-11-21_weightspace-hermite-ridges"
 title: "Hermite ridge windows as CIP-0028 follow-on (stable K_uu)"
-status: "In Progress"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-21"
 last_updated: "2026-11-26"
@@ -27,8 +27,8 @@ Gaussian ridge windows in whitened weight space ([CIP-0028](../../cip/cip0028.md
 ## Acceptance Criteria
 
 - [x] Separate CIP drafted (optional inducing type alongside Gaussian ridge): [CIP-003D](../../cip/cip003D.md)
-- [ ] Closed forms + MC/quadrature gates; capacity rule per degree
-- [ ] Document trade-off vs Gaussian ridges (large \(\|\hat{\mathbf x}\|\), no MLP mean story)
+- [x] Closed forms + MC/quadrature gates; capacity rule per degree (CIP-003D phases 1-2)
+- [x] Document trade-off vs Gaussian ridges (`docs/tutorials/deepgp.md`) (large \(\|\hat{\mathbf x}\|\), no MLP mean story)
 
 ## Related
 
@@ -43,4 +43,4 @@ Task created after ridge \(K_{uu}\) stability diagnosis; Gaussian guards land wi
 
 ### 2026-11-26
 
-Superseded by [CIP-003D](../../cip/cip003D.md) (Accepted). Implementation is tracked in `2026-11-26_cip003d-phase1-layout` through `phase6-reproduction`; the closed-form and capacity acceptance criteria above are covered there.
+Completed via PR #156. Superseded by [CIP-003D](../../cip/cip003D.md) (Accepted). Implementation is tracked in `2026-11-26_cip003d-phase1-layout` through `phase6-reproduction`; the closed-form and capacity acceptance criteria above are covered there.

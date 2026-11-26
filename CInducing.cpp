@@ -718,7 +718,7 @@ double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
 {
   // CIP-0037: directions before offsets once D' is moderate; one-sided offsets.
   // If M ≤ 4 D' use n_off=1 (one window per direction, nDir may exceed D').
-  // Otherwise n_off = ceil(M/(4 D')) and nDir = M/n_off. Offsets on [1, 2.5]
+  // Otherwise n_off = ceil(M/(4 D')) and nDir = ceil(M/n_off). Offsets on [1, 2.5]
   // (a=1.5 when n_off=1). Within each block of ≤ D' directions, Gram–Schmidt;
   // further blocks are independent random frames (prototype orth_dirs).
   if(M == 0)
@@ -731,7 +731,9 @@ double CInducingWeightSpace::makeRidgeInit(CMatrix& WOut, unsigned int M,
     nOff = (M + 4 * Dp - 1) / (4 * Dp); // ceil(M / (4 Dp))
     if(nOff < 1)
       nOff = 1;
-    nDir = M / nOff;
+    // Round up so nDir * nOff >= M: every row is assigned a direction
+    // (rounding down left trailing rows zero; CIP-003C item 1).
+    nDir = (M + nOff - 1) / nOff;
     if(nDir < 1)
       nDir = 1;
   }

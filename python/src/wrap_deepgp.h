@@ -11,6 +11,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include "CAdam.h"
 #include "CDeepGp.h"
 #include "CKern.h"
 #include "CMatrix.h"
@@ -34,7 +35,9 @@ public:
            bool drop_residual = false,
            const std::string& likelihood = "gaussian",
            unsigned int num_categories = 3,
-           int verbosity = 0);
+           int verbosity = 0,
+           bool learn_window_width = false,
+           bool learn_window_widths = false);
 
   void optimize(unsigned int iters = 100,
                 int batch_size = -1,
@@ -52,6 +55,19 @@ public:
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
       unsigned int samples = 0,
       uint64_t seed = 0) const;
+
+  // Noise-free predictive (latent f) mean/variance; same arguments as predict.
+  std::pair<py::array_t<double>, py::array_t<double>> predict_noiseless(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+      unsigned int samples = 0,
+      uint64_t seed = 0) const;
+
+  // Discard Adam moments / step count (otherwise kept between optimize calls).
+  void reset_optimizer();
+  unsigned long optimizer_steps() const { return adam ? adam->getStepCount() : 0; }
+
+  bool learn_window_width() const { return learnWindowWidth && !learnWindowWidths; }
+  bool learn_window_widths() const { return learnWindowWidths; }
 
   void save(const std::string& path) const;
   static std::unique_ptr<PyDeepGP> load(const std::string& path);
@@ -85,6 +101,9 @@ private:
   std::vector<std::unique_ptr<CKern> > ownedKerns;
   std::unique_ptr<CNoise> ownedNoise;
   std::unique_ptr<CDeepGp> model;
+  std::unique_ptr<CAdam> adam;  // persists moments across optimize() calls
+  bool learnWindowWidth = false;
+  bool learnWindowWidths = false;
 };
 
 void bind_deepgp(py::module_& m);

@@ -89,12 +89,13 @@ C++ regression sweep for item 1; Python tests for each façade item; `checkGradi
 
 - [x] Item 1: weight-space defect located and fixed (`makeRidgeInit` used `nDir = M / nOff`, rounding down, so trailing rows stayed zero; now `ceil`)
 - [x] Item 1: regression sweep added (`testCGp`, M=1..300, d in {1,2,8})
-- [ ] `predict_noiseless` on `DeepGP`
-- [ ] Rectangular `jacobian_spread`
-- [ ] Hidden width above input dimension
-- [ ] Adam state kept across `optimize` calls
-- [ ] Learned windows and Hermite on `DeepGP`
-- [ ] Student-t on `DeepGP`
+- [x] `predict_noiseless` on `DeepGP`
+- [x] Rectangular `jacobian_spread`
+- [x] Hidden width above input dimension (PCA zero-padded)
+- [x] Adam state kept across `optimize` calls (`CAdam` retains moments; `reset_optimizer()`)
+- [x] Learned windows on `DeepGP` (`learn_window_width(s)`)
+- [ ] Hermite features on `DeepGP` (not in GPc: the only Hermite code is Gauss-Hermite quadrature; needs new weight-space maths, so split into its own CIP)
+- [x] Student-t on `DeepGP` (already accepted as `likelihood='student_t'` after CIP-003A; the gap listed in section 2 was out of date)
 - [ ] Notebook workarounds removed; full-protocol run
 
 ## References

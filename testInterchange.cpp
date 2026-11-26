@@ -266,6 +266,35 @@ void testProdMatern52ModelStream(const string& golden)
   delete g;
 }
 
+void testWhiteModelStream(const string& golden, const string& noWhiteGolden)
+{
+  // CIP-0027 allow-white flag survives a .model write/read, so an exact GP with
+  // kern.white round-trips; streams without the key still read as flag = false.
+  auto m = CInterchange::fromFile(golden);
+  const string path = "testInterchange_white.model";
+  m->writeGpModel(path);
+  CGp* g = readGpFromFile(path, 0);
+  expect(g->isAllowWhiteAndLikelihoodNoise(), "allow-white flag read back from the .model");
+  CMatrix Xn = m->inputs(), Yn = m->targets();
+  g->setTargetVals(Yn);
+  g->updateM();
+  g->pX = &Xn;
+  CJson out = CInterchange::exportModel(*g);  // verifies the log likelihood internally
+  expect(out.at("kernel").dump().find("kern.white") != string::npos, "kern.white exported from a .model");
+  g->setAllowWhiteAndLikelihoodNoise(false);
+  expect(throwsWith([&] { CInterchange::exportModel(*g); }, "allow-white"),
+         "negative: White without the allow-white flag is not exported");
+  delete g;
+  remove(path.c_str());
+
+  auto n = CInterchange::fromFile(noWhiteGolden);
+  n->writeGpModel(path);
+  CGp* h = readGpFromFile(path, 0);
+  expect(!h->isAllowWhiteAndLikelihoodNoise(), "streams without the key read as flag = false");
+  delete h;
+  remove(path.c_str());
+}
+
 void checkGolden(const string& path)
 {
   auto m = CInterchange::fromFile(path);
@@ -317,6 +346,7 @@ int main(int argc, char** argv)
     checkGolden(dir + "/ftc_prod_matern52.json");
     checkGolden(dir + "/fitc_matern52.json");
     testProdMatern52ModelStream(dir + "/ftc_prod_matern52.json");
+    testWhiteModelStream(dir + "/ftc_rbf_white.json", dir + "/ftc_standardize.json");
   }
   catch(ndlexceptions::Error& e)
   {

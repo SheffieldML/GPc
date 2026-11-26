@@ -432,16 +432,14 @@ void CInterchange::writeFile(const string& path) const
 
 void CInterchange::writeGpModel(const string& path, const string& comment) const
 {
-  if(hasWhite && !pgp->isSparseApproximation())
-    fail("writeGpModel", "an exact model with kern.white cannot be written as a .model file: "
-         "the stream does not record that White and likelihood.variance both add, so the "
-         "likelihood would change on reload. Keep it as JSON (gp learn --from).");
+  // An exact model with White sets the allow-white flag in fromJson, and the
+  // stream records it, so the additive likelihood survives a reload.
   writeGpToFile(*pgp, path, comment);
 }
 
 namespace {
 
-CJson exportKernel(const CKern* k, unsigned int inDim, const string& where)
+CJson exportKernel(const CKern* k, unsigned int inDim, const string& where, bool whiteOk)
 {
   const string type = k->getType();
   CJson node = CJson::makeObject();
@@ -450,7 +448,7 @@ CJson exportKernel(const CKern* k, unsigned int inDim, const string& where)
     node.set("type", CJson::makeString("kern.add"));
     CJson parts = CJson::makeArray();
     for(unsigned int i = 0; i < c->getNumKerns(); ++i)
-      parts.push(exportKernel(c->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]"));
+      parts.push(exportKernel(c->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]", whiteOk));
     node.set("parts", parts);
     return node;
   }
@@ -460,13 +458,20 @@ CJson exportKernel(const CKern* k, unsigned int inDim, const string& where)
     node.set("type", CJson::makeString("kern.prod"));
     CJson parts = CJson::makeArray();
     for(unsigned int i = 0; i < t->getNumKerns(); ++i)
-      parts.push(exportKernel(t->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]"));
+      parts.push(exportKernel(t->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]", whiteOk));
     node.set("parts", parts);
     return node;
   }
   if(type == "white")
-    fail(where, "kern.white cannot be exported from a .model file: its noise semantics there "
-         "(White-owned or sparse-jitter) differ from the wire format's additive rule");
+  {
+    if(!whiteOk)
+      fail(where, "kern.white cannot be exported from this .model: without the allow-white flag "
+           "(gp learn --allow-white-and-noise) White owns the noise, and sparse models treat it as "
+           "jitter; both differ from the wire format's additive rule");
+    node.set("type", CJson::makeString("kern.white"));
+    node.set("variance", CJson::makeNumber(k->getByPath("variance")));
+    return node;
+  }
   if(type == "rbf" || type == "matern32" || type == "matern52")
   {
     node.set("type", CJson::makeString("kern." + type));
@@ -531,7 +536,8 @@ CJson CInterchange::exportModel(const CGp& model)
         Z.setVal(model.X_u.getVal(i, j), i, j);
     doc.set("inducing_inputs", matrixToJson(Z));
   }
-  doc.set("kernel", exportKernel(model.getKernel(), model.getInputDim(), "kernel"));
+  doc.set("kernel", exportKernel(model.getKernel(), model.getInputDim(), "kernel",
+                                  !sparse && model.isAllowWhiteAndLikelihoodNoise()));
   CJson lik = CJson::makeObject();
   lik.set("type", CJson::makeString("likelihoods.gaussian"));
   lik.set("variance", CJson::makeNumber(model.getByPath("likelihood.variance")));

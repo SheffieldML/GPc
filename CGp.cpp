@@ -4055,6 +4055,29 @@ void CGp::readParamsFromStream(istream& in)
       pInducing = new CInducingPoints(&X_u);
     }
   }
+  // CIP-0016 / CIP-0027 optional trailing key (absent => false, as in older streams).
+  allowWhiteAndLikelihoodNoise = false;
+  if(in.good() && !in.eof())
+  {
+    streampos pos = in.tellg();
+    string line;
+    bool matched = false;
+    if(ndlstrutil::getline(in, line) && line.size() > 0)
+    {
+      vector<string> tokens;
+      ndlstrutil::tokenise(tokens, line, "=");
+      if(tokens.size() == 2 && tokens[0] == "allowWhiteAndLikelihoodNoise")
+      {
+        allowWhiteAndLikelihoodNoise = (tokens[1] == "1" || tokens[1] == "true");
+        matched = true;
+      }
+    }
+    if(!matched)
+    {
+      in.clear();
+      in.seekg(pos);
+    }
+  }
   setMupToDate(false);
   // Don't update M as you need py to be set for that.
   //updateM();
@@ -4095,6 +4118,10 @@ void CGp::writeParamsToStream(ostream& out) const
       pInducing->centres().toStream(out);
     }
   }
+  // Written only when set, so streams of default models are unchanged and older
+  // readers (which stop after the inducing keys) ignore it.
+  if(allowWhiteAndLikelihoodNoise)
+    writeToStream(out, "allowWhiteAndLikelihoodNoise", true);
   //py->toStream(out);
   //pX->toStream(out);
 

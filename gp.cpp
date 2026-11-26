@@ -1389,7 +1389,7 @@ void CClgp::helpInfo()
     helpArgument("sample", "For drawing HMC samples of the hyperparameter posterior of a learned GP (exact or sparse with inducing points held fixed; CIP-003B).");
     helpArgument("display", "For displaying the parameters of a learned GP model.");
     helpArgument("gnuplot", "For plotting the results in gnuplot.");
-    helpArgument("export", "gp export example_file model_file out.json: write a learned .model (plus its training data) as an interchange document (CIP-0016). Refuses models the format cannot carry exactly (White kernels, centred or scaled targets, unsupported kernels) and verifies the log likelihood.");
+    helpArgument("export", "gp export example_file model_file out.json: write a learned .model (plus its training data) as an interchange document (CIP-0016). Refuses models the format cannot carry exactly (White kernels unless the model carries the allow-white flag, learnt output scales, unsupported kernels) and verifies the log likelihood.");
     helpArgument("import", "gp import in.json model_file [data_file]: write an interchange document as a .model file plus its training data as CSV (default model_file.csv) for relearn/sample (CIP-0016).");
     helpDescriptor("For help on a specific command type gp command --h");
     cout << endl;

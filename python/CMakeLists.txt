@@ -11,6 +11,7 @@ set(GPC_PY_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_gplvm.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_deepgp.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_likelihood.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/wrap_interchange.cpp
 )
 
 pybind11_add_module(_gpc MODULE ${GPC_PY_SOURCES})

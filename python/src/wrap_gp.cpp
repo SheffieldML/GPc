@@ -1037,6 +1037,16 @@ void PyGPRegression::optimize(unsigned int iters, bool messages, py::object call
   model->setDefaultTextProgress(true);
 }
 
+void PyGPRegression::set_allow_white_and_noise(bool val)
+{
+  model->setAllowWhiteAndLikelihoodNoise(val);
+}
+
+bool PyGPRegression::allow_white_and_noise() const
+{
+  return model->isAllowWhiteAndLikelihoodNoise();
+}
+
 double PyGPRegression::objective() const
 {
   return model->computeObjectiveVal();
@@ -1584,6 +1594,13 @@ void bind_gp(py::module_& m)
            "Run SCG for iters iterations (minimises -log-likelihood).\n"
            "messages= is handled by gpc.models.GPRegression (in-place table);\n"
            "this binding only installs callback=.")
+      .def("set_allow_white_and_noise",
+           &PyGPRegression::set_allow_white_and_noise,
+           py::arg("allow"),
+           "CIP-0016: when True, a White kernel and likelihood.variance both add to the\n"
+           "Gram diagonal (K + white + sigma^2 I), matching GPy/GPmat/GPflow/GPJax.\n"
+           "Default False keeps CIP-0027 noise ownership.")
+      .def("allow_white_and_noise", &PyGPRegression::allow_white_and_noise)
       .def("objective",
            &PyGPRegression::objective,
            "Return the SCG objective (-log-likelihood).")

@@ -249,17 +249,220 @@ void testKuu()
          "type 'hermite', kernel-free K_uu, no learnable parameters");
 }
 
+// ---- phase 2: K_fu against quadrature over omega ~ N(0, I_{D'}) ----------
+double heNorm(unsigned int k, double x) // He_k(x) / sqrt(k!)
+{
+  double p0 = 1.0, p1 = x;
+  if(k == 0) return 1.0;
+  for(unsigned int i = 1; i < k; i++)
+  {
+    const double p2 = x * p1 - i * p0;
+    p0 = p1;
+    p1 = p2;
+  }
+  return p1 / sqrt(tgamma(k + 1.0));
+}
+
+// xhat_n (D'-vector) = sqrt(sigmaDiag) .* (x_n, 1), as in the ridge code.
+CMatrix xhatOf(const CMatrix& X, const vector<double>& sigmaDiag)
+{
+  const unsigned int d = X.getCols();
+  CMatrix Xh(X.getRows(), d + 1);
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    for(unsigned int j = 0; j < d; j++)
+      Xh.setVal(sqrt(sigmaDiag[j]) * X.getVal(n, j), n, j);
+    Xh.setVal(sqrt(sigmaDiag[d]), n, d);
+  }
+  return Xh;
+}
+
+// Tensor-grid trapezoid (spectrally accurate for Gaussian-weighted smooth
+// integrands). Returns B * E[erf(w.xhat_n/sqrt2) He_k(v_m.w)/sqrt(k!)] in KQ
+// and B^2 E[erf(w.xhat_i/sqrt2) erf(w.xhat_j/sqrt2)] in KffQ.
+void quadrature(CMatrix& KQ, CMatrix& KffQ, const CMatrix& Xh, const CMatrix& V,
+                const vector<unsigned int>& ks, double variance, double h, double L)
+{
+  const unsigned int D = V.getCols();
+  const unsigned int N = Xh.getRows();
+  const unsigned int M = V.getRows();
+  const int G = (int)floor(2 * L / h + 0.5) + 1;
+  const double B = sqrt(variance * M_PI / 2.0);
+  KQ.resize(N, M);
+  KQ.zeros();
+  KffQ.resize(N, N);
+  KffQ.zeros();
+  vector<int> idx(D, 0);
+  vector<double> w(D), e(N);
+  const double norm = pow(2 * M_PI, -0.5 * D);
+  bool done = false;
+  while(!done)
+  {
+    double r2 = 0.0;
+    for(unsigned int c = 0; c < D; c++)
+    {
+      w[c] = -L + idx[c] * h;
+      r2 += w[c] * w[c];
+    }
+    const double dens = norm * exp(-0.5 * r2) * pow(h, (int)D);
+    for(unsigned int n = 0; n < N; n++)
+    {
+      double t = 0.0;
+      for(unsigned int c = 0; c < D; c++)
+        t += w[c] * Xh.getVal(n, c);
+      e[n] = erf(t / sqrt(2.0));
+    }
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double s = 0.0;
+      for(unsigned int c = 0; c < D; c++)
+        s += V.getVal(m, c) * w[c];
+      const double he = heNorm(ks[m], s);
+      for(unsigned int n = 0; n < N; n++)
+        KQ.addVal(B * dens * e[n] * he, n, m);
+    }
+    for(unsigned int i = 0; i < N; i++)
+      for(unsigned int j = 0; j < N; j++)
+        KffQ.addVal(B * B * dens * e[i] * e[j], i, j);
+    unsigned int c = 0;
+    while(c < D && ++idx[c] == G)
+      idx[c++] = 0;
+    done = (c == D);
+  }
+}
+
+double maxAbsDiff(const CMatrix& A, const CMatrix& B)
+{
+  double m = 0.0;
+  for(unsigned int i = 0; i < A.getRows(); i++)
+    for(unsigned int j = 0; j < A.getCols(); j++)
+      m = max(m, fabs(A.getVal(i, j) - B.getVal(i, j)));
+  return m;
+}
+
+// Gate one kernel: (1) the erf feature identity reproduces kern.computeElement,
+// (2) wsHermiteCrossCompute reproduces the quadrature of the window integral.
+template <class K>
+void gateKernel(K& kern, const vector<double>& sigmaDiag, double variance,
+                const string& label, double h, double L, double tol)
+{
+  const unsigned int d = kern.getInputDim();
+  CMatrix X(3, d);
+  const double vals[] = {0.3, -0.7, 0.55, 0.9, -0.2, 0.4, -0.6, 0.1, 0.8};
+  for(unsigned int n = 0; n < 3; n++)
+    for(unsigned int j = 0; j < d; j++)
+      X.setVal(vals[(n * d + j) % 9], n, j);
+  CMatrix V;
+  vector<unsigned int> ks;
+  CInducingHermite::makeLayout(V, ks, 9, d);
+  // makeLayout may return only odd degrees up to capacity; ensure degrees 1,3,5.. appear
+  CMatrix Kfu, KQ, KffQ, Kff(X.getRows(), X.getRows());
+  kern.wsHermiteCrossCompute(Kfu, X, V, ks);
+  quadrature(KQ, KffQ, xhatOf(X, sigmaDiag), V, ks, variance, h, L);
+  kern.compute(Kff, X);
+  const double eFeat = maxAbsDiff(Kff, KffQ);
+  const double eHerm = maxAbsDiff(Kfu, KQ);
+  cout << label << ": |K_ff - erf-feature quadrature| = " << eFeat
+       << ", |K_fu - Hermite quadrature| = " << eHerm << endl;
+  expect(eFeat < tol, label + ": erf-feature identity reproduces computeElement");
+  expect(eHerm < tol, label + ": K_fu matches quadrature of the window integral");
+  // Nyström capture phi_n = L^{-1} K_u,n has |phi_n|^2 <= k(x_n,x_n) (K_ff - Q_ff is PSD).
+  CInducingHermite ind(V, ks);
+  CMatrix Kuu(V.getRows(), V.getRows()), Kuf, kd(X.getRows(), 1);
+  ind.computeKuu(Kuu, kern);
+  ind.computeKuf(Kuf, kern, X);
+  kern.diagCompute(kd, X);
+  const unsigned int M = V.getRows();
+  vector<vector<double> > Lc(M, vector<double>(M, 0.0));
+  for(unsigned int i = 0; i < M; i++)
+    for(unsigned int j = 0; j <= i; j++)
+    {
+      double a = Kuu.getVal(i, j);
+      for(unsigned int c = 0; c < j; c++)
+        a -= Lc[i][c] * Lc[j][c];
+      Lc[i][j] = (i == j) ? sqrt(a) : a / Lc[j][j];
+    }
+  bool bounded = true;
+  double ratio = 0.0;
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    vector<double> phi(M);
+    double cap = 0.0;
+    for(unsigned int i = 0; i < M; i++)
+    {
+      double a = Kuf.getVal(i, n);
+      for(unsigned int c = 0; c < i; c++)
+        a -= Lc[i][c] * phi[c];
+      phi[i] = a / Lc[i][i];
+      cap += phi[i] * phi[i];
+    }
+    if(cap > kd.getVal(n, 0) * (1 + 1e-10)) bounded = false;
+    ratio = max(ratio, cap / kd.getVal(n, 0));
+  }
+  cout << label << ": max capture / prior variance = " << ratio << endl;
+  expect(bounded, label + ": Nystrom capture <= prior variance");
+}
+
+void testKfu()
+{
+  { // isotropic MLP, non-default parameters, d=1 (D'=2)
+    CMlpKern kern(1);
+    kern.setParam(1.7, 0); // weight variance
+    kern.setParam(0.6, 1); // bias variance
+    kern.setParam(2.3, 2); // variance
+    gateKernel(kern, {1.7, 0.6}, 2.3, "mlp d=1", 0.05, 9.0, 1e-9);
+  }
+  { // ARD MLP, d=2 (D'=3)
+    CMlpardKern kern(2);
+    kern.setParam(0.8, 0);
+    kern.setParam(0.5, 1);
+    kern.setParam(1.4, 2);
+    kern.setParam(1.3, 3);
+    kern.setParam(0.4, 4);
+    gateKernel(kern, {0.8 * 1.3, 0.8 * 0.4, 0.5}, 1.4, "mlpard d=2", 0.1, 8.0, 1e-6);
+  }
+}
+
+void testKernelRouting()
+{
+  CMatrix V;
+  vector<unsigned int> ks;
+  CInducingHermite::makeLayout(V, ks, 6, 2);
+  CInducingHermite ind(V, ks);
+  CMatrix X(4, 2), K, Kx;
+  for(unsigned int n = 0; n < 4; n++)
+  {
+    X.setVal(0.3 * n - 0.4, n, 0);
+    X.setVal(0.5 - 0.2 * n, n, 1);
+  }
+  CMlpKern mlp(2);
+  mlp.setParam(1.3, 2);
+  // E2: a kernel without Hermite features is refused, with a message naming it.
+  CRbfKern rbf(2);
+  const string e2 = thrown([&] { ind.computeKuf(K, rbf, X); });
+  expect(has(e2, "E2") && has(e2, "mlp"), "E2: non-MLP kernel refused with an explicit message");
+  // Compound mlp + white routes to the signal component and matches mlp alone.
+  CCmpndKern cmp(2);
+  cmp.addKern(&mlp);
+  CWhiteKern white(2);
+  cmp.addKern(&white);
+  CMatrix Kmlp, Kcmp;
+  ind.computeKuf(Kmlp, mlp, X);
+  ind.computeKuf(Kcmp, cmp, X);
+  expect(maxAbsDiff(Kmlp, Kcmp) == 0.0, "compound (mlp + white) routes to the signal component");
+  // Layout contract: Kuf is M x N, Kux equals Kuf on the same inputs.
+  ind.computeKux(Kx, mlp, X);
+  expect(Kmlp.getRows() == ind.numInducing() && Kmlp.getCols() == 4 && maxAbsDiff(Kmlp, Kx) == 0.0,
+         "Kuf is M x N and Kux equals Kuf on the same inputs");
+}
+
 void testGating()
 {
   CMatrix V;
   vector<unsigned int> ks;
   CInducingHermite::makeLayout(V, ks, 6, 2);
   CInducingHermite ind(V, ks);
-  CMlpKern kern(2);
-  CMatrix X(4, 2), K;
-  X.zeros();
-  expect(!thrown([&] { ind.computeKuf(K, kern, X); }).empty(),
-         "computeKuf throws until phase 2");
+  CMatrix K;
   expect(!thrown([&] { ind.setCentres(V); }).empty(), "setCentres refused (windows fixed)");
 }
 
@@ -269,7 +472,7 @@ int main()
 {
   try
   {
-    cout << "==== testInducingHermite (CIP-003D phase 1) ====" << endl;
+    cout << "==== testInducingHermite (CIP-003D phases 1-2) ====" << endl;
     testCapacityTable();
     testSweep();
     testE1Message();
@@ -277,6 +480,8 @@ int main()
     testAudit();
     testWarnings();
     testKuu();
+    testKfu();
+    testKernelRouting();
     testGating();
     cout << "Number of failures: " << fails << "." << endl;
     return fails > 0 ? 1 : 0;

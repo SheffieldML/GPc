@@ -273,6 +273,15 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   virtual void wsGradS(CMatrix& gS, const CMatrix& X, const CMatrix& W, double s,
                        const CMatrix& gKfu) const;
 
+  // CIP-003D: fixed Hermite ridge windows. Kfu is N x M with
+  //   Kfu[n,m] = sqrt(variance) * c_k * rho^k,  rho = v_m.xhat_n / sqrt(1+|xhat_n|^2),
+  //   c_k = (-1)^j (2j-1)!! / sqrt(k!),  j = (k-1)/2  (k odd),
+  // derived for this library's MLP kernel
+  //   variance * asin(xhat.xhat' / sqrt((1+|xhat|^2)(1+|xhat'|^2))).
+  // V is M x (d+1) with unit rows; ks holds the M odd degrees.
+  virtual void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                     const std::vector<unsigned int>& ks) const;
+
   virtual void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                                    const CMatrix& a, double s) const;
   virtual void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
@@ -801,6 +810,8 @@ class CCmpndKern: public CComponentKern {
                const CMatrix& gKfu) const;
   void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                            const CMatrix& a, double s) const;
+  void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                             const std::vector<unsigned int>& ks) const;
   void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                          const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
@@ -1442,6 +1453,8 @@ class CMlpKern: public CKern {
                const CMatrix& gKfu) const;
   void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                            const CMatrix& a, double s) const;
+  void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                             const std::vector<unsigned int>& ks) const;
   void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                          const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
@@ -1709,6 +1722,8 @@ class CMlpardKern: public CArdKern {
                const CMatrix& gKfu) const;
   void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                            const CMatrix& a, double s) const;
+  void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                             const std::vector<unsigned int>& ks) const;
   void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                          const CMatrix& a, double s, const CMatrix& gKfu) const;
   void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,

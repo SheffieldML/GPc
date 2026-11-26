@@ -147,6 +147,14 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 **Convention mismatch (new, must be handled in phase 2).** The prototype kernel is \(\sigma^2\tfrac2\pi\arcsin\!\big(2\hat x\!\cdot\!\hat x'/\sqrt{(1+2\|\hat x\|^2)(1+2\|\hat x'\|^2)}\big)\). GPc's `CMlpKern::computeElement` is \(\sigma^2\arcsin\!\big(\hat x\!\cdot\!\hat x'/\sqrt{(1+\|\hat x\|^2)(1+\|\hat x'\|^2)}\big)\): no \(2/\pi\) prefactor, and the factor 2 is absorbed in the weight and bias variances. So \(\rho\), \(c_k\) and the \(\sqrt{\sigma^2}\) prefactor above cannot be copied from the prototype; they must be re-derived for GPc's form (the ridge code's \(B=\sqrt{\sigma^2\pi/2}\) shows the same adjustment). The quadrature gate in phase 2 is what settles this; the prototype's figures are compared only after rescaling.
 
+**Convention derivation (phase 2, gated).** Write \(\hat x=(\sqrt w\,x,\sqrt b)\), \(n_2=\|\hat x\|^2\), \(B=\sqrt{\sigma^2\pi/2}\). The identity \(\mathbb E[\operatorname{erf}(a\!\cdot\!\omega)\operatorname{erf}(b\!\cdot\!\omega)]=\tfrac2\pi\arcsin\big(2a\!\cdot\!b/\sqrt{(1+2\|a\|^2)(1+2\|b\|^2)}\big)\) with \(a=\hat x/\sqrt2\) gives \(k(x,x')=B^2\,\mathbb E_\omega[\operatorname{erf}(\omega\!\cdot\!\hat x/\sqrt2)\operatorname{erf}(\omega\!\cdot\!\hat x'/\sqrt2)]\), so \(K_{fu}=B\,\mathbb E_\omega[\operatorname{erf}(\omega\!\cdot\!\hat x/\sqrt2)\,He_k(v\!\cdot\!\omega)]/\sqrt{k!}\). For jointly Gaussian \((s,y)=(v\!\cdot\!\omega,\hat x\!\cdot\!\omega)\) with \(\operatorname{Var}s=1\), \(\mathbb E[He_k(s)h(y)]=\operatorname{Cov}(s,y)^k\,\mathbb E[h^{(k)}(y)]\); with \(h^{(k)}(y)=\sqrt{2/\pi}\,He_{k-1}(y)e^{-y^2/2}\) (\(k\) odd) and \(\mathbb E_{y\sim N(0,v)}He_{2m}(y)=(2m-1)!!\,(v-1)^m\), this reduces to
+
+\[
+K_{fu}[n,m]=\sigma\,c_k\,\rho^k,\qquad \rho=\frac{v\!\cdot\!\hat x}{\sqrt{1+n_2}},\qquad c_k=\frac{(-1)^j\,(2j-1)!!}{\sqrt{k!}},\ j=\tfrac{k-1}2 .
+\]
+
+The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and \(\rho_p=v\!\cdot\!\hat x_p/\sqrt{1+2\|\hat x_p\|^2}\) are the same expression for its kernel (\(\tfrac2\pi\sigma^2\arcsin\), \(\operatorname{erf}(\omega\!\cdot\!\hat x_p)\)): substituting \(\hat x_p=\hat x/\sqrt2\) gives \(\rho_p=\rho/\sqrt2\) and \(\sqrt{2/\pi}\,\sigma\) times our \(c_k\rho^k\), the \(\sqrt{2/\pi}\) being the \(2/\pi\) kernel prefactor. Implemented in `mlpHermiteKfuDiag` (`CKern.cpp`) for `CMlpKern` and `CMlpardKern` (ARD: \(\sigma_{\text{diag},j}=w\,\text{scale}_j\), bias last). Gates in `testInducingHermite`: the erf-feature identity reproduces `computeElement` (\(\lesssim10^{-11}\)), \(K_{fu}\) matches tensor-grid quadrature of the window integral (\(\lesssim10^{-11}\) for isotropic \(d=1\) and ARD \(d=2\)), and the Nyström capture never exceeds the prior variance (0.98 and 0.99 of it at \(M=9\)). The numerical comparison with the prototype's own output is left to phase 6; here the reconciliation is analytic.
+
 **Per-degree capacity (decision, agreed 2026-11-26: keep fixed for now, store `ks` in the stream; over-capacity and near-capacity are error E1 and warning W2).** The rule is \(\lfloor\binom{D'+k-1}{k}/2\rfloor\) per odd degree \(k\le9\), degree 1 capped at \(D'\). Implications:
 
 | input dim \(d\) | total capacity (\(k\le 9\)) | without the \(/2\) |
@@ -165,9 +173,9 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 ## Implementation Status
 
-- [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1; `c_k` arrives with phase 2)
-- [ ] Ask-versus-delivered: E1, E5, W1, W2 done and tested (phase 1); E2-E4, E6, W3, W4 follow in phases 2, 4, 5
-- [ ] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates
+- [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1)
+- [ ] Ask-versus-delivered: E1, E2, E5, W1, W2 done and tested (phases 1-2); E3, E4, E6, W3, W4 follow in phases 4, 5
+- [x] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates (phase 2; `wsHermiteCrossCompute` on `CMlpKern`, `CMlpardKern`, compound; the `wsHermiteGradParams` / `wsHermiteGradX` virtuals arrive with phase 3)
 - [ ] Kernel-parameter gradients and `checkGradients`
 - [ ] `CGp` / `CDeepGp` / stream / CLI wiring
 - [ ] Python façade and tests

@@ -335,8 +335,8 @@ struct HermiteLayoutReport
 
 // CIP-003D: fixed Hermite ridge windows (odd degrees), no width, no offset, no
 // learnable parameters. K_uu = delta_{kl} (v_m . v_n)^k is kernel-free.
-// Phase 1: layout, capacity, audit and K_uu. K_uf / K_ux / gradients throw
-// NotImplementedError until phases 2 and 3.
+// Phases 1-2: layout, capacity, audit, K_uu, K_uf / K_ux (MLP kernels only,
+// error E2 otherwise). Gradients throw NotImplementedError until phase 3.
 class CInducingHermite : public CInducing
 {
  public:
@@ -399,6 +399,7 @@ class CInducingHermite : public CInducing
   CMatrix V;                         // M x D', unit rows
   std::vector<unsigned int> ks;      // M odd degrees
   HermiteLayoutReport layoutReport;
+  mutable CMatrix Kfu; // N x M scratch for computeKuf/Kux
 };
 
 #endif /* CINDUCING_H */

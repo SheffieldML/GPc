@@ -1822,16 +1822,20 @@ void CInducingHermite::computeKuu(CMatrix& Kuu, const CKern& /*kern*/) const
   fillKuu(Kuu);
 }
 
-void CInducingHermite::computeKuf(CMatrix&, const CKern&, const CMatrix&) const
+void CInducingHermite::computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingHermite::computeKuf is not implemented until CIP-003D phase 2.");
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  kern.wsHermiteCrossCompute(Kfu, X, V, ks);
+  Kuf.resize(M, N);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < N; n++)
+      Kuf.setVal(Kfu.getVal(n, m), m, n);
 }
 
-void CInducingHermite::computeKux(CMatrix&, const CKern&, const CMatrix&) const
+void CInducingHermite::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingHermite::computeKux is not implemented until CIP-003D phase 2.");
+  computeKuf(Kux, kern, Xstar);
 }
 
 void CInducingHermite::gradFromKuuKuf(CMatrix&, CMatrix&, CMatrix*, const CKern&,

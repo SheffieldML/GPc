@@ -93,7 +93,7 @@ C++ regression sweep for item 1; Python tests for each façade item; `checkGradi
 - [x] Rectangular `jacobian_spread`
 - [x] Hidden width above input dimension (PCA zero-padded)
 - [x] Adam state kept across `optimize` calls (`CAdam` retains moments; `reset_optimizer()`)
-- [x] Learned windows on `DeepGP` (`learn_window_width(s)`)
+- [x] Learned windows on `DeepGP` (`learn_window_width(s)`); the width gradient was not reaching the optimiser until the fix in `backlog/bugs/2026-11-26_deepgp-learned-window-width-no-effect.md`
 - [ ] Hermite features on `DeepGP` (not in GPc: the only Hermite code is Gauss-Hermite quadrature; needs new weight-space maths, so split into its own CIP)
 - [x] Student-t on `DeepGP` (already accepted as `likelihood='student_t'` after CIP-003A; the gap listed in section 2 was out of date)
 - [ ] Notebook workarounds removed; full-protocol run

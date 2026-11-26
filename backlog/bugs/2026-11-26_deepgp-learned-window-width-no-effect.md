@@ -1,7 +1,7 @@
 ---
 id: "2026-11-26_deepgp-learned-window-width-no-effect"
 title: "DeepGP learn_window_width=True leaves the trained ELBO unchanged"
-status: "Proposed"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-26"
 last_updated: "2026-11-26"
@@ -36,9 +36,9 @@ Possibilities: the width gradient is zero or not wired into the deep GP objectiv
 
 ## Acceptance Criteria
 
-- [ ] Cause identified
-- [ ] A test shows the learned width moves from its initial value on a problem where it should
-- [ ] `checkGradients`-style check of the width gradient in the deep GP objective
+- [x] Cause identified: `CSvgp::packInducingGrad` and `packOptIntoStochastic` (`CDeepGp.cpp`) packed centre gradients and zero-filled the trailing width slots, so the optimiser saw a zero width gradient (the gradient was computed correctly by `CInducingWeightSpace`)
+- [x] A test shows the learned width changes the trained ELBO (`test_learned_window_width_changes_the_trained_elbo`; reproduction now 86.91 learned against 80.97 fixed)
+- [x] Finite-difference check of the width gradient, tied and untied (`testDeepGp`, CIP-003C block; max error about 4e-10; fails with 0.09 and 0.03 on the old code)
 
 ## Related
 
@@ -49,3 +49,5 @@ Possibilities: the width gradient is zero or not wired into the deep GP objectiv
 ### 2026-11-26
 
 Task created with Proposed status.
+
+Fixed on branch `cip003C-learned-window-width-fix`: width gradient packed in both paths. Note for the notebooks: the earlier "learned windows" rows in `deepgp-mlp` notebook 05 are invalid and need re-running.

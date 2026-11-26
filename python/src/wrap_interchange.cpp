@@ -43,6 +43,19 @@ public:
     return {m, v};
   }
 
+  std::pair<py::array_t<double>, py::array_t<double>> predict_latent(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xnew) const
+  {
+    CMatrix Xn = matrixFromNumpy(Xnew);
+    std::vector<double> mu, var;
+    impl->predictLatent(Xn, mu, var);
+    py::array_t<double> m(mu.size()), v(var.size());
+    std::copy(mu.begin(), mu.end(), m.mutable_data());
+    std::copy(var.begin(), var.end(), v.mutable_data());
+    return {m, v};
+  }
+  bool is_laplace() const { return impl->isLaplace(); }
+
 private:
   std::unique_ptr<CInterchange> impl;
 };
@@ -57,6 +70,8 @@ void bind_interchange(py::module_& m)
       .def("objective", &PyInterchangeModel::objective)
       .def("to_json", &PyInterchangeModel::to_json)
       .def("predict", &PyInterchangeModel::predict, py::arg("Xnew"))
+      .def("predict_latent", &PyInterchangeModel::predict_latent, py::arg("Xnew"))
+      .def("is_laplace", &PyInterchangeModel::is_laplace)
       .def("set_allow_white_and_noise", &PyInterchangeModel::set_allow_white_and_noise)
       .def("allow_white_and_noise", &PyInterchangeModel::allow_white_and_noise)
       .def("set_by_path", &PyInterchangeModel::set_by_path)

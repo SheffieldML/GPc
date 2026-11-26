@@ -61,6 +61,11 @@ class CInterchange
   // per row of Xnew for single-output models.
   void predict(const CMatrix& Xnew, std::vector<double>& mean, std::vector<double>& var) const;
 
+  // Laplace models only: moments of the latent f at Xnew (predict() returns the
+  // moments of y derived from these). Throws for Gaussian models.
+  void predictLatent(const CMatrix& Xnew, std::vector<double>& mu, std::vector<double>& var) const;
+  bool isLaplace() const { return laplace; }
+
   CInterchange(const CInterchange&) = delete;
   CInterchange& operator=(const CInterchange&) = delete;
   ~CInterchange();
@@ -71,8 +76,10 @@ class CInterchange
   CJson doc;                 // source document (structure + extension fields)
   CMatrix X, Y, Z;
   std::unique_ptr<CCmpndKern> kern;
-  std::unique_ptr<CGaussianNoise> noise;
+  std::unique_ptr<CNoise> noise;
   bool hasWhite = false;
+  bool laplace = false;      // models.gp with a Bernoulli or Poisson likelihood, inference: laplace
+  enum NonGaussian { NoneNG, BernoulliNG, PoissonNG } nonGaussian = NoneNG;
   CIndexWhiteKern* indexWhite = nullptr;  // per-output noise of a mixed_gaussian likelihood (owned by kern)
   double targetJacobian = 0.0;  // -N log s of a normalizer, added to the reported log likelihood
   std::vector<CKern*> leaves;  // atomic kernels in document order (owned by kern)

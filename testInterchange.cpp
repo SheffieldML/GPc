@@ -376,6 +376,19 @@ void checkGolden(const string& path)
     okMean = okMean && std::fabs(mean[i] - rm.at(i).asNumber()) <= tol.at("mean").asNumber();
     okVar = okVar && std::fabs(var[i] - rv.at(i).asNumber()) <= tol.at("var").asNumber();
   }
+  if(ref.has("latent_mean"))
+  {
+    vector<double> mu, s2;
+    m->predictLatent(Xnew, mu, s2);
+    bool okMu = mu.size() == ref.at("latent_mean").size(), okS2 = okMu;
+    for(size_t i = 0; okMu && i < mu.size(); ++i)
+    {
+      okMu = okMu && std::fabs(mu[i] - ref.at("latent_mean").at(i).asNumber()) <= tol.at("mean").asNumber();
+      okS2 = okS2 && std::fabs(s2[i] - ref.at("latent_var").at(i).asNumber()) <= tol.at("var").asNumber();
+    }
+    expect(okMu, path + ": latent predictive mean vs oracle");
+    expect(okS2, path + ": latent predictive variance vs oracle");
+  }
   expect(okMean, path + ": predictive mean vs oracle");
   expect(okVar, path + ": predictive variance vs oracle");
 
@@ -405,6 +418,8 @@ int main(int argc, char** argv)
     checkGolden(dir + "/ftc_icm.json");
     checkGolden(dir + "/ftc_lcm.json");
     testCoregionalisation(dir + "/ftc_icm.json", dir + "/ftc_lcm.json");
+    checkGolden(dir + "/laplace_bernoulli.json");
+    checkGolden(dir + "/laplace_poisson.json");
   }
   catch(ndlexceptions::Error& e)
   {

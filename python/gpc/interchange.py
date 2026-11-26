@@ -46,6 +46,11 @@ def to_wire(model, doc_template=None):
 
 def reference(model, Xnew):
     mean, var = model.predict(Xnew)
-    return {"log_likelihood": -float(model.objective()),
-            "mean": mean.ravel().tolist(),
-            "var": var.ravel().tolist()}
+    out = {"log_likelihood": -float(model.objective()),
+           "mean": mean.ravel().tolist(),
+           "var": var.ravel().tolist()}
+    if model.is_laplace():
+        mu, s2 = model.predict_latent(Xnew)
+        out["latent_mean"] = mu.ravel().tolist()
+        out["latent_var"] = s2.ravel().tolist()
+    return out

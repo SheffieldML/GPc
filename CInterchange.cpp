@@ -300,7 +300,8 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
 
   const string type = need(doc, "type", "document").asString();
   const bool sparse = (type == "models.sparse_gp_regression");
-  if(!sparse && type != "models.gp_regression")
+  const bool generic = (type == "models.gp");
+  if(!sparse && !generic && type != "models.gp_regression")
     fail("type", "unknown model type '" + type + "'");
 
   const unsigned int inputDim = countAt(need(doc, "input_dim", "document"), "input_dim");
@@ -327,8 +328,56 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
   const CJson& lik = need(doc, "likelihood", "document");
   const string likType = need(lik, "type", "likelihood").asString();
   const bool mixed = (likType == "likelihoods.mixed_gaussian");
-  if(!mixed && likType != "likelihoods.gaussian")
-    fail("likelihood.type", "only likelihoods.gaussian and likelihoods.mixed_gaussian are supported");
+  const bool bernoulli = (likType == "likelihoods.bernoulli"), poisson = (likType == "likelihoods.poisson");
+  if(generic != (bernoulli || poisson))
+    fail("type", "models.gp is for non-Gaussian likelihoods (bernoulli, poisson); got likelihood '" + likType + "'");
+  if(!mixed && !bernoulli && !poisson && likType != "likelihoods.gaussian")
+    fail("likelihood.type", "only gaussian, mixed_gaussian, bernoulli and poisson likelihoods are supported");
+  if(generic)
+  {
+    // Bernoulli (probit) or Poisson (log) with Laplace inference on a full GP.
+    if(!doc.has("inference") || doc.at("inference").asString() != "laplace")
+      fail("inference", "non-Gaussian likelihoods need inference: laplace");
+    if(doc.has("approximation") && doc.at("approximation").asString() != "ftc")
+      fail("approximation", "non-Gaussian models are full GPs (ftc)");
+    if(doc.has("mean") || doc.has("normalizer") || doc.has("sparse_linalg") || doc.has("inducing_inputs"))
+      fail("document", "mean, normalizer and sparse fields are not defined for non-Gaussian models");
+    if(lik.has("variance"))
+      fail("likelihood.variance", "bernoulli and poisson likelihoods take no variance");
+    const string link = need(lik, "link", "likelihood").asString();
+    if(link != (bernoulli ? "probit" : "log"))
+      fail("likelihood.link", "'" + link + "' is not valid for " + likType);
+    for(unsigned int i = 0; i < m->Y.getRows(); ++i)
+    {
+      const double y = m->Y.getVal(i, 0);
+      if(bernoulli && y != 0.0 && y != 1.0)
+        fail("data.Y", "row " + to_string(i) + ": bernoulli labels must be 0 or 1");
+      if(poisson && (y < 0.0 || y != std::floor(y)))
+        fail("data.Y", "row " + to_string(i) + ": poisson counts must be non-negative integers");
+    }
+    m->kern.reset(new CCmpndKern(inputDim));
+    bool white = false;
+    buildKernelTree(need(doc, "kernel", "document"), inputDim, "kernel", *m->kern, m->leaves, white);
+    if(white)
+      fail("kernel", "kern.white is not supported for non-Gaussian models");
+    if(bernoulli)
+    {
+      m->noise.reset(new CProbitNoise(&m->Y));
+      m->noise->setParam(0.0, 0);   // GPy's Bernoulli has no bias: p(y=1|f) = Phi(f)
+    }
+    else
+      m->noise.reset(new CPoissonNoise(&m->Y));
+    m->pgp.reset(new CGp(m->kern.get(), m->noise.get(), &m->X, CGp::FTC, 0, 0));
+    m->pgp->setBiasVal(0.0, 0);
+    m->pgp->setLaplaceInference(true);
+    // GPy stops at 1e-4 on the objective, which leaves ~1e-6 error in the predictive; the
+    // interchange reader solves to convergence so documents have one meaning.
+    m->pgp->setLaplaceSolver(200, 1e-13, 0.0);
+    m->pgp->setVerbosity(0);
+    m->laplace = true;
+    m->nonGaussian = bernoulli ? BernoulliNG : PoissonNG;
+    return m;
+  }
   vector<double> mixedVar;
   unsigned int mixedCol = 0;
   double sigma2 = 0.0;
@@ -384,8 +433,11 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
   }
 
   // Noise: zero mean, so the bias is fixed to zero (GPy semantics).
-  m->noise.reset(new CGaussianNoise(&m->Y));
-  m->noise->setBiasVal(0.0, 0);
+  {
+    unique_ptr<CGaussianNoise> g(new CGaussianNoise(&m->Y));
+    g->setBiasVal(0.0, 0);
+    m->noise = std::move(g);
+  }
 
   // Target transform. mean.constant c and normalizer both map onto GPc's stored
   // bias/scale (m = (y - bias)/scale). They are exclusive in 0.1: the order in
@@ -465,6 +517,29 @@ void CInterchange::predict(const CMatrix& Xnew, vector<double>& mean, vector<dou
   if(Xnew.getCols() != X.getCols())
     fail("predict", "Xnew has " + to_string(Xnew.getCols()) + " columns but the model has "
          + to_string(X.getCols()) + " inputs");
+  if(laplace)
+  {
+    // Moments of y from the latent Gaussian N(mu, s2).
+    vector<double> mu, s2;
+    predictLatent(Xnew, mu, s2);
+    mean.resize(mu.size());
+    var.resize(mu.size());
+    for(size_t i = 0; i < mu.size(); ++i)
+    {
+      if(nonGaussian == BernoulliNG)
+      {
+        const double p = ndlutil::cumGaussian(mu[i] / std::sqrt(1.0 + s2[i]));
+        mean[i] = p;
+        var[i] = p * (1.0 - p);
+      }
+      else
+      {
+        mean[i] = std::exp(mu[i] + 0.5 * s2[i]);
+        var[i] = mean[i] + mean[i] * mean[i] * std::expm1(s2[i]);
+      }
+    }
+    return;
+  }
   CMatrix mu(Xnew.getRows(), Y.getCols());
   CMatrix vs(Xnew.getRows(), Y.getCols());
   pgp->predictiveMeanVar(mu, vs, Xnew);
@@ -474,6 +549,21 @@ void CInterchange::predict(const CMatrix& Xnew, vector<double>& mean, vector<dou
   {
     mean[i] = mu.getVal(i, 0);
     var[i] = vs.getVal(i, 0);
+  }
+}
+
+void CInterchange::predictLatent(const CMatrix& Xnew, vector<double>& mu, vector<double>& var) const
+{
+  if(!laplace)
+    fail("predictLatent", "only Laplace models have a latent predictive");
+  CMatrix m(Xnew.getRows(), 1), v(Xnew.getRows(), 1);
+  pgp->laplaceLatentMeanVar(m, v, Xnew);
+  mu.resize(Xnew.getRows());
+  var.resize(Xnew.getRows());
+  for(unsigned int i = 0; i < Xnew.getRows(); ++i)
+  {
+    mu[i] = m.getVal(i, 0);
+    var[i] = v.getVal(i, 0);
   }
 }
 
@@ -528,7 +618,11 @@ CJson CInterchange::toJson() const
   out.erase("x-reference");
   size_t leafIndex = 0;
   writeKernelParams(out.at("kernel"), leafIndex);
-  if(indexWhite)
+  if(laplace)
+  {
+    // no likelihood parameters on the wire
+  }
+  else if(indexWhite)
   {
     CJson v = CJson::makeArray();
     for(unsigned int d = 0; d < indexWhite->getOutputDim(); ++d)

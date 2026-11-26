@@ -266,6 +266,61 @@ void testProdMatern52ModelStream(const string& golden)
   delete g;
 }
 
+void testCoregionalisation(const string& icm, const string& lcm)
+{
+  // ICM/LCM with per-output noise: .model round trip keeps active_dims, and bad
+  // documents are refused with the offending field named.
+  auto m = CInterchange::fromFile(lcm);
+  const string path = "testInterchange_lcm.model";
+  m->writeGpModel(path);
+  CGp* g = readGpFromFile(path, 0);
+  CMatrix Xn = m->inputs(), Yn = m->targets();
+  g->setTargetVals(Yn);
+  g->updateM();
+  g->pX = &Xn;
+  CJson out = CInterchange::exportModel(*g);  // verifies the log likelihood internally
+  const string k = out.at("kernel").dump();
+  expect(k.find("kern.coregionalize") != string::npos && k.find("active_dims") != string::npos,
+         "coregionalize and active_dims exported from a .model");
+  expect(out.at("likelihood").at("type").asString() == "likelihoods.mixed_gaussian",
+         "index-white noise exported as likelihoods.mixed_gaussian");
+  delete g;
+  remove(path.c_str());
+
+  const CJson base = CJson::parseFile(icm);
+  {
+    CJson d = base;
+    d.at("kernel").at("parts").at(1).erase("active_dims");
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "active_dims"),
+           "negative: coregionalize without active_dims");
+  }
+  {
+    CJson d = base;
+    d.at("kernel").at("parts").at(0).set("active_dims", CJson::parse("[7]"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "outside"), "negative: active_dims column out of range");
+  }
+  {
+    CJson d = base;
+    d.at("likelihood").erase("output_index_column");
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "output_index_column"),
+           "negative: mixed_gaussian without output_index_column");
+  }
+  {
+    CJson d = base;
+    d.at("data").set("X", CJson::parse("[[0,5],[1,0],[2,0],[0.5,1],[1.5,1],[2.5,1]]"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "output index"),
+           "negative: data output index outside the noise vector");
+  }
+  {
+    CJson d = base;
+    d.at("likelihood").set("variance", CJson::parse("[0.1]"));
+    d.at("data").set("X", CJson::parse("[[0,0],[1,0],[2,0],[0.5,0],[1.5,0],[2.5,0]]"));
+    d.at("kernel").at("parts").at(1).set("output_dim", CJson::makeNumber(1));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "rows"),
+           "negative: W rows disagree with output_dim");
+  }
+}
+
 void testWhiteModelStream(const string& golden, const string& noWhiteGolden)
 {
   // CIP-0027 allow-white flag survives a .model write/read, so an exact GP with
@@ -347,6 +402,9 @@ int main(int argc, char** argv)
     checkGolden(dir + "/fitc_matern52.json");
     testProdMatern52ModelStream(dir + "/ftc_prod_matern52.json");
     testWhiteModelStream(dir + "/ftc_rbf_white.json", dir + "/ftc_standardize.json");
+    checkGolden(dir + "/ftc_icm.json");
+    checkGolden(dir + "/ftc_lcm.json");
+    testCoregionalisation(dir + "/ftc_icm.json", dir + "/ftc_lcm.json");
   }
   catch(ndlexceptions::Error& e)
   {

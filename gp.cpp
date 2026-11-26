@@ -715,11 +715,11 @@ void CClgp::exportJson()
   CMatrix y;
   readData(X, y, dataName);
   CGp* pmodel=readGpFromFile(modelFileName, getVerbosity());
-  pmodel->setTargetVals(y);
-  pmodel->updateM();
-  pmodel->pX=&X;
   if(pmodel->getInputDim()!=X.getCols())
     throw ndlexceptions::Error(dataName + ": input data is not of correct dimension");
+  pmodel->pX=&X;
+  pmodel->setTargetVals(y);
+  pmodel->updateM();
   CJson doc=CInterchange::exportModel(*pmodel);
   doc.dumpFile(outName);
   exitNormal();

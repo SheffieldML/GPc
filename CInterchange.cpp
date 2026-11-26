@@ -102,16 +102,39 @@ int linalgFrom(const string& s, const string& where)
   fail(where, "unknown sparse_linalg '" + s + "'");
 }
 
+// GPc realises likelihoods.mixed_gaussian as an index-white kernel plus a frozen
+// likelihood variance of this size.
+const double kMixedFloor = 1e-6;
+
 // ARD split (CIP-0016): GPc rbfard has 1/l_j^2 = inverseWidth * inputScale_j. We
 // store inverseWidth = min(l)^-2 and inputScale_j = (min l / l_j)^2, so the
 // smallest lengthscale carries scale one.
-bool buildLeaf(const CJson& node, unsigned int inDim, const string& where,
-               unique_ptr<CKern>& out, bool& isWhite)
+bool buildLeafCore(const CJson& node, unsigned int inDim, const string& where,
+                   unique_ptr<CKern>& out, bool& isWhite)
 {
   isWhite = false;
   const string type = need(node, "type", where).asString();
-  if(node.has("active_dims"))
-    fail(where, "active_dims is not supported by this reader");
+  if(type == "kern.coregionalize")
+  {
+    if(inDim != 1)
+      fail(where, "kern.coregionalize needs active_dims with exactly one column");
+    const unsigned int D = countAt(need(node, "output_dim", where), where + ".output_dim");
+    const CMatrix W = matrixAt(need(node, "W", where), where + ".W");
+    if(W.getRows() != D)
+      fail(where + ".W", "has " + to_string(W.getRows()) + " rows but output_dim is " + to_string(D));
+    const CJson& kappa = need(node, "kappa", where);
+    if(!kappa.isArray() || kappa.size() != D)
+      fail(where + ".kappa", "must be an array of output_dim entries");
+    unique_ptr<CCoregionalizeKern> k(new CCoregionalizeKern(1, D, W.getCols()));
+    for(unsigned int d = 0; d < D; ++d)
+      for(unsigned int r = 0; r < W.getCols(); ++r)
+        k->setParam(W.getVal(d, r), d * W.getCols() + r);
+    for(unsigned int d = 0; d < D; ++d)
+      k->setParam(positiveAt(kappa.at(d), where + ".kappa[" + to_string(d) + "]"),
+                  D * W.getCols() + d);
+    out = std::move(k);
+    return true;
+  }
   if(type == "kern.rbf" || type == "kern.matern32" || type == "kern.matern52")
   {
     const double variance = positiveAt(need(node, "variance", where), where + ".variance");
@@ -173,6 +196,32 @@ bool buildLeaf(const CJson& node, unsigned int inDim, const string& where,
   return false;
 }
 
+// A leaf reads either every input column or the listed active_dims (GPy
+// semantics); lengthscale lists must match the number of columns it reads.
+bool buildLeaf(const CJson& node, unsigned int totalDim, const string& where,
+               unique_ptr<CKern>& out, bool& isWhite)
+{
+  if(!node.has("active_dims"))
+    return buildLeafCore(node, totalDim, where, out, isWhite);
+  const CJson& ad = node.at("active_dims");
+  if(!ad.isArray() || ad.size() == 0)
+    fail(where + ".active_dims", "must be a non-empty array of column indices");
+  vector<unsigned int> dims;
+  for(size_t i = 0; i < ad.size(); ++i)
+  {
+    const double v = numberAt(ad.at(i), where + ".active_dims");
+    if(v < 0.0 || v != std::floor(v) || v >= totalDim)
+      fail(where + ".active_dims", "column " + to_string(v) + " is outside 0.." + to_string(totalDim - 1));
+    if(std::find(dims.begin(), dims.end(), static_cast<unsigned int>(v)) != dims.end())
+      fail(where + ".active_dims", "repeats a column");
+    dims.push_back(static_cast<unsigned int>(v));
+  }
+  if(!buildLeafCore(node, static_cast<unsigned int>(dims.size()), where, out, isWhite))
+    return false;
+  out->setActiveDims(dims);
+  return true;
+}
+
 // Build one kernel node. kern.prod becomes a CTensorKern (product over the same
 // inputs); a kern.add inside a product becomes a nested CCmpndKern. Leaves are
 // recorded in document order so toJson() can read parameters back. The parent
@@ -203,6 +252,8 @@ unique_ptr<CKern> buildKernelNode(const CJson& node, unsigned int inDim, const s
   bool white = false;
   if(!buildLeaf(node, inDim, where, leaf, white))
     fail(where, "unknown kernel type '" + type + "'");
+  if(node.at("type").asString() == "kern.coregionalize" && !node.has("active_dims"))
+    fail(where, "kern.coregionalize requires active_dims");
   if(white && inProduct)
     fail(where, "kern.white inside kern.prod is not supported (it is an additive noise term)");
   leaves.push_back(leaf.get());
@@ -274,9 +325,44 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
 
   // Likelihood.
   const CJson& lik = need(doc, "likelihood", "document");
-  if(need(lik, "type", "likelihood").asString() != "likelihoods.gaussian")
-    fail("likelihood.type", "only likelihoods.gaussian is supported");
-  const double sigma2 = positiveAt(need(lik, "variance", "likelihood"), "likelihood.variance");
+  const string likType = need(lik, "type", "likelihood").asString();
+  const bool mixed = (likType == "likelihoods.mixed_gaussian");
+  if(!mixed && likType != "likelihoods.gaussian")
+    fail("likelihood.type", "only likelihoods.gaussian and likelihoods.mixed_gaussian are supported");
+  vector<double> mixedVar;
+  unsigned int mixedCol = 0;
+  double sigma2 = 0.0;
+  if(mixed)
+  {
+    const CJson& v = need(lik, "variance", "likelihood");
+    if(!v.isArray() || v.size() == 0)
+      fail("likelihood.variance", "mixed_gaussian needs an array of per-output variances");
+    for(size_t i = 0; i < v.size(); ++i)
+    {
+      mixedVar.push_back(positiveAt(v.at(i), "likelihood.variance[" + to_string(i) + "]"));
+      if(mixedVar.back() <= kMixedFloor)
+        fail("likelihood.variance[" + to_string(i) + "]", "must exceed " + to_string(kMixedFloor)
+             + " (GPc keeps a frozen likelihood variance of that size)");
+    }
+    const double c = numberAt(need(lik, "output_index_column", "likelihood"),
+                              "likelihood.output_index_column");
+    if(c < 0.0 || c != std::floor(c) || c >= inputDim)
+      fail("likelihood.output_index_column", "is not a column of data.X");
+    mixedCol = static_cast<unsigned int>(c);
+    for(unsigned int i = 0; i < m->X.getRows(); ++i)
+    {
+      const double idx = m->X.getVal(i, mixedCol);
+      if(idx < 0.0 || idx != std::floor(idx) || idx >= mixedVar.size())
+        fail("data.X", "row " + to_string(i) + " has output index " + to_string(idx)
+             + " outside 0.." + to_string(mixedVar.size() - 1));
+    }
+  }
+  else
+  {
+    if(need(lik, "variance", "likelihood").isArray())
+      fail("likelihood.variance", "likelihoods.gaussian takes a single variance");
+    sigma2 = positiveAt(need(lik, "variance", "likelihood"), "likelihood.variance");
+  }
 
   // Kernel.
   m->kern.reset(new CCmpndKern(inputDim));
@@ -284,6 +370,18 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
   buildKernelTree(need(doc, "kernel", "document"), inputDim, "kernel",
                   *m->kern, m->leaves, hasWhite);
   m->hasWhite = hasWhite;
+  if(mixed)
+  {
+    // Per-output noise is an index-white kernel; the likelihood variance is frozen
+    // at kMixedFloor and subtracted from each wire variance so the Gram is exact.
+    unique_ptr<CIndexWhiteKern> iw(new CIndexWhiteKern(1, static_cast<unsigned int>(mixedVar.size())));
+    for(unsigned int d = 0; d < mixedVar.size(); ++d)
+      iw->setParam(mixedVar[d] - kMixedFloor, d);
+    iw->setActiveDims(vector<unsigned int>(1, mixedCol));
+    m->indexWhite = iw.get();
+    m->kern->addKern(std::move(iw));
+    sigma2 = kMixedFloor;
+  }
 
   // Noise: zero mean, so the bias is fixed to zero (GPy semantics).
   m->noise.reset(new CGaussianNoise(&m->Y));
@@ -327,10 +425,14 @@ unique_ptr<CInterchange> CInterchange::fromJson(const CJson& doc)
     // The wire format is additive: Gram = K (including any White) + sigma^2 I.
     if(hasWhite)
       m->pgp->setAllowWhiteAndLikelihoodNoise(true);
+    if(mixed)
+      m->pgp->fixLikelihoodVariance(true);
   }
   else
   {
     const int approx = approxFrom(need(doc, "approximation", "document").asString(), "approximation");
+    if(mixed)
+      fail("likelihood.type", "likelihoods.mixed_gaussian is only supported with models.gp_regression");
     if(approx == CGp::FTC)
       fail("approximation", "'ftc' is not a sparse approximation");
     const int linalg = doc.has("sparse_linalg")
@@ -386,6 +488,21 @@ void CInterchange::writeKernelParams(CJson& node, size_t& leafIndex) const
     return;
   }
   const CKern* k = leaves.at(leafIndex++);
+  if(type == "kern.coregionalize")
+  {
+    const CCoregionalizeKern* c = static_cast<const CCoregionalizeKern*>(k);
+    const unsigned int D = c->getOutputDim(), R = c->getRank();
+    CMatrix W(D, R);
+    for(unsigned int d = 0; d < D; ++d)
+      for(unsigned int r = 0; r < R; ++r)
+        W.setVal(c->getParam(d * R + r), d, r);
+    node.set("W", matrixToJson(W));
+    CJson kappa = CJson::makeArray();
+    for(unsigned int d = 0; d < D; ++d)
+      kappa.push(CJson::makeNumber(c->getParam(D * R + d)));
+    node.set("kappa", kappa);
+    return;
+  }
   node.set("variance", CJson::makeNumber(k->getByPath("variance")));
   if(type == "kern.rbf" || type == "kern.matern32" || type == "kern.matern52")
   {
@@ -411,8 +528,16 @@ CJson CInterchange::toJson() const
   out.erase("x-reference");
   size_t leafIndex = 0;
   writeKernelParams(out.at("kernel"), leafIndex);
-  out.at("likelihood").set("variance",
-      CJson::makeNumber(pgp->getByPath("likelihood.variance")));
+  if(indexWhite)
+  {
+    CJson v = CJson::makeArray();
+    for(unsigned int d = 0; d < indexWhite->getOutputDim(); ++d)
+      v.push(CJson::makeNumber(indexWhite->getParam(d) + pgp->getByPath("likelihood.variance")));
+    out.at("likelihood").set("variance", v);
+  }
+  else
+    out.at("likelihood").set("variance",
+        CJson::makeNumber(pgp->getByPath("likelihood.variance")));
   // Inducing inputs move during optimisation unless fixed.
   if(pgp->isSparseApproximation())
   {
@@ -439,7 +564,26 @@ void CInterchange::writeGpModel(const string& path, const string& comment) const
 
 namespace {
 
+CJson exportKernel(const CKern* k, unsigned int inDim, const string& where, bool whiteOk);
+
+CJson exportLeaf(const CKern* k, unsigned int inDim, const string& where, bool whiteOk);
+
 CJson exportKernel(const CKern* k, unsigned int inDim, const string& where, bool whiteOk)
+{
+  CJson node = exportLeaf(k, k->getInputDim(), where, whiteOk);
+  // A leaf that reads fewer columns than the model has, or a permuted subset, names them.
+  const bool composite = dynamic_cast<const CCmpndKern*>(k) || dynamic_cast<const CTensorKern*>(k);
+  if(!composite && (k->getInputDim() != inDim || !k->isDefaultActiveDims()))
+  {
+    CJson dims = CJson::makeArray();
+    for(unsigned int d : k->getActiveDims())
+      dims.push(CJson::makeNumber(d));
+    node.set("active_dims", dims);
+  }
+  return node;
+}
+
+CJson exportLeaf(const CKern* k, unsigned int inDim, const string& where, bool whiteOk)
 {
   const string type = k->getType();
   CJson node = CJson::makeObject();
@@ -460,6 +604,23 @@ CJson exportKernel(const CKern* k, unsigned int inDim, const string& where, bool
     for(unsigned int i = 0; i < t->getNumKerns(); ++i)
       parts.push(exportKernel(t->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]", whiteOk));
     node.set("parts", parts);
+    return node;
+  }
+  if(type == "coregionalize")
+  {
+    const CCoregionalizeKern* c = static_cast<const CCoregionalizeKern*>(k);
+    const unsigned int D = c->getOutputDim(), R = c->getRank();
+    node.set("type", CJson::makeString("kern.coregionalize"));
+    node.set("output_dim", CJson::makeNumber(D));
+    CMatrix W(D, R);
+    for(unsigned int d = 0; d < D; ++d)
+      for(unsigned int r = 0; r < R; ++r)
+        W.setVal(c->getParam(d * R + r), d, r);
+    node.set("W", matrixToJson(W));
+    CJson kappa = CJson::makeArray();
+    for(unsigned int d = 0; d < D; ++d)
+      kappa.push(CJson::makeNumber(c->getParam(D * R + d)));
+    node.set("kappa", kappa);
     return node;
   }
   if(type == "white")
@@ -536,11 +697,61 @@ CJson CInterchange::exportModel(const CGp& model)
         Z.setVal(model.X_u.getVal(i, j), i, j);
     doc.set("inducing_inputs", matrixToJson(Z));
   }
-  doc.set("kernel", exportKernel(model.getKernel(), model.getInputDim(), "kernel",
-                                  !sparse && model.isAllowWhiteAndLikelihoodNoise()));
+  const bool whiteOk = !sparse && model.isAllowWhiteAndLikelihoodNoise();
+  // A top-level index-white component is per-output noise: it leaves the kernel and
+  // becomes likelihoods.mixed_gaussian (wire variance = index-white + likelihood variance).
+  const CKern* kernel = model.getKernel();
+  const CIndexWhiteKern* iw = nullptr;
+  vector<const CKern*> others;
+  if(const CCmpndKern* top = dynamic_cast<const CCmpndKern*>(kernel))
+    for(unsigned int i = 0; i < top->getNumKerns(); ++i)
+    {
+      const CKern* c = top->getComponent(i);
+      if(c->getType() == "indexwhite")
+      {
+        if(iw)
+          fail("export", "more than one index-white component");
+        iw = static_cast<const CIndexWhiteKern*>(c);
+      }
+      else
+        others.push_back(c);
+    }
+  if(iw)
+  {
+    if(sparse)
+      fail("export", "index-white noise is only supported for exact models");
+    if(others.empty())
+      fail("export", "index-white noise without a covariance kernel");
+    if(others.size() == 1)
+      doc.set("kernel", exportKernel(others[0], model.getInputDim(), "kernel", whiteOk));
+    else
+    {
+      CJson parts = CJson::makeArray();
+      for(size_t i = 0; i < others.size(); ++i)
+        parts.push(exportKernel(others[i], model.getInputDim(), "kernel.parts[" + to_string(i) + "]", whiteOk));
+      CJson add = CJson::makeObject();
+      add.set("type", CJson::makeString("kern.add"));
+      add.set("parts", parts);
+      doc.set("kernel", add);
+    }
+  }
+  else
+    doc.set("kernel", exportKernel(kernel, model.getInputDim(), "kernel", whiteOk));
   CJson lik = CJson::makeObject();
-  lik.set("type", CJson::makeString("likelihoods.gaussian"));
-  lik.set("variance", CJson::makeNumber(model.getByPath("likelihood.variance")));
+  if(iw)
+  {
+    lik.set("type", CJson::makeString("likelihoods.mixed_gaussian"));
+    CJson v = CJson::makeArray();
+    for(unsigned int d = 0; d < iw->getOutputDim(); ++d)
+      v.push(CJson::makeNumber(iw->getParam(d) + model.getByPath("likelihood.variance")));
+    lik.set("variance", v);
+    lik.set("output_index_column", CJson::makeNumber(iw->getActiveDims().at(0)));
+  }
+  else
+  {
+    lik.set("type", CJson::makeString("likelihoods.gaussian"));
+    lik.set("variance", CJson::makeNumber(model.getByPath("likelihood.variance")));
+  }
   doc.set("likelihood", lik);
   CJson data = CJson::makeObject();
   data.set("X", matrixToJson(*model.pX));

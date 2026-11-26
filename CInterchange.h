@@ -86,6 +86,7 @@ class CInterchange
   std::unique_ptr<CGp> pgp;    // declared last: destroyed first
 
   void writeKernelParams(CJson& node, size_t& leafIndex) const;
+  static CJson exportLaplaceModel(const CGp& model);
 };
 
 #endif

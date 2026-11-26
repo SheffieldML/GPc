@@ -350,6 +350,38 @@ void testWhiteModelStream(const string& golden, const string& noWhiteGolden)
   remove(path.c_str());
 }
 
+void testLaplaceModelStream(const string& golden)
+{
+  // A Laplace model survives .model write, read and export: the stream records
+  // laplaceInference, and the export reproduces likelihood, inference and kernel.
+  auto m = CInterchange::fromFile(golden);
+  const string path = "testInterchange_laplace.model";
+  m->writeGpModel(path);
+  CGp* g = readGpFromFile(path, 0);
+  expect(g->isLaplaceInference(), golden + ": laplaceInference read back from the .model");
+  CMatrix Xn = m->inputs(), Yn = m->targets();
+  g->setTargetVals(Yn);
+  g->updateM();
+  g->pX = &Xn;
+  expectNear(-g->computeObjectiveVal(), m->logLikelihood(), 1e-9, golden + ": .model reloads to the same log likelihood");
+  CJson out = CInterchange::exportModel(*g);  // verifies the log likelihood internally
+  const CJson& src = CJson::parseFile(golden);
+  expect(out.at("type").asString() == "models.gp" && out.at("inference").asString() == "laplace"
+         && out.at("likelihood").dump() == src.at("likelihood").dump(),
+         golden + ": exported as models.gp with the same likelihood and inference");
+  // GPc keeps the top level as a compound kernel, so a single leaf exports as a one-part kern.add.
+  const CJson &ko0 = out.at("kernel"), &ks = src.at("kernel");
+  const CJson& ko = (ko0.at("type").asString() == "kern.add" && ko0.at("parts").size() == 1)
+      ? ko0.at("parts").at(0) : ko0;
+  expect(ko.at("type").asString() == ks.at("type").asString()
+         && std::fabs(ko.at("variance").asNumber() - ks.at("variance").asNumber()) < 1e-12
+         && std::fabs(ko.at("lengthscale").asNumber() - ks.at("lengthscale").asNumber()) < 1e-12,
+         golden + ": exported kernel matches");
+  // A Gaussian stream carries no laplaceInference key.
+  remove(path.c_str());
+  delete g;
+}
+
 void checkGolden(const string& path)
 {
   auto m = CInterchange::fromFile(path);
@@ -420,6 +452,8 @@ int main(int argc, char** argv)
     testCoregionalisation(dir + "/ftc_icm.json", dir + "/ftc_lcm.json");
     checkGolden(dir + "/laplace_bernoulli.json");
     checkGolden(dir + "/laplace_poisson.json");
+    testLaplaceModelStream(dir + "/laplace_bernoulli.json");
+    testLaplaceModelStream(dir + "/laplace_poisson.json");
   }
   catch(ndlexceptions::Error& e)
   {

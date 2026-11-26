@@ -4055,9 +4055,11 @@ void CGp::readParamsFromStream(istream& in)
       pInducing = new CInducingPoints(&X_u);
     }
   }
-  // CIP-0016 / CIP-0027 optional trailing key (absent => false, as in older streams).
+  // CIP-0016 optional trailing keys, in any order (absent => false, as in older streams):
+  // allowWhiteAndLikelihoodNoise (CIP-0027) and laplaceInference (CIP-0033).
   allowWhiteAndLikelihoodNoise = false;
-  if(in.good() && !in.eof())
+  bool readLaplace = false;
+  while(in.good() && !in.eof())
   {
     streampos pos = in.tellg();
     string line;
@@ -4071,12 +4073,24 @@ void CGp::readParamsFromStream(istream& in)
         allowWhiteAndLikelihoodNoise = (tokens[1] == "1" || tokens[1] == "true");
         matched = true;
       }
+      else if(tokens.size() == 2 && tokens[0] == "laplaceInference")
+      {
+        readLaplace = (tokens[1] == "1" || tokens[1] == "true");
+        matched = true;
+      }
     }
     if(!matched)
     {
       in.clear();
       in.seekg(pos);
+      break;
     }
+  }
+  if(readLaplace)
+  {
+    setLaplaceInference(true);
+    // A stored Laplace model means the converged answer, as in CInterchange.
+    setLaplaceSolver(200, 1e-13, 0.0);
   }
   setMupToDate(false);
   // Don't update M as you need py to be set for that.
@@ -4122,6 +4136,8 @@ void CGp::writeParamsToStream(ostream& out) const
   // readers (which stop after the inducing keys) ignore it.
   if(allowWhiteAndLikelihoodNoise)
     writeToStream(out, "allowWhiteAndLikelihoodNoise", true);
+  if(laplaceInference)
+    writeToStream(out, "laplaceInference", true);
   //py->toStream(out);
   //pX->toStream(out);
 

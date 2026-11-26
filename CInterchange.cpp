@@ -757,12 +757,49 @@ CJson exportLeaf(const CKern* k, unsigned int inDim, const string& where, bool w
 
 }  // namespace
 
+CJson CInterchange::exportLaplaceModel(const CGp& model)
+{
+  const string nt = model.getNoiseType();
+  if(nt != "probit" && nt != "poisson")
+    fail("export", "Laplace inference is on the wire only for probit (Bernoulli) and poisson noise, not '" + nt + "'");
+  if(model.isSparseApproximation() || model.getApproximationType() != CGp::FTC)
+    fail("export", "non-Gaussian models are full GPs (ftc) in schema 0.1");
+  if(model.getBiasVal(0) != 0.0 || model.getScaleVal(0) != 1.0 || model.isOutputScaleLearnt())
+    fail("export", "mean and normalizer are not defined for non-Gaussian models in schema 0.1");
+  CJson doc = CJson::makeObject();
+  doc.set("schema_version", CJson::makeString(schemaVersion()));
+  doc.set("type", CJson::makeString("models.gp"));
+  doc.set("input_dim", CJson::makeNumber(model.getInputDim()));
+  doc.set("output_dim", CJson::makeNumber(1));
+  doc.set("approximation", CJson::makeString("ftc"));
+  doc.set("inference", CJson::makeString("laplace"));
+  doc.set("kernel", exportKernel(model.getKernel(), model.getInputDim(), "kernel", false));
+  CJson lik = CJson::makeObject();
+  lik.set("type", CJson::makeString(nt == "probit" ? "likelihoods.bernoulli" : "likelihoods.poisson"));
+  lik.set("link", CJson::makeString(nt == "probit" ? "probit" : "log"));
+  doc.set("likelihood", lik);
+  CJson data = CJson::makeObject();
+  data.set("X", matrixToJson(*model.pX));
+  data.set("Y", matrixToJson(*model.py));
+  doc.set("data", data);
+  // Verify against a rebuilt model (this also catches a probit bias, which the wire format lacks); both solve the same Laplace problem.
+  const double want = fromJson(doc)->logLikelihood();
+  const double got = -model.computeObjectiveVal();
+  if(!(std::fabs(got - want) <= 1e-5 * (1.0 + std::fabs(want))))
+    fail("export", "verification failed: source log likelihood " + to_string(got)
+         + " but the exported document gives " + to_string(want));
+  return doc;
+}
+
 CJson CInterchange::exportModel(const CGp& model)
 {
   if(model.getOutputDim() != 1)
     fail("export", "only single-output models are supported");
+  const bool laplaceModel = model.isLaplaceInference();
+  if(laplaceModel)
+    return exportLaplaceModel(model);
   if(!model.isGaussianNoise())
-    fail("export", "only Gaussian likelihoods are supported");
+    fail("export", "only Gaussian likelihoods are supported (and Bernoulli/Poisson with Laplace inference)");
   if(model.getApproximationType() == CGp::PITC)
     fail("export", "PITC is not supported");
   if(model.isOutputScaleLearnt())

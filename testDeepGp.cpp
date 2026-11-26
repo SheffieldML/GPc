@@ -520,7 +520,7 @@ int main()
       CDeepGp dgp(X, y, kerns, dims, Ms, beta, 0.5, 0);
       dgp.setLayerInducingType(0, "weightspace");
       dgp.setLayerInducingType(1, "weightspace");
-      // learnS grads are not packed yet (CSvgp::packInducingGrad); FD W/q/kern only.
+      // Learned-width gradients are checked in the CIP-003C block below.
       CMatrix m0(dgp.layer(0).getNumInducing(), q);
       m0.zeros();
       vector<CMatrix> S0(q);
@@ -582,6 +582,90 @@ int main()
            << " of " << p0.getCols() << " (checked " << idxs.size() << ")"
            << endl;
       expect(maxErr < 2e-2, "V4: ridge analytic grads match FD at fixed ε");
+    }
+
+    // ---- CIP-003C: learned window-width gradient reaches the deep GP optimiser ----
+    // Regression: CSvgp::packInducingGrad and packOptIntoStochastic zero-filled the
+    // width slots, so learn_window_width left the ELBO unchanged. FD at fixed eps.
+    for(int untied = 0; untied < 2; untied++)
+    {
+      const unsigned int N = 12, M = 6, q = 2;
+      mt19937 rng(31);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, q), y(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        for(unsigned int d = 0; d < q; d++)
+          X.setVal(nd(rng), i, d);
+        y.setVal(tanh(X.getVal(i, 0) - 0.3 * X.getVal(i, 1)) + 0.05 * nd(rng),
+                 i, 0);
+      }
+      ndlutil::init_genrand(29u);
+      CMlpKern k0(X), k1(X);
+      k0.setParam(1.0, 0); k0.setParam(1.0, 1); k0.setParam(0.8, 2);
+      k1.setParam(1.0, 0); k1.setParam(1.0, 1); k1.setParam(1.2, 2);
+      vector<CKern*> kerns = {&k0, &k1};
+      CDeepGp dgp(X, y, kerns, vector<unsigned int>{q, q, 1u},
+                  vector<unsigned int>{M, M}, 6.0, 0.5, 0);
+      dgp.setLayerInducingType(0, "weightspace");
+      dgp.setLayerInducingType(1, "weightspace");
+      dgp.setLayerLearnWindowWidth(0, true, untied != 0);
+      dgp.setLayerLearnWindowWidth(1, true, untied != 0);
+      CMatrix m0(M, q);
+      m0.zeros();
+      vector<CMatrix> S0(q);
+      for(unsigned int j = 0; j < q; j++)
+      {
+        S0[j].resize(M, M);
+        S0[j].zeros();
+        S0[j].addDiag(0.25);
+        S0[j].setSymmetric(true);
+      }
+      dgp.layer(0).setWhitenedQ(m0, S0);
+      dgp.layer(1).naturalGradientStep(0.25);
+      dgp.setNumSamples(1);
+      CMatrix eps(N * q, 1);
+      for(unsigned int i = 0; i < eps.getRows(); i++)
+        eps.setVal(nd(rng), i, 0);
+      dgp.setFrozenEps(eps);
+      vector<unsigned int> all(N);
+      for(unsigned int i = 0; i < N; i++) all[i] = i;
+      CMatrix gAnal, p0;
+      dgp.objectiveGradBatch(all, gAnal);
+      dgp.getStochasticParams(p0);
+
+      auto* pWs = dynamic_cast<CInducingWeightSpace*>(dgp.layer(0).getInducing());
+      expect(pWs != 0, "CIP-003C: hidden layer is weight-space");
+      if(pWs != 0)
+      {
+        const unsigned int nS = pWs->numLearnedWindowWidths();
+        expect(nS == (untied ? M : 1u), "CIP-003C: learned width count");
+        // Layer 0 stochastic layout starts at 0: kern params, inducing block
+        // (centres then widths), beta, q.
+        const unsigned int sEnd = k0.getNumParams() + pWs->getNumParams();
+        const double h = 1e-5;
+        double maxErr = 0.0, maxAbs = 0.0;
+        for(unsigned int is = 0; is < nS; is++)
+        {
+          const unsigned int i = sEnd - nS + is;
+          CMatrix pp(p0), pm(p0), gTmp;
+          pp.setVal(p0.getVal(i) + h, i);
+          pm.setVal(p0.getVal(i) - h, i);
+          dgp.setStochasticParams(pp);
+          const double Lp = dgp.objectiveGradBatch(all, gTmp);
+          dgp.setStochasticParams(pm);
+          const double Lm = dgp.objectiveGradBatch(all, gTmp);
+          dgp.setStochasticParams(p0);
+          const double gFd = (Lp - Lm) / (2.0 * h);
+          maxErr = max(maxErr, fabs(gAnal.getVal(i) - gFd));
+          maxAbs = max(maxAbs, fabs(gFd));
+        }
+        cout << "  info: CIP-003C " << (untied ? "untied" : "tied")
+             << " width max|g-FD|=" << maxErr << " max|FD|=" << maxAbs << endl;
+        expect(maxAbs > 1e-6, "CIP-003C: width gradient is not identically zero");
+        expect(maxErr < 2e-2 * max(1.0, maxAbs),
+               "CIP-003C: learned width gradient matches FD at fixed eps");
+      }
     }
 
     // ---- Phase 2: s ≤ 1 via sigmoid pack under Adam + hard push ----

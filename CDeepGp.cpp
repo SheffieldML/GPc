@@ -90,6 +90,16 @@ void packOptIntoStochastic(CSvgp& layer, const CMatrix& gKern, const CMatrix& gZ
         gOut.setVal(gZ.getVal(i, j), counter++);
   while(counter < nOpt - 1)
     gOut.setVal(0.0, counter++);
+  // Learned window widths are the last slots of the inducing block; see
+  // CSvgp::packInducingGrad.
+  if(layer.getInducing()->learnsWindowWidth())
+  {
+    const unsigned int nS = layer.getInducing()->numLearnedWindowWidths();
+    const unsigned int nInd = layer.getInducing()->getNumParams();
+    DIMENSIONMATCH(nS <= nInd);
+    for(unsigned int i = 0; i < nS; i++)
+      gOut.setVal(layer.getInducing()->windowWidthGradAt(i), zEnd - nS + i);
+  }
   if(nOpt > 0 && counter == nOpt - 1)
     gOut.setVal(gBeta, counter++);
   for(unsigned int i = 0; i < gQ.getCols(); i++)

@@ -989,7 +989,6 @@ void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
                              const CMatrix& gZ) const
 {
   // Match CInducing::getParams layout: column-major over centres(), then optional s.
-  // learnS gradient is not yet returned by gradFromKuuKuf; leave those slots 0.
   unsigned int counter = offset;
   const unsigned int M = gZ.getRows();
   const unsigned int d = gZ.getCols();
@@ -1002,6 +1001,17 @@ void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
         gFlat.setVal(gZ.getVal(i, j), counter++);
   while(counter < offset + nInd)
     gFlat.setVal(0.0, counter++);
+  // Learned window widths occupy the last numLearnedWindowWidths() slots of the
+  // inducing block (CInducing::getParams: centres, then s). Their gradient is the
+  // one gradFromKuuKuf left in the inducing object, already chained through the
+  // unconstrained parametrisation. Zero here made learn_window_width a no-op.
+  if(pInducing->learnsWindowWidth())
+  {
+    const unsigned int nS = pInducing->numLearnedWindowWidths();
+    DIMENSIONMATCH(nS <= nInd);
+    for(unsigned int i = 0; i < nS; i++)
+      gFlat.setVal(pInducing->windowWidthGradAt(i), offset + nInd - nS + i);
+  }
 }
 
 double CSvgp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g)

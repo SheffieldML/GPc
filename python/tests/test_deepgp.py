@@ -208,3 +208,20 @@ def test_learn_window_widths_on_deepgp():
             X, Y, layers=1, kernel="mlp", inducing="weightspace",
             learn_window_width=True, learn_window_widths=True,
         )
+
+
+def test_learned_window_width_changes_the_trained_elbo():
+    # Regression (CIP-003C): the width gradient was zero-filled when packed, so
+    # learn_window_width=True trained to the same ELBO as the fixed-width model.
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(300, 4))
+    Y = np.sin(X[:, :1])
+    elbo = {}
+    for flag in (False, True):
+        m = gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=16, kernel="mlp",
+            inducing="weightspace", learn_window_width=flag,
+        )
+        m.optimize(iters=100, batch_size=100, samples=1, adam_lr=1e-2, seed=0)
+        elbo[flag] = m.elbo()
+    assert abs(elbo[True] - elbo[False]) > 1e-3

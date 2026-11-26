@@ -1838,12 +1838,44 @@ void CInducingHermite::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix
   computeKuf(Kux, kern, Xstar);
 }
 
-void CInducingHermite::gradFromKuuKuf(CMatrix&, CMatrix&, CMatrix*, const CKern&,
-                                      const CMatrix&, const CMatrix&, const CMatrix&,
-                                      bool, bool, const CMatrix*, const CMatrix*) const
+void CInducingHermite::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                                      const CKern& kern, const CMatrix& X,
+                                      const CMatrix& gKuu, const CMatrix& gKuf,
+                                      bool wantX, bool regulariseKern,
+                                      const CMatrix* /*KuuCached*/,
+                                      const CMatrix* /*KufCached*/) const
 {
-  throw ndlexceptions::NotImplementedError(
-      "CInducingHermite::gradFromKuuKuf is not implemented until CIP-003D phase 3.");
+  // K_uu is kernel-free and the windows are fixed, so gKuu contributes nothing;
+  // only K_fu carries kernel-parameter and data-X dependence.
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  const unsigned int nParams = kern.getNumParams();
+  DIMENSIONMATCH(gKernParams.getCols() == nParams);
+  DIMENSIONMATCH(gKuu.getRows() == M && gKuu.getCols() == M);
+  DIMENSIONMATCH(gKuf.getRows() == M && gKuf.getCols() == N);
+  gZ.resize(M, V.getCols());
+  gZ.zeros();
+
+  gKfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+      gKfu.setVal(gKuf.getVal(m, n), n, m);
+
+  tempG.resize(1, nParams);
+  tempG.zeros();
+  kern.wsHermiteGradParams(tempG, X, V, ks, gKfu);
+  for(unsigned int i = 0; i < kern.getNumTransforms(); i++)
+  {
+    const unsigned int idx = kern.getTransformIndex(i);
+    tempG.setVal(tempG.getVal(idx) * kern.getTransformGradFact(kern.getParam(idx), i), idx);
+  }
+  if(regulariseKern)
+    kern.addPriorGrad(tempG);
+  for(unsigned int i = 0; i < nParams; i++)
+    gKernParams.addVal(tempG.getVal(i), i);
+
+  if(wantX && gXOrNull != 0)
+    kern.wsHermiteGradX(*gXOrNull, X, V, ks, gKfu);
 }
 
 void CInducingHermite::setCentres(const CMatrix&)

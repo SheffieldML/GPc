@@ -176,8 +176,8 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 - [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1)
 - [ ] Ask-versus-delivered: E1, E2, E5, W1, W2 done and tested (phases 1-2); E3, E4, E6, W3, W4 follow in phases 4, 5
 - [x] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates (phase 2; `wsHermiteCrossCompute` on `CMlpKern`, `CMlpardKern`, compound; the `wsHermiteGradParams` / `wsHermiteGradX` virtuals arrive with phase 3)
-- [ ] Kernel-parameter gradients and `checkGradients`
-- [ ] `CGp` / `CDeepGp` / stream / CLI wiring
+- [x] Kernel-parameter and data-X gradients (phase 3): `wsHermiteGradParams` / `wsHermiteGradX` on `CMlpKern`, `CMlpardKern`, compound; `CInducingHermite::gradFromKuuKuf` (gKuu contributes nothing: K_uu is kernel-free and windows are fixed). Gated against central finite differences at the hook level (about 1e-10) and through a `CSvgp` layer (objective gradient and gX, about 1e-9). `CDeepGp`-layer gate follows with the phase 4 wiring
+- [ ] `CGp` / `CDeepGp` / stream / CLI wiring (phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector)
 - [ ] Python façade and tests
 - [ ] Docs: trade-off against Gaussian ridges
 - [ ] Prototype composite-task reproduction

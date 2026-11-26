@@ -971,10 +971,14 @@ void CSvgp::packInducingGrad(CMatrix& gFlat, unsigned int offset,
   unsigned int counter = offset;
   const unsigned int M = gZ.getRows();
   const unsigned int d = gZ.getCols();
+  // Families with fixed windows (e.g. Hermite) have no learnable inducing parameters;
+  // never pack gZ past what the optimiser vector reserves for them.
+  const unsigned int nInd = pInducing->getNumParams();
   for(unsigned int j = 0; j < d; j++)
     for(unsigned int i = 0; i < M; i++)
-      gFlat.setVal(gZ.getVal(i, j), counter++);
-  while(counter < offset + pInducing->getNumParams())
+      if(counter < offset + nInd)
+        gFlat.setVal(gZ.getVal(i, j), counter++);
+  while(counter < offset + nInd)
     gFlat.setVal(0.0, counter++);
 }
 

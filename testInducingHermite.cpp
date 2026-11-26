@@ -8,6 +8,8 @@
 #include <vector>
 #include "CInducing.h"
 #include "CKern.h"
+#include "CSvgp.h"
+#include <random>
 #include "ndlutil.h"
 
 using namespace std;
@@ -456,6 +458,169 @@ void testKernelRouting()
          "Kuf is M x N and Kux equals Kuf on the same inputs");
 }
 
+// ---- phase 3: gradients against central finite differences ---------------
+double relErr(double a, double b)
+{
+  return fabs(a - b) / max(1.0, max(fabs(a), fabs(b)));
+}
+
+// <gKfu, Kfu> as a function of the kernel parameters and X.
+double contraction(const CKern& kern, const CMatrix& X, const CMatrix& V,
+                   const vector<unsigned int>& ks, const CMatrix& gKfu)
+{
+  CMatrix Kfu;
+  kern.wsHermiteCrossCompute(Kfu, X, V, ks);
+  double acc = 0.0;
+  for(unsigned int n = 0; n < Kfu.getRows(); n++)
+    for(unsigned int m = 0; m < Kfu.getCols(); m++)
+      acc += gKfu.getVal(n, m) * Kfu.getVal(n, m);
+  return acc;
+}
+
+void gateHooksFd(CKern& kern, const string& label)
+{
+  const unsigned int d = kern.getInputDim();
+  mt19937 rng(11);
+  normal_distribution<double> nd(0.0, 1.0);
+  CMatrix X(5, d), V;
+  vector<unsigned int> ks;
+  CInducingHermite::makeLayout(V, ks, 12, d);
+  for(unsigned int n = 0; n < 5; n++)
+    for(unsigned int j = 0; j < d; j++)
+      X.setVal(0.8 * nd(rng), n, j);
+  CMatrix gKfu(5, V.getRows());
+  for(unsigned int n = 0; n < 5; n++)
+    for(unsigned int m = 0; m < V.getRows(); m++)
+      gKfu.setVal(nd(rng), n, m);
+  const unsigned int P = kern.getNumParams();
+  CMatrix gP(1, P), gX;
+  kern.wsHermiteGradParams(gP, X, V, ks, gKfu);
+  kern.wsHermiteGradX(gX, X, V, ks, gKfu);
+  const double eps = 1e-6;
+  double worstP = 0.0, worstX = 0.0;
+  for(unsigned int p = 0; p < P; p++)
+  {
+    const double p0 = kern.getParam(p);
+    kern.setParam(p0 + eps, p);
+    const double fp = contraction(kern, X, V, ks, gKfu);
+    kern.setParam(p0 - eps, p);
+    const double fm = contraction(kern, X, V, ks, gKfu);
+    kern.setParam(p0, p);
+    worstP = max(worstP, relErr(gP.getVal(p), (fp - fm) / (2 * eps)));
+  }
+  for(unsigned int n = 0; n < 5; n++)
+    for(unsigned int j = 0; j < d; j++)
+    {
+      const double x0 = X.getVal(n, j);
+      X.setVal(x0 + eps, n, j);
+      const double fp = contraction(kern, X, V, ks, gKfu);
+      X.setVal(x0 - eps, n, j);
+      const double fm = contraction(kern, X, V, ks, gKfu);
+      X.setVal(x0, n, j);
+      worstX = max(worstX, relErr(gX.getVal(n, j), (fp - fm) / (2 * eps)));
+    }
+  cout << label << ": max rel err params = " << worstP << ", X = " << worstX << endl;
+  expect(worstP < 1e-6, label + ": wsHermiteGradParams matches finite differences");
+  expect(worstX < 1e-6, label + ": wsHermiteGradX matches finite differences");
+}
+
+void testHookGradients()
+{
+  CMlpKern mlp(2);
+  mlp.setParam(1.3, 0);
+  mlp.setParam(0.7, 1);
+  mlp.setParam(1.9, 2);
+  gateHooksFd(mlp, "mlp d=2");
+  CMlpardKern ard(3);
+  ard.setParam(0.9, 0);
+  ard.setParam(0.4, 1);
+  ard.setParam(1.2, 2);
+  ard.setParam(1.5, 3);
+  ard.setParam(0.6, 4);
+  ard.setParam(2.0, 5);
+  gateHooksFd(ard, "mlpard d=3");
+  // Compound: params of the white component get zero gradient from K_fu.
+  CMlpKern sig(2);
+  CWhiteKern white(2);
+  CCmpndKern cmp(2);
+  cmp.addKern(&sig);
+  cmp.addKern(&white);
+  gateHooksFd(cmp, "compound mlp+white d=2");
+}
+
+// Layer-level: CSvgp with Hermite inducing. Kernel-parameter gradient (including
+// the packing guard for zero inducing parameters) and data-X gradient vs FD.
+void testSvgpGradients()
+{
+  const unsigned int N = 18, q = 2;
+  mt19937 rng(5);
+  normal_distribution<double> nd(0.0, 1.0);
+  CMatrix X(N, q), y(N, 1), Z(4, q);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    for(unsigned int d = 0; d < q; d++)
+      X.setVal(nd(rng), i, d);
+    y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+  }
+  Z.zeros();
+  CMlpardKern kern(X);
+  kern.setParam(1.0, 0);
+  kern.setParam(1.0, 1);
+  kern.setParam(1.0, 2);
+  CSvgp sv(&kern, &X, &y, Z, 4.0, 0);
+  CMatrix V;
+  vector<unsigned int> ks;
+  CInducingHermite::makeLayout(V, ks, 14, q);
+  sv.setInducing(new CInducingHermite(V, ks));
+  for(unsigned int t = 0; t < 5; t++)
+    sv.naturalGradientStep(0.3);
+  vector<unsigned int> all(N);
+  for(unsigned int i = 0; i < N; i++)
+    all[i] = i;
+
+  const unsigned int nOpt = sv.getOptNumParams();
+  expect(nOpt == kern.getNumParams() + 1, "Hermite layer reserves no inducing parameters");
+  CMatrix g(1, nOpt);
+  const double L0 = sv.objectiveGradBatch(all, g);
+  CMatrix p(1, nOpt), p0(1, nOpt);
+  sv.getOptParams(p0);
+  double worst = 0.0;
+  const double eps = 1e-6;
+  for(unsigned int i = 0; i < nOpt; i++)
+  {
+    p.deepCopy(p0);
+    p.setVal(p0.getVal(i) + eps, i);
+    sv.setOptParams(p);
+    CMatrix gt(1, nOpt);
+    const double Lp = sv.objectiveGradBatch(all, gt);
+    p.setVal(p0.getVal(i) - eps, i);
+    sv.setOptParams(p);
+    const double Lm = sv.objectiveGradBatch(all, gt);
+    worst = max(worst, relErr(g.getVal(i), (Lp - Lm) / (2 * eps)));
+  }
+  sv.setOptParams(p0);
+  cout << "CSvgp+Hermite: L0 = " << L0 << ", max rel err opt params = " << worst << endl;
+  expect(worst < 1e-5, "CSvgp with Hermite inducing: objective gradient matches finite differences");
+
+  CMatrix XB(X), gK, gZ, gX;
+  double gB = 0.0;
+  sv.elboGradAt(gK, gZ, gB, &gX, XB, all, 1.0);
+  double worstX = 0.0;
+  for(unsigned int i = 0; i < N; i++)
+    for(unsigned int d = 0; d < q; d++)
+    {
+      const double x0 = XB.getVal(i, d);
+      XB.setVal(x0 + eps, i, d);
+      const double Lp = sv.dataTermAt(XB, all, 1.0);
+      XB.setVal(x0 - eps, i, d);
+      const double Lm = sv.dataTermAt(XB, all, 1.0);
+      XB.setVal(x0, i, d);
+      worstX = max(worstX, relErr(gX.getVal(i, d), (Lp - Lm) / (2 * eps)));
+    }
+  cout << "CSvgp+Hermite: max rel err gX = " << worstX << endl;
+  expect(worstX < 1e-5, "CSvgp with Hermite inducing: data-X gradient matches finite differences");
+}
+
 void testGating()
 {
   CMatrix V;
@@ -472,7 +637,7 @@ int main()
 {
   try
   {
-    cout << "==== testInducingHermite (CIP-003D phases 1-2) ====" << endl;
+    cout << "==== testInducingHermite (CIP-003D phases 1-3) ====" << endl;
     testCapacityTable();
     testSweep();
     testE1Message();
@@ -482,6 +647,8 @@ int main()
     testKuu();
     testKfu();
     testKernelRouting();
+    testHookGradients();
+    testSvgpGradients();
     testGating();
     cout << "Number of failures: " << fails << "." << endl;
     return fails > 0 ? 1 : 0;

@@ -81,9 +81,13 @@ void packOptIntoStochastic(CSvgp& layer, const CMatrix& gKern, const CMatrix& gZ
   unsigned int counter = 0;
   for(unsigned int i = 0; i < gKern.getCols(); i++)
     gOut.setVal(gKern.getVal(i), counter++);
+  // Fixed-window families (Hermite) reserve no inducing parameters: pack gZ only
+  // up to the count the optimiser vector holds.
+  const unsigned int zEnd = counter + layer.getInducing()->getNumParams();
   for(unsigned int j = 0; j < gZ.getCols(); j++)
     for(unsigned int i = 0; i < gZ.getRows(); i++)
-      gOut.setVal(gZ.getVal(i, j), counter++);
+      if(counter < zEnd)
+        gOut.setVal(gZ.getVal(i, j), counter++);
   while(counter < nOpt - 1)
     gOut.setVal(0.0, counter++);
   if(nOpt > 0 && counter == nOpt - 1)

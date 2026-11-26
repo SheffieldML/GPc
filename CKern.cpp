@@ -4563,6 +4563,77 @@ void mlpHermiteKfuDiag(CMatrix& Kfu, double variance, const vector<double>& sigm
   }
 }
 
+
+// Gradients of sum_nm gKfu[n,m] K_fu[n,m] for K = sigma c_k rho^k,
+// rho = t / sqrt(1+n2), t = v.xhat, n2 = |xhat|^2, xhat_j = sqrt(s_j) x_j (bias: x=1).
+//   dK/dvariance = K / (2 variance)
+//   dK/ds_j = sigma c k rho^(k-1) [ v_j x_j / (2 sqrt(s_j) sqrt(1+n2)) - t x_j^2 / (2 (1+n2)^(3/2)) ]
+//   dK/dx_j = sigma c k rho^(k-1) [ v_j sqrt(s_j) / sqrt(1+n2) - t s_j x_j / (1+n2)^(3/2) ]
+void mlpHermiteGradsDiag(vector<double>& gSig, double& gVar, CMatrix* gX, double variance,
+                         const vector<double>& sigmaDiag, const CMatrix& X, const CMatrix& V,
+                         const vector<unsigned int>& ks, const CMatrix& gKfu)
+{
+  const unsigned int N = X.getRows();
+  const unsigned int M = V.getRows();
+  const unsigned int d = X.getCols();
+  DIMENSIONMATCH(V.getCols() == d + 1);
+  DIMENSIONMATCH(ks.size() == M);
+  DIMENSIONMATCH(gKfu.getRows() == N && gKfu.getCols() == M);
+  BOUNDCHECK(variance > 0.0);
+  for(unsigned int j = 0; j <= d; j++)
+    BOUNDCHECK(sigmaDiag[j] > 0.0);
+  gSig.assign(d + 1, 0.0);
+  gVar = 0.0;
+  if(gX)
+  {
+    gX->resize(N, d);
+    gX->zeros();
+  }
+  vector<double> ck(M);
+  for(unsigned int m = 0; m < M; m++)
+  {
+    if(ks[m] == 0 || (ks[m] % 2) == 0)
+      throw ndlexceptions::Error("Hermite window degrees must be odd and >= 1.");
+    ck[m] = hermiteCk(ks[m]);
+  }
+  const double sig = sqrt(variance);
+  vector<double> xe(d + 1), sq(d + 1);
+  for(unsigned int j = 0; j <= d; j++)
+    sq[j] = sqrt(sigmaDiag[j]);
+  for(unsigned int n = 0; n < N; n++)
+  {
+    double n2 = 0.0;
+    for(unsigned int j = 0; j < d; j++)
+      xe[j] = X.getVal(n, j);
+    xe[d] = 1.0;
+    for(unsigned int j = 0; j <= d; j++)
+      n2 += sigmaDiag[j] * xe[j] * xe[j];
+    const double den = sqrt(1.0 + n2);
+    const double den3 = den * den * den;
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double w = gKfu.getVal(n, m);
+      if(w == 0.0)
+        continue;
+      double t = 0.0;
+      for(unsigned int j = 0; j <= d; j++)
+        t += V.getVal(m, j) * sq[j] * xe[j];
+      const double rho = t / den;
+      const unsigned int k = ks[m];
+      gVar += w * sig * ck[m] * pow(rho, (int)k) / (2.0 * variance);
+      const double pre = w * sig * ck[m] * k * pow(rho, (int)k - 1);
+      for(unsigned int j = 0; j <= d; j++)
+      {
+        gSig[j] += pre * (V.getVal(m, j) * xe[j] / (2.0 * sq[j] * den) -
+                          t * xe[j] * xe[j] / (2.0 * den3));
+        if(gX && j < d)
+          gX->addVal(pre * (V.getVal(m, j) * sq[j] / den -
+                            t * sigmaDiag[j] * xe[j] / den3), n, j);
+      }
+    }
+  }
+}
+
 } // namespace
 
 void CMlpKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
@@ -4591,6 +4662,35 @@ void CMlpKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatr
   vector<double> sigmaDiag(d + 1, weightVariance);
   sigmaDiag[d] = biasVariance;
   mlpHermiteKfuDiag(Kfu, variance, sigmaDiag, X, V, ks);
+}
+
+void CMlpKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                   const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d && g.getCols() == getNumParams());
+  vector<double> sigmaDiag(d + 1, weightVariance), gSig;
+  sigmaDiag[d] = biasVariance;
+  double gVar = 0.0;
+  mlpHermiteGradsDiag(gSig, gVar, 0, variance, sigmaDiag, X, V, ks, gKfu);
+  g.zeros();
+  double gW = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+    gW += gSig[j];
+  g.setVal(gW, 0);
+  g.setVal(gSig[d], 1);
+  g.setVal(gVar, 2);
+}
+
+void CMlpKern::wsHermiteGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                              const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  vector<double> sigmaDiag(d + 1, weightVariance), gSig;
+  sigmaDiag[d] = biasVariance;
+  double gVar = 0.0;
+  mlpHermiteGradsDiag(gSig, gVar, &gX, variance, sigmaDiag, X, V, ks, gKfu);
 }
 
 void CMlpKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
@@ -4662,6 +4762,42 @@ void CMlpardKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CM
     sigmaDiag[j] = weightVariance * scales.getVal(j);
   sigmaDiag[d] = biasVariance;
   mlpHermiteKfuDiag(Kfu, variance, sigmaDiag, X, V, ks);
+}
+
+void CMlpardKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                      const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d && g.getCols() == getNumParams());
+  vector<double> sigmaDiag(d + 1), gSig;
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  double gVar = 0.0;
+  mlpHermiteGradsDiag(gSig, gVar, 0, variance, sigmaDiag, X, V, ks, gKfu);
+  g.zeros();
+  double gW = 0.0;
+  for(unsigned int j = 0; j < d; j++)
+  {
+    gW += gSig[j] * scales.getVal(j);
+    g.setVal(gSig[j] * weightVariance, 3 + j);
+  }
+  g.setVal(gW, 0);
+  g.setVal(gSig[d], 1);
+  g.setVal(gVar, 2);
+}
+
+void CMlpardKern::wsHermiteGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                                 const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  const unsigned int d = getInputDim();
+  DIMENSIONMATCH(X.getCols() == d);
+  vector<double> sigmaDiag(d + 1), gSig;
+  for(unsigned int j = 0; j < d; j++)
+    sigmaDiag[j] = weightVariance * scales.getVal(j);
+  sigmaDiag[d] = biasVariance;
+  double gVar = 0.0;
+  mlpHermiteGradsDiag(gSig, gVar, &gX, variance, sigmaDiag, X, V, ks, gKfu);
 }
 
 void CMlpardKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
@@ -10439,6 +10575,22 @@ void CKern::wsHermiteCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const 
       "Hermite inducing (E2): wsHermiteCrossCompute not implemented for kernel type " +
       getType() + "; use an 'mlp' or 'mlpard' kernel.");
 }
+void CKern::wsHermiteGradParams(CMatrix& /*g*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                                const vector<unsigned int>& /*ks*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "Hermite inducing (E2): wsHermiteGradParams not implemented for kernel type " +
+      getType() + "; use an 'mlp' or 'mlpard' kernel.");
+}
+
+void CKern::wsHermiteGradX(CMatrix& /*gX*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
+                           const vector<unsigned int>& /*ks*/, const CMatrix& /*gKfu*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "Hermite inducing (E2): wsHermiteGradX not implemented for kernel type " +
+      getType() + "; use an 'mlp' or 'mlpard' kernel.");
+}
+
 void CKern::wsRidgeCrossCompute(CMatrix& /*Kfu*/, const CMatrix& /*X*/, const CMatrix& /*V*/,
                                 const CMatrix& /*a*/, double /*s*/) const
 {
@@ -12412,6 +12564,32 @@ void CCmpndKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMa
 {
   DIMENSIONMATCH(components.size() > 0);
   wsSelectCompoundSignal(components)->wsHermiteCrossCompute(Kfu, X, V, ks);
+}
+
+void CCmpndKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                     const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getCols() == getNumParams());
+  g.zeros();
+  const CKern* signal = wsSelectCompoundSignal(components);
+  unsigned int start = 0;
+  for(size_t i = 0; i < components.size(); i++)
+  {
+    // Only the signal component contributes to K_fu (noise components are zero there).
+    if(components[i].get() == signal)
+    {
+      CMatrix subg(1, components[i]->getNumParams());
+      components[i]->wsHermiteGradParams(subg, X, V, ks, gKfu);
+      g.setMatrix(0, start, subg);
+    }
+    start += components[i]->getNumParams();
+  }
+}
+
+void CCmpndKern::wsHermiteGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                                const vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  wsSelectCompoundSignal(components)->wsHermiteGradX(gX, X, V, ks, gKfu);
 }
 
 void CCmpndKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,

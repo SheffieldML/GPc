@@ -51,6 +51,9 @@ class CSvgp : public CStochasticOptimisable {
   void setInducing(CInducing* pInd);
   void setInducingType(const string& typeName);
   CInducing* getInducing() { return pInducing; }
+  // CIP-003D: W1-W3 for Hermite inducing on this layer's inputs (empty otherwise).
+  vector<string> hermiteWarnings() const;
+  string hermiteLayoutDescription() const;
   const CInducing* getInducing() const { return pInducing; }
   // Centres storage for families that need a non-owned CMatrix* (points, WN, greens).
   CMatrix& getCentresStorage() { return Z; }

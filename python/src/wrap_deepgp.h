@@ -86,6 +86,10 @@ public:
   unsigned int hidden_dim() const;
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
+  std::vector<std::string> hermite_warnings() const
+  {
+    return model ? model->hermiteWarnings() : std::vector<std::string>();
+  }
   const std::string& likelihood_type() const { return likelihoodType; }
   double chi() const;
   std::string approx() const { return "deepgp"; }

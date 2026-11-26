@@ -1140,6 +1140,14 @@ void CGp::setInducingType(const string& typeName)
   setKupToDate(false);
 }
 
+vector<string> CGp::hermiteWarnings() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  if(ph == 0 || pX == 0)
+    return vector<string>();
+  return ph->warnings(*pkern, *pX);
+}
+
 string CGp::getInducingType() const
 {
   if(pInducing == 0)
@@ -3734,6 +3742,13 @@ ModelDescription CGp::describe() const
     if(pInducing!=0)
     {
       desc.headerLines.push_back(string("Inducing type: ") + pInducing->typeName());
+      if(const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing))
+      {
+        desc.headerLines.push_back(
+            "Inducing fixed: hermite windows have no free parameters (fixed by construction)");
+        if(pX != 0)
+          desc.headerLines.push_back(string("Hermite layout: ") + ph->describeLayout(*pkern, *pX));
+      }
       if(pInducing->typeName()!="points" && pInducing->typeName()!="hermite")
         desc.headerLines.push_back(
             string("Learn window width: ")

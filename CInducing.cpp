@@ -1682,6 +1682,7 @@ void CInducingHermite::makeLayout(CMatrix& VOut, vector<unsigned int>& ksOut,
         "CInducingHermite (E5): allocation left windows unassigned despite capacity check.");
 
   ndlutil::init_genrand(rngSeed);
+  ndlutil::resetRandn(); // otherwise the layout depends on earlier randn() parity
   VOut.resize(M, Dp);
   VOut.zeros();
   ksOut.assign(M, 0);
@@ -1876,6 +1877,58 @@ void CInducingHermite::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix
 
   if(wantX && gXOrNull != 0)
     kern.wsHermiteGradX(*gXOrNull, X, V, ks, gKfu);
+}
+
+double CInducingHermite::capturedVariance(const CKern& kern, const CMatrix& X) const
+{
+  const unsigned int M = numInducing();
+  const unsigned int N = X.getRows();
+  CMatrix Kuu(M, M), Kuf;
+  fillKuu(Kuu);
+  computeKuf(Kuf, kern, X);
+  CMatrix cholKuu(M, M);
+  cholKuu.jitChol(Kuu);               // as CSvgp::updateKernelMatrices
+  CMatrix A(Kuf);
+  A.trsm(cholKuu, 1.0, "L", "U", "T", "N"); // A = L^{-1} K_uf
+  double captured = 0.0, prior = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    captured += A.dotColCol(n, A, n);
+    prior += kern.diagComputeElement(X, n);
+  }
+  return prior > 0.0 ? captured / prior : 1.0;
+}
+
+vector<string> CInducingHermite::warnings(const CKern& kern, const CMatrix& X,
+                                          double capturedThreshold) const
+{
+  vector<string> out = layoutReport.warnings();
+  const double frac = capturedVariance(kern, X);
+  if(frac < capturedThreshold)
+  {
+    ostringstream os;
+    os << "Warning (CIP-003D W3): Hermite windows capture " << 100.0 * frac
+       << "% of the prior variance on the training inputs (below "
+       << 100.0 * capturedThreshold << "%; M=" << numInducing()
+       << ", D'=" << weightDim() << "). More windows may not help at this input dimension.";
+    out.push_back(os.str());
+  }
+  return out;
+}
+
+string CInducingHermite::describeLayout(const CKern& kern, const CMatrix& X) const
+{
+  ostringstream os;
+  os << layoutReport.summary() << " captured_variance=" << 100.0 * capturedVariance(kern, X) << "%";
+  return os.str();
+}
+
+string CInducingHermite::hiddenLayerWarning(unsigned int layer, unsigned int numLayers)
+{
+  ostringstream os;
+  os << "Warning (CIP-003D W4): Hermite inducing on hidden layer " << layer << " of a "
+     << numLayers << "-layer deep GP; CIP-0035 finds fixed windows underfit in hidden layers.";
+  return os.str();
 }
 
 void CInducingHermite::setWindowWidth(double)

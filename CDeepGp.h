@@ -63,6 +63,9 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   // makeRidgeInit (CIP-0037). Rebuilds stochastic param offsets.
   void setLayerInducingType(unsigned int ell, const std::string& typeName);
   std::string getLayerInducingType(unsigned int ell) const;
+  // CIP-003D: W1-W4 for Hermite layers (empty when none). Layer inputs are the layer inputs
+  // as currently stored (initial mean path at construction).
+  std::vector<std::string> hermiteWarnings() const;
   // Enable learnable ridge window width(s); sigmoid-mapped into [0.05, 1].
   void setLayerLearnWindowWidth(unsigned int ell, bool learn,
                                 bool untied = false);

@@ -378,6 +378,17 @@ class CInducingHermite : public CInducing
   static CInducingHermite* fromStreamData(const CMatrix& Vin, const CMatrix& ksRow,
                                           unsigned int numActive, unsigned int inputDim);
   CMatrix degreesAsRow() const;
+  // W3: fraction of the prior variance sum_n k(x_n,x_n) that the windows capture on X,
+  // i.e. sum_n |L^{-1} K_u,n|^2 / sum_n k(x_n,x_n) with K_uu = L L^T.
+  double capturedVariance(const CKern& kern, const CMatrix& X) const;
+  static double capturedVarianceWarnThreshold() { return 0.5; } // placeholder; phase 6 calibrates
+  // W1-W3 as text (empty when none fire); W3 evaluated on X with the given kernel.
+  std::vector<std::string> warnings(const CKern& kern, const CMatrix& X,
+                                    double capturedThreshold = capturedVarianceWarnThreshold()) const;
+  // One-line layout description including captured variance on X (describe()/str(model)).
+  std::string describeLayout(const CKern& kern, const CMatrix& X) const;
+  // W4: Hermite in a hidden layer of a multi-layer deep GP.
+  static std::string hiddenLayerWarning(unsigned int layer, unsigned int numLayers);
   unsigned int getNumParams() const { return 0; }
   void getParams(CMatrix& /*param*/, unsigned int /*offset*/) const {}
   void setParams(const CMatrix& /*param*/, unsigned int /*offset*/) {}

@@ -169,12 +169,19 @@ namespace ndlutil {
   {
     return genrand_real3();
   }
+  // Box-Muller spare value. File scope so that resetRandn() can discard it.
+  static bool randnStored = false;
+  static double randnStoreVal;
+  void resetRandn()
+  {
+    randnStored = false;
+  }
   double randn()
   {
     // uses the polar form of the Box-Mueller transform. 
     double x1, x2, w;
-    static bool stored=false;
-    static double storeVal;
+    bool& stored = randnStored;
+    double& storeVal = randnStoreVal;
     if(stored)
     {	
       stored = false;

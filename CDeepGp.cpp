@@ -331,6 +331,21 @@ void CDeepGp::setLayerInducingType(unsigned int ell, const string& typeName)
   packLayerOffsets();
 }
 
+vector<string> CDeepGp::hermiteWarnings() const
+{
+  vector<string> out;
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+  {
+    if(inducingTypes[ell] != "hermite")
+      continue;
+    for(const string& w : layers[ell]->hermiteWarnings())
+      out.push_back("layer " + to_string(ell) + ": " + w);
+    if(ell + 1 < numLayers)
+      out.push_back(CInducingHermite::hiddenLayerWarning(ell, numLayers));
+  }
+  return out;
+}
+
 string CDeepGp::getLayerInducingType(unsigned int ell) const
 {
   if(ell >= numLayers)

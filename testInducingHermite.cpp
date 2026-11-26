@@ -156,6 +156,13 @@ void testDeterminism()
   CInducingHermite::makeLayout(C, kc, 40, 3, 12u);
   expect(A.equals(B) && ka == kb, "layout deterministic for a given seed");
   expect(!A.equals(C), "layout changes with the seed");
+  // Regression: a cached Box-Muller spare from an earlier randn() call used to
+  // leak into the layout, so the same seed gave different layouts per process.
+  ndlutil::randn();
+  CMatrix D;
+  vector<unsigned int> kd;
+  CInducingHermite::makeLayout(D, kd, 40, 3, 11u);
+  expect(A.equals(D) && ka == kd, "layout independent of prior randn() parity");
 }
 
 void testAudit()
@@ -916,13 +923,88 @@ void testGating()
   expect(!thrown([&] { ind.setCentres(V); }).empty(), "setCentres refused (windows fixed)");
 }
 
+// ---- phase 5: W3/W4, delivered-layout description ------------------------
+bool anyHas(const vector<string>& v, const string& needle)
+{
+  for(const string& s : v)
+    if(has(s, needle))
+      return true;
+  return false;
+}
+
+void testPhase5Warnings()
+{
+  { // Well-conditioned control: nothing to warn about, layout always described.
+    SparseToy t(20, 2, 8);
+    t.model->setInducingFixed(true);
+    t.model->setInducingType("hermite");
+    expect(t.model->hermiteWarnings().empty(), "control: no warnings at M=8, d=2");
+    const ModelDescription d = t.model->describe();
+    bool layout = false, fixedLine = false;
+    for(const string& h : d.headerLines)
+    {
+      layout = layout || has(h, "Hermite layout: ");
+      fixedLine = fixedLine || has(h, "no free parameters");
+    }
+    expect(layout && fixedLine, "describe() shows layout and the fixed-by-construction line");
+    const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(t.model->getInducing());
+    expect(ph != 0, "hermite inducing object present");
+    if(ph)
+    {
+      const double frac = ph->capturedVariance(t.kern, t.X);
+      expect(frac > 0.0 && frac <= 1.0 + 1e-9, "captured variance fraction in (0, 1]");
+      expect(!anyHas(ph->warnings(t.kern, t.X), "W3"), "W3 silent at the default threshold here");
+      expect(anyHas(ph->warnings(t.kern, t.X, 1.01), "W3"), "W3 fires when threshold is above the fraction");
+    }
+  }
+  { // W1 and W2 reach CGp::hermiteWarnings at d=1 full capacity.
+    SparseToy t(40, 1, 16);
+    t.model->setInducingFixed(true);
+    t.model->setInducingType("hermite");
+    const vector<string> w = t.model->hermiteWarnings();
+    expect(anyHas(w, "W1") && anyHas(w, "W2"), "CGp: W1 and W2 at d=1, M=16");
+  }
+  { // Non-hermite model: no hermite warnings.
+    SparseToy t(20, 2, 8, true);
+    expect(t.model->hermiteWarnings().empty(), "points model has no hermite warnings");
+  }
+  { // W4: only hidden layers of a multi-layer deep GP.
+    const unsigned int N = 14;
+    mt19937 rng(3);
+    normal_distribution<double> nd(0.0, 1.0);
+    CMatrix X(N, 1), y(N, 1);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      X.setVal(nd(rng), i, 0);
+      y.setVal(tanh(X.getVal(i, 0)), i, 0);
+    }
+    CMlpKern k0(1), k1(1);
+    CDeepGp two(X, y, vector<CKern*>{&k0, &k1}, vector<unsigned int>{1u, 1u, 1u},
+                vector<unsigned int>{6, 6}, 4.0, 0.5, 0);
+    expect(two.hermiteWarnings().empty(), "deep GP with points layers: no hermite warnings");
+    two.setLayerInducingType(0, "hermite");
+    two.setLayerInducingType(1, "hermite");
+    const vector<string> w = two.hermiteWarnings();
+    expect(anyHas(w, "W4") && anyHas(w, "hidden layer 0"), "W4 on hidden layer 0");
+    int w4 = 0;
+    for(const string& s : w)
+      w4 += has(s, "W4") ? 1 : 0;
+    expect(w4 == 1, "W4 only for the hidden layer, not the output layer");
+    CMlpKern kk(1);
+    CDeepGp one(X, y, vector<CKern*>{&kk}, vector<unsigned int>{1u, 1u},
+                vector<unsigned int>{6}, 4.0, 0.5, 0);
+    one.setLayerInducingType(0, "hermite");
+    expect(!anyHas(one.hermiteWarnings(), "W4"), "single-layer deep GP: no W4");
+  }
+}
+
 } // namespace
 
 int main()
 {
   try
   {
-    cout << "==== testInducingHermite (CIP-003D phases 1-4) ====" << endl;
+    cout << "==== testInducingHermite (CIP-003D phases 1-5) ====" << endl;
     testCapacityTable();
     testSweep();
     testE1Message();
@@ -937,6 +1019,7 @@ int main()
     testCGpWiring();
     testCGpStream();
     testDeepWiring();
+    testPhase5Warnings();
     testGating();
     cout << "Number of failures: " << fails << "." << endl;
     return fails > 0 ? 1 : 0;

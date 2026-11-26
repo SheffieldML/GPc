@@ -72,6 +72,18 @@ void CSvgp::setInducing(CInducing* pInd)
   updateKernelMatrices();
 }
 
+vector<string> CSvgp::hermiteWarnings() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  return ph ? ph->warnings(*pkern, *pX) : vector<string>();
+}
+
+string CSvgp::hermiteLayoutDescription() const
+{
+  const CInducingHermite* ph = dynamic_cast<const CInducingHermite*>(pInducing);
+  return ph ? ph->describeLayout(*pkern, *pX) : string();
+}
+
 void CSvgp::setInducingType(const string& typeName)
 {
   if(typeName == "points")

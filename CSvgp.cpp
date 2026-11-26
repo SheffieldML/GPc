@@ -23,7 +23,7 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
              double betaVal, int verbos)
   : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
     verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0),
-    dropResidual(false), qParamMode(QModeCvi)
+    dropResidual(false), qParamMode(QModeCvi), lazyFullData(false), fullDataValid(false)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -135,7 +135,6 @@ void CSvgp::setBeta(double val)
 void CSvgp::updateKernelMatrices()
 {
   const unsigned int M = numInducing;
-  const unsigned int N = nData;
   Kuu.resize(M, M);
   pInducing->computeKuu(Kuu, *pkern);
   Kuu.setSymmetric(true);
@@ -144,6 +143,24 @@ void CSvgp::updateKernelMatrices()
   if(jit > 1e-2 && verbosity > 0)
     cout << "Warning: jitter of " << jit << " added to K_uu in CSvgp." << endl;
 
+  fullDataValid = false;
+  if(!lazyFullData)
+    ensureFullData();
+}
+
+void CSvgp::setLazyFullData(bool val)
+{
+  lazyFullData = val;
+  if(!val)
+    ensureFullData();
+}
+
+void CSvgp::ensureFullData() const
+{
+  if(fullDataValid)
+    return;
+  const unsigned int M = numInducing;
+  const unsigned int N = nData;
   Kuf.resize(M, N);
   pInducing->computeKuf(Kuf, *pkern, *pX);
   A.deepCopy(Kuf);
@@ -156,6 +173,7 @@ void CSvgp::updateKernelMatrices()
     diagK.setVal(pkern->diagComputeElement(*pX, i), i);
     diagQ.setVal(A.dotColCol(i, A, i), i);
   }
+  fullDataValid = true;
 }
 
 void CSvgp::setInducingCentres(const CMatrix& Znew)
@@ -316,6 +334,7 @@ void CSvgp::formAB(const vector<unsigned int>& batch, CMatrix& AB,
     return;
   }
 
+  ensureFullData();
   for(unsigned int k = 0; k < B; k++)
   {
     const unsigned int i = batch[k];
@@ -371,7 +390,9 @@ void CSvgp::fillMarginals(const vector<unsigned int>& batch,
   const CMatrix* pA = &A;
   const CMatrix* pDK = &diagK;
   const CMatrix* pDQ = &diagQ;
-  if(!isFullOrderedBatch(batch))
+  if(isFullOrderedBatch(batch))
+    ensureFullData();
+  else
   {
     formAB(batch, wsAB, wsDK, wsDQ);
     pA = &wsAB;
@@ -832,6 +853,7 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
   }
 
   CMatrix KufBar, Ubar;
+  ensureFullData();
   trsmAdjointUT(KufBar, Ubar, cholKuu, A, Abar);
   CMatrix KuuBar;
   cholAdjointUpperBlocked(KuuBar, cholKuu, Ubar);

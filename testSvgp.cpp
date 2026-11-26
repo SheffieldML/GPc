@@ -282,12 +282,157 @@ static void runCase(bool withWhite)
   }
 }
 
+// Lazy vs eager full-data matrices must give identical results.
+static void lazyEquivalenceCase(const string& inducingType)
+{
+  const string tag = " [lazy vs eager, " + inducingType + "]";
+  const double tol = 1e-10;
+  const unsigned int N = 40, M = 8, q = 2;
+  const double beta = 7.0;
+  mt19937 rng(123);
+  normal_distribution<double> nd(0.0, 1.0);
+  CMatrix X(N, q), y(N, 2), Z(M, q);
+  for(unsigned int i = 0; i < N; i++)
+    {
+      for(unsigned int d = 0; d < q; d++)
+        X.setVal(nd(rng), i, d);
+      y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+      y.setVal(sin(X.getVal(i, 1)) + 0.1 * nd(rng), i, 1);
+    }
+  for(unsigned int k = 0; k < M; k++)
+    for(unsigned int d = 0; d < q; d++)
+      Z.setVal(0.7 * nd(rng), k, d);
+
+  CRbfKern kernE(X), kernL(X);
+  CMlpKern mlpE(X), mlpL(X);
+  for(unsigned int i = 0; i < 3; i++)
+    {
+      mlpE.setParam(1.0, i);
+      mlpL.setParam(1.0, i);
+    }
+  const bool ws = (inducingType == "weightspace");
+  CKern* ke = ws ? static_cast<CKern*>(&mlpE) : static_cast<CKern*>(&kernE);
+  CKern* kl = ws ? static_cast<CKern*>(&mlpL) : static_cast<CKern*>(&kernL);
+
+  CSvgp eager(ke, &X, &y, Z, beta, 0);
+  CSvgp lazy(kl, &X, &y, Z, beta, 0);
+  if(ws)
+    {
+      eager.setInducingType("weightspace");
+      lazy.setInducingType("weightspace");
+    }
+  lazy.setLazyFullData(true);
+  lazy.updateKernelMatrices();
+  expect(lazy.isLazyFullData() && !lazy.fullDataBuilt(),
+         "lazy: full-data matrices not built after update" + tag);
+
+  // Explicit-input API must not trigger the full-data build.
+  vector<unsigned int> rows;
+  for(unsigned int k = 0; k < 6; k++)
+    rows.push_back(3 * k);
+  CMatrix XB(rows.size(), q);
+  for(unsigned int k = 0; k < rows.size(); k++)
+    for(unsigned int d = 0; d < q; d++)
+      XB.setVal(X.getVal(rows[k], d), k, d);
+  const double cB = (double)N / (double)rows.size();
+  {
+    CMatrix gKe, gZe, gKl, gZl;
+    double gBe = 0.0, gBl = 0.0;
+    const double Ee = eager.elboGradAt(gKe, gZe, gBe, 0, XB, rows, cB);
+    const double El = lazy.elboGradAt(gKl, gZl, gBl, 0, XB, rows, cB);
+    CMatrix me, ve, ml, vl;
+    eager.marginalsAt(XB, me, ve);
+    lazy.marginalsAt(XB, ml, vl);
+    expect(!lazy.fullDataBuilt(), "lazy: *At API leaves full data unbuilt" + tag);
+    expect(fabs(Ee - El) < tol && maxAbsDiff(gKe, gKl) < tol &&
+               maxAbsDiff(gZe, gZl) < tol && fabs(gBe - gBl) < tol,
+           "elboGradAt equal (obj, kern, Z, beta)" + tag);
+    expect(maxAbsDiff(me, ml) < tol && maxAbsDiff(ve, vl) < tol,
+           "marginalsAt equal" + tag);
+    eager.naturalGradientStepAt(0.3, XB, rows, cB);
+    lazy.naturalGradientStepAt(0.3, XB, rows, cB);
+    expect(!lazy.fullDataBuilt(), "lazy: naturalGradientStepAt leaves full data unbuilt" + tag);
+  }
+
+  // Full-data API: builds on demand and agrees, for full and partial batches.
+  vector<unsigned int> full(N);
+  for(unsigned int i = 0; i < N; i++)
+    full[i] = i;
+  vector<unsigned int> big, small;
+  for(unsigned int i = 0; i < N; i += 2)
+    big.push_back(i);       // B*4 >= N: uses gather-from-A path
+  small = vector<unsigned int>(rows.begin(), rows.begin() + 4);  // small-batch path
+  const vector<unsigned int>* batches[3] = {&full, &big, &small};
+  const char* names[3] = {"full", "half", "small"};
+  for(int b = 0; b < 3; b++)
+    {
+      const string bt = string(" (") + names[b] + " batch)" + tag;
+      eager.naturalGradientStep(0.2, *batches[b]);
+      lazy.naturalGradientStep(0.2, *batches[b]);
+      expect(maxAbsDiff(eager.getWhitenedMean(), lazy.getWhitenedMean()) < tol,
+             "naturalGradientStep q mean equal" + bt);
+      expect(maxAbsDiff(eager.getWhitenedCov(0), lazy.getWhitenedCov(0)) < tol,
+             "naturalGradientStep q cov equal" + bt);
+      expect(fabs(eager.elbo(*batches[b]) - lazy.elbo(*batches[b])) < tol,
+             "elbo(batch) equal" + bt);
+      CMatrix gKe, gZe, gKl, gZl;
+      double gBe = 0.0, gBl = 0.0;
+      const double Ee = eager.elboGrad(gKe, gZe, gBe, *batches[b]);
+      const double El = lazy.elboGrad(gKl, gZl, gBl, *batches[b]);
+      expect(fabs(Ee - El) < tol && maxAbsDiff(gKe, gKl) < tol &&
+                 maxAbsDiff(gZe, gZl) < tol && fabs(gBe - gBl) < tol,
+             "elboGrad(batch) equal" + bt);
+    }
+  expect(fabs(eager.elbo() - lazy.elbo()) < tol, "elbo() equal" + tag);
+  expect(lazy.fullDataBuilt(), "lazy: full data built after full-data API" + tag);
+
+  // Predictions.
+  {
+    CMatrix Xs(5, q);
+    for(unsigned int i = 0; i < 5; i++)
+      for(unsigned int d = 0; d < q; d++)
+        Xs.setVal(nd(rng), i, d);
+    CMatrix mu1, v1, mu2, v2;
+    eager.predictiveMeanVar(mu1, v1, Xs);
+    lazy.predictiveMeanVar(mu2, v2, Xs);
+    expect(maxAbsDiff(mu1, mu2) < tol && maxAbsDiff(v1, v2) < tol,
+           "predictiveMeanVar equal" + tag);
+  }
+
+  // Hyperparameter change: lazy cache must be invalidated, not stale.
+  {
+    CMatrix p1, p2;
+    eager.getOptParams(p1);
+    p2 = p1;
+    for(unsigned int i = 0; i < p1.getCols(); i++)
+      p2.setVal(p1.getVal(i) + 0.15, i);
+    eager.setOptParams(p2);
+    lazy.setOptParams(p2);
+    eager.updateKernelMatrices();
+    lazy.updateKernelMatrices();
+    expect(!lazy.fullDataBuilt(), "lazy: update invalidates full data" + tag);
+    expect(fabs(eager.elbo() - lazy.elbo()) < tol, "elbo() equal after hyper change" + tag);
+    CMatrix gKe, gZe, gKl, gZl;
+    double gBe = 0.0, gBl = 0.0;
+    eager.elboGrad(gKe, gZe, gBe);
+    lazy.elboGrad(gKl, gZl, gBl);
+    expect(maxAbsDiff(gKe, gKl) < tol && fabs(gBe - gBl) < tol,
+           "elboGrad equal after hyper change" + tag);
+  }
+
+  // Switching back to eager rebuilds.
+  lazy.setLazyFullData(false);
+  expect(lazy.fullDataBuilt(), "setLazyFullData(false) rebuilds" + tag);
+}
+
 int main()
 {
   try
     {
       runCase(false);
       runCase(true);
+      lazyEquivalenceCase("points");
+      lazyEquivalenceCase("weightspace");
 
       // 4. M = N, Z = X, no white kernel.
       //    lengthscale 0.3: K_uu well conditioned -> optimum ELBO == exact marginal.

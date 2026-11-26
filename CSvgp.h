@@ -62,6 +62,15 @@ class CSvgp : public CStochasticOptimisable {
   // Recompute K_uu, K_uf, diag K after kernel or inducing changes.
   void updateKernelMatrices();
 
+  // Lazy full-data matrices: when true, updateKernelMatrices() computes only
+  // K_uu and its Cholesky; K_uf, A, diag K, diag Q (all N-sized) are built on
+  // first use by the full-data API (elbo(), elboGrad(batch), full batches).
+  // The explicit-input API (*At, marginalsAt, ...) never needs them, so deep-GP
+  // layer cores avoid O(M N) work per step. Results are identical either way.
+  void setLazyFullData(bool val);
+  bool isLazyFullData() const { return lazyFullData; }
+  bool fullDataBuilt() const { return fullDataValid; }
+
   // Full-batch ELBO.
   double elbo() const;
   // Unbiased minibatch estimate: data term scaled by N/|batch|.
@@ -221,6 +230,8 @@ class CSvgp : public CStochasticOptimisable {
   double dataTerm(const vector<unsigned int>& batch) const;
   double klPlusPrior() const;
   vector<unsigned int> allIndices() const;
+  // Build K_uf, A, diag K, diag Q from the current K_uu factor (no-op if valid).
+  void ensureFullData() const;
 
   CKern* pkern;
   const CMatrix* pX;
@@ -241,10 +252,13 @@ class CSvgp : public CStochasticOptimisable {
   // Kernel quantities.
   CMatrix Kuu;      // M x M (jitter-modified if jitChol needed it)
   CMatrix cholKuu;  // upper Cholesky U of Kuu (Kuu = U^T U, L = U^T)
-  CMatrix Kuf;      // M x N
-  CMatrix A;        // M x N, L^{-1} K_uf (whitened projection)
-  CMatrix diagK;    // N x 1
-  CMatrix diagQ;    // N x 1, column norms^2 of A = diag(K_fu K_uu^{-1} K_uf)
+  // Full-data quantities are mutable caches: see ensureFullData().
+  mutable CMatrix Kuf;      // M x N
+  mutable CMatrix A;        // M x N, L^{-1} K_uf (whitened projection)
+  mutable CMatrix diagK;    // N x 1
+  mutable CMatrix diagQ;    // N x 1, column norms^2 of A = diag(K_fu K_uu^{-1} K_uf)
+  bool lazyFullData;        // default false (eager)
+  mutable bool fullDataValid;
 
   // Whitened variational parameters q(v_j) = N(qMean(:,j), qCov[j]).
   CMatrix qMean;         // M x d

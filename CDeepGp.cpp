@@ -186,6 +186,8 @@ void CDeepGp::rebuildLayers(double beta)
     if(inducingTypes[ell] != "points")
       layers[ell]->setInducingType(inducingTypes[ell]);
     layers[ell]->setDropResidual(dropResidual);
+    // Deep-GP cores use only the explicit-input API; skip O(M N) full-data work.
+    layers[ell]->setLazyFullData(true);
     if(ell + 1 < numLayers)
     {
       CMatrix m(layers[ell]->getNumInducing(), layers[ell]->getOutputDim());

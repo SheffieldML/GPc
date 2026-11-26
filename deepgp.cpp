@@ -307,8 +307,8 @@ void CCldeepgp::learn()
 
   if(numLayers < 1)
     exitError("-L must be >= 1.");
-  if(inducingType != "points" && inducingType != "weightspace")
-    exitError("--inducing must be points or weightspace.");
+  if(inducingType != "points" && inducingType != "weightspace" && inducingType != "hermite")
+    exitError("--inducing must be points, weightspace or hermite.");
   if(numSamples < 1)
     exitError("--samples must be positive.");
   if(!(chi > 0.0) || !(beta > 0.0))
@@ -477,7 +477,7 @@ void CCldeepgp::helpInfo()
   cout << "  --hidden D      hidden width for intermediate dims (default Din)"
        << endl;
   cout << "  -M M|M1,M2,...  inducing count per layer (default 10)" << endl;
-  cout << "  --inducing T    points | weightspace (default points)" << endl;
+  cout << "  --inducing T    points | weightspace | hermite (default points)" << endl;
   cout << "  --residual on|off  Nyström residual; off = finite-network bound"
        << endl;
   cout << "  --batch B       minibatch size (default N)" << endl;

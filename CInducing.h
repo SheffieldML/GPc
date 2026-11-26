@@ -366,6 +366,18 @@ class CInducingHermite : public CInducing
                       const CMatrix* KufCached = 0) const;
 
   // Fixed windows: nothing to optimise.
+  // E3: Hermite windows have no width. Anything that would set or learn one is refused.
+  void setWindowWidth(double s);
+  void setWindowWidthAt(unsigned int m, double s);
+  void setLearnWindowWidth(bool learn);
+  // E2 up front: throw NotImplementedError now (not at the first K_fu) when the kernel
+  // has no Hermite features, so a failed setter leaves the model unchanged.
+  static void checkKernelSupport(const CKern& kern, unsigned int inputDim);
+  // Stream load (E6): rebuild from a stored (V, ks) block and refuse inconsistent data
+  // with StreamFormatError. ksRow is 1 x M holding integer-valued odd degrees.
+  static CInducingHermite* fromStreamData(const CMatrix& Vin, const CMatrix& ksRow,
+                                          unsigned int numActive, unsigned int inputDim);
+  CMatrix degreesAsRow() const;
   unsigned int getNumParams() const { return 0; }
   void getParams(CMatrix& /*param*/, unsigned int /*offset*/) const {}
   void setParams(const CMatrix& /*param*/, unsigned int /*offset*/) {}

@@ -331,8 +331,8 @@ testInducingGradZ.o: testInducingGradZ.cpp CKern.h CInducing.h CMatrix.h
 	$(CC) -c testInducingGradZ.cpp -o testInducingGradZ.o $(CCFLAGS)
 
 # CIP-003D phase 1: Hermite inducing layout, capacity and audit.
-testInducingHermite: testInducingHermite.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o testInducingHermite testInducingHermite.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+testInducingHermite: testInducingHermite.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testInducingHermite testInducingHermite.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
 
 testInducingHermite.o: testInducingHermite.cpp CKern.h CInducing.h CMatrix.h CSvgp.h
 	$(CC) -c testInducingHermite.cpp -o testInducingHermite.o $(CCFLAGS)

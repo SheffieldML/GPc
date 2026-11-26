@@ -383,6 +383,9 @@ public:
   }
   void setInducingFixed(const bool val) 
   {
+    if(!val && pInducing != 0 && pInducing->typeName() == "hermite")
+      throw ndlexceptions::Error(
+          "Hermite inducing (E4): windows have no free parameters; inducing cannot be unfixed.");
     inducingFixed = val;
   }
 

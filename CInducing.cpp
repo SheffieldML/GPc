@@ -1878,6 +1878,85 @@ void CInducingHermite::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix
     kern.wsHermiteGradX(*gXOrNull, X, V, ks, gKfu);
 }
 
+void CInducingHermite::setWindowWidth(double)
+{
+  throw ndlexceptions::Error(
+      "Hermite inducing (E3): Hermite windows have no width; window_width cannot be set.");
+}
+
+void CInducingHermite::setWindowWidthAt(unsigned int, double)
+{
+  throw ndlexceptions::Error(
+      "Hermite inducing (E3): Hermite windows have no width; window_width cannot be set.");
+}
+
+void CInducingHermite::setLearnWindowWidth(bool learn)
+{
+  if(learn)
+    throw ndlexceptions::Error(
+        "Hermite inducing (E3): Hermite windows have no width; learn_window_width cannot be enabled.");
+}
+
+void CInducingHermite::checkKernelSupport(const CKern& kern, unsigned int inputDim)
+{
+  CMatrix X(1, inputDim), V(1, inputDim + 1), Kfu;
+  X.zeros();
+  V.zeros();
+  V.setVal(1.0, 0, 0);
+  std::vector<unsigned int> ks(1, 1u);
+  kern.wsHermiteCrossCompute(Kfu, X, V, ks); // throws NotImplementedError (E2) if unsupported
+}
+
+CMatrix CInducingHermite::degreesAsRow() const
+{
+  CMatrix row(1, (unsigned int)ks.size());
+  for(size_t m = 0; m < ks.size(); m++)
+    row.setVal((double)ks[m], 0, (unsigned int)m);
+  return row;
+}
+
+CInducingHermite* CInducingHermite::fromStreamData(const CMatrix& Vin, const CMatrix& ksRow,
+                                                   unsigned int numActive,
+                                                   unsigned int inputDim)
+{
+  if(Vin.getRows() != numActive)
+    throw ndlexceptions::StreamFormatError(
+        "hermiteDirections", "E6: hermiteDirections has " + std::to_string(Vin.getRows()) +
+                                 " rows but numActive is " + std::to_string(numActive) + ".");
+  if(Vin.getCols() != inputDim + 1)
+    throw ndlexceptions::StreamFormatError(
+        "hermiteDirections", "E6: hermiteDirections has " + std::to_string(Vin.getCols()) +
+                                 " columns but inputDim+1 is " + std::to_string(inputDim + 1) + ".");
+  if(ksRow.getRows() != 1 || ksRow.getCols() != numActive)
+    throw ndlexceptions::StreamFormatError(
+        "hermiteDegrees", "E6: hermiteDegrees must be 1 x numActive (" +
+                              std::to_string(numActive) + ").");
+  std::vector<unsigned int> ksIn(numActive);
+  for(unsigned int m = 0; m < numActive; m++)
+  {
+    const double v = ksRow.getVal(0, m);
+    const double r = floor(v + 0.5);
+    if(fabs(v - r) > 1e-9 || r < 1.0 || ((long)r % 2) == 0)
+      throw ndlexceptions::StreamFormatError(
+          "hermiteDegrees", "E6: degree " + std::to_string(v) + " at index " +
+                                std::to_string(m) + " is not an odd integer >= 1.");
+    ksIn[m] = (unsigned int)r;
+  }
+  try
+  {
+    return new CInducingHermite(Vin, ksIn); // runs the E5 audit
+  }
+  catch(ndlexceptions::StreamFormatError&)
+  {
+    throw;
+  }
+  catch(ndlexceptions::Error& e)
+  {
+    throw ndlexceptions::StreamFormatError(
+        "hermiteDirections", "E6: stored Hermite layout fails its audit: " + e.getMessage());
+  }
+}
+
 void CInducingHermite::setCentres(const CMatrix&)
 {
   throw ndlexceptions::Error(

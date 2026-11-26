@@ -9,6 +9,9 @@
 #include "CInducing.h"
 #include "CKern.h"
 #include "CSvgp.h"
+#include "CGp.h"
+#include "CDeepGp.h"
+#include "CNoise.h"
 #include <random>
 #include "ndlutil.h"
 
@@ -621,6 +624,288 @@ void testSvgpGradients()
   expect(worstX < 1e-5, "CSvgp with Hermite inducing: data-X gradient matches finite differences");
 }
 
+// ---- phase 4: CGp / CDeepGp wiring, E3, E4, E6, stream round trip -------
+struct SparseToy
+{
+  CMatrix X, y, Xu;
+  CMlpKern kern;
+  CRbfKern rbf;
+  CGaussianNoise noise;
+  CGp* model;
+  SparseToy(unsigned int N, unsigned int q, unsigned int M, bool useRbf = false)
+      : X(N, q), y(N, 1), Xu(M, q), kern(q), rbf(q), noise(&y), model(0)
+  {
+    mt19937 rng(21);
+    normal_distribution<double> nd(0.0, 1.0);
+    for(unsigned int i = 0; i < N; i++)
+    {
+      for(unsigned int j = 0; j < q; j++)
+        X.setVal(nd(rng), i, j);
+      y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+    }
+    for(unsigned int m = 0; m < M; m++)
+      for(unsigned int j = 0; j < q; j++)
+        Xu.setVal(X.getVal(m % N, j), m, j);
+    for(int i = 0; i < noise.getOutputDim(); i++)
+      noise.setBiasVal(0.0, i);
+    CKern* k = useRbf ? (CKern*)&rbf : (CKern*)&kern;
+    model = new CGp(k, &noise, &X, CGp::DTCVAR, M, 0);
+    model->setInducingVals(Xu);
+    model->setBetaVal(10.0);
+  }
+  ~SparseToy() { delete model; }
+};
+
+void testCGpWiring()
+{
+  // E4: refuse while inducing is free, and leave the model unchanged.
+  {
+    SparseToy t(20, 2, 8);
+    const string e4 = thrown([&] { t.model->setInducingType("hermite"); });
+    expect(has(e4, "E4") && t.model->getInducingType() == "points",
+           "E4: hermite refused while inducing is not fixed; type unchanged");
+    t.model->setInducingFixed(true);
+    t.model->setInducingType("hermite");
+    expect(t.model->getInducingType() == "hermite" && t.model->getInducing()->numInducing() == 8,
+           "CGp hermite: delivered numInducing equals requested numActive");
+    expect(has(thrown([&] { t.model->setInducingFixed(false); }), "E4"),
+           "E4: unfixing a hermite model refused");
+    // E3
+    expect(has(thrown([&] { t.model->getInducing()->setWindowWidth(0.3); }), "E3"),
+           "E3: window width refused");
+    expect(has(thrown([&] { t.model->getInducing()->setLearnWindowWidth(true); }), "E3"),
+           "E3: learn window width refused");
+    expect(!thrown([&] { t.model->setByPath("inducing.window_width", 0.3); }).empty(),
+           "E3: window_width path refused");
+    expect(!has(thrown([&] { t.model->getInducing()->setLearnWindowWidth(false); }), "E3"),
+           "learn_window_width=false is not an error");
+    // The optimiser vector holds no inducing parameters.
+    const double ll = t.model->logLikelihood();
+    expect(std::isfinite(ll), "CGp hermite: logLikelihood finite");
+    const unsigned int nOpt = t.model->getOptNumParams();
+    CMatrix g(1, nOpt), p(1, nOpt), p0(1, nOpt);
+    t.model->computeObjectiveGradParams(g);
+    t.model->getOptParams(p0);
+    double worst = 0.0;
+    const double eps = 1e-6;
+    for(unsigned int i = 0; i < nOpt; i++)
+    {
+      p.deepCopy(p0);
+      p.setVal(p0.getVal(i) + eps, i);
+      t.model->setOptParams(p);
+      const double fp = t.model->computeObjectiveVal();
+      p.setVal(p0.getVal(i) - eps, i);
+      t.model->setOptParams(p);
+      const double fm = t.model->computeObjectiveVal();
+      worst = max(worst, relErr(g.getVal(i), (fp - fm) / (2 * eps)));
+    }
+    t.model->setOptParams(p0);
+    cout << "CGp+Hermite (DTCVAR): nOpt=" << nOpt << ", max rel err = " << worst << endl;
+    expect(worst < 1e-5, "CGp hermite: objective gradient matches finite differences");
+  }
+  // E2 and E1 through the CGp setter, each leaving the type unchanged.
+  {
+    SparseToy t(20, 2, 8, true);
+    t.model->setInducingFixed(true);
+    const string e2 = thrown([&] { t.model->setInducingType("hermite"); });
+    expect(has(e2, "E2") && t.model->getInducingType() == "points",
+           "E2: RBF kernel refused at the CGp setter; type unchanged");
+  }
+  {
+    SparseToy t(30, 1, 20);
+    t.model->setInducingFixed(true);
+    const string e1 = thrown([&] { t.model->setInducingType("hermite"); });
+    expect(has(e1, "E1") && t.model->getInducingType() == "points",
+           "E1: M=20 > capacity 16 at d=1 refused at the CGp setter; type unchanged");
+  }
+}
+
+void testCGpStream()
+{
+  SparseToy t(20, 2, 8);
+  t.model->setInducingFixed(true);
+  t.model->setInducingType("hermite");
+  ostringstream out;
+  writeGpToStream(*t.model, out);
+  const string blob = out.str();
+  expect(has(blob, "inducingType=hermite") && has(blob, "hermiteDirections=") &&
+             has(blob, "hermiteDegrees="),
+         "stream writes the hermite block (V and ks)");
+  istringstream in(blob);
+  CGp* round = readGpFromStream(in);
+  expect(round != 0 && round->getInducingType() == "hermite" &&
+             round->getInducing()->numInducing() == 8,
+         "stream restores hermite type and M");
+  if(round != 0)
+  {
+    const CInducingHermite* a = dynamic_cast<const CInducingHermite*>(t.model->getInducing());
+    const CInducingHermite* b = dynamic_cast<const CInducingHermite*>(round->getInducing());
+    expect(a && b && a->degrees() == b->degrees() &&
+               maxAbsDiff(a->directions(), b->directions()) < 1e-12,
+           "stream round trip preserves V and ks");
+    CMatrix K1(8, 8), K2(8, 8), Ku1, Ku2;
+    a->computeKuu(K1, *t.model->getKernel());
+    b->computeKuu(K2, *round->getKernel());
+    a->computeKux(Ku1, *t.model->getKernel(), t.X);
+    b->computeKux(Ku2, *round->getKernel(), t.X);
+    expect(maxAbsDiff(K1, K2) < ndlutil::MATCHTOL && maxAbsDiff(Ku1, Ku2) < ndlutil::MATCHTOL,
+           "stream round trip: K_uu and K_ux equal within MATCHTOL");
+    delete round;
+  }
+  // E6 at stream level.
+  {
+    string noDeg = blob.substr(0, blob.find("hermiteDegrees="));
+    istringstream bin(noDeg);
+    const string e = thrown([&] { delete readGpFromStream(bin); });
+    expect(has(e, "E6"), "E6: missing hermiteDegrees block");
+  }
+  {
+    string unfixed = blob;
+    const size_t p = unfixed.find("fixInducing=1");
+    expect(p != string::npos, "blob has fixInducing=1");
+    if(p != string::npos)
+    {
+      unfixed.replace(p, 13, "fixInducing=0");
+      istringstream bin(unfixed);
+      const string e = thrown([&] { delete readGpFromStream(bin); });
+      expect(has(e, "E6"), "E6: hermite with fixInducing=0");
+    }
+  }
+  // E6 at data level.
+  {
+    CMatrix V;
+    vector<unsigned int> ks;
+    CInducingHermite::makeLayout(V, ks, 6, 2);
+    CInducingHermite good(V, ks);
+    CMatrix row = good.degreesAsRow();
+    expect(thrown([&] { delete CInducingHermite::fromStreamData(V, row, 6, 2); }).empty(),
+           "fromStreamData accepts a consistent block");
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(V, row, 7, 2); }), "E6"),
+           "E6: numActive disagrees with V rows");
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(V, row, 6, 3); }), "E6"),
+           "E6: V columns disagree with inputDim+1");
+    CMatrix shortRow(1, 5);
+    shortRow.zeros();
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(V, shortRow, 6, 2); }), "E6"),
+           "E6: ks length disagrees");
+    CMatrix even(row);
+    even.setVal(2.0, 0, 3);
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(V, even, 6, 2); }), "E6"),
+           "E6: even degree");
+    CMatrix frac(row);
+    frac.setVal(3.5, 0, 3);
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(V, frac, 6, 2); }), "E6"),
+           "E6: non-integer degree");
+    CMatrix dup(V);
+    for(unsigned int j = 0; j < dup.getCols(); j++)
+      dup.setVal(V.getVal(0, j), 1, j);
+    CMatrix row2 = row;
+    row2.setVal(row.getVal(0, 0), 0, 1);
+    expect(has(thrown([&] { delete CInducingHermite::fromStreamData(dup, row2, 6, 2); }), "E6"),
+           "E6: stored layout that fails the audit (duplicate window)");
+  }
+  // Old model files (no hermite block) still load.
+  {
+    SparseToy p(20, 2, 8);
+    p.model->setInducingFixed(true);
+    ostringstream o2;
+    writeGpToStream(*p.model, o2);
+    istringstream i2(o2.str());
+    CGp* r = readGpFromStream(i2);
+    expect(r != 0 && r->getInducingType() == "points" && !has(o2.str(), "hermite"),
+           "points model stream (no hermite block) still loads");
+    delete r;
+  }
+}
+
+void testDeepWiring()
+{
+  const unsigned int N = 14, M = 6;
+  mt19937 rng(3);
+  normal_distribution<double> nd(0.0, 1.0);
+  CMatrix X(N, 1), y(N, 1);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    X.setVal(nd(rng), i, 0);
+    y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+  }
+  { // E2 at the layer setter: type recorded unchanged.
+    CRbfKern r0(1), r1(1);
+    CDeepGp dgp(X, y, vector<CKern*>{&r0, &r1}, vector<unsigned int>{1u, 1u, 1u},
+                vector<unsigned int>{M, M}, 4.0, 0.5, 0);
+    const string e = thrown([&] { dgp.setLayerInducingType(0, "hermite"); });
+    expect(has(e, "E2") && dgp.getLayerInducingType(0) == "points",
+           "CDeepGp: E2 at the layer setter leaves the recorded type unchanged");
+  }
+  CMlpKern k0(1), k1(1);
+  CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1}, vector<unsigned int>{1u, 1u, 1u},
+              vector<unsigned int>{M, M}, 4.0, 0.5, 0);
+  dgp.setLayerInducingType(0, "hermite");
+  dgp.setLayerInducingType(1, "hermite");
+  dgp.setNumSamples(1);
+  dgp.setSeed(5);
+  expect(has(thrown([&] { dgp.setLayerLearnWindowWidth(0, true, false); }), "E3"),
+         "CDeepGp: E3 for learn_window_width on a hermite layer");
+  expect(dgp.layer(0).getInducing()->numInducing() == M, "CDeepGp hermite: delivered M");
+  CMatrix pBefore;
+  dgp.getStochasticParams(pBefore);
+  const double L0 = dgp.elboEstimate();
+  ostringstream os;
+  dgp.toStream(os);
+  expect(has(os.str(), "inducingType=hermite"), "CDeepGp stream records hermite layers");
+  istringstream is(os.str());
+  CMatrix Xt(1, 1), Yt(1, 1);
+  CRbfKern kt(1);
+  CDeepGp loaded(Xt, Yt, vector<CKern*>{&kt}, vector<unsigned int>{1u, 1u},
+                 vector<unsigned int>{1u}, 1.0, 1.0, 0);
+  loaded.fromStream(is);
+  bool same = loaded.getLayerInducingType(0) == "hermite" && loaded.getLayerInducingType(1) == "hermite";
+  for(unsigned int l = 0; l < 2 && same; l++)
+  {
+    const CInducingHermite* a = dynamic_cast<const CInducingHermite*>(dgp.layer(l).getInducing());
+    const CInducingHermite* b = dynamic_cast<const CInducingHermite*>(loaded.layer(l).getInducing());
+    same = a && b && a->degrees() == b->degrees() &&
+           maxAbsDiff(a->directions(), b->directions()) < 1e-12;
+  }
+  expect(same, "CDeepGp stream round trip preserves V and ks per layer");
+  loaded.setNumSamples(1);
+  loaded.setSeed(5);
+  const double L1 = loaded.elboEstimate();
+  cout << "CDeepGp+Hermite ELBO before/after stream: " << L0 << " / " << L1 << endl;
+  expect(fabs(L0 - L1) < 1e-6, "CDeepGp stream round trip: ELBO equal");
+
+  // Layer gradients (deferred from phase 3): frozen noise, all stochastic params.
+  {
+    CMatrix eps(N, 1);
+    for(unsigned int i = 0; i < N; i++)
+      eps.setVal(nd(rng), i, 0);
+    dgp.setFrozenEps(eps);
+    vector<unsigned int> all(N);
+    for(unsigned int i = 0; i < N; i++)
+      all[i] = i;
+    CMatrix gA;
+    dgp.objectiveGradBatch(all, gA);
+    CMatrix p0;
+    dgp.getStochasticParams(p0);
+    const double h = 1e-5;
+    double worst = 0.0;
+    for(unsigned int i = 0; i < p0.getCols(); i++)
+    {
+      CMatrix pp(p0), pm(p0), gT;
+      pp.setVal(p0.getVal(i) + h, i);
+      pm.setVal(p0.getVal(i) - h, i);
+      dgp.setStochasticParams(pp);
+      const double Lp = dgp.objectiveGradBatch(all, gT);
+      dgp.setStochasticParams(pm);
+      const double Lm = dgp.objectiveGradBatch(all, gT);
+      worst = max(worst, relErr(gA.getVal(i), (Lp - Lm) / (2 * h)));
+    }
+    dgp.setStochasticParams(p0);
+    cout << "CDeepGp+Hermite: " << p0.getCols() << " stochastic params, max rel err = " << worst << endl;
+    expect(worst < 1e-4, "CDeepGp with Hermite layers: gradient matches finite differences");
+  }
+}
+
 void testGating()
 {
   CMatrix V;
@@ -637,7 +922,7 @@ int main()
 {
   try
   {
-    cout << "==== testInducingHermite (CIP-003D phases 1-3) ====" << endl;
+    cout << "==== testInducingHermite (CIP-003D phases 1-4) ====" << endl;
     testCapacityTable();
     testSweep();
     testE1Message();
@@ -649,6 +934,9 @@ int main()
     testKernelRouting();
     testHookGradients();
     testSvgpGradients();
+    testCGpWiring();
+    testCGpStream();
+    testDeepWiring();
     testGating();
     cout << "Number of failures: " << fails << "." << endl;
     return fails > 0 ? 1 : 0;

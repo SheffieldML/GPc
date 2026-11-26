@@ -531,6 +531,12 @@ void CClgp::learn()
   {
     try
     {
+      if(inducingTypeStr == "hermite")
+      {
+        // Hermite windows have no free parameters; say so rather than adjust silently.
+        cerr << "Note: --inducing hermite uses fixed windows; inducing is held fixed." << endl;
+        pmodel->setInducingFixed(true);
+      }
       pmodel->setInducingType(inducingTypeStr);
     }
     catch(ndlexceptions::Error& err)
@@ -538,7 +544,7 @@ void CClgp::learn()
       exitError(err.getMessage());
     }
     if((inducingTypeStr == "whitenoise" || inducingTypeStr == "greens"
-        || inducingTypeStr == "weightspace")
+        || inducingTypeStr == "weightspace" || inducingTypeStr == "hermite")
        && windowWidth > 0.0)
     {
       try
@@ -1293,7 +1299,7 @@ void CClgp::helpInfo()
     helpArgument("-S, --Scale-data bool", "Scale the data by setting the standard deviation in each direction to 1.0. Default value is 0 (false).");
     helpArgument("-A, --Approximation-type string", "Sparse approximation type. Either FTC (no approximation), DTC (projected process approximation), DTCVAR (variational sparse approximation).");// FITC (fully independent training conditional --- not fully tested).");//, PITC (partially independent training conditional. Default value is FTC (no approximation).");
     helpArgument("-L, --sparse-linalg string", "Sparse inducing-side linear algebra: lq (LQ of [I,A], CIP-001B, default), stable (whitened C + Murray adjoints), or legacy (explicit invK_uu). Prefer --sparse-linalg over -L (short -L collides with Learn-scales).");
-    helpArgument("--inducing points|whitenoise|greens|weightspace", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 MLP/arccos weight-space features.");
+    helpArgument("--inducing points|whitenoise|greens|weightspace|hermite", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 MLP/arccos weight-space features. hermite: CIP-003D fixed Hermite ridge windows (MLP kernels only; no window width; inducing held fixed).");
     helpArgument("--window-width float", "Fixed window width s (with --inducing whitenoise, greens, or weightspace). Default: median nearest-neighbour spacing of inducing centres.");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");

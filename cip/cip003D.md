@@ -174,10 +174,10 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 ## Implementation Status
 
 - [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1)
-- [ ] Ask-versus-delivered: E1, E2, E5, W1, W2 done and tested (phases 1-2); E3, E4, E6, W3, W4 follow in phases 4, 5
+- [ ] Ask-versus-delivered: E1-E6, W1, W2 done and tested (phases 1-4); W3, W4 follow in phase 5 with the Python façade
 - [x] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates (phase 2; `wsHermiteCrossCompute` on `CMlpKern`, `CMlpardKern`, compound; the `wsHermiteGradParams` / `wsHermiteGradX` virtuals arrive with phase 3)
-- [x] Kernel-parameter and data-X gradients (phase 3): `wsHermiteGradParams` / `wsHermiteGradX` on `CMlpKern`, `CMlpardKern`, compound; `CInducingHermite::gradFromKuuKuf` (gKuu contributes nothing: K_uu is kernel-free and windows are fixed). Gated against central finite differences at the hook level (about 1e-10) and through a `CSvgp` layer (objective gradient and gX, about 1e-9). `CDeepGp`-layer gate follows with the phase 4 wiring
-- [ ] `CGp` / `CDeepGp` / stream / CLI wiring (phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector)
+- [x] Kernel-parameter and data-X gradients (phase 3): `wsHermiteGradParams` / `wsHermiteGradX` on `CMlpKern`, `CMlpardKern`, compound; `CInducingHermite::gradFromKuuKuf` (gKuu contributes nothing: K_uu is kernel-free and windows are fixed). Gated against central finite differences at the hook level (about 1e-10) and through a `CSvgp` layer (objective gradient and gX, about 1e-9). `CDeepGp`-layer gate done in phase 4 (62 stochastic params, rel err about 1e-9)
+- [x] `CGp` / `CDeepGp` / stream / CLI wiring (phase 4): `CGp::setInducingType("hermite")` (E4 if inducing not fixed, E2 probe, E1, E5 before any state changes), `CSvgp` and `CDeepGp::setLayerInducingType`, `hermiteDirections` / `hermiteDegrees` stream blocks in `CGp` and per-layer in `CDeepGp` (V and ks explicit; E6 via `CInducingHermite::fromStreamData`), E3 on `setWindowWidth` / `setLearnWindowWidth(true)` / window-width paths, `gp --inducing hermite` and `deepgp --inducing hermite`. Phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector
 - [ ] Python façade and tests
 - [ ] Docs: trade-off against Gaussian ridges
 - [ ] Prototype composite-task reproduction

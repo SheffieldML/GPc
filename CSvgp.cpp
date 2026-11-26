@@ -99,6 +99,16 @@ void CSvgp::setInducingType(const string& typeName)
     const double s0 = CInducingWeightSpace::makeRidgeInit(W, numInducing, d, 7u);
     setInducing(new CInducingWeightSpace(W, s0, false, true));
   }
+  else if(typeName == "hermite")
+  {
+    // CIP-003D: fixed Hermite ridge windows. E2 / E1 / E5 raise before anything changes.
+    const unsigned int d = getInputDim();
+    CInducingHermite::checkKernelSupport(*pkern, d);
+    CMatrix V;
+    vector<unsigned int> ks;
+    CInducingHermite::makeLayout(V, ks, numInducing, d);
+    setInducing(new CInducingHermite(V, ks));
+  }
   else
     throw ndlexceptions::Error("CSvgp::setInducingType: unknown type \"" + typeName + "\"");
 }

@@ -33,7 +33,7 @@ title: "Multi-class likelihoods (robust-max, softmax) for SVGP and deep GP"
 
 ## Summary
 
-Add K-class likelihoods to `CNoise`: robust-max (Hernández-Lobato et al., 2011) first, softmax second. Both couple the K latent outputs of a data point, so they need a row-wise expected-log-likelihood hook that the SVGP and deep-GP final layer call instead of the per-element `expectedLogLikelihood`.
+Add K-class likelihoods (robust-max, then softmax) to GPc by changing the likelihood contract once, across the library, instead of adding a hook to one model. `CNoise` gains a block size (coupled output columns per datum; 1 for every existing likelihood), block oracles whose defaults are the existing per-element code, and a capability set, so that each inference engine (SVGP, Laplace, EP, IVM, PPA, samplers, prediction, I/O, Python) either supports a likelihood or refuses it with a clear error.
 
 ## Motivation
 
@@ -41,56 +41,86 @@ GPc has Gaussian, probit, ordered, and (CIP-003A) skew, Student-t, Poisson, bino
 
 ## Detailed Description
 
-### Why the existing interface is not enough
+### What the whole library assumes today
 
-`CSvgp::expectedLogLik(y, mu, var, gMu, gVar, j)` treats each of the d outputs independently. A K-class likelihood needs, per data point i, the vector of marginals (mu_ik, var_ik), k = 1..K, and returns E_q[log p(y_i | f_i)] with gradients with respect to every mu_ik and var_ik. Marginals stay independent across k under the SVGP factorisation, which is what makes the expectation tractable.
+Every consumer of `CNoise` assumes one likelihood term per element: observation y_ij depends on latent f_ij only. That assumption is spread across the library, not confined to SVGP:
 
-### Interface (on `CNoise`, not a new hierarchy)
+| Consumer | How it touches the likelihood | Per-element assumption |
+|---|---|---|
+| `CSvgp`, `CDeepGp` final layer | `expectedLogLikelihood(y, mu, var, gMu, gVar)` | scalar marginal in, scalar gradients out |
+| `CLaplaceInference` | `ndlnoise::laplacePointDerivs` (log p, d1, diagonal W, dW/df) | W is a diagonal vector |
+| `CEpInference` | cavity moments, site (tau, v) as N×1 vectors | one Gaussian site per element |
+| `CIvm`, `CPpa`, `CSparsePpa`, `CGp` (ADF) | `getNuG`, `updateSites`, `getGradInputs` per (i, j) | per-element site updates |
+| `CHmc` / variational HMC | pointwise log-density | scalar |
+| `CInterchange`, streams, `.mat` I/O, Python `gpc.likelihoods`, the type-string factory in `CNoise.cpp` | type string and parameter blocks | assumes the known zoo |
+
+A multi-class likelihood breaks the assumption in a specific way: the K latents of one datum share one observation. A hook added to `CSvgp` would fix one row of this table and leave the others silently wrong. The design below changes the model of the likelihood once and states what each consumer does with it.
+
+### Principle: the datum is a block, and per-element is the block of size one
+
+A likelihood term is a function p(y_i | f_i) where f_i is a block of `blockSize()` latents drawn from the output columns. Existing likelihoods have blockSize 1. Robust-max and softmax have blockSize K, equal to the number of output columns.
+
+Targets stay N × K one-hot (this is how the oil data is already stored and how `CNoise` stores `py`). That keeps `nProcesses`, `getOutputDim()`, bias/scale vectors, `CGp` and `CSvgp` dimension logic, and every existing stream and fixture unchanged. Integer labels are converted to one-hot at the boundary (loader, `setTarget`, Python façade), never inside inference.
+
+### Interface: block oracle first, per-element as the default case
+
+`CNoise` gains a small block-oracle contract. Each member has a default that reduces to the existing per-element virtuals, so no existing likelihood changes.
 
 ```cpp
-virtual bool isRowCoupled() const { return false; }
-// y: class index (or one-hot row); mu, var, gMu, gVar: length K.
-virtual double expectedLogLikelihoodRow(const double* y, const double* mu,
-                                        const double* var, unsigned int K,
-                                        double* gMu, double* gVar) const;
+// Consecutive output columns forming one coupled block (1 = independent).
+virtual unsigned int blockSize() const { return 1; }
+
+// Capabilities, so each inference can refuse clearly instead of guessing.
+enum Capability { CapExpectedLogLik = 1, CapPointDerivs = 2,
+                  CapCavityMoments = 4, CapPredictive = 8 };
+virtual unsigned int capabilities() const;   // default: derived from what the
+                                             // element-wise virtuals implement
+
+// Block oracles (default: loop the element-wise virtuals over the block).
+virtual double expectedLogLikelihoodBlock(const double* y, const double* mu,
+    const double* var, double* gMu, double* gVar) const;          // VI
+virtual double pointDerivsBlock(const double* y, const double* f,
+    double* g, CMatrix& negHessian, CMatrix* dHdf) const;         // Laplace
+virtual double cavityMomentsBlock(/* ... */) const;                // EP / ADF
+virtual void   predictBlock(const double* mu, const double* var,
+    double* prob) const;                                           // out()
 ```
 
-`CSvgp::dataTerm`, `dataTermQGrads*`, `naturalGradientStep*` and `elboGrad*` branch once on `isRowCoupled()` and loop over rows instead of elements. Default `false` leaves every existing path untouched. The gamma-weighted CVI natural-gradient step needs the per-site (gMu, gVar) only, so it carries over.
+At `blockSize() == 1` the code takes exactly the current paths, which are the oracle defaults. There is one code path and one regression surface, not a parallel multi-class branch.
 
-### Robust-max
+### What each consumer does
 
-p(y = c | f) = (1 - eps) if c = argmax_k f_k, else eps / (K - 1), with eps a learned or fixed parameter. With f_k ~ N(mu_k, v_k) independent,
+- **`CSvgp` / `CDeepGp`:** the data term, CVI natural-gradient sites and `elboGrad*` loop over blocks and call `expectedLogLikelihoodBlock`. Sites remain per element (gMu, gVar) because q(f) is factorised over output columns.
+- **`CLaplaceInference`:** needs the block Hessian. Softmax has a structured negative Hessian (diag(pi) minus pi pi^T), so `pointDerivsBlock` returns it as a small matrix and Laplace solves a block-diagonal W. Robust-max is not twice differentiable at ties and reports no `CapPointDerivs`; Laplace checks the capability and errors with a message naming the likelihood.
+- **`CEpInference`, `CIvm`, `CPpa`, `CSparsePpa`, `CGp` ADF:** require `CapCavityMoments` and `blockSize() == 1`. Multi-class EP needs K-dimensional tilted moments and a multi-output site; that is a separate design (candidate follow-up CIP), not a hidden gap. Until then these paths throw `ndlexceptions::Error` naming the likelihood and the missing capability.
+- **Variational HMC and samplers:** use the expected or pointwise log-density through the same oracle once `CapExpectedLogLik` or `CapPointDerivs` is declared.
+- **Prediction:** `CNoise::out(yPred, probOut, mu, var)` and `likelihoods(...)` route through `predictBlock`, so `CGp`, `CSvgp`, the CLI tools and Python return class probabilities from one place.
+- **I/O and interchange:** stream fields are versioned; `CInterchange` rejects unknown likelihoods with an explicit message as it does today, and gains a categorical mapping only once the JSON schema defines one.
+- **Python:** `gpc.likelihoods.RobustMax(K, eps)` and `Softmax(K, samples)`; `DeepGP(..., likelihood='robustmax'|'softmax')` through the existing `wrap_deepgp` branch.
+- **Factory and CLI:** the type-string factory in `CNoise.cpp` and `CClctrl` gain `robustmax` and `softmax`, so command-line tools and `.model` round-trips work.
 
-P(c = argmax) = integral N(u | mu_c, v_c) prod_{k != c} Phi((u - mu_k) / sqrt(v_k)) du,
+### The two likelihoods
 
-computed by Gauss-Hermite quadrature with Q nodes at O(K Q) per point; E_q[log p] = log(1 - eps) P_c + log(eps / (K - 1)) (1 - P_c). Gradients with respect to mu and var follow from differentiating the integrand (closed form per node). K = 2 reduces to probit with a scaled bias, which gives an exact check.
+**Robust-max** (Hernandez-Lobato et al., 2011). p(y = c | f) is 1 - eps if c is the argmax of f, else eps / (K - 1). With independent Gaussian marginals, P(c = argmax) = integral N(u | mu_c, v_c) prod_{k != c} Phi((u - mu_k) / sqrt(v_k)) du, by Gauss-Hermite quadrature at O(K Q) per datum, with analytic gradients in mu and var. Declares `CapExpectedLogLik | CapPredictive`. K = 2 reduces to probit, an exact check.
 
-### Softmax
-
-E_q[log softmax_c(f)] has no closed form. Use S reparameterised samples with common random numbers (fixed seed per call, so finite-difference checks are meaningful), giving an unbiased, differentiable estimate. This is stochastic inside the ELBO; the likelihood must say so in its documentation and in `display`.
-
-### Targets and prediction
-
-Targets are accepted as integer labels in one column or as one-hot rows; the noise model normalises internally. `out(yPred, probOut, mu, var)` returns class probabilities from the same quadrature (robust-max) or sampling (softmax). The one-hot ±1 Gaussian path stays available as an explicit baseline.
-
-### Deep GP and Python
-
-`CDeepGp::setLikelihood` already forwards to the final layer. The final layer needs K output columns; `isRowCoupled()` tells the deep GP to skip the Gaussian beta path. The Python `gpc.likelihoods` façade (CIP-003A) gains `RobustMax(K, eps)` and `Softmax(K, samples)`.
+**Softmax.** E_q[log softmax_c(f)] by S reparameterised samples with common random numbers (seed fixed per call, so finite differences are meaningful). Declares `CapExpectedLogLik | CapPointDerivs | CapPredictive`. Stochastic inside the ELBO; documented and shown in `display`.
 
 ### Tenet alignment
 
-- *Compose through interfaces*: the extension is a `CNoise` implementation plus one hook, not a special case inside `CSvgp`.
-- *Flexibility without a performance tax*: quadrature is O(K Q) per point and allocation-light; the softmax sample count is a user knob.
-- *Assert and verify*: dimension asserts on K against y and mu columns; gradient checks and reference comparisons are acceptance gates below.
+- *Compose through interfaces:* one contract on `CNoise`, with capabilities; no special case in any model.
+- *Flexibility without a performance tax:* block size 1 runs the existing loops; blocks use small stack arrays, no per-datum heap traffic.
+- *Assert and verify:* asserts that blockSize divides the output columns and K matches; capability refusals instead of silent wrong answers; each oracle verified against a reference and finite differences.
+- *Interoperate with the ecosystem:* versioned streams, GPflow reference fixtures, one-hot targets as the existing data already uses.
 
 ## Implementation Plan
 
-1. Row-coupled hook on `CNoise`, with `CSvgp` dispatch and the default non-coupled path unchanged.
-2. `CRobustMaxNoise`: quadrature, gradients, parameter eps, stream I/O (versioned fields), `display`, `out`.
-3. Verification for robust-max (see Testing Strategy).
-4. `CSoftmaxNoise` with common-random-number sampling.
-5. Deep-GP wiring and a K-class synthetic example plus MNIST re-run, reported against the Gaussian-one-hot baseline.
-6. Python façade and documentation.
+1. **Audit and contract:** list every `CNoise` call site (the table above, regenerated by grep and kept in the CIP) and add `blockSize()`, `capabilities()` and the block oracles with element-wise defaults. No behaviour change; the full existing test suite must pass unchanged.
+2. **Capability refusals:** EP, IVM, PPA, sparse PPA and ADF paths assert `blockSize() == 1` and the capabilities they need, with a test that each rejects a block likelihood.
+3. **SVGP and deep-GP dispatch** through the block oracle.
+4. **`CRobustMaxNoise`:** quadrature, gradients, eps, versioned stream I/O, `display`, factory entry, `out`/`predictBlock`.
+5. **`CSoftmaxNoise`** with common-random-number sampling and `pointDerivsBlock`; Laplace block-W support.
+6. **Boundaries:** label-to-one-hot conversion in loaders and Python; `wrap_likelihood` / `wrap_deepgp`; CLI factory.
+7. **Experiments:** K-class synthetic example and MNIST deep GP against the Gaussian one-hot baseline.
 
 Backlog tasks are created once this CIP is Accepted.
 
@@ -100,12 +130,14 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 
 ## Testing Strategy
 
-- **Reference values:** P(c = argmax) against brute-force Monte Carlo (large S) and against high-order quadrature; K = 2 against `CProbitNoise` expected log-likelihood and gradients.
-- **Gradients:** finite-difference check of (gMu, gVar) per point; `checkGradients` on the full SVGP objective with the new likelihood; for softmax use fixed seeds.
-- **Fixtures:** a small K = 3 case with values produced by an independent implementation (GPflow `RobustMax`), stored under `matfiles/` or `testdata/`, with the generating script in the repo.
-- **Invariants:** probabilities sum to one; eps in (0, 1); asserts on K mismatches.
-- **Regression:** `testSvgp`, `testNoise*`, `testDeepGp` unchanged.
-- **Gate:** the tests compile and run on this machine under `make`.
+- **No-regression gate:** after phases 1 and 3, `testNoise`, `testNoiseBatched`, `testNoiseInLikelihood`, `testLikelihoodZoo`, `testCGp`, `testEp`, `testIvm*`, `testPpa`, `testSvgp`, `testDeepGp` and `testSviBayesGplvm` pass with identical numbers.
+- **Default-oracle equivalence:** for every existing likelihood, the block oracle at blockSize 1 equals the element-wise virtuals to 1e-12.
+- **Reference values:** robust-max P(c = argmax) against brute-force Monte Carlo and high-order quadrature; K = 2 against `CProbitNoise` expected log-likelihood and gradients; a K = 3 fixture from GPflow `RobustMax` under `testdata/`, with its generating script in the repo.
+- **Gradients:** finite-difference check of (gMu, gVar) and of eps per datum; `checkGradients` on the full SVGP and deep-GP objective with each new likelihood; fixed seeds for softmax.
+- **Capability refusals:** each of EP, IVM, PPA, sparse PPA and ADF throws the documented error for a block likelihood; Laplace throws for robust-max and runs for softmax, checked against a finite-difference mode and Hessian.
+- **Invariants:** class probabilities sum to one; eps in (0, 1); blockSize divides the output columns; one-hot rows have exactly one 1.
+- **I/O:** `.model` round-trip with `equals` at `ndlutil::MATCHTOL`; old-stream loading unchanged.
+- **Gate:** everything builds and runs under `make` on this machine.
 
 ## Related Requirements
 
@@ -113,12 +145,13 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 
 ## Implementation Status
 
-- [ ] Row-coupled hook and `CSvgp` dispatch
-- [ ] `CRobustMaxNoise`
-- [ ] Robust-max verification
-- [ ] `CSoftmaxNoise`
-- [ ] Deep-GP wiring and MNIST comparison
-- [ ] Python façade and docs
+- [ ] Call-site audit and block-oracle contract (no behaviour change)
+- [ ] Capability refusals in EP, IVM, PPA, sparse PPA, ADF
+- [ ] SVGP and deep-GP dispatch
+- [ ] `CRobustMaxNoise` and verification
+- [ ] `CSoftmaxNoise`, Laplace block W
+- [ ] Loaders, Python, factory/CLI
+- [ ] K-class example and MNIST comparison
 
 ## References
 

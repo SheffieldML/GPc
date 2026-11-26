@@ -431,6 +431,27 @@ void checkGolden(const string& path)
 
 }  // namespace
 
+void testYamlReading(const string& dir)
+{
+  const char* names[] = {"ftc_rbf_white", "dtcvar_ard_data", "ftc_prod_matern52", "fitc_matern52",
+                         "ftc_icm", "ftc_lcm", "ftc_standardize", "laplace_bernoulli", "laplace_poisson"};
+  for(const char* n : names)
+  {
+    const string y = dir + "/" + n + ".yaml", j = dir + "/" + n + ".json";
+#ifdef GPC_YAML
+    expect(CJson::parseFile(y).dump(-1) == CJson::parseFile(j).dump(-1), string(n) + ": YAML parses to the same document as its JSON twin");
+    auto a = CInterchange::fromFile(y), b = CInterchange::fromFile(j);
+    expectNear(a->logLikelihood(), b->logLikelihood(), 1e-12, string(n) + ": YAML and JSON models agree");
+#else
+    bool refused = false;
+    try { CJson::parseFile(y); } catch(ndlexceptions::Error& e) {
+      refused = string(e.getMessage()).find("YAML=1") != string::npos;
+    }
+    expect(refused, string(n) + ": YAML refused with a rebuild hint when built without GPC_YAML");
+#endif
+  }
+}
+
 int main(int argc, char** argv)
 {
   const string dir = argc > 1 ? argv[1] : "../gp-scuderia/examples";
@@ -454,6 +475,7 @@ int main(int argc, char** argv)
     checkGolden(dir + "/laplace_poisson.json");
     testLaplaceModelStream(dir + "/laplace_bernoulli.json");
     testLaplaceModelStream(dir + "/laplace_poisson.json");
+    testYamlReading(dir);
   }
   catch(ndlexceptions::Error& e)
   {

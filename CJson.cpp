@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#ifdef GPC_YAML
+#include <yaml-cpp/yaml.h>
+#endif
 
 using namespace std;
 
@@ -381,8 +384,91 @@ CJson CJson::parse(const string& text)
   return p.parseDocument();
 }
 
+#ifdef GPC_YAML
+namespace {
+// YAML core-schema scalars: quoted scalars are strings; plain ones are null,
+// bool, number or string. yaml-cpp marks quoted scalars with the tag "!".
+CJson fromYamlNode(const YAML::Node& n)
+{
+  switch(n.Type())
+  {
+  case YAML::NodeType::Null:
+    return CJson();
+  case YAML::NodeType::Scalar:
+  {
+    const string& t = n.Scalar();
+    if(n.Tag() == "!")
+      return CJson::makeString(t);
+    if(t == "null" || t == "Null" || t == "NULL" || t == "~" || t.empty())
+      return CJson();
+    if(t == "true" || t == "True" || t == "TRUE")
+      return CJson::makeBool(true);
+    if(t == "false" || t == "False" || t == "FALSE")
+      return CJson::makeBool(false);
+    if(t == ".inf" || t == ".Inf" || t == ".INF" || t == "+.inf")
+      throw ndlexceptions::Error("YAML: infinity is not representable in the interchange format");
+    if(t == ".nan" || t == ".NaN" || t == ".NAN" || t == "-.inf")
+      throw ndlexceptions::Error("YAML: non-finite numbers are not representable in the interchange format");
+    const char* b = t.c_str();
+    char* e = 0;
+    const double v = strtod(b, &e);
+    if(e != b && *e == '\0' && !std::isspace(static_cast<unsigned char>(t[0])))
+      return CJson::makeNumber(v);
+    return CJson::makeString(t);
+  }
+  case YAML::NodeType::Sequence:
+  {
+    CJson a = CJson::makeArray();
+    for(size_t i = 0; i < n.size(); ++i)
+      a.push(fromYamlNode(n[i]));
+    return a;
+  }
+  case YAML::NodeType::Map:
+  {
+    CJson o = CJson::makeObject();
+    for(YAML::const_iterator it = n.begin(); it != n.end(); ++it)
+      o.set(it->first.as<string>(), fromYamlNode(it->second));
+    return o;
+  }
+  default:
+    throw ndlexceptions::Error("YAML: unsupported node type");
+  }
+}
+}  // namespace
+#endif
+
+static bool hasYamlExtension(const string& path)
+{
+  const size_t dot = path.rfind('.');
+  if(dot == string::npos)
+    return false;
+  const string ext = path.substr(dot);
+  return ext == ".yaml" || ext == ".yml";
+}
+
 CJson CJson::parseFile(const string& path)
 {
+  if(hasYamlExtension(path))
+  {
+#ifdef GPC_YAML
+    try
+    {
+      return fromYamlNode(YAML::LoadFile(path));
+    }
+    catch(const YAML::BadFile&)
+    {
+      throw ndlexceptions::FileReadError(path);
+    }
+    catch(const YAML::Exception& e)
+    {
+      throw ndlexceptions::Error("YAML parse error in " + path + ": " + e.what());
+    }
+#else
+    throw ndlexceptions::Error("'" + path + "' is YAML, but this build has no YAML reader. "
+                               "Rebuild with YAML=1 (needs yaml-cpp) or convert to JSON first "
+                               "(gp-scuderia: gp_scuderia.io.to_json_twin).");
+#endif
+  }
   ifstream in(path.c_str(), ios::in | ios::binary);
   if(!in)
     throw ndlexceptions::FileReadError(path);

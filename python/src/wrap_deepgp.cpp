@@ -419,6 +419,15 @@ std::vector<std::string> PyDeepGP::layer_param_paths(unsigned int ell) const
   return out;
 }
 
+double PyDeepGP::layer_kl(unsigned int ell) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  if(ell >= model->getNumLayers())
+    throw ndlexceptions::Error("layer index out of range");
+  return model->layer(ell).klQ();
+}
+
 double PyDeepGP::get_layer_param(unsigned int ell, const std::string& path) const
 {
   if(!model)
@@ -613,6 +622,8 @@ void bind_deepgp(py::module_& m)
       .def("layer_param_paths", &PyDeepGP::layer_param_paths, py::arg("layer"),
            "Kernel parameter paths of one layer (as accepted by set_layer_param).")
       .def("get_layer_param", &PyDeepGP::get_layer_param, py::arg("layer"), py::arg("path"))
+      .def("layer_kl", &PyDeepGP::layer_kl, py::arg("layer"),
+           "KL(q(v) || N(0, I)) summed over the layer outputs (nats).")
       .def("set_layer_param", &PyDeepGP::set_layer_param, py::arg("layer"), py::arg("path"),
            py::arg("value"), "Set one kernel parameter of one layer (before optimisation).")
       .def_property_readonly("drop_residual", &PyDeepGP::drop_residual)

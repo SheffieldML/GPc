@@ -76,6 +76,8 @@ public:
   // Per-layer kernel parameters, named as CGp::paramPaths (e.g. 'kern.weight_variance').
   std::vector<std::string> layer_param_paths(unsigned int ell) const;
   double get_layer_param(unsigned int ell, const std::string& path) const;
+  // KL(q(v) || N(0, I)) summed over the layer's outputs (diagnostic).
+  double layer_kl(unsigned int ell) const;
   void set_layer_param(unsigned int ell, const std::string& path, double val);
   bool drop_residual() const;
   double jacobian_spread(unsigned int n_probe = 32, uint64_t probe_seed = 0) const;

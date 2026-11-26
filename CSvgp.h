@@ -165,6 +165,8 @@ class CSvgp : public CStochasticOptimisable {
                        CMatrix* gXOrNull) const;
   // sum_j KL(q(v_j) || N(0,I)); optional ∂KL/∂packed-q into gQOrNull (Cholesky).
   double klQ(CMatrix* gQOrNull = 0) const;
+  // Packed dKL/dq in Cholesky mode without forming S^{-1} (see CSvgp.cpp).
+  void klGradPackedQ(CMatrix& gQ) const;
 
   // Packed unconstrained parameters: kern transforms, then inducing params
   // (CInducing::getParams), then betaTransform(beta).

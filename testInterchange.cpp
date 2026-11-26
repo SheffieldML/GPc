@@ -171,7 +171,27 @@ void testNegative()
   {
     CJson d = CJson::parse(kAnalytic);
     d.at("kernel").set("type", CJson::makeString("kern.prod"));
-    expect(throwsWith([&] { CInterchange::fromJson(d); }, "kern.prod"), "negative: kern.prod refused");
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "parts"), "negative: kern.prod without parts");
+  }
+  {
+    CJson d = CJson::parse(kAnalytic);
+    CJson prod = CJson::makeObject();
+    prod.set("type", CJson::makeString("kern.prod"));
+    CJson parts = CJson::makeArray();
+    parts.push(d.at("kernel"));
+    CJson w = CJson::makeObject();
+    w.set("type", CJson::makeString("kern.white"));
+    w.set("variance", CJson::makeNumber(0.1));
+    parts.push(w);
+    prod.set("parts", parts);
+    d.set("kernel", prod);
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "kern.white"), "negative: kern.white inside kern.prod");
+  }
+  {
+    CJson d = CJson::parse(kAnalytic);
+    d.at("kernel").set("type", CJson::makeString("kern.matern52"));
+    d.at("kernel").set("lengthscale", CJson::parse("[1.0]"));
+    expect(throwsWith([&] { CInterchange::fromJson(d); }, "ARD"), "negative: ARD matern52 refused");
   }
   {
     CJson d = CJson::parse(kAnalytic);
@@ -208,6 +228,25 @@ void testModelStreamRoundTrip()
   delete g;
 }
 
+void testProdMatern52ModelStream(const string& golden)
+{
+  // A product kernel and Matern 5/2 survive a .model write, read and export.
+  auto m = CInterchange::fromFile(golden);
+  const string path = "testInterchange_prod.model";
+  m->writeGpModel(path);
+  CGp* g = readGpFromFile(path, 0);
+  CMatrix Xn = m->inputs(), Yn = m->targets();
+  g->setTargetVals(Yn);
+  g->updateM();
+  g->pX = &Xn;
+  CJson out = CInterchange::exportModel(*g);
+  expect(out.at("kernel").dump().find("kern.prod") != string::npos
+         && out.at("kernel").dump().find("kern.matern52") != string::npos,
+         "prod and matern52 exported from a .model");
+  remove(path.c_str());
+  delete g;
+}
+
 void checkGolden(const string& path)
 {
   auto m = CInterchange::fromFile(path);
@@ -223,6 +262,9 @@ void checkGolden(const string& path)
       Xnew.setVal(xn.at(i).at(j).asNumber(), static_cast<unsigned int>(i), static_cast<unsigned int>(j));
   vector<double> mean, var;
   m->predict(Xnew, mean, var);
+  // Regression: FITC predict once overwrote scaledM and changed the objective.
+  expectNear(m->logLikelihood(), ref.at("log_likelihood").asNumber(),
+             tol.at("log_likelihood").asNumber(), path + ": log likelihood unchanged by predict");
   const CJson& rm = ref.at("mean");
   const CJson& rv = ref.at("var");
   bool okMean = mean.size() == rm.size(), okVar = var.size() == rv.size();
@@ -253,6 +295,9 @@ int main(int argc, char** argv)
     testModelStreamRoundTrip();
     checkGolden(dir + "/ftc_rbf_white.json");
     checkGolden(dir + "/dtcvar_ard_data.json");
+    checkGolden(dir + "/ftc_prod_matern52.json");
+    checkGolden(dir + "/fitc_matern52.json");
+    testProdMatern52ModelStream(dir + "/ftc_prod_matern52.json");
   }
   catch(ndlexceptions::Error& e)
   {

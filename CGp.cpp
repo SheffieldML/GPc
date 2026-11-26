@@ -1462,16 +1462,17 @@ void CGp::updateAlpha() const
     case FITC:
       if(isSpherical())
       {
-	//////////////
-	scaledM.deepCopy(m);
+	// m ./ D in a local: the member scaledM (m ./ sqrt(D), set in updateAD) feeds
+	// the objective, so overwriting it here made predict change the FITC
+	// log likelihood in the whitened (lq, stable) modes.
+	CMatrix mOverD(m);
 	for(unsigned int i=0; i<getNumData(); i++)
-	  scaledM.scaleRow(i, 1/diagD.getVal(i));
-	/////////////
+	  mOverD.scaleRow(i, 1/diagD.getVal(i));
         if(isWhitenedSparseLinalg())
         {
           // Alpha = β U^{-1} C^{-1} B (m./D) with B, LcholC from updateAD().
           CMatrix u(numActive, getOutputDim());
-          u.gemm(B, scaledM, 1.0, 0.0, "n", "n");
+          u.gemm(B, mOverD, 1.0, 0.0, "n", "n");
           Alpha.deepCopy(u);
           Alpha.trsm(LcholC, 1.0, "l", "u", "t", "n");
           Alpha.trsm(LcholC, 1.0, "l", "u", "n", "n");
@@ -1481,7 +1482,7 @@ void CGp::updateAlpha() const
         else
         {
 	setADupToDate(false);
-	Alpha.gemm(K_uf, scaledM, 1.0, 0.0, "n", "n");
+	Alpha.gemm(K_uf, mOverD, 1.0, 0.0, "n", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
         }

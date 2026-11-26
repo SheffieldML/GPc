@@ -112,7 +112,7 @@ bool buildLeaf(const CJson& node, unsigned int inDim, const string& where,
   const string type = need(node, "type", where).asString();
   if(node.has("active_dims"))
     fail(where, "active_dims is not supported by this reader");
-  if(type == "kern.rbf" || type == "kern.matern32")
+  if(type == "kern.rbf" || type == "kern.matern32" || type == "kern.matern52")
   {
     const double variance = positiveAt(need(node, "variance", where), where + ".variance");
     const CJson& ls = need(node, "lengthscale", where);
@@ -146,8 +146,10 @@ bool buildLeaf(const CJson& node, unsigned int inDim, const string& where,
     unique_ptr<CKern> k;
     if(type == "kern.rbf")
       k.reset(new CRbfKern(inDim));
-    else
+    else if(type == "kern.matern32")
       k.reset(new CMatern32Kern(inDim));
+    else
+      k.reset(new CMatern52Kern(inDim));
     k->setByPath("lengthscale", lscalar);
     k->setByPath("variance", variance);
     out = std::move(k);
@@ -171,6 +173,43 @@ bool buildLeaf(const CJson& node, unsigned int inDim, const string& where,
   return false;
 }
 
+// Build one kernel node. kern.prod becomes a CTensorKern (product over the same
+// inputs); a kern.add inside a product becomes a nested CCmpndKern. Leaves are
+// recorded in document order so toJson() can read parameters back. The parent
+// takes ownership without cloning, so the raw leaf pointers stay valid.
+unique_ptr<CKern> buildKernelNode(const CJson& node, unsigned int inDim, const string& where,
+                                  vector<CKern*>& leaves, bool inProduct)
+{
+  const string type = need(node, "type", where).asString();
+  if(type == "kern.add" || type == "kern.prod")
+  {
+    const bool prod = (type == "kern.prod");
+    const CJson& parts = need(node, "parts", where);
+    if(!parts.isArray() || parts.size() == 0)
+      fail(where + ".parts", "must be a non-empty array");
+    unique_ptr<CCmpndKern> sum;
+    unique_ptr<CTensorKern> product;
+    if(prod) product.reset(new CTensorKern(inDim)); else sum.reset(new CCmpndKern(inDim));
+    for(size_t i = 0; i < parts.size(); ++i)
+    {
+      unique_ptr<CKern> child = buildKernelNode(parts.at(i), inDim,
+          where + ".parts[" + to_string(i) + "]", leaves, inProduct || prod);
+      if(prod) product->addKern(std::move(child)); else sum->addKern(std::move(child));
+    }
+    if(prod) return unique_ptr<CKern>(std::move(product));
+    return unique_ptr<CKern>(std::move(sum));
+  }
+  unique_ptr<CKern> leaf;
+  bool white = false;
+  if(!buildLeaf(node, inDim, where, leaf, white))
+    fail(where, "unknown kernel type '" + type + "'");
+  if(white && inProduct)
+    fail(where, "kern.white inside kern.prod is not supported (it is an additive noise term)");
+  leaves.push_back(leaf.get());
+  return leaf;
+}
+
+// Top level: sums are flattened into the model's compound kernel.
 void buildKernelTree(const CJson& node, unsigned int inDim, const string& where,
                      CCmpndKern& sum, vector<CKern*>& leaves, bool& hasWhite)
 {
@@ -185,18 +224,9 @@ void buildKernelTree(const CJson& node, unsigned int inDim, const string& where,
                       sum, leaves, hasWhite);
     return;
   }
-  if(type == "kern.prod")
-    fail(where, "kern.prod is not supported by this reader yet");
-  unique_ptr<CKern> leaf;
-  bool white = false;
-  if(!buildLeaf(node, inDim, where, leaf, white))
-    fail(where, "unknown kernel type '" + type + "'");
-  hasWhite = hasWhite || white;
-  // The compound takes ownership without cloning, so the raw pointer stays valid
-  // for read-back in toJson().
-  CKern* raw = leaf.get();
-  sum.addKern(std::move(leaf));
-  leaves.push_back(raw);
+  if(type == "kern.white")
+    hasWhite = true;
+  sum.addKern(buildKernelNode(node, inDim, where, leaves, false));
 }
 
 }  // namespace
@@ -319,7 +349,7 @@ void CInterchange::predict(const CMatrix& Xnew, vector<double>& mean, vector<dou
 void CInterchange::writeKernelParams(CJson& node, size_t& leafIndex) const
 {
   const string type = node.at("type").asString();
-  if(type == "kern.add")
+  if(type == "kern.add" || type == "kern.prod")
   {
     CJson& parts = node.at("parts");
     for(size_t i = 0; i < parts.size(); ++i)
@@ -328,7 +358,7 @@ void CInterchange::writeKernelParams(CJson& node, size_t& leafIndex) const
   }
   const CKern* k = leaves.at(leafIndex++);
   node.set("variance", CJson::makeNumber(k->getByPath("variance")));
-  if(type == "kern.rbf" || type == "kern.matern32")
+  if(type == "kern.rbf" || type == "kern.matern32" || type == "kern.matern52")
   {
     if(node.at("lengthscale").isArray())
     {
@@ -395,12 +425,22 @@ CJson exportKernel(const CKern* k, unsigned int inDim, const string& where)
     node.set("parts", parts);
     return node;
   }
+  if(dynamic_cast<const CTensorKern*>(k))
+  {
+    const CTensorKern* t = static_cast<const CTensorKern*>(k);
+    node.set("type", CJson::makeString("kern.prod"));
+    CJson parts = CJson::makeArray();
+    for(unsigned int i = 0; i < t->getNumKerns(); ++i)
+      parts.push(exportKernel(t->getComponent(i), inDim, where + ".parts[" + to_string(i) + "]"));
+    node.set("parts", parts);
+    return node;
+  }
   if(type == "white")
     fail(where, "kern.white cannot be exported from a .model file: its noise semantics there "
          "(White-owned or sparse-jitter) differ from the wire format's additive rule");
-  if(type == "rbf" || type == "matern32")
+  if(type == "rbf" || type == "matern32" || type == "matern52")
   {
-    node.set("type", CJson::makeString(type == "rbf" ? "kern.rbf" : "kern.matern32"));
+    node.set("type", CJson::makeString("kern." + type));
     node.set("variance", CJson::makeNumber(k->getByPath("variance")));
     node.set("lengthscale", CJson::makeNumber(k->getByPath("lengthscale")));
     return node;

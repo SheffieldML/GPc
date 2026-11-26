@@ -97,11 +97,27 @@ Purely additive: a new inducing type name and a new stream block. Defaults and e
 
 - REQ-0002 (runnable verification)
 
-## Open Questions
+## Open Questions (resolved or narrowed 2026-11-26)
 
-- Does `CMlpKern` already expose the \(\hat{\mathbf x}\) projections the Hermite \(K_{fu}\) needs, or do we add a hook? Check when starting phase 2.
-- Should the per-degree capacity rule be a user option? The prototype hard-codes it; we propose to keep it fixed until a use case appears.
-- Hermite in hidden layers: CIP-0035 lists it as "not recommended". We expose it anyway for reproduction and keep that note in the docs.
+**Kernel hooks (resolved: new hooks needed).** The existing hooks are ridge-specific virtuals on `CKern` (`wsRidgeCrossCompute`, `wsRidgeGradParams`, `wsRidgeGradX`, taking `V, a, s`), implemented for `CMlpKern`, `CMlpardKern`, `CArcCosineKern`, `CWhiteKern` and the compound dispatcher. The \(\hat{\mathbf x}=\sqrt{\sigma_\text{diag}}\,(\mathbf x,1)\) projection is formed inside file-local helpers (`ridgeKfuFillState`), not exposed. Phase 2 therefore adds parallel virtuals `wsHermiteCrossCompute` / `wsHermiteGradParams` / `wsHermiteGradX` (taking `V, ks`) on `CKern` (default: throw `NotImplementedError`, as the ridge hooks do), implemented for `CMlpKern` and `CMlpardKern`, and routed through the compound dispatcher. `CArcCosineKern` stays unsupported until asked for.
+
+**Convention mismatch (new, must be handled in phase 2).** The prototype kernel is \(\sigma^2\tfrac2\pi\arcsin\!\big(2\hat x\!\cdot\!\hat x'/\sqrt{(1+2\|\hat x\|^2)(1+2\|\hat x'\|^2)}\big)\). GPc's `CMlpKern::computeElement` is \(\sigma^2\arcsin\!\big(\hat x\!\cdot\!\hat x'/\sqrt{(1+\|\hat x\|^2)(1+\|\hat x'\|^2)}\big)\): no \(2/\pi\) prefactor, and the factor 2 is absorbed in the weight and bias variances. So \(\rho\), \(c_k\) and the \(\sqrt{\sigma^2}\) prefactor above cannot be copied from the prototype; they must be re-derived for GPc's form (the ridge code's \(B=\sqrt{\sigma^2\pi/2}\) shows the same adjustment). The quadrature gate in phase 2 is what settles this; the prototype's figures are compared only after rescaling.
+
+**Per-degree capacity (decision: keep fixed for now, store `ks` in the stream).** The rule is \(\lfloor\binom{D'+k-1}{k}/2\rfloor\) per odd degree \(k\le9\), degree 1 capped at \(D'\). Implications:
+
+| input dim \(d\) | total capacity (\(k\le 9\)) | without the \(/2\) |
+|---|---|---|
+| 1 | 16 | 30 |
+| 2 | 63 | 125 |
+| 3 | 212 | 420 |
+| 5 | 1557 | 3108 |
+| 8 | 16106 | 32206 |
+
+- *Low-dimensional inputs run out.* A 1-D problem (the sinc tutorials) cannot use more than 16 Hermite windows, a 2-D problem more than 63. The paper-scale \(M=64,128\) with hidden width 5 (\(D'=6\), capacity 1557) is unaffected. We assert on this: `M` above capacity throws a named error. The prototype instead leaves its allocation loop with `rest > 0` and silently returns fewer than `M` windows (`self.M = len(ks)`), so reference runs at low \(d\) may have used fewer windows than requested; check before comparing.
+- *The \(/2\) is a conservative margin, not a theorem.* Distinct non-parallel unit directions give a positive-definite degree-\(k\) block up to \(\binom{D'+k-1}{k}\) (the dimension of symmetric \(k\)-tensors), so the true rank bound is twice the stated capacity. Random directions near the true bound give a poorly conditioned block; halving keeps \(\kappa(K_{uu})\) in the tens to hundreds. We have not derived the factor, so the CIP should test \(\kappa\) against fill fraction rather than assert it.
+- *High degrees carry little variance.* \(K_{fu}\propto c_k\rho^k\) with \(|\rho|<1\), so degree 7 and 9 windows add little unless \(\|\hat x\|\) is large. Above a few hundred windows in low \(d\), extra \(M\) buys little captured variance; this is the low-dimension plateau CIP-0028 describes for fixed windows.
+- *Fixed means reproducible.* With a seed, the layout is deterministic and matches the prototype's design, which is what the reproduction gate wants. Users cannot trade degree mix against conditioning.
+- *Deferral is cheap if `ks` is stored.* The stream block holds `V` and `ks` explicitly, so a later release can change `kmax` or the allocation policy (and expose it as an option) without breaking old `.model` files. If we omitted `ks` and recomputed it from `(M, D')`, any later change to the rule would silently change loaded models.
 
 ## Implementation Status
 

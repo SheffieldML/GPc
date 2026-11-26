@@ -13,6 +13,14 @@ else
 include make.linux
 endif
 
+# Optional YAML reading (CIP-0016, gp-scuderia CIP-0001): make YAML=1 [YAMLROOT=prefix].
+# Off by default: without it a .yaml path fails with a message that says how to convert.
+ifeq ($(YAML),1)
+YAMLROOT ?= $(BREW)
+CCFLAGS += -DGPC_YAML -I$(YAMLROOT)/include
+LDFLAGS += -L$(YAMLROOT)/lib -lyaml-cpp -Wl,-rpath,$(YAMLROOT)/lib
+endif
+
 all: gplvm bgplvm deepgp ivm gp ppa libgp$(LIBSEXT) libgp$(LIBDEXT)
 
 # CIP-001D: Python façade (optional; needs python/.venv with pybind11+numpy).
@@ -100,19 +108,19 @@ ppa: ppa.o CClctrl.o CPpa.o CSparsePpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdj
 ppa.o: ppa.cpp CPpa.h CSparsePpa.h CKern.h CMatrix.h ppa.h CClctrl.h
 	$(CC) -c ppa.cpp -o ppa.o $(CCFLAGS)
 
-gp: gp.o CHmc.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
-	$(LD) ${XLINKERFLAGS} -o gp gp.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
+gp: gp.o CJson.o CInterchange.o CHmc.o CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o gp gp.o CJson.o CInterchange.o CHmc.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o ndlassert.o $(LDFLAGS)
 
 # CIP-001D / CIP-0035: GPLVM façades + DeepGP (SVGP/Adam) in libgp.
-LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o
+LIBGP_OBJS = CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CClctrl.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o
 
-libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o
+libgp$(LIBSEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o
 	$(LIBSCOMMAND) libgp$(LIBSEXT) $(LIBGP_OBJS)
 
-libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o
+libgp$(LIBDEXT): CClctrl.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CMultioutput.o CDist.o ndlassert.o CMltools.o CGplvm.o CBayesGplvm.o CMrd.o CSvgp.o CAdam.o CStochasticOptimisable.o CDeepGp.o CHmc.o CVariationalTarget.o CJson.o CInterchange.o
 	$(LIBDCOMMAND) libgp$(LIBDEXT) $(LIBGP_OBJS) $(LDFLAGS)
 
-gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
+gp.o: gp.cpp gp.h CInterchange.h CJson.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
   CNdlInterfaces.h ndlutil.h ndlfortran.h lapack.h CKern.h CTransform.h \
   CDataModel.h CDist.h CGp.h CMltools.h COptimisable.h CNoise.h CClctrl.h CHmc.h CPosteriorTarget.h CVariationalTarget.h
 	$(CC) -c gp.cpp -o gp.o $(CCFLAGS)
@@ -121,7 +129,7 @@ gp.o: gp.cpp gp.h ndlexceptions.h ndlstrutil.h CMatrix.h ndlassert.h \
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -131,7 +139,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
 # testNoiseBatched / testNoiseInLikelihood / testCip0027Perf / testIvmSoftener are CIP-0027 (no .mat).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc
+matio-tests: testDist testKern testMatrix testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -156,6 +164,7 @@ run-matio-tests: matio-tests
 	./testMatrix
 	./testOptimisable
 	./testParamPaths
+	./testInterchange
 	./testGp
 	./testCGp
 	./testCholAdjoint
@@ -436,6 +445,18 @@ testCGp: testCGp.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfo
 
 testCGp.o: testCGp.cpp CGp.h CKern.h CMatrix.h
 	$(CC) -c testCGp.cpp -o testCGp.o $(CCFLAGS)
+
+testInterchange: testInterchange.o $(LIBGP_OBJS)
+	$(LD) ${XLINKERFLAGS} -o testInterchange testInterchange.o $(LIBGP_OBJS) $(LDFLAGS)
+
+testInterchange.o: testInterchange.cpp CInterchange.h CJson.h
+	$(CC) -c testInterchange.cpp -o testInterchange.o $(CCFLAGS)
+
+CJson.o: CJson.cpp CJson.h
+	$(CC) -c CJson.cpp -o CJson.o $(CCFLAGS)
+
+CInterchange.o: CInterchange.cpp CInterchange.h CJson.h CGp.h CKern.h CNoise.h
+	$(CC) -c CInterchange.cpp -o CInterchange.o $(CCFLAGS)
 
 testNoisePrior: testNoisePrior.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o testNoisePrior testNoisePrior.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)

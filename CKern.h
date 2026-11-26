@@ -394,6 +394,10 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   void setActiveDims(const vector<unsigned int>& dims);
   const vector<unsigned int>& getActiveDims() const { return activeDims; }
   bool isDefaultActiveDims() const;
+  // Streams add an optional trailing "activeDims=" line for non-default column
+  // selections (ICM/LCM layouts); readKernFromStream restores it. Older readers
+  // never see the line for kernels that read every column.
+  void toStream(ostream& out) const override;
   // Squared Euclidean distance on activeDims only. Falls back to dist2Row
   // when activeDims is the default and both matrices have inputDim columns.
   double dist2Active(const CMatrix& X1, unsigned int i1,
@@ -730,6 +734,11 @@ class CComponentKern : public CKern
   virtual unsigned int getNumKerns() const
   {
     return components.size();
+  }
+  // Read-only access to a component (CIP-0016 export walks the kernel tree).
+  const CKern* getComponent(unsigned int i) const
+  {
+    return components.at(i).get();
   }
 
   

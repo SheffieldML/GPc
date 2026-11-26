@@ -1,4 +1,6 @@
 #include "gp.h"
+#include "CInterchange.h"
+#include <fstream>
 
 int main(int argc, char* argv[])
 {
@@ -39,6 +41,10 @@ int main(int argc, char* argv[])
 	  command.learn();	  
 	else if(argument=="relearn") // initialise with an old model.
 	  command.relearn();	  
+	else if(argument=="export") // .model -> interchange JSON (CIP-0016).
+	  command.exportJson();
+	else if(argument=="import") // interchange JSON -> .model (CIP-0016).
+	  command.importJson();
 	else if(argument=="sample") // HMC samples of the hyperparameter posterior (CIP-003B).
 	  command.sample();
 	//else if(argument=="test") // test with a model.
@@ -89,6 +95,12 @@ void CClgp::learn()
 {
   incrementArgument();
   setMode("learn");
+  for(int ai=0; ai<argc; ai++)
+    if(string(argv[ai])=="--from")
+    {
+      learnFrom();
+      return;
+    }
   
   enum {
     KERNEL_USAGE_BACK,
@@ -638,6 +650,115 @@ void CClgp::learn()
     exitError("Unrecognised file format number.");
       
   }
+  exitNormal();
+}
+
+// CIP-0016 A2: gp learn --from model.json [-o out.json] [-m model_file] [-# iters]
+// Reads an interchange document, optimises its free parameters, and writes the
+// result back as an interchange document (and optionally a .model file).
+void CClgp::learnFrom()
+{
+  string from, out="gp_model.json", modelFile;
+  int iters=1000;
+  while(isFlags()) {
+    if(!isCurrentArgumentFlag()) {
+      setFlags(false);
+      break;
+    }
+    if(isCurrentArg("-?", "--?") || isCurrentArg("-h", "--help")) {
+      helpInfo();
+      exitNormal();
+    }
+    else if(isCurrentArg("-f", "--from")) {
+      incrementArgument();
+      from = getCurrentArgument();
+    }
+    else if(isCurrentArg("-o", "--output-json")) {
+      incrementArgument();
+      out = getCurrentArgument();
+    }
+    else if(isCurrentArg("-m", "--model-file")) {
+      incrementArgument();
+      modelFile = getCurrentArgument();
+    }
+    else if(isCurrentArg("-#", "--#iterations")) {
+      incrementArgument();
+      iters = getIntFromCurrentArgument();
+    }
+    else
+      unrecognisedFlag();
+    incrementArgument();
+  }
+  if(from.empty())
+    exitError("--from needs an interchange file.");
+  auto model = CInterchange::fromFile(from);
+  CGp& gp = model->gp();
+  gp.setDefaultOptimiser(CGp::SCG);
+  if(getVerbosity()>0)
+    cout << "Log likelihood before optimisation: " << model->logLikelihood() << endl;
+  gp.optimise(iters);
+  if(getVerbosity()>0)
+    cout << "Log likelihood after optimisation: " << model->logLikelihood() << endl;
+  model->writeFile(out);
+  if(!modelFile.empty())
+    model->writeGpModel(modelFile, "Learned from " + from + " with gp learn --from.");
+  exitNormal();
+}
+
+// gp export example_file model_file out.json
+// A .model stream holds no data, so the training data comes from example_file
+// exactly as for relearn and sample.
+void CClgp::exportJson()
+{
+  incrementArgument();
+  setMode("export");
+  if(getCurrentArgumentNo()+2>=argc)
+    exitError("Usage: gp export example_file model_file out.json");
+  const string dataName=getCurrentArgument();
+  const string modelFileName=argv[getCurrentArgumentNo()+1];
+  const string outName=argv[getCurrentArgumentNo()+2];
+  CMatrix X;
+  CMatrix y;
+  readData(X, y, dataName);
+  CGp* pmodel=readGpFromFile(modelFileName, getVerbosity());
+  if(pmodel->getInputDim()!=X.getCols())
+    throw ndlexceptions::Error(dataName + ": input data is not of correct dimension");
+  pmodel->pX=&X;
+  pmodel->setTargetVals(y);
+  pmodel->updateM();
+  CJson doc=CInterchange::exportModel(*pmodel);
+  doc.dumpFile(outName);
+  exitNormal();
+}
+
+// gp import in.json model_file [data_file]
+// Writes the .model and the training data as dense CSV (last column = y, as read
+// by relearn/sample); data_file defaults to model_file + ".csv".
+void CClgp::importJson()
+{
+  incrementArgument();
+  setMode("import");
+  if(getCurrentArgumentNo()+1>=argc)
+    exitError("Usage: gp import in.json model_file [data_file]");
+  const string inName=getCurrentArgument();
+  const string modelFileName=argv[getCurrentArgumentNo()+1];
+  const string dataName=(getCurrentArgumentNo()+2<argc)
+      ? string(argv[getCurrentArgumentNo()+2]) : modelFileName+".csv";
+  auto model=CInterchange::fromFile(inName);
+  model->writeGpModel(modelFileName, "Imported from "+inName+" with gp import.");
+  ofstream csv(dataName.c_str());
+  if(!csv.is_open())
+    throw ndlexceptions::FileWriteError(dataName);
+  csv.precision(17);
+  const CMatrix& X=model->inputs();
+  const CMatrix& Y=model->targets();
+  for(unsigned int i=0; i<X.getRows(); i++)
+  {
+    for(unsigned int j=0; j<X.getCols(); j++)
+      csv << X.getVal(i, j) << ",";
+    csv << Y.getVal(i, 0) << "\n";
+  }
+  csv.close(); // exitNormal does not run destructors.
   exitNormal();
 }
 
@@ -1274,6 +1395,8 @@ void CClgp::helpInfo()
     helpArgument("sample", "For drawing HMC samples of the hyperparameter posterior of a learned GP (exact or sparse with inducing points held fixed; CIP-003B).");
     helpArgument("display", "For displaying the parameters of a learned GP model.");
     helpArgument("gnuplot", "For plotting the results in gnuplot.");
+    helpArgument("export", "gp export example_file model_file out.json: write a learned .model (plus its training data) as an interchange document (CIP-0016). Refuses models the format cannot carry exactly (White kernels unless the model carries the allow-white flag, learnt output scales, unsupported kernels) and verifies the log likelihood.");
+    helpArgument("import", "gp import in.json model_file [data_file]: write an interchange document as a .model file plus its training data as CSV (default model_file.csv) for relearn/sample (CIP-0016).");
     helpDescriptor("For help on a specific command type gp command --h");
     cout << endl;
     cout << "Options:" << endl;
@@ -1302,6 +1425,7 @@ void CClgp::helpInfo()
     helpArgument("--inducing points|whitenoise|greens|weightspace|hermite", "Inducing-variable family. Default points. whitenoise: CIP-001C kernel-free K_uu (Gaussian windows). greens: CIP-0029 1-D causal-root features. weightspace: CIP-0028 MLP/arccos weight-space features. hermite: CIP-003D fixed Hermite ridge windows (MLP kernels only; no window width; inducing held fixed).");
     helpArgument("--window-width float", "Fixed window width s (with --inducing whitenoise, greens, or weightspace). Default: median nearest-neighbour spacing of inducing centres.");
     helpArgument("-P, --set path=value", "Set a model parameter by GPy-style path after the model is built (CIP-0014). Examples: rbf.variance=1.0, kern.rbf.lengthscale=2.0, white.variance=0.01, beta=10 (sparse). Repeatable.");
+    helpArgument("-f, --from file.json", "CIP-0016: learn from an interchange document instead of example_file; model structure, data and starting values come from the file. Other options here: -o/--output-json out.json (default gp_model.json), -m/--model-file file (also write a .model), -#/--#iterations. See also the export and import commands.");
     //      helpArgument("-dh, --dynamics-hyperparameter double", "Specify weighting of the prior on the dynamics hyperparameters.");
     string m=getMode();
     setMode("kern");

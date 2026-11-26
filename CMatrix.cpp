@@ -1075,8 +1075,9 @@ void CMatrix::readParamsFromStream(istream& in)
       throw ndlexceptions::StreamFormatError("matrix", "Incorrect number of columns in row " + ndlstrutil::itoa(i) + " of matrix.");
     for(unsigned int j=0; j<tokens.size(); j++) 
     {
-      // strtod, not atoi: values are written as integers or hex floats, and a hex float
-      // without a '.' (0x1p-1 == 0.5) used to be truncated to 0 by atoi.
+      // strtod reads decimal integers, decimals and hex floats alike. The earlier
+      // atoi branch for tokens without '.' turned hex floats such as 0x1p-1 (0.5)
+      // into 0, silently corrupting saved models (found by CIP-0016 A2).
       setVal(strtod(tokens[j].c_str(), 0), i, j);
     }
   }

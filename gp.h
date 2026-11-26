@@ -21,6 +21,10 @@ class CClgp : public CClctrl {
   void sample();
   void display();
   void gnuplot();
+  // CIP-0016 A2: interchange format (JSON) commands.
+  void learnFrom();
+  void exportJson();
+  void importJson();
 
   void helpInfo();
   void helpHeader();

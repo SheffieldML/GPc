@@ -9873,6 +9873,42 @@ void writeKernToStream(const CKern& kern, ostream& out)
 {
   kern.toStream(out);
 }
+void CKern::toStream(ostream& out) const
+{
+  CStreamInterface::toStream(out);
+  if(!isDefaultActiveDims())
+    writeToStream(out, "activeDims", activeDims);
+}
+// Optional trailing key written by CKern::toStream (absent => default dims).
+static void readOptionalActiveDims(istream& in, CKern* pkern)
+{
+  if(!in.good() || in.eof())
+    return;
+  streampos pos = in.tellg();
+  string line;
+  bool matched = false;
+  if(ndlstrutil::getline(in, line) && line.size() > 0)
+  {
+    vector<string> tokens;
+    ndlstrutil::tokenise(tokens, line, "=");
+    if(tokens.size() == 2 && tokens[0] == "activeDims")
+    {
+      vector<string> cols;
+      ndlstrutil::tokenise(cols, tokens[1], " ");
+      vector<unsigned int> dims;
+      for(size_t i=0; i<cols.size(); i++)
+        if(cols[i].size() > 0)
+          dims.push_back(static_cast<unsigned int>(atoi(cols[i].c_str())));
+      pkern->setActiveDims(dims);
+      matched = true;
+    }
+  }
+  if(!matched)
+  {
+    in.clear();
+    in.seekg(pos);
+  }
+}
 CKern* readKernFromStream(istream& in)
 {
   double ver = CStreamInterface::readVersionFromStream(in); 
@@ -9946,6 +9982,7 @@ CKern* readKernFromStream(istream& in)
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown kernel type " + type);
   pkern->readParamsFromStream(in);  
+  readOptionalActiveDims(in, pkern);
   return pkern;
 }
 void CKern::readParamsFromStream(istream& in)

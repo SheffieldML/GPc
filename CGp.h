@@ -147,6 +147,8 @@ public:
   bool isEpInference() const { return epInference; }
   void setLaplaceInference(bool on);
   bool isLaplaceInference() const { return laplaceInference; }
+  // Newton stopping rule of the Laplace mode search (defaults mirror GPy: 30 iterations, 1e-4).
+  void setLaplaceSolver(unsigned int maxIters, double tol, double jitter = 1e-6) { laplaceEngine.setMaxIters(maxIters); laplaceEngine.setTol(tol); laplaceEngine.setJitter(jitter); laplaceUpToDate = false; }
   // Posterior latent mean / var after last EP evaluation (empty if unused).
   const CMatrix& epPosteriorMean() const { return epMu; }
   const CMatrix& epPosteriorVarDiag() const { return epVarDiag; }

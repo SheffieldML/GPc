@@ -567,6 +567,10 @@ bool CGp::addsLikelihoodVarianceToGram() const
     return false;
   if(hasWhiteComponent())
   {
+    // CIP-0016: with the opt-in, White and likelihood.variance both add to the
+    // Gram diagonal (K + white + sigma^2 I), as in GPy, GPmat, GPflow and GPJax.
+    if(allowWhiteAndLikelihoodNoise)
+      return true;
     if(likelihoodVarianceFixed)
       return false;
     // Migrating: White fixed, variance free → likelihood owns the Gram noise.
@@ -1488,16 +1492,17 @@ void CGp::updateAlpha() const
     case FITC:
       if(isSpherical())
       {
-	//////////////
-	scaledM.deepCopy(m);
+	// m ./ D in a local: the member scaledM (m ./ sqrt(D), set in updateAD) feeds
+	// the objective, so overwriting it here made predict change the FITC
+	// log likelihood in the whitened (lq, stable) modes.
+	CMatrix mOverD(m);
 	for(unsigned int i=0; i<getNumData(); i++)
-	  scaledM.scaleRow(i, 1/diagD.getVal(i));
-	/////////////
+	  mOverD.scaleRow(i, 1/diagD.getVal(i));
         if(isWhitenedSparseLinalg())
         {
           // Alpha = β U^{-1} C^{-1} B (m./D) with B, LcholC from updateAD().
           CMatrix u(numActive, getOutputDim());
-          u.gemm(B, scaledM, 1.0, 0.0, "n", "n");
+          u.gemm(B, mOverD, 1.0, 0.0, "n", "n");
           Alpha.deepCopy(u);
           Alpha.trsm(LcholC, 1.0, "l", "u", "t", "n");
           Alpha.trsm(LcholC, 1.0, "l", "u", "n", "n");
@@ -1507,7 +1512,7 @@ void CGp::updateAlpha() const
         else
         {
 	setADupToDate(false);
-	Alpha.gemm(K_uf, scaledM, 1.0, 0.0, "n", "n");
+	Alpha.gemm(K_uf, mOverD, 1.0, 0.0, "n", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "t", "n");
 	Alpha.trsm(LcholA, 1.0, "l", "u", "n", "n");
         }
@@ -4117,6 +4122,43 @@ void CGp::readParamsFromStream(istream& in)
       pInducing = new CInducingPoints(&X_u);
     }
   }
+  // CIP-0016 optional trailing keys, in any order (absent => false, as in older streams):
+  // allowWhiteAndLikelihoodNoise (CIP-0027) and laplaceInference (CIP-0033).
+  allowWhiteAndLikelihoodNoise = false;
+  bool readLaplace = false;
+  while(in.good() && !in.eof())
+  {
+    streampos pos = in.tellg();
+    string line;
+    bool matched = false;
+    if(ndlstrutil::getline(in, line) && line.size() > 0)
+    {
+      vector<string> tokens;
+      ndlstrutil::tokenise(tokens, line, "=");
+      if(tokens.size() == 2 && tokens[0] == "allowWhiteAndLikelihoodNoise")
+      {
+        allowWhiteAndLikelihoodNoise = (tokens[1] == "1" || tokens[1] == "true");
+        matched = true;
+      }
+      else if(tokens.size() == 2 && tokens[0] == "laplaceInference")
+      {
+        readLaplace = (tokens[1] == "1" || tokens[1] == "true");
+        matched = true;
+      }
+    }
+    if(!matched)
+    {
+      in.clear();
+      in.seekg(pos);
+      break;
+    }
+  }
+  if(readLaplace)
+  {
+    setLaplaceInference(true);
+    // A stored Laplace model means the converged answer, as in CInterchange.
+    setLaplaceSolver(200, 1e-13, 0.0);
+  }
   setMupToDate(false);
   // Don't update M as you need py to be set for that.
   //updateM();
@@ -4169,6 +4211,12 @@ void CGp::writeParamsToStream(ostream& out) const
       pInducing->centres().toStream(out);
     }
   }
+  // Written only when set, so streams of default models are unchanged and older
+  // readers (which stop after the inducing keys) ignore it.
+  if(allowWhiteAndLikelihoodNoise)
+    writeToStream(out, "allowWhiteAndLikelihoodNoise", true);
+  if(laplaceInference)
+    writeToStream(out, "laplaceInference", true);
   //py->toStream(out);
   //pX->toStream(out);
 

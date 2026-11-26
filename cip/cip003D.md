@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-26"
 id: "003D"
 last_updated: "2026-11-26"
-status: "In Progress"
+status: "Implemented"
 compressed: false
 related_requirements: ["0002"]
 related_cips: ["0028", "0032", "0035", "0037", "003C"]
@@ -197,13 +197,13 @@ The prototype's \(c_k=\tfrac{2}{\sqrt\pi}(-1)^j\tfrac{(2j)!}{j!\sqrt{k!}}\) and 
 ## Implementation Status
 
 - [x] Layout, capacity rule, audit (E1, E5) and layout report (W1, W2) in C++ (`CInducingHermite`, phase 1)
-- [x] Ask-versus-delivered: E1-E6, W1, W2 (phases 1-4); W3, W4 in C++ and W1, W2, W4 through Python (phase 5). W3 is unreachable from Python at the 0.5 placeholder; calibration is phase 6
+- [x] Ask-versus-delivered: E1-E6, W1, W2 (phases 1-4); W3, W4 in C++ and W1, W2, W4 through Python (phase 5). W3 is reachable from Python after the phase 6 recalibration to 0.6
 - [x] \(K_{uu}\), \(K_{fu}\), \(K_{ux}\) with quadrature gates (phase 2; `wsHermiteCrossCompute` on `CMlpKern`, `CMlpardKern`, compound; the `wsHermiteGradParams` / `wsHermiteGradX` virtuals arrive with phase 3)
 - [x] Kernel-parameter and data-X gradients (phase 3): `wsHermiteGradParams` / `wsHermiteGradX` on `CMlpKern`, `CMlpardKern`, compound; `CInducingHermite::gradFromKuuKuf` (gKuu contributes nothing: K_uu is kernel-free and windows are fixed). Gated against central finite differences at the hook level (about 1e-10) and through a `CSvgp` layer (objective gradient and gX, about 1e-9). `CDeepGp`-layer gate done in phase 4 (62 stochastic params, rel err about 1e-9)
 - [x] `CGp` / `CDeepGp` / stream / CLI wiring (phase 4): `CGp::setInducingType("hermite")` (E4 if inducing not fixed, E2 probe, E1, E5 before any state changes), `CSvgp` and `CDeepGp::setLayerInducingType`, `hermiteDirections` / `hermiteDegrees` stream blocks in `CGp` and per-layer in `CDeepGp` (V and ks explicit; E6 via `CInducingHermite::fromStreamData`), E3 on `setWindowWidth` / `setLearnWindowWidth(true)` / window-width paths, `gp --inducing hermite` and `deepgp --inducing hermite`. Phase 3 also guarded `CSvgp::packInducingGrad` and `CDeepGp::packOptIntoStochastic` so a family with zero inducing parameters never has `gZ` packed into the optimiser vector
 - [x] Python façade and tests (phase 5: `inducing='hermite'`, `inducing_fixed=None` default, `hermite_warnings()`, layout in `str(model)`)
 - [x] Docs: trade-off against Gaussian ridges (`docs/tutorials/deepgp.md`)
-- [x] Prototype composite-task reproduction: all four configurations within the prototype's seed range (see Phase 6 results); `deepgp-mlp` notebook re-run outstanding
+- [x] Prototype composite-task reproduction: all four configurations within the prototype's seed range (see Phase 6 results); `deepgp-mlp` notebook re-run tracked in `backlog/features/2026-11-26_cip003d-deepgp-mlp-hermite-notebook.md`
 
 ## References
 

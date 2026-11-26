@@ -81,7 +81,8 @@ virtual double expectedLogLikelihoodBlock(const double* y, const double* mu,
     const double* var, double* gMu, double* gVar) const;          // VI
 virtual double pointDerivsBlock(const double* y, const double* f,
     double* g, CMatrix& negHessian, CMatrix* dHdf) const;         // Laplace
-virtual double cavityMomentsBlock(/* ... */) const;                // EP / ADF
+virtual double cavityMomentsBlock(const double* y, const double* mu,
+    const double* var, double* dlogZdMu, double* dlogZdVar) const; // EP / ADF
 virtual void   predictBlock(const double* mu, const double* var,
     double* prob) const;                                           // out()
 ```
@@ -92,7 +93,7 @@ At `blockSize() == 1` the code takes exactly the current paths, which are the or
 
 - **`CSvgp` / `CDeepGp`:** the data term, CVI natural-gradient sites and `elboGrad*` loop over blocks and call `expectedLogLikelihoodBlock`. Sites remain per element (gMu, gVar) because q(f) is factorised over output columns.
 - **`CLaplaceInference`:** needs the block Hessian. Softmax has a structured negative Hessian (diag(pi) minus pi pi^T), so `pointDerivsBlock` returns it as a small matrix and Laplace solves a block-diagonal W. Robust-max is not twice differentiable at ties and reports no `CapPointDerivs`; Laplace checks the capability and errors with a message naming the likelihood.
-- **`CEpInference`, `CIvm`, `CPpa`, `CSparsePpa`, `CGp` ADF:** require `CapCavityMoments` and `blockSize() == 1`. Multi-class EP needs K-dimensional tilted moments and a multi-output site; that is a separate design (candidate follow-up CIP), not a hidden gap. Until then these paths throw `ndlexceptions::Error` naming the likelihood and the missing capability.
+- **EP, ADF, IVM, PPA, sparse PPA, `CGp` sites (in scope):** these work with one Gaussian site per latent, N × K sites for K classes, which is the storage `CIvm`/`CNoise` already use for multi-output models (`updateSites(m, beta, ..., g, nu, index)` runs over output columns). Sites stay diagonal across the K latents of a datum. The likelihood supplies block cavity moments: from cavity marginals N(mu_k, v_k) it returns log Z and the derivatives dlogZ/dmu_k, dlogZ/dv_k for k = 1..K, and the existing identities give the new per-latent mean and variance (mean_k = mu_k + v_k dlogZ/dmu_k; var_k = v_k + v_k^2 (2 dlogZ/dv_k - (dlogZ/dmu_k)^2)). This is the factorised-site multi-class EP of Kim and Ghahramani (2006). Given diagonal sites, the posterior over the K latents is K independent solves, so `CEpInference` generalises from N×1 to N×K sites with K prior Gram matrices (shared or per-class kernel) and a single coupled step, the moment match. ADF in `CIvm`/`CPpa`/`CSparsePpa`/`CGp` uses the same oracle. IVM point selection sums the per-latent entropy changes (`entropyChangeAdd`) over the block; this is a documented choice, tested against single-class selection at K = 1. Likelihoods without `CapCavityMoments` are refused with an error naming both.
 - **Variational HMC and samplers:** use the expected or pointwise log-density through the same oracle once `CapExpectedLogLik` or `CapPointDerivs` is declared.
 - **Prediction:** `CNoise::out(yPred, probOut, mu, var)` and `likelihoods(...)` route through `predictBlock`, so `CGp`, `CSvgp`, the CLI tools and Python return class probabilities from one place.
 - **I/O and interchange:** stream fields are versioned; `CInterchange` rejects unknown likelihoods with an explicit message as it does today, and gains a categorical mapping only once the JSON schema defines one.
@@ -101,9 +102,9 @@ At `blockSize() == 1` the code takes exactly the current paths, which are the or
 
 ### The two likelihoods
 
-**Robust-max** (Hernandez-Lobato et al., 2011). p(y = c | f) is 1 - eps if c is the argmax of f, else eps / (K - 1). With independent Gaussian marginals, P(c = argmax) = integral N(u | mu_c, v_c) prod_{k != c} Phi((u - mu_k) / sqrt(v_k)) du, by Gauss-Hermite quadrature at O(K Q) per datum, with analytic gradients in mu and var. Declares `CapExpectedLogLik | CapPredictive`. K = 2 reduces to probit, an exact check.
+**Robust-max** (Hernandez-Lobato et al., 2011). p(y = c | f) is 1 - eps if c is the argmax of f, else eps / (K - 1). With independent Gaussian marginals, P(c = argmax) = integral N(u | mu_c, v_c) prod_{k != c} Phi((u - mu_k) / sqrt(v_k)) du, by Gauss-Hermite quadrature at O(K Q) per datum, with analytic gradients in mu and var. Z = (1 - eps) P_c + eps/(K - 1) (1 - P_c), so cavity moments follow from the same quadrature and its derivatives. Declares `CapExpectedLogLik | CapCavityMoments | CapPredictive`. K = 2 reduces to probit, an exact check.
 
-**Softmax.** E_q[log softmax_c(f)] by S reparameterised samples with common random numbers (seed fixed per call, so finite differences are meaningful). Declares `CapExpectedLogLik | CapPointDerivs | CapPredictive`. Stochastic inside the ELBO; documented and shown in `display`.
+**Softmax.** E_q[log softmax_c(f)] by S reparameterised samples with common random numbers (seed fixed per call, so finite differences are meaningful). Cavity moments use the same sampled estimator (K-dimensional quadrature is feasible only for small K); EP with sampled moments is stochastic, so it needs fixed seeds per call, damping, and a looser convergence test, and the CIP does not claim monotone EP convergence for softmax. Declares `CapExpectedLogLik | CapPointDerivs | CapCavityMoments | CapPredictive`. Stochastic inside the ELBO and EP; documented and shown in `display`.
 
 ### Tenet alignment
 
@@ -115,7 +116,7 @@ At `blockSize() == 1` the code takes exactly the current paths, which are the or
 ## Implementation Plan
 
 1. **Audit and contract:** list every `CNoise` call site (the table above, regenerated by grep and kept in the CIP) and add `blockSize()`, `capabilities()` and the block oracles with element-wise defaults. No behaviour change; the full existing test suite must pass unchanged.
-2. **Capability refusals:** EP, IVM, PPA, sparse PPA and ADF paths assert `blockSize() == 1` and the capabilities they need, with a test that each rejects a block likelihood.
+2. **Block EP and ADF:** generalise `CEpInference` sites to N×K, ADF in `CIvm`/`CPpa`/`CSparsePpa`/`CGp` through `cavityMomentsBlock`, and IVM selection over blocks; capability refusals for likelihoods without `CapCavityMoments` or `CapPointDerivs`.
 3. **SVGP and deep-GP dispatch** through the block oracle.
 4. **`CRobustMaxNoise`:** quadrature, gradients, eps, versioned stream I/O, `display`, factory entry, `out`/`predictBlock`.
 5. **`CSoftmaxNoise`** with common-random-number sampling and `pointDerivsBlock`; Laplace block-W support.
@@ -134,7 +135,8 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 - **Default-oracle equivalence:** for every existing likelihood, the block oracle at blockSize 1 equals the element-wise virtuals to 1e-12.
 - **Reference values:** robust-max P(c = argmax) against brute-force Monte Carlo and high-order quadrature; K = 2 against `CProbitNoise` expected log-likelihood and gradients; a K = 3 fixture from GPflow `RobustMax` under `testdata/`, with its generating script in the repo.
 - **Gradients:** finite-difference check of (gMu, gVar) and of eps per datum; `checkGradients` on the full SVGP and deep-GP objective with each new likelihood; fixed seeds for softmax.
-- **Capability refusals:** each of EP, IVM, PPA, sparse PPA and ADF throws the documented error for a block likelihood; Laplace throws for robust-max and runs for softmax, checked against a finite-difference mode and Hessian.
+- **Block EP / ADF:** at K = 1 and blockSize 1 EP, IVM, PPA numbers are identical to current fixtures; for robust-max K = 2 EP matches probit EP (`testEp` fixtures); K = 3 EP against a GPflow/GPy-style reference or brute-force numerical tilted moments (the tilted moments themselves checked against quadrature to 1e-8); EP site and log Z gradients by finite differences; IVM block selection reduces to the single-class rule at K = 1. Softmax EP uses fixed seeds and a statistical tolerance.
+- **Capability refusals:** a likelihood lacking `CapCavityMoments` is rejected by EP/ADF, and one lacking `CapPointDerivs` (robust-max) by Laplace, each with the documented error; softmax Laplace is checked against a finite-difference mode and Hessian.
 - **Invariants:** class probabilities sum to one; eps in (0, 1); blockSize divides the output columns; one-hot rows have exactly one 1.
 - **I/O:** `.model` round-trip with `equals` at `ndlutil::MATCHTOL`; old-stream loading unchanged.
 - **Gate:** everything builds and runs under `make` on this machine.
@@ -146,7 +148,7 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 ## Implementation Status
 
 - [ ] Call-site audit and block-oracle contract (no behaviour change)
-- [ ] Capability refusals in EP, IVM, PPA, sparse PPA, ADF
+- [ ] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals
 - [ ] SVGP and deep-GP dispatch
 - [ ] `CRobustMaxNoise` and verification
 - [ ] `CSoftmaxNoise`, Laplace block W

@@ -46,8 +46,21 @@ CKern* makeLayerKern(const std::string& name, unsigned int din)
     lin->setInitParam();
     return lin;
   }
+  // CIP-0041 B3: ARD kernels, one input scale per layer-input dimension.
+  if(name == "rbfard")
+  {
+    CRbfardKern* k = new CRbfardKern(din);
+    k->setInitParam();
+    return k;
+  }
+  if(name == "mlpard")
+  {
+    CMlpardKern* k = new CMlpardKern(din);
+    k->setInitParam();
+    return k;
+  }
   throw ndlexceptions::Error(
-      "DeepGP kernel must be 'rbf', 'mlp', or 'lin' (got '" + name + "').");
+      "DeepGP kernel must be 'rbf', 'mlp', 'lin', 'rbfard' or 'mlpard' (got '" + name + "').");
 }
 
 
@@ -170,6 +183,8 @@ std::string canonicalKernelName(const std::string& n)
 {
   if(n == "RBF") return "rbf";
   if(n == "MLP") return "mlp";
+  if(n == "RBFARD" || n == "rbf_ard") return "rbfard";
+  if(n == "MLPARD" || n == "mlp_ard") return "mlpard";
   if(n == "Linear" || n == "linear") return "lin";
   return n;
 }
@@ -258,7 +273,8 @@ PyDeepGP::PyDeepGP(
     unsigned int likelihood_seed,
     const std::string& diag,
     unsigned int diag_samples,
-    bool diag_force)
+    bool diag_force,
+    py::object mlp_init)
   : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)),
     likelihoodType(likelihood),
     learnWindowWidth(learn_window_width),
@@ -325,7 +341,7 @@ PyDeepGP::PyDeepGP(
     if(kernNames[ell] == "conv" && ind != "patches")
       throw ndlexceptions::Error(pre + "a convolutional kernel supports inducing='patches' only in this release");
     if(ind == "weightspace" && kernNames[ell] != "mlp")
-      throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp'");
+      throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp' (got '" + kernNames[ell] + "')");
     if(ind == "hermite" && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '"
                                  + kernNames[ell] + "'.");
@@ -412,6 +428,31 @@ PyDeepGP::PyDeepGP(
         model->setLayerLearnWindowWidth(ell, true, learn_window_widths);
   if(drop_residual)
     model->setDropResidual(true);
+
+  // CIP-0041 B2: 'scaled' sets the MLP weight variance to 1 / mean ||h||^2 and the bias
+  // variance to 0.1, so that ||xhat||^2 = w ||h||^2 + b starts near 1.1.  'unit' (the
+  // default) leaves the kernel as built.
+  {
+    const std::vector<std::string> inits = parseLayerStrings(mlp_init, layers, "mlp_init");
+    for(unsigned int ell = 0; ell < layers; ++ell)
+    {
+      const std::string pre = perLayer ? "layer " + std::to_string(ell) + ": " : "";
+      if(inits[ell] != "unit" && inits[ell] != "scaled")
+        throw ndlexceptions::Error(pre + "mlp_init must be 'unit' or 'scaled'");
+      if(inits[ell] == "unit")
+        continue;
+      if(kernNames[ell] != "mlp")
+        throw ndlexceptions::Error(pre + "mlp_init='scaled' requires kernel='mlp' (got '"
+                                   + kernNames[ell] + "')");
+      const double msn = model->layerInputMeanSqNorm(ell);
+      if(!(msn > 0.0))
+        throw ndlexceptions::Error(pre + "mlp_init='scaled': layer input has zero norm");
+      CKern* k = model->layer(ell).getKern();
+      k->setParam(1.0 / msn, 0);
+      k->setParam(0.1, 1);
+      model->layer(ell).updateKernelMatrices();
+    }
+  }
 
   if(likelihood == "gaussian" || likelihood == "Gaussian")
   {
@@ -778,6 +819,15 @@ void PyDeepGP::set_layer_param(unsigned int ell, const std::string& path, double
   model->layer(ell).updateKernelMatrices();
 }
 
+double PyDeepGP::layer_input_mean_sqnorm(unsigned int ell) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  if(ell >= model->getNumLayers())
+    throw ndlexceptions::Error("layer index out of range");
+  return model->layerInputMeanSqNorm(ell);
+}
+
 void PyDeepGP::set_drop_residual(bool val)
 {
   if(!model)
@@ -793,11 +843,23 @@ bool PyDeepGP::drop_residual() const
 }
 
 double PyDeepGP::jacobian_spread(unsigned int n_probe,
-                                 uint64_t probe_seed) const
+                                 uint64_t probe_seed,
+                                 bool prior) const
+{
+  return std::get<0>(jacobian_stats(n_probe, probe_seed, prior));
+}
+
+std::tuple<double, double> PyDeepGP::jacobian_stats(unsigned int n_probe,
+                                                    uint64_t probe_seed,
+                                                    bool prior) const
 {
   if(!model)
     throw ndlexceptions::Error("DeepGP is uninitialised");
-  return model->jacobianSpread(n_probe, probe_seed);
+  if(n_probe < 1)
+    throw ndlexceptions::Error("n_probe must be >= 1");
+  double spread, meanLog;
+  model->jacobianStats(n_probe, probe_seed, prior, spread, meanLog);
+  return std::make_tuple(spread, meanLog);
 }
 
 ModelDescription PyDeepGP::describe() const
@@ -827,6 +889,19 @@ ModelDescription PyDeepGP::describe() const
     if(model->getLayerInducingType(ell) == "hermite")
       d.headerLines.push_back("layer " + std::to_string(ell) + " hermite layout: " +
                               model->layer(ell).hermiteLayoutDescription());
+  // CIP-0041 B3: ARD scales are part of what was built; show every parameter of ARD layers.
+  for(unsigned int ell = 0; ell < model->getNumLayers(); ++ell)
+  {
+    const CKern* k = model->layer(ell).getKern();
+    const std::string t = k->getType();
+    if(t != "rbfard" && t != "mlpard")
+      continue;
+    std::ostringstream os;
+    os << "layer " << ell << " " << t << ":";
+    for(unsigned int i = 0; i < k->getNumParams(); ++i)
+      os << " " << k->getParamName(i) << "=" << k->getParam(i);
+    d.headerLines.push_back(os.str());
+  }
   d.hasLogLikelihood = true;
   d.logLikelihood = model->elboEstimate();
   d.optNumParams = static_cast<int>(model->getStochasticNumParams());
@@ -904,7 +979,8 @@ void bind_deepgp(py::module_& m)
                     unsigned int,
                     const std::string&,
                     unsigned int,
-                    bool>(),
+                    bool,
+                    py::object>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("layers") = 2,
@@ -926,7 +1002,8 @@ void bind_deepgp(py::module_& m)
            py::arg("likelihood_seed") = 12345,
            py::arg("diag") = "exact",
            py::arg("diag_samples") = 64,
-           py::arg("diag_force") = false)
+           py::arg("diag_force") = false,
+           py::arg("mlp_init") = py::str("unit"))
       .def("optimize",
            &PyDeepGP::optimize,
            py::arg("iters") = 100,
@@ -981,12 +1058,22 @@ void bind_deepgp(py::module_& m)
            "KL(q(v) || N(0, I)) summed over the layer outputs (nats).")
       .def("set_layer_param", &PyDeepGP::set_layer_param, py::arg("layer"), py::arg("path"),
            py::arg("value"), "Set one kernel parameter of one layer (before optimisation).")
+      .def("layer_input_mean_sqnorm", &PyDeepGP::layer_input_mean_sqnorm, py::arg("layer"),
+           "Mean over the data of the squared norm of layer's input (mean-path).")
       .def_property_readonly("drop_residual", &PyDeepGP::drop_residual)
       .def("jacobian_spread",
            &PyDeepGP::jacobian_spread,
            py::arg("n_probe") = 32,
            py::arg("probe_seed") = 0,
-           "Median prior Jacobian log-singular-value spread (V7).")
+           py::arg("prior") = true,
+           "Median Jacobian log-singular-value spread (V7). prior=True draws the whitened "
+           "variables from N(0, I) per layer; prior=False evaluates at the variational mean.")
+      .def("jacobian_stats",
+           &PyDeepGP::jacobian_stats,
+           py::arg("n_probe") = 32,
+           py::arg("probe_seed") = 0,
+           py::arg("prior") = true,
+           "(median spread, median mean log singular value) of the input-output Jacobian.")
       .def("conv_filters", &PyDeepGP::conv_filters,
            "Inducing patches of the convolutional first layer as an (M, h, w, C) array.")
       .def("conv_patch_weights", &PyDeepGP::conv_patch_weights,

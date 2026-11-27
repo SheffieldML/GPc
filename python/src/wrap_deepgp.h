@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -44,7 +45,8 @@ public:
            unsigned int likelihood_seed = 12345,
            const std::string& diag = "exact",
            unsigned int diag_samples = 64,
-           bool diag_force = false);
+           bool diag_force = false,
+           py::object mlp_init = py::str("unit"));
 
   void optimize(unsigned int iters = 100,
                 int batch_size = -1,
@@ -76,6 +78,7 @@ public:
       unsigned int samples = 0,
       uint64_t seed = 0) const;
 
+  double layer_input_mean_sqnorm(unsigned int ell) const;
   // CIP-0040: inducing patches as (M, h, w, C); patch weights (P).
   py::array_t<double> conv_filters() const;
   py::array_t<double> conv_patch_weights() const;
@@ -97,7 +100,10 @@ public:
   double layer_kl(unsigned int ell) const;
   void set_layer_param(unsigned int ell, const std::string& path, double val);
   bool drop_residual() const;
-  double jacobian_spread(unsigned int n_probe = 32, uint64_t probe_seed = 0) const;
+  double jacobian_spread(unsigned int n_probe = 32, uint64_t probe_seed = 0,
+                         bool prior = true) const;
+  std::tuple<double, double> jacobian_stats(unsigned int n_probe = 32, uint64_t probe_seed = 0,
+                                            bool prior = true) const;
 
   ModelDescription describe() const;
   std::string to_string() const;

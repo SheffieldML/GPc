@@ -783,10 +783,29 @@ void CDeepGp::predictMeanVar(const CMatrix& Xstar, CMatrix& mu, CMatrix& var,
     }
 }
 
+double CDeepGp::layerInputMeanSqNorm(unsigned int ell) const
+{
+  BOUNDCHECK(ell < numLayers);
+  const CMatrix& H = layerX[ell];
+  double s = 0.0;
+  for(unsigned int n = 0; n < H.getRows(); n++)
+    for(unsigned int d = 0; d < H.getCols(); d++)
+      s += H.getVal(n, d) * H.getVal(n, d);
+  return s / static_cast<double>(H.getRows());
+}
+
 double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
 {
+  double spread, meanLog;
+  jacobianStats(nProbe, probeSeed, true, spread, meanLog);
+  return spread;
+}
+
+void CDeepGp::jacobianStats(unsigned int nProbe, uint64_t probeSeed, bool prior,
+                            double& medianSpread, double& medianMeanLogSv) const
+{
   if(nProbe == 0)
-    throw ndlexceptions::Error("CDeepGp::jacobianSpread: nProbe >= 1");
+    throw ndlexceptions::Error("CDeepGp::jacobianStats: nProbe >= 1");
   // Rectangular maps (CIP-003C): J is Dout x Din with min(Din,Dout) singular
   // values, taken from the smaller of J^T J (Din x Din) and J J^T.
   const unsigned int Din = inputDim;
@@ -794,8 +813,9 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
   const unsigned int k = min(Din, Dout);
   mt19937_64 prng(probeSeed);
   normal_distribution<double> nd(0.0, 1.0);
-  vector<double> spreads;
+  vector<double> spreads, meanLogs;
   spreads.reserve(nProbe);
+  meanLogs.reserve(nProbe);
   const double h = 1e-4;
 
   for(unsigned int t = 0; t < nProbe; t++)
@@ -808,6 +828,11 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
     vector<CMatrix> vs(numLayers);
     for(unsigned int ell = 0; ell < numLayers; ell++)
     {
+      if(!prior)
+      {
+        vs[ell].deepCopy(layers[ell]->getWhitenedMean());
+        continue;
+      }
       const unsigned int Mi = layers[ell]->getNumInducing();
       const unsigned int Do = layers[ell]->getOutputDim();
       vs[ell].resize(Mi, Do);
@@ -837,18 +862,22 @@ double CDeepGp::jacobianSpread(unsigned int nProbe, uint64_t probeSeed) const
     G.setSymmetric(true);
     CMatrix lam(1, k);
     G.syev(lam, "n", "l");
-    double lmin = 1e300, lmax = 0.0;
+    double lmin = 1e300, lmax = 0.0, sumLog = 0.0;
     for(unsigned int i = 0; i < k; i++)
     {
       const double s = sqrt(max(fabs(lam.getVal(i)), 0.0));
       lmin = min(lmin, s);
       lmax = max(lmax, s);
+      sumLog += log(max(s, 1e-300));
     }
+    meanLogs.push_back(sumLog / static_cast<double>(k));
     const double spread = log(max(lmax, 1e-300)) - log(max(lmin, 1e-300));
     spreads.push_back(spread);
   }
   sort(spreads.begin(), spreads.end());
-  return spreads[spreads.size() / 2];
+  sort(meanLogs.begin(), meanLogs.end());
+  medianSpread = spreads[spreads.size() / 2];
+  medianMeanLogSv = meanLogs[meanLogs.size() / 2];
 }
 
 void CDeepGp::display(ostream& os) const

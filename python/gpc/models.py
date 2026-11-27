@@ -547,7 +547,7 @@ class DeepGP(_DeepGP):
     num_inducing :
         Int or length-``L`` sequence of inducing counts.
     kernel :
-        ``'rbf'``, ``'mlp'``, or ``'lin'``: a string (same type on every layer)
+        ``'rbf'``, ``'mlp'``, ``'lin'``, ``'rbfard'`` or ``'mlpard'``: a string (same type on every layer)
         or a length-``layers`` sequence (one per layer, CIP-0041).
     inducing :
         ``'points'``, ``'patches'``, ``'weightspace'`` or ``'hermite'`` (the last two need
@@ -568,6 +568,13 @@ class DeepGP(_DeepGP):
         with a Gaussian likelihood and is refused otherwise unless
         ``diag_force=True`` (then biased). A larger ``stride`` is the exact way
         to reduce the cost.
+    mlp_init :
+        ``'unit'`` (default: weight, bias and signal variance all 1) or
+        ``'scaled'``: a string for every layer or a length-``layers`` sequence;
+        ``'scaled'`` needs ``kernel='mlp'`` on that layer. It sets the weight
+        variance to ``1 / mean ||h||^2`` (``h`` is the layer input pushed through
+        the mean maps) and the bias variance to 0.1, so that ``||xhat||^2``
+        starts near one whatever the input scale.
     chi, beta :
         Hidden variance scale and observation precision init.
     drop_residual :
@@ -625,6 +632,7 @@ class DeepGP(_DeepGP):
         diag: str = "exact",
         diag_samples: int = 64,
         diag_force: bool = False,
+        mlp_init: Any = "unit",
     ) -> None:
         from .kern import Conv as _Conv
 
@@ -672,6 +680,7 @@ class DeepGP(_DeepGP):
             diag=diag,
             diag_samples=diag_samples,
             diag_force=diag_force,
+            mlp_init=mlp_init,
             **mc,
         )
         _emit_hermite_warnings(self)

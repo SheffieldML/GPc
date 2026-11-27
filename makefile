@@ -129,7 +129,7 @@ gp.o: gp.cpp gp.h CInterchange.h CJson.h ndlexceptions.h ndlstrutil.h CMatrix.h 
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSvgpBlock testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -291,6 +291,12 @@ testSvgp: testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.
 
 testSvgp.o: testSvgp.cpp CSvgp.h CAdam.h CGp.h CKern.h CMatrix.h CNoise.h CSparsePpa.h
 	$(CC) -c testSvgp.cpp -o testSvgp.o $(CCFLAGS)
+
+testSvgpBlock: testSvgpBlock.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o testSvgpBlock testSvgpBlock.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o $(LDFLAGS)
+
+testSvgpBlock.o: testSvgpBlock.cpp CSvgp.h CGp.h CKern.h CMatrix.h CNoise.h
+	$(CC) -c testSvgpBlock.cpp -o testSvgpBlock.o $(CCFLAGS)
 
 # CIP-0030 Phase 1: SVI Bayesian GP-LVM (sampled q(X) on CSvgp).
 testSviBayesGplvm: testSviBayesGplvm.o CSviBayesGplvm.o CSvgp.o CAdam.o CStochasticOptimisable.o CBayesGplvm.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o

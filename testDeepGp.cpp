@@ -17,6 +17,27 @@
 
 using namespace std;
 
+// CIP-003E Phase 3: coupled two-output Gaussian block (full 2x2 precision).
+class CCoupledGaussianDg : public CGaussianNoise
+{
+ public:
+  CCoupledGaussianDg(CMatrix* y) : CGaussianNoise(y) {}
+  unsigned int blockSize() const { return 2; }
+  double expectedLogLikelihoodBlock(const double* y, const double* mu, const double* var,
+                                    unsigned int, double* gMu, double* gVar) const
+  {
+    const double P00 = 3.0, P01 = 1.2, P11 = 2.5;
+    const double r0 = y[0] - mu[0], r1 = y[1] - mu[1];
+    gMu[0] = P00 * r0 + P01 * r1;
+    gMu[1] = P01 * r0 + P11 * r1;
+    gVar[0] = -0.5 * P00;
+    gVar[1] = -0.5 * P11;
+    const double quad = P00 * r0 * r0 + 2.0 * P01 * r0 * r1 + P11 * r1 * r1;
+    return -0.5 * (quad + P00 * var[0] + P11 * var[1]) + 0.5 * log(P00 * P11 - P01 * P01)
+           - log(2.0 * M_PI);
+  }
+};
+
 static int fails = 0;
 
 static void expect(bool cond, const string& msg)
@@ -1026,6 +1047,58 @@ int main()
       cout << "  info: Phase3 V4-probit max|g-FD|=" << maxErr
            << " at i=" << worst << " of " << p0.getCols() << endl;
       expect(maxErr < 5e-3, "Phase3 V4: probit grads match FD at fixed ε");
+    }
+
+    // ---- CIP-003E Phase 3: coupled two-output block as the final layer ----
+    {
+      const unsigned int N = 10, M = 4;
+      mt19937 rng(91);
+      normal_distribution<double> nd(0.0, 1.0);
+      CMatrix X(N, 1), y(N, 2);
+      for(unsigned int i = 0; i < N; i++)
+      {
+        X.setVal(-1.0 + 2.0 * (double)i / (double)(N - 1), i, 0);
+        y.setVal(sin(X.getVal(i, 0)), i, 0);
+        y.setVal(cos(2.0 * X.getVal(i, 0)), i, 1);
+      }
+      ndlutil::init_genrand(97u);
+      CCmpndKern k0(X), k1(X);
+      makeRbfOnly(k0, X, 1.5, 0.4);
+      makeRbfOnly(k1, X, 1.2, 1.0);
+      CDeepGp dgp(X, y, vector<CKern*>{&k0, &k1},
+                  vector<unsigned int>{1u, 1u, 2u},
+                  vector<unsigned int>{M, M}, 1.0, 0.4, 0);
+      CCoupledGaussianDg cg(&y);
+      dgp.setLikelihood(&cg);
+      for(unsigned int t = 0; t < 5; t++)
+        dgp.layer(1).naturalGradientStep(0.2);
+      dgp.setNumSamples(1);
+      CMatrix eps(N, 1);
+      for(unsigned int i = 0; i < N; i++)
+        eps.setVal(nd(rng), i, 0);
+      dgp.setFrozenEps(eps);
+      vector<unsigned int> all(N);
+      for(unsigned int i = 0; i < N; i++) all[i] = i;
+      CMatrix gAnal;
+      dgp.objectiveGradBatch(all, gAnal);
+      CMatrix p0;
+      dgp.getStochasticParams(p0);
+      const double h = 1e-5;
+      double maxErr = 0.0;
+      for(unsigned int i = 0; i < p0.getCols(); i++)
+      {
+        CMatrix pp(p0), pm(p0), gTmp;
+        pp.setVal(p0.getVal(i) + h, i);
+        pm.setVal(p0.getVal(i) - h, i);
+        dgp.setStochasticParams(pp);
+        const double Lp = dgp.objectiveGradBatch(all, gTmp);
+        dgp.setStochasticParams(pm);
+        const double Lm = dgp.objectiveGradBatch(all, gTmp);
+        dgp.setStochasticParams(p0);
+        maxErr = max(maxErr, fabs(gAnal.getVal(i) - (Lp - Lm) / (2.0 * h)));
+      }
+      cout << "  info: Phase3 coupled-block max|g-FD|=" << maxErr << endl;
+      expect(maxErr < 5e-3, "CIP-003E: coupled block final layer grads match FD at fixed eps");
     }
 
     // ---- Phase 3: ordered likelihood + optional final-layer CVI ----

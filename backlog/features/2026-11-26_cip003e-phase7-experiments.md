@@ -1,7 +1,7 @@
 ---
 id: "2026-11-26_cip003e-phase7-experiments"
 title: "Phase 7: K-class example and MNIST deep GP versus Gaussian one-hot baseline"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-26"
 last_updated: "2026-11-26"
@@ -25,8 +25,8 @@ Synthetic K-class example and MNIST deep GP with robust-max, reported against th
 
 ## Acceptance Criteria
 
-- [ ] Example under examples/
-- [ ] MNIST results with accuracy and NLL
+- [x] Example under examples/
+- [x] MNIST results with accuracy and NLL
 
 ## Implementation Notes
 
@@ -40,3 +40,6 @@ Work on branch `cip003E-multiclass-likelihood` (worktree `../GPc-cip003E-multicl
 
 ### 2026-11-26
 Task created with Ready status when CIP-003E was accepted.
+
+### 2026-11-27
+Both examples written. MNIST (reduced setting) and K=4 spirals results recorded in CIP-003E, "Phase 7 results".

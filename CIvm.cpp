@@ -840,6 +840,21 @@ void CIvm::readParamsFromStream(istream& in)
   activeSet = readVectorUintFromStream(in, "activeSet");
   if(activeSet.size() != getNumActive())
     throw ndlexceptions::StreamFormatError("numActive", "Number of active points does not match active set size.");
+  // The inactive set is not streamed: it is the complement of the active set in
+  // [0, numData), kept in ascending order exactly as selectPoints() maintains it.
+  {
+    vector<bool> isActive(getNumData(), false);
+    for(unsigned int i=0; i<activeSet.size(); i++)
+    {
+      if(activeSet[i] >= getNumData())
+        throw ndlexceptions::StreamFormatError("activeSet", "Active point index exceeds number of data.");
+      isActive[activeSet[i]] = true;
+    }
+    inactiveSet.clear();
+    for(unsigned int i=0; i<getNumData(); i++)
+      if(!isActive[i])
+        inactiveSet.push_back(i);
+  }
   activeY.fromStream(in);
   if(activeY.getCols() !=getOutputDim())
     throw ndlexceptions::StreamFormatError("outputDim", "Number of columns of activeY does not match output dimension.");

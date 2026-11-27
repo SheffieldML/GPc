@@ -80,6 +80,7 @@ ALL_BINARIES = benchGPc \
   demo_mrd \
   testCoregionalize \
   testMatrix \
+  testCode \
   testClctrl \
   testCholAdjoint \
   testLQAdjoint \
@@ -199,7 +200,7 @@ libgp$(LIBDEXT): $(LIBGP_OBJS)
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+tests: testDist testGp testIvm testKern testMatrix testCode testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -207,10 +208,13 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCoregionalize is CIP-000D (no .mat). testPsi / testBayesGplvm are CIP-0017.
 # testMrd is CIP-0018.
 # testWnHankel is CIP-001C Phase 3 (no .mat).
+# testCode is a fixture-free smoke test. testIvm / testMltools read numeric reference
+# matrices through matio (testIvm<Type>Active.mat); with _NDLMATLAB they instead load
+# the full MATLAB model structs.
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
 # testNoiseBatched / testNoiseInLikelihood / testCip0027Perf / testIvmSoftener are CIP-0027 (no .mat).
-matio-tests: testDist testKern testMatrix testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+matio-tests: testDist testKern testMatrix testCode testMltools testIvm testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -233,6 +237,9 @@ run-matio-tests: matio-tests
 	./testHmc
 	./testVariationalHmc
 	./testMatrix
+	./testCode
+	./testMltools
+	./testIvm
 	./testOptimisable
 	./testParamPaths
 	./testInterchange
@@ -396,6 +403,10 @@ testCoregionalize: testCoregionalize.o CMultioutput.o CGp.o CInducing.o CCholAdj
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 
 
+
+# Fixture-free smoke test of matrix algebra and special functions.
+testCode: testCode.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 
 testMatrix: testMatrix.o CMatrix.o ndlfortran.o ndlstrutil.o ndlutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS) 

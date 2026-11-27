@@ -161,9 +161,11 @@ void CGp::setEpInference(bool on)
     if(isSparseApproximation() || getApproximationType() != FTC)
       throw ndlexceptions::Error(
           "CGp::setEpInference: CIP-0033 EP requires FTC (dense) approximation.");
-    if(getOutputDim() != 1)
-      throw ndlexceptions::Error(
-          "CGp::setEpInference: EP currently supports a single output.");
+    // CIP-003E: single scalar-block output keeps the legacy probit path;
+    // anything else goes through the block engine and needs the likelihood
+    // to supply cavity moments.
+    if(epUsesBlockEngine())
+      pnoise->requireCapability(CNoise::CapCavityMoments, "CGp::setEpInference");
     laplaceInference = false;
     laplaceUpToDate = false;
   }
@@ -195,7 +197,11 @@ double CGp::epLogLikelihood() const
   const unsigned int n = getNumData();
   CMatrix Kep(n, n);
   pkern->compute(Kep, *pX);
-  epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
+  if(epUsesBlockEngine())
+    epLogMarginalCache = epEngine.runBlock(std::vector<CMatrix>(1, Kep), *py, *pnoise,
+                                           epSites, epMu, epVarDiag);
+  else
+    epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
   epUpToDate = true;
   return epLogMarginalCache + pkern->priorLogProb();
 }
@@ -213,7 +219,24 @@ void CGp::epLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) con
   CMatrix kss(nt, 1);
   for(unsigned int i = 0; i < nt; i++)
     kss.setVal(pkern->diagComputeElement(Xin, i), i, 0);
-  epEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+  if(!epUsesBlockEngine())
+  {
+    epEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+    return;
+  }
+  const unsigned int D = getOutputDim();
+  mu.resize(nt, D);
+  varDiag.resize(nt, D);
+  CMatrix mk, vk;
+  for(unsigned int k = 0; k < D; k++)
+  {
+    epEngine.predictiveMeanVarBlock(k, Kx, kss, mk, vk);
+    for(unsigned int i = 0; i < nt; i++)
+    {
+      mu.setVal(mk.getVal(i), i, k);
+      varDiag.setVal(vk.getVal(i), i, k);
+    }
+  }
 }
 
 void CGp::laplaceLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) const
@@ -2572,7 +2595,19 @@ void CGp::updateG() const
     const unsigned int numKernParams = pkern->getNumParams();
     CMatrix tempG(1, numKernParams);
     CMatrix dLdK(getNumData(), getNumData());
-    epEngine.fillDLDK(dLdK);
+    if(epUsesBlockEngine())
+    {
+      // Shared kernel across latents: dL/dK sums over the K posteriors.
+      CMatrix dk(getNumData(), getNumData());
+      dLdK.zeros();
+      for(unsigned int k = 0; k < epEngine.numLatentsBlock(); k++)
+      {
+        epEngine.fillDLDKBlock(k, dk);
+        dLdK.axpy(dk, 1.0);
+      }
+    }
+    else
+      epEngine.fillDLDK(dLdK);
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)

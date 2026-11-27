@@ -146,6 +146,71 @@ static int testCGpEpOptimise()
   return fail;
 }
 
+// CIP-003E: multi-output EP through CGp. With Gaussian noise EP is exact, so the
+// block path must reproduce the exact CGp likelihood and kernel gradients.
+static int testCGpBlockEpGaussian()
+{
+  const unsigned int n = 9, D = 3;
+  CMatrix X(n, 1), Y(n, D);
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -1.5 + 3.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    for(unsigned int j = 0; j < D; j++)
+      Y.setVal(sin((1.0 + j) * x) + 0.1 * i * (j - 1.0), i, j);
+  }
+  // CGp subtracts the column means (bias) and the EP path does not: centre Y
+  // so the two describe the same model.
+  for(unsigned int j = 0; j < D; j++)
+  {
+    double m = 0.0;
+    for(unsigned int i = 0; i < n; i++) m += Y.getVal(i, j);
+    m /= (double)n;
+    for(unsigned int i = 0; i < n; i++) Y.setVal(Y.getVal(i, j) - m, i, j);
+  }
+  int fail = 0;
+  CRbfKern kA(X), kB(X);
+  kA.setVariance(1.3); kA.setLengthScale(0.9);
+  kB.setVariance(1.3); kB.setLengthScale(0.9);
+  CGaussianNoise nA(&Y), nB(&Y);
+  nA.setSigma2(0.2); nB.setSigma2(0.2);
+  CGp exact(&kA, &nA, &X, CGp::FTC, 0, 0);
+  CGp ep(&kB, &nB, &X, CGp::FTC, 0, 0);
+  ep.setEpInference(true);
+  const double Le = exact.logLikelihood();
+  const double Lp = ep.logLikelihood();
+  fail += checkClose("CGp block EP (D=3 Gaussian) log likelihood == exact", Lp, Le, 1e-3);
+  CMatrix gE(1, exact.getOptNumParams()), gP(1, ep.getOptNumParams());
+  exact.logLikelihoodGradient(gE);
+  ep.logLikelihoodGradient(gP);
+  for(unsigned int i = 0; i < kA.getNumParams(); i++)
+    fail += checkClose("CGp block EP kern gradient == exact", gP.getVal(i), gE.getVal(i), 1e-3);
+  // Predictive latent mean/var must match the exact GP posterior.
+  CMatrix Xt(2, 1); Xt.setVal(-0.3, 0, 0); Xt.setVal(0.7, 1, 0);
+  CMatrix mu, vd;
+  ep.epLatentMeanVar(mu, vd, Xt);
+  fail += checkClose("CGp block EP predictive shape", (mu.getRows() == 2 && mu.getCols() == D) ? 1.0 : 0.0, 1.0, 0.0);
+  CMatrix mE(2, D), vE(2, D);
+  exact.latentMeanVar(mE, vE, Xt);
+  for(unsigned int j = 0; j < D; j++)
+  {
+    fail += checkClose("CGp block EP predictive mean == exact", mu.getVal(0, j), mE.getVal(0, j), 1e-3);
+    fail += checkClose("CGp block EP latent variance == exact", vd.getVal(1, j), vE.getVal(1, j), 1e-3);
+  }
+
+  // Refusal: a likelihood without cavity moments cannot drive multi-output EP.
+  CMatrix Yb(n, 2);
+  for(unsigned int i = 0; i < n; i++) { Yb.setVal(1.0, i, 0); Yb.setVal(0.5, i, 1); }
+  CRbfKern kC(X);
+  CStudentTNoise st(&Yb);
+  CGp bad(&kC, &st, &X, CGp::FTC, 0, 0);
+  bool threw = false;
+  try { bad.setEpInference(true); }
+  catch(ndlexceptions::Error&) { threw = true; }
+  fail += checkClose("CGp EP refuses likelihood without cavity moments", threw ? 1.0 : 0.0, 1.0, 0.0);
+  return fail;
+}
+
 static int testLaplaceDerivsAndMode()
 {
   // W = r(t+r) at f=0.5, y=1: t=0.5
@@ -336,6 +401,7 @@ int main()
   fail += testMomentsMatchGPyFormula();
   fail += testEpLogMarginalFixture();
   fail += testCGpEpOptimise();
+  fail += testCGpBlockEpGaussian();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
   fail += testCGpLaplaceLatentPredict();

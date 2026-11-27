@@ -722,10 +722,129 @@ class IndexWhite(Kern):
         return f"IndexWhite({self.input_dim}, output_dim={self.output_dim}{dims})"
 
 
+class Conv(Kern):
+    """Convolutional covariance on flattened images (CIP-0040, ``CConvKern``).
+
+    ``k(x, x') = sum_{p,p'} w_p w_{p'} k_g(x[p], x'[p'])`` where ``x[p]`` is the
+    ``p``-th patch and ``k_g`` is the patch kernel ``base``. Images are flattened
+    row-major with the channel fastest (``H x W x C``); patches are the valid
+    windows at ``stride``, flattened in the same ``(h, w, C)`` order.
+
+    Parameters
+    ----------
+    base :
+        Patch kernel: :class:`RBF`, :class:`MLP` or :class:`Linear` with
+        ``input_dim == patch_h * patch_w * C``.
+    image_shape :
+        ``(H, W, C)``.
+    patch_shape :
+        ``(h, w)``.
+    stride :
+        Patch stride (default 1).
+    weights :
+        ``'learned'`` (one weight per patch position), ``'tied'`` (one shared
+        weight) or ``'fixed'`` (``w = 1 / P``, no parameters).
+
+    Use it as ``DeepGP(X, Y, kernel=[Conv(...), 'rbf'], inducing='patches')``;
+    the model's inducing variables are then patches, and
+    ``model.inducing_filters()`` returns them as images. It is not accepted by
+    the ``CGp``-based models (``SparseGPRegression`` and friends): use
+    ``DeepGP(layers=1)``, with ``likelihood='probit'`` for classification.
+    """
+
+    def __init__(
+        self,
+        base: Kern,
+        image_shape: Sequence[int],
+        patch_shape: Sequence[int],
+        stride: int = 1,
+        weights: str = "learned",
+    ) -> None:
+        """Create a convolutional kernel descriptor."""
+        if not isinstance(base, _Atomic):
+            raise TypeError("Conv base must be an atomic kernel (RBF, MLP or Linear)")
+        if base.active_dims is not None:
+            raise ValueError("Conv base must not use active_dims")
+        if base._type not in ("rbf", "mlp", "lin", "linear"):
+            raise ValueError(
+                f"Conv base must be RBF, MLP or Linear (got {type(base).__name__})"
+            )
+        shape = [int(v) for v in image_shape]
+        pshape = [int(v) for v in patch_shape]
+        if len(shape) != 3 or len(pshape) != 2:
+            raise ValueError("image_shape must be (H, W, C) and patch_shape (h, w)")
+        if min(shape + pshape) < 1 or int(stride) < 1:
+            raise ValueError("image_shape, patch_shape and stride must be positive")
+        if pshape[0] > shape[0] or pshape[1] > shape[1]:
+            raise ValueError("patch_shape must fit inside image_shape")
+        if weights not in ("learned", "tied", "fixed"):
+            raise ValueError("weights must be 'learned', 'tied' or 'fixed'")
+        q = pshape[0] * pshape[1] * shape[2]
+        if base.input_dim != q:
+            raise ValueError(
+                f"base.input_dim is {base.input_dim} but a patch has "
+                f"h*w*C = {q} entries"
+            )
+        self.base = base
+        self.image_shape = tuple(shape)
+        self.patch_shape = tuple(pshape)
+        self.stride = int(stride)
+        self.weights = weights
+        self.input_dim = shape[0] * shape[1] * shape[2]
+
+    @property
+    def num_patches(self) -> int:
+        """Number of patch positions ``P``."""
+        H, W, _ = self.image_shape
+        h, w = self.patch_shape
+        return ((H - h) // self.stride + 1) * ((W - w) // self.stride + 1)
+
+    def to_parts(self) -> list[dict[str, Any]]:
+        """One ``conv`` part (consumed by ``DeepGP`` and ``Conv.K``)."""
+        return [
+            {
+                "type": "conv",
+                "input_dim": self.input_dim,
+                "image_shape": list(self.image_shape),
+                "patch_shape": list(self.patch_shape),
+                "stride": self.stride,
+                "weights": self.weights,
+                "patch": self.base.to_parts()[0],
+            }
+        ]
+
+    def K(self, X: Any, X2: Any | None = None) -> Any:
+        """Evaluate the convolutional covariance ``K(X)`` or ``K(X, X2)``."""
+        import numpy as np
+
+        from ._gpc import conv_kern_K
+
+        Xa = np.ascontiguousarray(X, dtype=float)
+        X2a = None if X2 is None else np.ascontiguousarray(X2, dtype=float)
+        return conv_kern_K(self.to_parts()[0], Xa, X2a)
+
+    def __repr__(self) -> str:
+        return (
+            f"Conv({self.base!r}, image_shape={self.image_shape}, "
+            f"patch_shape={self.patch_shape}, stride={self.stride}, "
+            f"weights={self.weights!r})"
+        )
+
+
 def normalize_kernel_arg(kernel: object) -> str | list[dict[str, Any]]:
     """Return a string name or a parts list for the C++ constructor."""
     if isinstance(kernel, str):
         return kernel
+    if isinstance(kernel, Conv) or (
+        isinstance(kernel, Sequence)
+        and not isinstance(kernel, (str, bytes))
+        and any(isinstance(p, dict) and p.get("type") == "conv" for p in kernel)
+    ):
+        raise NotImplementedError(
+            "Conv kernels are supported by DeepGP only (use DeepGP(layers=1, "
+            "kernel=Conv(...), inducing='patches'); add likelihood='probit' for "
+            "classification)"
+        )
     if isinstance(kernel, Kern):
         return kernel.to_parts()
     if isinstance(kernel, Sequence) and not isinstance(kernel, (str, bytes)):
@@ -739,6 +858,7 @@ def normalize_kernel_arg(kernel: object) -> str | list[dict[str, Any]]:
 
 __all__ = [
     "Kern",
+    "Conv",
     "Add",
     "Prod",
     "RBF",

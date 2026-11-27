@@ -10431,6 +10431,8 @@ CKern* readKernFromStream(istream& in)
     pkern = new CCmpndKern();
   else if(type=="tensor")
     pkern = new CTensorKern();
+  else if(type=="conv")
+    pkern = new CConvKern();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown kernel type " + type);
   pkern->readParamsFromStream(in);  
@@ -13128,3 +13130,555 @@ void CCmpndKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X,
 // CIP-003F A3 switch (see CKern.h).
 void CKern::setLegacyRidge(bool legacy) { gRidgeLegacy = legacy; }
 bool CKern::legacyRidge() { return gRidgeLegacy; }
+
+// ---- CIP-0040 Phase 1a: convolutional covariance function ----
+CConvKern::CConvKern()
+  : imageH(0), imageW(0), channels(0), patchH(0), patchW(0), stride(1),
+    nPatchRows(0), nPatchCols(0), P(0), mode(WEIGHTS_LEARNED)
+{
+  setType("conv");
+  setName("convolutional");
+  nParams = 0;
+}
+
+CConvKern::CConvKern(const CKern& patchKern, unsigned int H, unsigned int Wd,
+                     unsigned int C, unsigned int ph, unsigned int pw,
+                     unsigned int st, WeightMode m)
+  : patch(patchKern.clone())
+{
+  setType("conv");
+  setName("convolutional");
+  configure(H, Wd, C, ph, pw, st, m);
+}
+
+CConvKern::CConvKern(const CConvKern& k)
+  : CKern(k), patch(k.patch ? k.patch->clone() : nullptr),
+    imageH(k.imageH), imageW(k.imageW), channels(k.channels),
+    patchH(k.patchH), patchW(k.patchW), stride(k.stride),
+    nPatchRows(k.nPatchRows), nPatchCols(k.nPatchCols), P(k.P), mode(k.mode),
+    w(k.w), wParams(k.wParams)
+{
+  setType("conv");
+  setName("convolutional");
+  diagSamples = k.diagSamples;
+  diagSeed = k.diagSeed;
+  setInputDim(k.getInputDim());  // resets the weights via setInitParam ...
+  w = k.w;                       // ... so restore them afterwards
+  wParams = k.wParams;
+  if(patch)
+    rebuildParams();
+}
+
+CConvKern::~CConvKern() {}
+
+void CConvKern::configure(unsigned int H, unsigned int Wd, unsigned int C,
+                          unsigned int ph, unsigned int pw, unsigned int st, WeightMode m)
+{
+  if(H == 0 || Wd == 0 || C == 0 || ph == 0 || pw == 0 || st == 0)
+    throw ndlexceptions::Error("CConvKern: image, patch and stride sizes must be positive.");
+  if(ph > H || pw > Wd)
+    throw ndlexceptions::Error("CConvKern: patch larger than image.");
+  imageH = H; imageW = Wd; channels = C; patchH = ph; patchW = pw; stride = st;
+  nPatchRows = (H - ph) / st + 1;
+  nPatchCols = (Wd - pw) / st + 1;
+  P = nPatchRows * nPatchCols;
+  mode = m;
+  if(patch->getInputDim() != patchDim())
+    throw ndlexceptions::Error("CConvKern: patch kernel input dimension ("
+                               + ndlstrutil::itoa(patch->getInputDim())
+                               + ") must equal patch size h*w*C ("
+                               + ndlstrutil::itoa(patchDim()) + ").");
+  setInputDim(H * Wd * C);
+  w.assign(P, 1.0 / P);
+  wParams.assign(mode == WEIGHTS_LEARNED ? P : (mode == WEIGHTS_TIED ? 1 : 0), 1.0 / P);
+  rebuildParams();
+}
+
+void CConvKern::rebuildParams()
+{
+  const unsigned int nk = patch->getNumParams();
+  nParams = nk + (unsigned int)wParams.size();
+  paramNames.clear();
+  for(unsigned int i = 0; i < nParams; i++)
+    setParamName(getParamName(i), i);
+  unlinkTransforms();  // transforms are shared with the patch kernel; never delete them here
+  for(unsigned int i = 0; i < patch->getNumTransforms(); i++)
+    addTransform(patch->getTransform(i), patch->getTransformIndex(i));
+  setStationary(false);
+}
+
+string CConvKern::getParamName(unsigned int i) const
+{
+  const unsigned int nk = patch->getNumParams();
+  if(i < nk)
+    return "patch." + patch->getParamName(i);
+  return mode == WEIGHTS_TIED ? string("weight") : "weight_" + ndlstrutil::itoa(i - nk);
+}
+
+void CConvKern::setWeightsFromParams()
+{
+  if(mode == WEIGHTS_LEARNED)
+    w = wParams;
+  else if(mode == WEIGHTS_TIED)
+    w.assign(P, wParams[0]);
+}
+
+void CConvKern::setInitParam()
+{
+  // Only the weights are reset: setInputDim() calls this, and the patch
+  // kernel's own parameters must survive construction and cloning.
+  if(P == 0)
+    return;
+  w.assign(P, 1.0 / P);
+  for(double& v : wParams)
+    v = 1.0 / P;
+}
+
+void CConvKern::setParam(double val, unsigned int paramNo)
+{
+  BOUNDCHECK(paramNo < nParams);
+  const unsigned int nk = patch->getNumParams();
+  if(paramNo < nk)
+    patch->setParam(val, paramNo);
+  else
+  {
+    wParams[paramNo - nk] = val;
+    setWeightsFromParams();
+  }
+}
+
+double CConvKern::getParam(unsigned int paramNo) const
+{
+  BOUNDCHECK(paramNo < nParams);
+  const unsigned int nk = patch->getNumParams();
+  return paramNo < nk ? patch->getParam(paramNo) : wParams[paramNo - nk];
+}
+
+void CConvKern::extractPatches(CMatrix& Xp, const CMatrix& X) const
+{
+  DIMENSIONMATCH(X.getCols() == getInputDim());
+  const unsigned int N = X.getRows();
+  Xp.resize(N * P, patchDim());
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int pr = 0; pr < nPatchRows; pr++)
+      for(unsigned int pc = 0; pc < nPatchCols; pc++)
+      {
+        const unsigned int row = n * P + pr * nPatchCols + pc;
+        unsigned int col = 0;
+        for(unsigned int di = 0; di < patchH; di++)
+          for(unsigned int dj = 0; dj < patchW; dj++)
+          {
+            const unsigned int base = ((pr * stride + di) * imageW + (pc * stride + dj)) * channels;
+            for(unsigned int c = 0; c < channels; c++)
+              Xp.setVal(X.getVal(n, base + c), row, col++);
+          }
+      }
+}
+
+void CConvKern::imagePatches(CMatrix& Xn, const CMatrix& Xp, unsigned int n) const
+{
+  Xn.resize(P, patchDim());
+  for(unsigned int p = 0; p < P; p++)
+    Xn.copyRowRow(p, Xp, n * P + p);
+}
+
+double CConvKern::quadForm(const CMatrix& G) const
+{
+  double s = 0.0;
+  for(unsigned int a = 0; a < P; a++)
+  {
+    double r = 0.0;
+    for(unsigned int b = 0; b < P; b++)
+      r += G.getVal(a, b) * w[b];
+    s += w[a] * r;
+  }
+  return s;
+}
+
+double CConvKern::diagComputeElement(const CMatrix& X, unsigned int index) const
+{
+  BOUNDCHECK(index < X.getRows());
+  CMatrix x1(1, X.getCols());
+  x1.copyRowRow(0, X, index);
+  CMatrix Xp, G(P, P);
+  extractPatches(Xp, x1);
+  if(diagIsEstimated())
+  {
+    // Same estimate as diagCompute for this row (seeded by the row index).
+    const unsigned int S = diagSamples;
+    std::vector<unsigned int> idx;
+    CMatrix Xs, Gs(S, S);
+    sampleDiagPatches(Xs, idx, Xp, 0, index);
+    patch->compute(Gs, Xs);
+    double s = 0.0;
+    for(unsigned int i = 0; i < S; i++)
+      for(unsigned int j = 0; j < S; j++)
+        if(i != j)
+          s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+    return (double)P * (double)P / ((double)S * (double)(S - 1)) * s;
+  }
+  patch->compute(G, Xp);
+  return quadForm(G);
+}
+
+void CConvKern::setDiagEstimator(unsigned int S, uint64_t seed)
+{
+  if(S == 1)
+    throw ndlexceptions::Error("CConvKern::setDiagEstimator: need S >= 2 samples (or 0 for exact).");
+  diagSamples = S;
+  diagSeed = seed;
+}
+
+// Stateless draw: splitmix64 of (seed, image row, draw number).
+static inline uint64_t convMix(uint64_t x)
+{
+  x += 0x9E3779B97F4A7C15ULL;
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  return x ^ (x >> 31);
+}
+
+void CConvKern::sampleDiagPatches(CMatrix& Xs, std::vector<unsigned int>& idx,
+                                  const CMatrix& Xp, unsigned int n, unsigned int seedRow) const
+{
+  idx.resize(diagSamples);
+  Xs.resize(diagSamples, patchDim());
+  for(unsigned int i = 0; i < diagSamples; i++)
+  {
+    const uint64_t r = convMix(convMix(diagSeed) ^ (convMix((uint64_t)seedRow + 1) + i));
+    idx[i] = (unsigned int)(r % P);
+    Xs.copyRowRow(i, Xp, n * P + idx[i]);
+  }
+}
+
+void CConvKern::diagCompute(CMatrix& d, const CMatrix& X) const
+{
+  DIMENSIONMATCH(X.rowsMatch(d));
+  DIMENSIONMATCH(d.getCols() == 1);
+  CMatrix Xp, Xn, G(P, P);
+  extractPatches(Xp, X);
+  if(diagIsEstimated())
+  {
+    const unsigned int S = diagSamples;
+    const double scale = (double)P * (double)P / ((double)S * (double)(S - 1));
+    std::vector<unsigned int> idx;
+    CMatrix Xs, Gs(S, S);
+    for(unsigned int n = 0; n < X.getRows(); n++)
+    {
+      sampleDiagPatches(Xs, idx, Xp, n, n);
+      patch->compute(Gs, Xs);
+      double s = 0.0;
+      for(unsigned int i = 0; i < S; i++)
+        for(unsigned int j = 0; j < S; j++)
+          if(i != j)
+            s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+      d.setVal(scale * s, n);
+    }
+    return;
+  }
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    imagePatches(Xn, Xp, n);
+    patch->compute(G, Xn);
+    d.setVal(quadForm(G), n);
+  }
+}
+
+double CConvKern::computeElement(const CMatrix& X1, unsigned int index1,
+                                 const CMatrix& X2, unsigned int index2) const
+{
+  CMatrix x1(1, X1.getCols()), x2(1, X2.getCols());
+  x1.copyRowRow(0, X1, index1);
+  x2.copyRowRow(0, X2, index2);
+  CMatrix K(1, 1);
+  compute(K, x1, x2);
+  return K.getVal(0, 0);
+}
+
+void CConvKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
+{
+  DIMENSIONMATCH(K.getRows() == X.getRows());
+  DIMENSIONMATCH(K.getCols() == X2.getRows());
+  const unsigned int N2 = X2.getRows();
+  CMatrix Xp, X2p, Xn, Kn(P, N2 * P);
+  extractPatches(Xp, X);
+  extractPatches(X2p, X2);
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    imagePatches(Xn, Xp, n);
+    patch->compute(Kn, Xn, X2p);
+    for(unsigned int m = 0; m < N2; m++)
+    {
+      double s = 0.0;
+      for(unsigned int a = 0; a < P; a++)
+      {
+        double r = 0.0;
+        for(unsigned int b = 0; b < P; b++)
+          r += Kn.getVal(a, m * P + b) * w[b];
+        s += w[a] * r;
+      }
+      K.setVal(s, n, m);
+    }
+  }
+}
+
+void CConvKern::compute(CMatrix& K, const CMatrix& X) const
+{
+  DIMENSIONMATCH(K.rowsMatch(X));
+  MATRIXPROPERTIES(K.isSquare());
+  compute(K, X, X);
+  K.setSymmetric(true);
+}
+
+void CConvKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const
+{
+  DIMENSIONMATCH(K.getRows() == X.getRows());
+  DIMENSIONMATCH(K.getCols() == 1);
+  CMatrix x2(1, X2.getCols());
+  x2.copyRowRow(0, X2, row);
+  compute(K, X, x2);
+}
+
+void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
+                              const CMatrix& cvGrd, bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
+  DIMENSIONMATCH(cvGrd.getRows() == X.getRows());
+  DIMENSIONMATCH(cvGrd.getCols() == X2.getRows());
+  const unsigned int nk = patch->getNumParams();
+  const unsigned int N2 = X2.getRows();
+  CMatrix Xp, X2p, Xn, Kn(P, N2 * P), Gn(P, N2 * P), gp(1, nk);
+  extractPatches(Xp, X);
+  extractPatches(X2p, X2);
+  vector<double> gw(P, 0.0);
+  g.zeros();
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    imagePatches(Xn, Xp, n);
+    patch->compute(Kn, Xn, X2p);
+    for(unsigned int m = 0; m < N2; m++)
+    {
+      const double c = cvGrd.getVal(n, m);
+      for(unsigned int a = 0; a < P; a++)
+      {
+        double rowSum = 0.0, colSum = 0.0;
+        for(unsigned int b = 0; b < P; b++)
+        {
+          rowSum += Kn.getVal(a, m * P + b) * w[b];
+          colSum += w[b] * Kn.getVal(b, m * P + a);
+          Gn.setVal(w[a] * w[b] * c, a, m * P + b);
+        }
+        gw[a] += c * (rowSum + colSum);
+      }
+    }
+    patch->getGradParams(gp, Xn, X2p, Gn, false);
+    for(unsigned int i = 0; i < nk; i++)
+      g.addVal(gp.getVal(i), i);
+  }
+  if(mode == WEIGHTS_LEARNED)
+    for(unsigned int a = 0; a < P; a++)
+      g.setVal(gw[a], nk + a);
+  else if(mode == WEIGHTS_TIED)
+  {
+    double s = 0.0;
+    for(unsigned int a = 0; a < P; a++)
+      s += gw[a];
+    g.setVal(s, nk);
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
+
+void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd,
+                              bool regularise) const
+{
+  DIMENSIONMATCH(X.rowsMatch(cvGrd));
+  DIMENSIONMATCH(cvGrd.isSquare());
+  getGradParams(g, X, X, cvGrd, regularise);
+}
+
+void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad,
+                                  bool regularise) const
+{
+  DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
+  DIMENSIONMATCH(cvGrad.getRows() == X.getRows() && cvGrad.getCols() == 1);
+  const unsigned int nk = patch->getNumParams();
+  CMatrix Xp, Xn, G(P, P), Ge(P, P), gp(1, nk);
+  extractPatches(Xp, X);
+  vector<double> gw(P, 0.0);
+  g.zeros();
+  const bool est = diagIsEstimated();
+  const unsigned int S = diagSamples;
+  const double scale = est ? (double)P * (double)P / ((double)S * (double)(S - 1)) : 0.0;
+  std::vector<unsigned int> idx;
+  CMatrix Xs, Gs, Ges;
+  if(est)
+  {
+    Gs.resize(S, S);
+    Ges.resize(S, S);
+  }
+  for(unsigned int n = 0; n < X.getRows(); n++)
+  {
+    const double c = cvGrad.getVal(n);
+    if(est)
+    {
+      sampleDiagPatches(Xs, idx, Xp, n, n);
+      patch->compute(Gs, Xs);
+      for(unsigned int i = 0; i < S; i++)
+      {
+        double r = 0.0;
+        for(unsigned int j = 0; j < S; j++)
+        {
+          const bool off = (i != j);
+          r += off ? Gs.getVal(i, j) * w[idx[j]] : 0.0;
+          Ges.setVal(off ? c * scale * w[idx[i]] * w[idx[j]] : 0.0, i, j);
+        }
+        gw[idx[i]] += 2.0 * c * scale * r;
+      }
+      Ges.setSymmetric(true);
+      patch->getGradParams(gp, Xs, Ges, false);
+      for(unsigned int i = 0; i < nk; i++)
+        g.addVal(gp.getVal(i), i);
+      continue;
+    }
+    imagePatches(Xn, Xp, n);
+    patch->compute(G, Xn);
+    for(unsigned int a = 0; a < P; a++)
+    {
+      double r = 0.0;
+      for(unsigned int b = 0; b < P; b++)
+      {
+        r += G.getVal(a, b) * w[b];
+        Ge.setVal(w[a] * w[b] * c, a, b);
+      }
+      gw[a] += 2.0 * c * r;
+    }
+    Ge.setSymmetric(true);
+    patch->getGradParams(gp, Xn, Ge, false);
+    for(unsigned int i = 0; i < nk; i++)
+      g.addVal(gp.getVal(i), i);
+  }
+  if(mode == WEIGHTS_LEARNED)
+    for(unsigned int a = 0; a < P; a++)
+      g.setVal(gw[a], nk + a);
+  else if(mode == WEIGHTS_TIED)
+  {
+    double s = 0.0;
+    for(unsigned int a = 0; a < P; a++)
+      s += gw[a];
+    g.setVal(s, nk);
+  }
+  if(regularise)
+    addPriorGrad(g);
+}
+
+double CConvKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2,
+                               const CMatrix& cvGrd) const
+{
+  BOUNDCHECK(index < nParams);
+  CMatrix g(1, nParams);
+  getGradParams(g, X, X2, cvGrd, false);
+  return g.getVal(index);
+}
+
+double CConvKern::getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const
+{
+  BOUNDCHECK(index < nParams);
+  CMatrix g(1, nParams);
+  getGradParams(g, X, X, cvGrd, false);
+  return g.getVal(index);
+}
+
+void CConvKern::getGradX(CMatrix&, const CMatrix&, unsigned int, const CMatrix&, bool) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CConvKern::getGradX: input gradients are not implemented (convolutional first layer only; CIP-0040 Phase 4).");
+}
+
+void CConvKern::getDiagGradX(CMatrix&, const CMatrix&, bool) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CConvKern::getDiagGradX: input gradients are not implemented (convolutional first layer only; CIP-0040 Phase 4).");
+}
+
+void CConvKern::addPrior(CDist* prior, unsigned int index)
+{
+  addPriorAt(prior, index);
+}
+
+void CConvKern::addPriorAt(CDist* prior, unsigned int index)
+{
+  if(index >= patch->getNumParams())
+    throw ndlexceptions::Error("CConvKern: priors are supported on the patch kernel parameters only.");
+  patch->addPriorAt(prior, index);
+}
+
+bool CConvKern::paramHasPrior(unsigned int paramNo) const
+{
+  return paramNo < patch->getNumParams() && patch->paramHasPrior(paramNo);
+}
+
+void CConvKern::addPriorGrad(CMatrix& g) const
+{
+  const unsigned int nk = patch->getNumParams();
+  CMatrix sub(1, nk);
+  for(unsigned int i = 0; i < nk; i++)
+    sub.setVal(g.getVal(i), i);
+  patch->addPriorGrad(sub);
+  for(unsigned int i = 0; i < nk; i++)
+    g.setVal(sub.getVal(i), i);
+}
+
+void CConvKern::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "inputDim", getInputDim());
+  writeToStream(out, "imageHeight", imageH);
+  writeToStream(out, "imageWidth", imageW);
+  writeToStream(out, "channels", channels);
+  writeToStream(out, "patchHeight", patchH);
+  writeToStream(out, "patchWidth", patchW);
+  writeToStream(out, "stride", stride);
+  writeToStream(out, "weightMode", string(mode == WEIGHTS_LEARNED ? "learned"
+                                          : (mode == WEIGHTS_TIED ? "tied" : "fixed")));
+  writeToStream(out, "numWeightParams", (unsigned int)wParams.size());
+  if(!wParams.empty())
+  {
+    CMatrix wp(1, (unsigned int)wParams.size());
+    for(unsigned int i = 0; i < wParams.size(); i++)
+      wp.setVal(wParams[i], i);
+    wp.toStream(out);
+  }
+  patch->toStream(out);
+}
+
+void CConvKern::readParamsFromStream(istream& in)
+{
+  const unsigned int inDim = readIntFromStream(in, "inputDim");
+  const unsigned int H = readIntFromStream(in, "imageHeight");
+  const unsigned int Wd = readIntFromStream(in, "imageWidth");
+  const unsigned int C = readIntFromStream(in, "channels");
+  const unsigned int ph = readIntFromStream(in, "patchHeight");
+  const unsigned int pw = readIntFromStream(in, "patchWidth");
+  const unsigned int st = readIntFromStream(in, "stride");
+  const string ms = readStringFromStream(in, "weightMode");
+  WeightMode m;
+  if(ms == "learned") m = WEIGHTS_LEARNED;
+  else if(ms == "tied") m = WEIGHTS_TIED;
+  else if(ms == "fixed") m = WEIGHTS_FIXED;
+  else throw ndlexceptions::StreamFormatError("weightMode", "Unknown weight mode " + ms);
+  const unsigned int nw = readIntFromStream(in, "numWeightParams");
+  CMatrix wp(1, nw > 0 ? nw : 1);
+  if(nw > 0)
+    wp.fromStream(in);
+  patch.reset(readKernFromStream(in));
+  configure(H, Wd, C, ph, pw, st, m);
+  if(inDim != getInputDim())
+    throw ndlexceptions::StreamFormatError("inputDim", "Stored input dimension does not match the image geometry.");
+  if(nw != wParams.size())
+    throw ndlexceptions::StreamFormatError("numWeightParams", "Stored weight count does not match the weight mode.");
+  for(unsigned int i = 0; i < nw; i++)
+    wParams[i] = wp.getVal(i);
+  setWeightsFromParams();
+}

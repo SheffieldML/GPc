@@ -123,6 +123,49 @@
       "hidden": 20,
       "batch": 256,
       "reps": 9
+    },
+    {
+      "id": "convgp_mnist_stride1_exact",
+      "kind": "convgp",
+      "kern": "conv",
+      "inducing": "patches",
+      "N": 2000,
+      "q": 784,
+      "M": 100,
+      "hidden": 20,
+      "batch": 64,
+      "reps": 5,
+      "patch": 5,
+      "stride": 1
+    },
+    {
+      "id": "convgp_mnist_stride2_exact",
+      "kind": "convgp",
+      "kern": "conv",
+      "inducing": "patches",
+      "N": 2000,
+      "q": 784,
+      "M": 100,
+      "hidden": 20,
+      "batch": 64,
+      "reps": 5,
+      "patch": 5,
+      "stride": 2
+    },
+    {
+      "id": "convgp_mnist_stride1_est64",
+      "kind": "convgp",
+      "kern": "conv",
+      "inducing": "patches",
+      "N": 2000,
+      "q": 784,
+      "M": 100,
+      "hidden": 20,
+      "batch": 64,
+      "reps": 5,
+      "patch": 5,
+      "stride": 1,
+      "diag-samples": 64
     }
   ]
 }

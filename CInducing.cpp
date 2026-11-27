@@ -2011,3 +2011,156 @@ void CInducingHermite::setCentres(const CMatrix&)
   throw ndlexceptions::Error(
       "CInducingHermite: windows are fixed; setCentres is not supported.");
 }
+
+
+// ---- CInducingPatches (CIP-0040 Phase 1b) ----
+
+CInducingPatches::CInducingPatches(const CMatrix& Z0)
+  : Z(Z0)
+{
+  if(Z.getRows() == 0 || Z.getCols() == 0)
+    throw ndlexceptions::Error("CInducingPatches requires a non-empty M x q centre matrix.");
+}
+
+const CConvKern& CInducingPatches::convKern(const CKern& kern)
+{
+  const CConvKern* ck = dynamic_cast<const CConvKern*>(&kern);
+  if(ck == 0)
+    throw ndlexceptions::Error("Inducing patches require a convolutional ('conv') kernel.");
+  return *ck;
+}
+
+void CInducingPatches::computeKuu(CMatrix& Kuu, const CKern& kern) const
+{
+  const CConvKern& ck = convKern(kern);
+  DIMENSIONMATCH(Z.getCols() == ck.patchDim());
+  ck.patchKernel().compute(Kuu, Z);
+}
+
+void CInducingPatches::computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const
+{
+  const CConvKern& ck = convKern(kern);
+  DIMENSIONMATCH(Z.getCols() == ck.patchDim());
+  const unsigned int P = ck.numPatches();
+  const unsigned int N = X.getRows();
+  const unsigned int M = Z.getRows();
+  const vector<double>& w = ck.patchWeights();
+  CMatrix Xp, Kp(M, N * P);
+  ck.extractPatches(Xp, X);
+  ck.patchKernel().compute(Kp, Z, Xp);
+  Kuf.resize(M, N);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < N; n++)
+    {
+      double s = 0.0;
+      for(unsigned int p = 0; p < P; p++)
+        s += w[p] * Kp.getVal(m, n * P + p);
+      Kuf.setVal(s, m, n);
+    }
+}
+
+void CInducingPatches::computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const
+{
+  computeKuf(Kux, kern, Xstar);
+}
+
+void CInducingPatches::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                                     const CKern& kern, const CMatrix& X,
+                                     const CMatrix& gKuu, const CMatrix& gKuf,
+                                     bool wantX, bool regulariseKern,
+                                     const CMatrix* KuuCached,
+                                     const CMatrix* /*KufCached*/) const
+{
+  const CConvKern& ck = convKern(kern);
+  if(wantX && gXOrNull != 0)
+    throw ndlexceptions::NotImplementedError(
+      "Inducing patches: gradients with respect to the inputs are not supported "
+      "(the convolutional kernel is first-layer only).");
+  const unsigned int M = Z.getRows();
+  const unsigned int N = X.getRows();
+  const unsigned int P = ck.numPatches();
+  const unsigned int nk = ck.patchKernel().getNumParams();
+  DIMENSIONMATCH(gKernParams.getCols() == ck.getNumParams());
+  DIMENSIONMATCH(gKuu.getRows() == M && gKuu.getCols() == M);
+  DIMENSIONMATCH(gKuf.getRows() == M && gKuf.getCols() == N);
+  const vector<double>& w = ck.patchWeights();
+
+  CMatrix Xp, Kp(M, N * P), G(M, N * P);
+  ck.extractPatches(Xp, X);
+  ck.patchKernel().compute(Kp, Z, Xp);
+  vector<double> gw(P, 0.0);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int n = 0; n < N; n++)
+    {
+      const double c = gKuf.getVal(m, n);
+      for(unsigned int p = 0; p < P; p++)
+      {
+        G.setVal(w[p] * c, m, n * P + p);
+        gw[p] += c * Kp.getVal(m, n * P + p);
+      }
+    }
+
+  // Patch-kernel parameters (priors once, with the K_uu term).
+  CMatrix t1(1, nk), t2(1, nk);
+  ck.patchKernel().getGradTransParams(t1, Z, gKuu, regulariseKern);
+  ck.patchKernel().getGradTransParams(t2, Z, Xp, G, false);
+  for(unsigned int i = 0; i < nk; i++)
+    gKernParams.addVal(t1.getVal(i) + t2.getVal(i), i);
+  // Weights carry no transform.
+  if(ck.getWeightMode() == CConvKern::WEIGHTS_LEARNED)
+  {
+    for(unsigned int p = 0; p < P; p++)
+      gKernParams.addVal(gw[p], nk + p);
+  }
+  else if(ck.getWeightMode() == CConvKern::WEIGHTS_TIED)
+  {
+    double s = 0.0;
+    for(unsigned int p = 0; p < P; p++)
+      s += gw[p];
+    gKernParams.addVal(s, nk);
+  }
+
+  ck.patchKernel().inducingGradZ(gZ, Z, Xp, gKuu, G, KuuCached, 0);
+}
+
+void CInducingPatches::getParams(CMatrix& param, unsigned int offset) const
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < Z.getCols(); j++)
+    for(unsigned int i = 0; i < Z.getRows(); i++)
+      param.setVal(Z.getVal(i, j), counter++);
+}
+
+void CInducingPatches::setParams(const CMatrix& param, unsigned int offset)
+{
+  unsigned int counter = offset;
+  for(unsigned int j = 0; j < Z.getCols(); j++)
+    for(unsigned int i = 0; i < Z.getRows(); i++)
+      Z.setVal(param.getVal(counter++), i, j);
+}
+
+void CInducingPatches::setCentres(const CMatrix& Znew)
+{
+  if(Znew.getCols() != Z.getCols())
+    throw ndlexceptions::Error("CInducingPatches::setCentres: patch dimension mismatch.");
+  Z.resize(Znew.getRows(), Znew.getCols());
+  Z.deepCopy(Znew);
+}
+
+void CInducingPatches::initFromData(CMatrix& Z, const CConvKern& kern, const CMatrix& X, unsigned int M)
+{
+  const unsigned int P = kern.numPatches();
+  const unsigned int N = X.getRows();
+  const unsigned long total = (unsigned long)N * P;
+  if(M == 0 || M > total)
+    throw ndlexceptions::Error("CInducingPatches::initFromData: need 0 < M <= (images x patches).");
+  CMatrix Xp;
+  kern.extractPatches(Xp, X);
+  Z.resize(M, kern.patchDim());
+  for(unsigned int m = 0; m < M; m++)
+  {
+    const unsigned long idx = (unsigned long)(((double)m + 0.5) * total / M);
+    for(unsigned int j = 0; j < kern.patchDim(); j++)
+      Z.setVal(Xp.getVal((unsigned int)idx, j), m, j);
+  }
+}

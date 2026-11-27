@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -108,6 +109,11 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // GEMM forms.  KufCached, when given, must be this kernel's own K(Z, X).
   virtual void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
                              const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
+  // CIP-0040 Phase 1c: true when diagCompute is a stochastic unbiased estimate of the exact
+  // diagonal (it may then fall below the Nystrom term; callers must not clamp it).
+  virtual bool diagIsEstimated() const { return false; }
+  // Draw fresh samples for the next minibatch (no-op unless the diagonal is estimated).
+  virtual void advanceDiagSeed() {}
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -2322,6 +2328,116 @@ class CIndexWhiteKern: public CKern {
 CTensorKern* createIcmKern(const CKern& spatial, unsigned int numOutputs, unsigned int rank=1);
 // LCM: sum of ICMs; takes ownership of nothing (clones each spatial).
 CCmpndKern* createLcmKern(const vector<const CKern*>& spatials, unsigned int numOutputs, unsigned int rank=1);
+
+
+// CIP-0040 Phase 1a: convolutional covariance function (van der Wilk et al., 2017).
+// Inputs are flattened H x W x C images (row-major, channel fastest). With patch
+// kernel k_g and patch weights w,
+//   k(x, x') = sum_{p,p'} w_p w_{p'} k_g(x^[p], x'^[p']).
+// Patches are the valid (no padding) h x w windows at the given stride, ordered
+// row-major over positions; a patch vector is row-major (di, dj, c).
+// Parameters are [patch kernel parameters..., weight parameters...]; the weight
+// parameters are P (learned), 1 (tied: one shared value for every patch) or 0
+// (fixed at 1/P).  Full N x N2 matrices cost O(N N2 P^2 q) and are intended for
+// tests and small N; training uses K_uf against inducing patches (Phase 1b).
+class CConvKern : public CKern {
+ public:
+  enum WeightMode { WEIGHTS_LEARNED, WEIGHTS_TIED, WEIGHTS_FIXED };
+  CConvKern();
+  CConvKern(const CKern& patchKern, unsigned int imageH, unsigned int imageW,
+            unsigned int channels, unsigned int patchH, unsigned int patchW,
+            unsigned int stride = 1, WeightMode mode = WEIGHTS_LEARNED);
+  CConvKern(const CConvKern&);
+  CConvKern& operator=(const CConvKern&) = delete;
+  ~CConvKern();
+  CConvKern* clone() const { return new CConvKern(*this); }
+
+  // Geometry and the narrow interface used by CInducingPatches.
+  unsigned int numPatches() const { return P; }
+  unsigned int patchDim() const { return patchH * patchW * channels; }
+  unsigned int imageHeight() const { return imageH; }
+  unsigned int imageWidth() const { return imageW; }
+  unsigned int numChannels() const { return channels; }
+  unsigned int getPatchHeight() const { return patchH; }
+  unsigned int getPatchWidth() const { return patchW; }
+  unsigned int getStride() const { return stride; }
+  WeightMode getWeightMode() const { return mode; }
+  const CKern& patchKernel() const { return *patch; }
+  CKern& patchKernel() { return *patch; }
+  const vector<double>& patchWeights() const { return w; }
+  // Xp is (N P) x q; row n*P+p is patch p of image n.
+  void extractPatches(CMatrix& Xp, const CMatrix& X) const;
+
+  // CIP-0040 Phase 1c: unbiased diagonal estimator.  With S >= 2 and S < P the
+  // diagonal sum_{a,b} w_a w_b k_g(x^a, x^b) is estimated per image from S patches
+  // drawn uniformly with replacement, using the off-diagonal (i != j) terms of
+  // their S x S Gram matrix: a U-statistic, unbiased, O(S^2 q) rather than O(P^2 q).
+  // Samples are a pure function of (seed, row of X, draw), so diagCompute and
+  // getDiagGradParams agree for the same batch; call advanceDiagSeed() between
+  // optimiser steps to draw fresh samples.  S = 0 (default) or S >= P is exact.
+  // Not written to streams: a reloaded kernel is exact.
+  void setDiagEstimator(unsigned int S, uint64_t seed = 0);
+  unsigned int getDiagSamples() const { return diagSamples; }
+  bool diagIsEstimated() const override { return diagSamples >= 2 && diagSamples < P; }
+  void advanceDiagSeed() override { ++diagSeed; }
+
+  void setInitParam();
+  double getVariance() const { return patch->getVariance(); }
+  void setVariance(double val) { patch->setVariance(val); }
+  void setParam(double val, unsigned int paramNo);
+  double getParam(unsigned int paramNo) const;
+  string getParamName(unsigned int paramNo) const;
+
+  double diagComputeElement(const CMatrix& X, unsigned int index) const;
+  void diagCompute(CMatrix& d, const CMatrix& X) const;
+  double computeElement(const CMatrix& X1, unsigned int index1,
+                        const CMatrix& X2, unsigned int index2) const;
+  void compute(CMatrix& K, const CMatrix& X) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const;
+  void compute(CMatrix& K, const CMatrix& X, const CMatrix& X2, unsigned int row) const;
+  using CKern::compute;
+  using CKern::getGradParams;
+
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd,
+                     bool regularise = true) const;
+  void getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd,
+                     bool regularise = true) const;
+  void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad,
+                         bool regularise = true) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& X2, const CMatrix& cvGrd) const;
+  double getGradParam(unsigned int index, const CMatrix& X, const CMatrix& cvGrd) const;
+  // Input gradients are not needed while the convolutional kernel is a first layer.
+  void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG = false) const;
+  void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG = false) const;
+
+  // Priors live on the patch kernel's parameters.
+  void addPrior(CDist* prior, unsigned int index);
+  void addPriorAt(CDist* prior, unsigned int index);
+  bool paramHasPrior(unsigned int paramNo) const;
+  double priorLogProb() const { return patch->priorLogProb(); }
+  void addPriorGrad(CMatrix& g) const;
+
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void configure(unsigned int H, unsigned int Wd, unsigned int C, unsigned int ph,
+                 unsigned int pw, unsigned int st, WeightMode m);
+  void rebuildParams();   // nParams, names, transforms from patch + weight mode
+  void setWeightsFromParams();
+  void imagePatches(CMatrix& Xn, const CMatrix& Xp, unsigned int n) const;
+  double quadForm(const CMatrix& G) const;  // w^T G w for a P x P block
+  void sampleDiagPatches(CMatrix& Xs, std::vector<unsigned int>& idx, const CMatrix& Xp, unsigned int n, unsigned int seedRow) const;
+
+  std::unique_ptr<CKern> patch;
+  unsigned int imageH, imageW, channels, patchH, patchW, stride;
+  unsigned int nPatchRows, nPatchCols, P;
+  WeightMode mode;
+  vector<double> w;        // effective weights, length P
+  vector<double> wParams;  // parameter storage: P (learned), 1 (tied), 0 (fixed)
+  unsigned int diagSamples = 0;  // 0: exact diagonal
+  uint64_t diagSeed = 0;
+};
 
 ostream& operator<<(ostream& os, const CKern& A);
 void writeKernToStream(const CKern& kern, ostream& out);

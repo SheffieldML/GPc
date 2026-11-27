@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-27"
 id: "003F"
 last_updated: "2026-11-27"
-status: "Proposed"
+status: "Accepted"
 compressed: false
 related_requirements: ["001A", "0015", "0002", "0016"]
 related_cips: ["0035", "002A", "002D", "0028", "003C", "003D", "003E", "0041"]
@@ -23,7 +23,7 @@ title: "Deep GP training speed (batched gradients, O(B) SVGP steps)"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
+- [x] Accepted - Approved, ready to start work
 - [ ] In Progress - Actively being implemented
 - [ ] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
@@ -143,7 +143,7 @@ The figures marked "Now" were measured once on a two-core CPU; the "After" colum
 
 ## Implementation Status
 
-- [ ] CIP accepted
+- [x] CIP accepted
 - [ ] Phase 0: timing baseline
 - [ ] Phase 1: \(O(B)\) SVGP steps
 - [ ] Phase 2: batched input and inducing gradients

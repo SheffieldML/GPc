@@ -24,7 +24,7 @@ fixed and route through `CCholAdjoint`. Pack unconstrained parameters with
 `getOptParams` / `setOptParams`, then:
 
 ```cpp
-sv.setNatGradGamma(0.5);   // interleaved natgrad after each Adam step
+sv.setNatGradGamma(0.5);   // interleaved natgrad after each Adam step (log-concave likelihoods only; see below)
 CAdam adam(0.05);
 adam.setBatchSize(32);
 adam.setSeed(42);

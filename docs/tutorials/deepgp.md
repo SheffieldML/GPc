@@ -51,7 +51,7 @@ Finite-network mode (Nyström residual off — a bound on a different model):
 | `--samples K` | Reparameterisation samples per point |
 | `--chi c` | Hidden-layer variance scale (\(c/(L-1)\) on hidden kernels) |
 | `--adam-lr` | Adam step size |
-| `--natgrad-gamma` | Optional final-layer CVI step in \([0,1]\) |
+| `--natgrad-gamma` | Optional final-layer CVI step in \([0,1]\). Use with log-concave likelihoods only; leave at 0 for `--likelihood robustmax` |
 
 Stream type is `deepgp`.
 

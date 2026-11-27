@@ -121,7 +121,7 @@ python-gpc-test: python-gpc
 
 # CIP-0013: objective+gradient timing harness (use RELEASE=1 for timed builds).
 bench: benchGPc
-benchGPc: bench/benchGPc.o CGp.o CSvgp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
+benchGPc: bench/benchGPc.o CDeepGp.o CAdam.o CStochasticOptimisable.o CMltools.o CGp.o CSvgp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 
 

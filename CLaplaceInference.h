@@ -3,6 +3,7 @@
 #define CLAPLACEINFERENCE_H
 
 #include "CMatrix.h"
+#include <vector>
 #include "CNoise.h"
 
 // Dense (FTC) Laplace approximation mirroring
@@ -25,6 +26,20 @@ class CLaplaceInference
   // Returns GPy log_marginal (no kernel prior).
   double run(const CMatrix& K, const CMatrix& Y);
 
+  // CIP-003E Phase 5: one block of noise->blockSize() latents per datum (Y is
+  // N x blockSize, one shared prior Gram K for every latent). The negative Hessian
+  // is a dense blockSize x blockSize matrix per datum, so the Newton step and the
+  // log determinant work on the stacked (N*blockSize) system with A = K^{-1} + W
+  // (SPD): O((N*blockSize)^3), the straightforward version of Rasmussen & Williams
+  // 3.3. Requires an attached noise with CapPointDerivs. fillDLDK then returns
+  // dL/dK summed over the latents; lastFhat is N x blockSize.
+  double runBlock(const CMatrix& K, const CMatrix& Y);
+  // Latent predictive marginals for a block fit: mu, varDiag are N_* x blockSize.
+  void predictiveMeanVarBlock(const CMatrix& KtrainTest,
+                              const CMatrix& kss,
+                              CMatrix& mu,
+                              CMatrix& varDiag) const;
+
   // After run: dL/dK including GPy implicit mode term.
   void fillDLDK(CMatrix& dLdK) const;
 
@@ -41,6 +56,7 @@ class CLaplaceInference
   bool converged() const { return didConverge; }
   const CMatrix& lastFhat() const { return fHat; }
   const CMatrix& lastAlpha() const { return KiF; } // K^{-1} f̂
+  const CMatrix& lastAlphaBlock() const { return blockAlpha; } // N x blockSize after runBlock
 
  private:
   void computeBStats(const CMatrix& K,
@@ -73,6 +89,11 @@ class CLaplaceInference
   mutable CMatrix KWiICache; // (K + W^{-1})^{-1}; GPy woodbury_inv
   mutable CMatrix dLdKCache;
   mutable bool haveGradCache;
+
+  // Block-mode state (runBlock).
+  unsigned int blockUsed;
+  mutable std::vector<CMatrix> blockPostCov;   // S_aa = [(K_f + W^{-1})^{-1}]_aa, N x N
+  mutable CMatrix blockAlpha;                  // N x blockSize, K^{-1} f_hat per latent
 };
 
 #endif /* CLAPLACEINFERENCE_H */

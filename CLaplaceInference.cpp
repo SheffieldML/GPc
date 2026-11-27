@@ -9,7 +9,7 @@ using namespace std;
 CLaplaceInference::CLaplaceInference()
   : maxIters(30), tol(1e-4), jitter(1e-6),
     itersUsed(0), didConverge(false), logMarginal(0.0),
-    pnoise(0), haveGradCache(false)
+    pnoise(0), haveGradCache(false), blockUsed(1)
 {
 }
 
@@ -310,4 +310,270 @@ void CLaplaceInference::predictiveMeanVar(const CMatrix& KtrainTest,
       v = ndlutil::EPS;
     varDiag.setVal(v, t, 0);
   }
+}
+
+// ---- CIP-003E Phase 5: block Laplace ---------------------------------------
+
+namespace {
+// Gather the datum-i blocks and evaluate the noise oracle at f (stacked a*N + i).
+struct BlockDerivs
+{
+  double logp;                 // sum over data
+  std::vector<double> g;       // M, stacked
+  CMatrix W;                   // M x M
+  std::vector<CMatrix> dW;     // per datum, (b*b) x b (filled when requested)
+};
+
+void blockDerivs(const CNoise& noise, const CMatrix& Y, const std::vector<double>& f,
+                 unsigned int N, unsigned int b, bool wantDW, BlockDerivs& out)
+{
+  const unsigned int M = N * b;
+  out.logp = 0.0;
+  out.g.assign(M, 0.0);
+  out.W.resize(M, M);
+  out.W.zeros();
+  out.dW.clear();
+  if(wantDW) out.dW.resize(N);
+  std::vector<double> y(b), fb(b), gb(b);
+  CMatrix H, dH;
+  for(unsigned int i = 0; i < N; i++)
+  {
+    for(unsigned int a = 0; a < b; a++)
+    {
+      y[a] = Y.getVal(i, a);
+      fb[a] = f[a * N + i];
+    }
+    double lp = 0.0;
+    noise.pointDerivsBlock(&y[0], &fb[0], 0, &lp, &gb[0], H, wantDW ? &dH : 0);
+    out.logp += lp;
+    for(unsigned int a = 0; a < b; a++)
+    {
+      out.g[a * N + i] = gb[a];
+      for(unsigned int c = 0; c < b; c++)
+        out.W.setVal(H.getVal(a, c), a * N + i, c * N + i);
+    }
+    if(wantDW) out.dW[i].deepCopy(dH);
+  }
+}
+
+// Blockwise product of the shared Gram with a stacked vector: out_a = Kmat v_a.
+void blockMul(const CMatrix& Kmat, const std::vector<double>& v, unsigned int N,
+              unsigned int b, std::vector<double>& out)
+{
+  out.assign(v.size(), 0.0);
+  for(unsigned int a = 0; a < b; a++)
+    for(unsigned int i = 0; i < N; i++)
+    {
+      double sum = 0.0;
+      for(unsigned int j = 0; j < N; j++)
+        sum += Kmat.getVal(i, j) * v[a * N + j];
+      out[a * N + i] = sum;
+    }
+}
+}  // namespace
+
+double CLaplaceInference::runBlock(const CMatrix& KIn, const CMatrix& Y)
+{
+  if(!pnoise)
+    throw ndlexceptions::Error("CLaplaceInference::runBlock requires an attached noise model");
+  pnoise->requireCapability(CNoise::CapPointDerivs, "CLaplaceInference::runBlock");
+  const unsigned int N = KIn.getRows(), b = pnoise->blockSize();
+  DIMENSIONMATCH(KIn.getCols() == N);
+  DIMENSIONMATCH(Y.getRows() == N);
+  DIMENSIONMATCH(Y.getCols() == b);
+  const unsigned int M = N * b;
+  blockUsed = b;
+
+  CMatrix K(KIn);
+  for(unsigned int i = 0; i < N; i++)
+    K.setVal(K.getVal(i, i) + jitter, i, i);
+  K.setSymmetric(true);
+  CMatrix Ki(K);
+  Ki.setSymmetric(true);
+  Ki.pdinv();
+  double logDetK = 0.0;
+  {
+    CMatrix U(K);
+    U.setSymmetric(true);
+    U.jitChol(U);
+    for(unsigned int i = 0; i < N; i++) logDetK += 2.0 * log(U.getVal(i, i));
+  }
+
+  // A = K_f^{-1} + W assembled and factorised; returns log|A| and fills Ainv on request.
+  auto buildA = [&](const CMatrix& W, CMatrix& U) {
+    CMatrix A(W);
+    for(unsigned int a = 0; a < b; a++)
+      for(unsigned int i = 0; i < N; i++)
+        for(unsigned int j = 0; j < N; j++)
+          A.setVal(A.getVal(a * N + i, a * N + j) + Ki.getVal(i, j), a * N + i, a * N + j);
+    A.setSymmetric(true);
+    U.deepCopy(A);
+    U.setSymmetric(true);
+    U.jitChol(U);
+  };
+  auto logDetFrom = [&](const CMatrix& U) {
+    double ld = 0.0;
+    for(unsigned int i = 0; i < M; i++) ld += 2.0 * log(U.getVal(i, i));
+    return ld;
+  };
+  auto psi = [&](const std::vector<double>& a, const std::vector<double>& f, double logp) {
+    double q = 0.0;
+    for(unsigned int i = 0; i < M; i++) q += a[i] * f[i];
+    return -0.5 * q + logp;
+  };
+
+  std::vector<double> a(M, 0.0), f(M, 0.0), fTry(M), aTry(M), bvec(M), fNew(M), aNew(M);
+  BlockDerivs d;
+  haveGradCache = false;
+  didConverge = false;
+  itersUsed = 0;
+  double prevObj = -1e300;
+  CMatrix U;
+  for(unsigned int it = 0; it < maxIters; it++)
+  {
+    blockDerivs(*pnoise, Y, f, N, b, false, d);
+    buildA(d.W, U);
+    CMatrix rhs(M, 1);
+    for(unsigned int p = 0; p < M; p++)
+    {
+      double Wf = 0.0;
+      for(unsigned int q = 0; q < M; q++) Wf += d.W.getVal(p, q) * f[q];
+      rhs.setVal(Wf + d.g[p], p, 0);
+    }
+    rhs.trsm(U, 1.0, "l", "u", "t", "n");
+    rhs.trsm(U, 1.0, "l", "u", "n", "n");
+    for(unsigned int p = 0; p < M; p++) fNew[p] = rhs.getVal(p, 0);
+    // a_new = K_f^{-1} f_new
+    blockMul(Ki, fNew, N, b, aNew);
+
+    const double oldObj = psi(a, f, d.logp);
+    double step = 1.0, newObj = oldObj;
+    bool accepted = false;
+    BlockDerivs dt;
+    for(unsigned int ls = 0; ls < 20; ls++)
+    {
+      for(unsigned int p = 0; p < M; p++) aTry[p] = a[p] + step * (aNew[p] - a[p]);
+      blockMul(K, aTry, N, b, fTry);
+      blockDerivs(*pnoise, Y, fTry, N, b, false, dt);
+      newObj = psi(aTry, fTry, dt.logp);
+      if(newObj >= oldObj - 1e-12) { accepted = true; break; }
+      step *= 0.5;
+    }
+    if(!accepted)
+    {
+      step = max(step, 1e-4);
+      for(unsigned int p = 0; p < M; p++) aTry[p] = a[p] + step * (aNew[p] - a[p]);
+      blockMul(K, aTry, N, b, fTry);
+      blockDerivs(*pnoise, Y, fTry, N, b, false, dt);
+      newObj = psi(aTry, fTry, dt.logp);
+    }
+    a = aTry;
+    f = fTry;
+    itersUsed = it + 1;
+    if(it > 0 && fabs(newObj - prevObj) < tol)
+    {
+      didConverge = true;
+      prevObj = newObj;
+      break;
+    }
+    prevObj = newObj;
+  }
+
+  // At the mode.
+  blockDerivs(*pnoise, Y, f, N, b, true, d);
+  buildA(d.W, U);
+  const double logDetA = logDetFrom(U);
+  CMatrix Ainv(M, M);
+  Ainv.setSymmetric(true);
+  Ainv.pdinv(U);
+  logMarginal = psi(a, f, d.logp) - 0.5 * (logDetA + static_cast<double>(b) * logDetK);
+
+  // S = (K_f + W^{-1})^{-1} = W - W A^{-1} W
+  CMatrix WA(M, M), S(M, M);
+  WA.gemm(d.W, Ainv, 1.0, 0.0, "n", "n");
+  S.deepCopy(d.W);
+  S.gemm(WA, d.W, -1.0, 1.0, "n", "n");
+
+  // s_c = -1/2 sum_ab Sigma_post[(a,i),(b,i)] dW_ab/df_c for each datum.
+  std::vector<double> sv(M, 0.0);
+  for(unsigned int i = 0; i < N; i++)
+    for(unsigned int c = 0; c < b; c++)
+    {
+      double sum = 0.0;
+      for(unsigned int a2 = 0; a2 < b; a2++)
+        for(unsigned int b2 = 0; b2 < b; b2++)
+          sum += Ainv.getVal(a2 * N + i, b2 * N + i) * d.dW[i].getVal(a2 * b + b2, c);
+      sv[c * N + i] = -0.5 * sum;
+    }
+  // u = (I - S K_f) s
+  std::vector<double> Ks, SKs(M, 0.0), u(M);
+  blockMul(K, sv, N, b, Ks);
+  for(unsigned int p = 0; p < M; p++)
+  {
+    double sum = 0.0;
+    for(unsigned int q = 0; q < M; q++) sum += S.getVal(p, q) * Ks[q];
+    SKs[p] = sum;
+    u[p] = sv[p] - sum;
+  }
+
+  dLdKCache.resize(N, N);
+  dLdKCache.zeros();
+  blockPostCov.assign(b, CMatrix());
+  for(unsigned int a2 = 0; a2 < b; a2++)
+  {
+    blockPostCov[a2].resize(N, N);
+    for(unsigned int i = 0; i < N; i++)
+      for(unsigned int j = 0; j < N; j++)
+      {
+        const double Sij = S.getVal(a2 * N + i, a2 * N + j);
+        blockPostCov[a2].setVal(Sij, i, j);
+        const double val = 0.5 * (a[a2 * N + i] * a[a2 * N + j] - Sij)
+                           + 0.5 * (u[a2 * N + i] * a[a2 * N + j] + u[a2 * N + j] * a[a2 * N + i]);
+        dLdKCache.setVal(dLdKCache.getVal(i, j) + val, i, j);
+      }
+  }
+  dLdKCache.setSymmetric(true);
+
+  fHat.resize(N, b);
+  blockAlpha.resize(N, b);
+  for(unsigned int a2 = 0; a2 < b; a2++)
+    for(unsigned int i = 0; i < N; i++)
+    {
+      fHat.setVal(f[a2 * N + i], i, a2);
+      blockAlpha.setVal(a[a2 * N + i], i, a2);
+    }
+  haveGradCache = true;
+  return logMarginal;
+}
+
+void CLaplaceInference::predictiveMeanVarBlock(const CMatrix& KtrainTest,
+                                               const CMatrix& kss,
+                                               CMatrix& mu,
+                                               CMatrix& varDiag) const
+{
+  if(!haveGradCache || blockPostCov.empty())
+    throw ndlexceptions::Error(
+        "CLaplaceInference::predictiveMeanVarBlock requires a prior runBlock().");
+  const unsigned int n = blockAlpha.getRows(), nt = KtrainTest.getCols(), b = blockUsed;
+  DIMENSIONMATCH(KtrainTest.getRows() == n);
+  DIMENSIONMATCH(kss.getRows() == nt);
+  mu.resize(nt, b);
+  varDiag.resize(nt, b);
+  for(unsigned int a = 0; a < b; a++)
+    for(unsigned int t = 0; t < nt; t++)
+    {
+      double m = 0.0, quad = 0.0;
+      for(unsigned int i = 0; i < n; i++)
+      {
+        m += KtrainTest.getVal(i, t) * blockAlpha.getVal(i, a);
+        double Sk = 0.0;
+        for(unsigned int j = 0; j < n; j++)
+          Sk += blockPostCov[a].getVal(i, j) * KtrainTest.getVal(j, t);
+        quad += KtrainTest.getVal(i, t) * Sk;
+      }
+      double v = kss.getVal(t, 0) - quad;
+      if(v < ndlutil::EPS) v = ndlutil::EPS;
+      mu.setVal(m, t, a);
+      varDiag.setVal(v, t, a);
+    }
 }

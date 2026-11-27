@@ -2664,6 +2664,8 @@ CNoise* readNoiseFromStream(istream& in)
     pnoise = new CGammaNoise();
   else if(type=="robustmax")
     pnoise = new CRobustMaxNoise();
+  else if(type=="softmax")
+    pnoise = new CSoftmaxNoise();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown noise type " + type);
   pnoise->readParamsFromStream(in);  
@@ -3957,6 +3959,314 @@ void CRobustMaxNoise::readParamsFromStream(istream& in)
   unsigned int numPar = readIntFromStream(in, "numParams");
   numClasses = static_cast<unsigned int>(readIntFromStream(in, "numClasses"));
   setEps(readDoubleFromStream(in, "eps"));
+  setNumData(1);
+  initStoreage();
+  if(numPar != getNumParams())
+    throw ndlexceptions::StreamFormatError("numParams",
+        "Number of parameters in file does not match computed number.");
+}
+
+// ---- CIP-003E Phase 5: softmax multi-class ----------------------------------
+
+CSoftmaxNoise::~CSoftmaxNoise() {}
+void CSoftmaxNoise::_init()
+{
+  setType("softmax");
+  setName("Softmax");
+}
+unsigned int CSoftmaxNoise::capabilities() const
+{
+  return CapExpectedLogLik | CapPointDerivs | CapCavityMoments | CapPredictive;
+}
+void CSoftmaxNoise::resample()
+{
+  // Portable generator: xorshift64* uniforms and Box-Muller, antithetic pairs.
+  draws.assign(static_cast<size_t>(numSamples) * numClasses, 0.0);
+  unsigned long long state = 0x9E3779B97F4A7C15ULL ^ (static_cast<unsigned long long>(seed) * 0xD1B54A32D192ED03ULL);
+  if(state == 0) state = 1;
+  auto uniform = [&state]() {
+    state ^= state >> 12; state ^= state << 25; state ^= state >> 27;
+    const unsigned long long r = state * 0x2545F4914F6CDD1DULL;
+    return (static_cast<double>(r >> 11) + 0.5) / 9007199254740992.0;
+  };
+  for(unsigned int s = 0; s + 1 < numSamples + 1; s += 2)
+    for(unsigned int k = 0; k < numClasses; k++)
+    {
+      const double u1 = uniform(), u2 = uniform();
+      const double z = sqrt(-2.0 * log(u1)) * cos(2.0 * 3.14159265358979323846 * u2);
+      draws[static_cast<size_t>(s) * numClasses + k] = z;
+      if(s + 1 < numSamples)
+        draws[static_cast<size_t>(s + 1) * numClasses + k] = -z;
+    }
+}
+unsigned int CSoftmaxNoise::observedClass(const double* y) const
+{
+  unsigned int c = 0;
+  double sum = 0.0;
+  for(unsigned int k = 0; k < numClasses; k++)
+  {
+    sum += y[k];
+    if(y[k] > y[c]) c = k;
+  }
+  if(fabs(sum - 1.0) > 1e-8 || fabs(y[c] - 1.0) > 1e-8)
+    throw ndlexceptions::Error("CSoftmaxNoise requires one-hot targets");
+  return c;
+}
+double CSoftmaxNoise::softmaxOf(const double* f, unsigned int K, double* pi)
+{
+  double m = f[0];
+  for(unsigned int k = 1; k < K; k++) m = max(m, f[k]);
+  double sum = 0.0;
+  for(unsigned int k = 0; k < K; k++) { pi[k] = exp(f[k] - m); sum += pi[k]; }
+  for(unsigned int k = 0; k < K; k++) pi[k] /= sum;
+  return m + log(sum);
+}
+double CSoftmaxNoise::expectedLogLikelihoodBlock(const double* y, const double* mu,
+                                                 const double* var, unsigned int j0,
+                                                 double* gMu, double* gVar) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses, S = numSamples, c = observedClass(y);
+  std::vector<double> sd(K), f(K), pi(K);
+  for(unsigned int k = 0; k < K; k++) { sd[k] = sqrt(var[k] > 0.0 ? var[k] : 0.0); gMu[k] = 0.0; gVar[k] = 0.0; }
+  double total = 0.0;
+  for(unsigned int s = 0; s < S; s++)
+  {
+    const double* e = &draws[static_cast<size_t>(s) * K];
+    for(unsigned int k = 0; k < K; k++) f[k] = mu[k] + sd[k] * e[k];
+    const double lse = softmaxOf(&f[0], K, &pi[0]);
+    total += f[c] - lse;
+    for(unsigned int k = 0; k < K; k++)
+    {
+      const double d = (k == c ? 1.0 : 0.0) - pi[k];
+      gMu[k] += d;
+      if(sd[k] > 0.0) gVar[k] += d * e[k] / (2.0 * sd[k]);
+    }
+  }
+  for(unsigned int k = 0; k < K; k++) { gMu[k] /= S; gVar[k] /= S; }
+  return total / S;
+}
+void CSoftmaxNoise::pointDerivsBlock(const double* y, const double* f, unsigned int j0,
+                                     double* logp, double* g, CMatrix& negHessian,
+                                     CMatrix* dNegHessian) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses, c = observedClass(y);
+  std::vector<double> pi(K);
+  const double lse = softmaxOf(f, K, &pi[0]);
+  *logp = f[c] - lse;
+  for(unsigned int k = 0; k < K; k++) g[k] = (k == c ? 1.0 : 0.0) - pi[k];
+  negHessian.resize(K, K);
+  for(unsigned int a = 0; a < K; a++)
+    for(unsigned int b = 0; b < K; b++)
+      negHessian.setVal((a == b ? pi[a] : 0.0) - pi[a] * pi[b], a, b);
+  if(dNegHessian != 0)
+  {
+    // dW_ab/df_d = pi_a(delta_ad - pi_d)delta_ab - pi_a(delta_ad - pi_d)pi_b
+    //              - pi_a pi_b (delta_bd - pi_d)
+    dNegHessian->resize(K * K, K);
+    for(unsigned int a = 0; a < K; a++)
+      for(unsigned int b = 0; b < K; b++)
+        for(unsigned int d = 0; d < K; d++)
+        {
+          const double da = (a == d ? 1.0 : 0.0) - pi[d];
+          const double db = (b == d ? 1.0 : 0.0) - pi[d];
+          const double v = (a == b ? pi[a] * da : 0.0) - pi[a] * da * pi[b] - pi[a] * pi[b] * db;
+          dNegHessian->setVal(v, a * K + b, d);
+        }
+  }
+}
+double CSoftmaxNoise::logZBlock(const double* y, const double* mu, const double* var,
+                                unsigned int j0) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses, S = numSamples, c = observedClass(y);
+  std::vector<double> f(K), pi(K);
+  double Z = 0.0;
+  for(unsigned int s = 0; s < S; s++)
+  {
+    const double* e = &draws[static_cast<size_t>(s) * K];
+    for(unsigned int k = 0; k < K; k++) f[k] = mu[k] + sqrt(var[k] > 0.0 ? var[k] : 0.0) * e[k];
+    softmaxOf(&f[0], K, &pi[0]);
+    Z += pi[c];
+  }
+  return log(max(Z / S, 1e-300));
+}
+void CSoftmaxNoise::cavityMomentsBlock(const double* y, const double* mu,
+                                       const double* var, unsigned int j0,
+                                       double* dMu, double* dVar) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses, S = numSamples, c = observedClass(y);
+  std::vector<double> sd(K), f(K), pi(K);
+  for(unsigned int k = 0; k < K; k++) { sd[k] = sqrt(var[k] > 0.0 ? var[k] : 0.0); dMu[k] = 0.0; dVar[k] = 0.0; }
+  double Z = 0.0;
+  for(unsigned int s = 0; s < S; s++)
+  {
+    const double* e = &draws[static_cast<size_t>(s) * K];
+    for(unsigned int k = 0; k < K; k++) f[k] = mu[k] + sd[k] * e[k];
+    softmaxOf(&f[0], K, &pi[0]);
+    Z += pi[c];
+    for(unsigned int k = 0; k < K; k++)
+    {
+      const double d = pi[c] * ((k == c ? 1.0 : 0.0) - pi[k]);
+      dMu[k] += d;
+      if(sd[k] > 0.0) dVar[k] += d * e[k] / (2.0 * sd[k]);
+    }
+  }
+  Z = max(Z, 1e-300);  // the 1/S factors cancel in dZ/Z
+  for(unsigned int k = 0; k < K; k++) { dMu[k] /= Z; dVar[k] /= Z; }
+}
+void CSoftmaxNoise::predictBlock(const double* mu, const double* var, unsigned int j0,
+                                 double* prob) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses, S = numSamples;
+  std::vector<double> f(K), pi(K);
+  for(unsigned int k = 0; k < K; k++) prob[k] = 0.0;
+  for(unsigned int s = 0; s < S; s++)
+  {
+    const double* e = &draws[static_cast<size_t>(s) * K];
+    for(unsigned int k = 0; k < K; k++) f[k] = mu[k] + sqrt(var[k] > 0.0 ? var[k] : 0.0) * e[k];
+    softmaxOf(&f[0], K, &pi[0]);
+    for(unsigned int k = 0; k < K; k++) prob[k] += pi[k] / S;
+  }
+}
+void CSoftmaxNoise::initStoreage()
+{
+  if(getOutputDim() % numClasses != 0)
+    throw ndlexceptions::Error("CSoftmaxNoise: outputDim must be a multiple of numClasses");
+  setNumParams(0);
+  initSiteStoreage();
+  clearTransforms();
+  setLogConcave(true);
+  setSpherical(false);
+  setMissing(false);
+}
+void CSoftmaxNoise::initNames() {}
+void CSoftmaxNoise::initVals() { activeSites().zeros(); }
+void CSoftmaxNoise::initParams() {}
+ostream& CSoftmaxNoise::display(ostream& os)
+{
+  os << "Softmax Noise: numClasses=" << numClasses << " numSamples=" << numSamples
+     << " seed=" << seed << " (Monte Carlo expectations, common random numbers)" << endl;
+  return os;
+}
+void CSoftmaxNoise::setParam(double /*val*/, unsigned int /*index*/)
+{
+  throw ndlexceptions::Error("CSoftmaxNoise has no free parameters");
+}
+void CSoftmaxNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+double CSoftmaxNoise::getParam(unsigned int /*index*/) const
+{
+  throw ndlexceptions::Error("CSoftmaxNoise has no free parameters");
+}
+void CSoftmaxNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+void CSoftmaxNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getCols() == 0 || getNumParams() == 0);
+}
+void CSoftmaxNoise::getGradInputs(double& /*gmu*/, double& /*gvs*/,
+                                  unsigned int /*i*/, unsigned int /*j*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "CSoftmaxNoise is a block likelihood; use cavityMomentsBlock");
+}
+void CSoftmaxNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                        const CMatrix& varSigmaTest) const
+{
+  CMatrix prob(muTest.getRows(), muTest.getCols());
+  out(yPred, prob, muTest, varSigmaTest);
+}
+void CSoftmaxNoise::out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest,
+                        const CMatrix& varSigmaTest) const
+{
+  const unsigned int K = numClasses;
+  DIMENSIONMATCH(muTest.getCols() % K == 0);
+  std::vector<double> mu(K), var(K), p(K);
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < muTest.getCols(); j0 += K)
+    {
+      for(unsigned int k = 0; k < K; k++)
+      {
+        mu[k] = muTest.getVal(i, j0 + k);
+        var[k] = varSigmaTest.getVal(i, j0 + k);
+      }
+      predictBlock(&mu[0], &var[0], j0, &p[0]);
+      unsigned int best = 0;
+      for(unsigned int k = 0; k < K; k++)
+      {
+        probOut.setVal(p[k], i, j0 + k);
+        if(p[k] > p[best]) best = k;
+      }
+      for(unsigned int k = 0; k < K; k++)
+        yPred.setVal(k == best ? 1.0 : 0.0, i, j0 + k);
+    }
+}
+void CSoftmaxNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                                const CMatrix& varSigmaTest,
+                                const CMatrix& /*yTest*/) const
+{
+  CMatrix yPred(muTest.getRows(), muTest.getCols());
+  out(yPred, L, muTest, varSigmaTest);
+}
+double CSoftmaxNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest,
+                                    const CMatrix& yTest) const
+{
+  const unsigned int K = numClasses;
+  DIMENSIONMATCH(muTest.getCols() % K == 0);
+  std::vector<double> y(K), mu(K), var(K);
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < muTest.getCols(); j0 += K)
+    {
+      for(unsigned int k = 0; k < K; k++)
+      {
+        y[k] = yTest.getVal(i, j0 + k);
+        mu[k] = muTest.getVal(i, j0 + k);
+        var[k] = varSigmaTest.getVal(i, j0 + k);
+      }
+      L += logZBlock(&y[0], &mu[0], &var[0], j0);
+    }
+  return L;
+}
+void CSoftmaxNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                         const CMatrix& yTest) const
+{
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  unsigned int wrong = 0;
+  for(unsigned int i = 0; i < yTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < yTest.getCols(); j0 += numClasses)
+      for(unsigned int k = 0; k < numClasses; k++)
+        if(yTest.getVal(i, j0 + k) > 0.5 && yPred.getVal(i, j0 + k) < 0.5)
+        { wrong++; break; }
+  cout << "Classification error: " << wrong << " of " << yTest.getRows() << endl;
+}
+void CSoftmaxNoise::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "outputDim", getOutputDim());
+  writeToStream(out, "numParams", getNumParams());
+  writeToStream(out, "numClasses", numClasses);
+  writeToStream(out, "numSamples", numSamples);
+  writeToStream(out, "seed", seed);
+}
+void CSoftmaxNoise::readParamsFromStream(istream& in)
+{
+  setOutputDim(readIntFromStream(in, "outputDim"));
+  unsigned int numPar = readIntFromStream(in, "numParams");
+  numClasses = static_cast<unsigned int>(readIntFromStream(in, "numClasses"));
+  numSamples = static_cast<unsigned int>(readIntFromStream(in, "numSamples"));
+  seed = static_cast<unsigned int>(readIntFromStream(in, "seed"));
+  resample();
   setNumData(1);
   initStoreage();
   if(numPar != getNumParams())

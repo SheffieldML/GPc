@@ -215,7 +215,8 @@ static int testCGpBlockEpGaussian()
   try { bad.setEpInference(true); }
   catch(ndlexceptions::Error&) { threw = true; }
   fail += checkClose("CGp EP refuses likelihood without cavity moments", threw ? 1.0 : 0.0, 1.0, 0.0);
-  // Laplace refuses a coupled block (until Phase 5 supplies a block W).
+  // Laplace refuses a coupled block whose likelihood lacks point derivatives
+  // (the Gaussian stand-in; softmax is accepted, see testCGpSoftmaxLaplace).
   {
     CMatrix Y1(n, 1);
     for(unsigned int i = 0; i < n; i++) Y1.setVal(i % 2 ? 1.0 : 0.0, i, 0);
@@ -454,6 +455,55 @@ static int testSiteWorkspaceAttach()
   return fail;
 }
 
+// CIP-003E Phase 5: Laplace for a coupled softmax block through CGp (D = 3
+// classes, one-hot targets): kernel gradient against finite differences of the
+// log likelihood, and predictive marginals.
+static int testCGpSoftmaxLaplace()
+{
+  const unsigned int n = 18, D = 3;
+  CMatrix X(n, 1), Y(n, D);
+  Y.zeros();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -3.0 + 6.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    Y.setVal(1.0, i, x < -1.0 ? 0 : (x < 1.0 ? 1 : 2));
+  }
+  int fail = 0;
+  CRbfKern k(X);
+  CSoftmaxNoise sm(&Y, D, 64, 3);
+  CGp model(&k, &sm, &X, CGp::FTC, 0, 0);
+  model.setLaplaceInference(true);
+  model.setLaplaceSolver(200, 1e-13);
+  const double L0 = model.logLikelihood();
+  fail += checkClose("CGp softmax Laplace log likelihood finite", std::isfinite(L0) ? 1.0 : 0.0, 1.0, 0.0);
+  CMatrix g(1, model.getOptNumParams());
+  model.logLikelihoodGradient(g);
+  CMatrix p0(1, model.getOptNumParams());
+  model.getOptParams(p0);
+  for(unsigned int i = 0; i < k.getNumParams() && i < p0.getCols(); i++)
+  {
+    const double h = 1e-5;
+    CMatrix pp(p0), pm(p0);
+    pp.setVal(p0.getVal(i) + h, i);
+    pm.setVal(p0.getVal(i) - h, i);
+    model.setOptParams(pp);
+    const double Lp = model.logLikelihood();
+    model.setOptParams(pm);
+    const double Lm = model.logLikelihood();
+    model.setOptParams(p0);
+    const double fd = (Lp - Lm) / (2.0 * h);
+    fail += checkClose("CGp softmax Laplace kern gradient vs FD", fabs(fd - g.getVal(i)) < 1e-5 * (1.0 + fabs(fd)) ? 1.0 : 0.0, 1.0, 0.0);
+  }
+  model.logLikelihood();
+  CMatrix Xt(2, 1); Xt.setVal(-2.0, 0, 0); Xt.setVal(2.0, 1, 0);
+  CMatrix mu, var;
+  model.laplaceLatentMeanVar(mu, var, Xt);
+  fail += checkClose("CGp softmax Laplace predictive: class 0 wins at x=-2", mu.getVal(0, 0) > mu.getVal(0, 1) && mu.getVal(0, 0) > mu.getVal(0, 2) ? 1.0 : 0.0, 1.0, 0.0);
+  fail += checkClose("CGp softmax Laplace predictive: class 2 wins at x=2", mu.getVal(1, 2) > mu.getVal(1, 0) && mu.getVal(1, 2) > mu.getVal(1, 1) ? 1.0 : 0.0, 1.0, 0.0);
+  return fail;
+}
+
 int main()
 {
   int fail = 0;
@@ -463,6 +513,7 @@ int main()
   fail += testCGpEpOptimise();
   fail += testCGpBlockEpGaussian();
   fail += testCGpLaplaceMultiOutput();
+  fail += testCGpSoftmaxLaplace();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
   fail += testCGpLaplaceLatentPredict();

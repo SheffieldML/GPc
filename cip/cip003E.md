@@ -2,7 +2,7 @@
 author: "Neil Lawrence"
 created: "2026-11-26"
 id: "003E"
-last_updated: "2026-11-26"
+last_updated: "2026-11-27"
 status: "Accepted"
 compressed: false
 related_requirements: ["0002"]
@@ -154,7 +154,7 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 - [x] `CRobustMaxNoise` and verification — Phase 4 (`testRobustMax`; fixture `testdata/robustmax`). P(argmax) by composite Gauss–Legendre with breakpoints at the Φ transitions (fixed Gauss–Hermite is inaccurate for small variances); ε is a fixed hyperparameter; capabilities are expected log-lik, cavity moments, predictive (no Laplace). The fixture is an independent stdlib Simpson reference, not GPflow output (GPflow was unavailable). Finding: EP on non-log-concave robust-max clamps site precisions at the floor when labels conflict with the prior, and the EP gradient is then not stationary; the EP gradient check uses clean labels. Robust-max marginal likelihood is flat in kernel amplitude, so the check perturbs the lengthscale.
 - [x] `CSoftmaxNoise`, Laplace block W — Phase 5 (`testSoftmax`, `testCGpSoftmaxLaplace` in `testEp`). Sampled quantities use a fixed set of S antithetic standard-normal draws per object (portable xorshift + Box–Muller, seed in the `.model`), so every estimate is a deterministic function of (mu, var) and its gradients are exact derivatives of the estimate. `cavityMomentsBlock` is the exact gradient of the sampled `logZBlock`. `CLaplaceInference::runBlock` solves the stacked (N·b) system with A = K⁻¹ + W (dense, O((N·b)³); the structured Rasmussen & Williams 3.4 form is a later optimisation); at blockSize 1 it equals the scalar solver. `dNegHessian` for blockSize b is a (b·b)×b matrix, entry (a·b+c, d) = dW_ac/df_d. `CGp::setLaplaceInference` now accepts coupled blocks (one runBlock per group of b outputs). Coverage added afterwards: softmax EP dL/dK vs FD (needs eta = 1; eta < 1 is fractional EP and its gradient differs), ADF `getNuG` on coupled blocks, and SVGP end to end with softmax and robust-max (gradients vs FD to 1e-8, full batch and minibatch). Finding: CVI on a non-log-concave likelihood (robust-max) can produce an indefinite precision target, so `CSvgp::naturalGradientStep(At)` now halves the step until q stays proper (unchanged for log-concave likelihoods). Robust-max CVI still ascends only overall (single-step ELBO drop up to 8e3 in the test), so gradient-based optimisation is the recommended route for it.
 - [ ] Loaders, Python, factory/CLI
-- [ ] K-class example and MNIST comparison
+- [x] K-class example and MNIST comparison
 
 ## References
 
@@ -188,3 +188,25 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 **Untried remedies, if this is ever needed.** (1) Clip \(\alpha_i\) at zero (keep the positive part of the curvature, as in Gauss-Newton or variational online Newton updates), which keeps the target valid by construction. (2) A line search on the full-batch ELBO. Neither is implemented. Decision (2026-11-27): leave as is.
 
 **Where this applies.** Any `CStochasticOptimisable` that uses the CVI step with a coupled or non-log-concave likelihood: `CSvgp` (CIP-002A), `CDeepGp` final layer (CIP-0035, `natgrad_gamma`), and `CSviBayesGplvm` if a non-log-concave likelihood is ever added (CIP-0030 uses Gaussian, probit and ordered, all log-concave). The CIP-002A statement that every likelihood except NCNM qualifies was too generous and has been amended; Student-t is also not log-concave and its use with CVI has not been examined. The Phase 7 robust-max example uses Adam alone.
+
+## Phase 7 results (2026-11-27)
+
+Examples: `python/examples/deepgp_multiclass.py` (K=4 spirals, 3 repeats) and `python/examples/deepgp_mnist.py`. All runs use Adam (`natgrad_gamma=0`).
+
+MNIST, reduced setting: 5000 training and 10000 test images, 30 whitened PCA components, two-layer deep GP (RBF, hidden width 10), M=100 inducing points, batch 500, 1000 iterations, Adam lr 0.02, one seed.
+
+| Likelihood | Test accuracy | Test NLL | Train time (s) |
+|---|---|---|---|
+| Gaussian one-hot (baseline) | 0.9564 | 0.3120 | 49 |
+| Robust-max, ε=0.01 | 0.9382 | 0.2522 | 168 |
+| Robust-max, ε=0.10 | 0.9337 | 0.3110 | 176 |
+| Softmax (Monte Carlo) | 0.9349 | 0.2155 | 69 |
+
+Findings:
+
+- The Gaussian one-hot baseline has the best accuracy but the worst or equal-worst NLL. Its class probabilities come from Monte Carlo over per-class Gaussians, so they are not calibrated by construction.
+- Softmax gives the best NLL. Robust-max with ε=0.01 is second on NLL. Both categorical likelihoods give up about 2 points of accuracy against the baseline in this short, single-seed run.
+- Robust-max costs about 2.5 times the Gaussian time and 2.5 times the softmax time here, because of the block moment computation.
+- On the K=4 spirals problem, softmax has the best NLL, and robust-max NLL depends on the fixed ε.
+
+Caveats: single seed; reduced scale, not full MNIST; no MLP or convolutional baselines; accuracy differences of this size are not distinguished from optimisation noise without repeats; robust-max ε is fixed, not learned.

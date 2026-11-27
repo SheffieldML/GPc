@@ -13489,6 +13489,142 @@ void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
     addPriorGrad(g);
 }
 
+// ---- CIP-0040 Phase 2: weight-space hooks over patches ---------------------------------------
+
+void CConvKern::contractKp(CMatrix& Kfu, const CMatrix& Kp, unsigned int N) const
+{
+  const unsigned int M = Kp.getCols();
+  Kfu.resize(N, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      double s = 0.0;
+      for(unsigned int p = 0; p < P; p++)
+        s += w[p] * Kp.getVal(n * P + p, m);
+      Kfu.setVal(s, n, m);
+    }
+}
+
+void CConvKern::expandKfuGrad(CMatrix& G, const CMatrix& gKfu) const
+{
+  const unsigned int N = gKfu.getRows(), M = gKfu.getCols();
+  G.resize(N * P, M);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int p = 0; p < P; p++)
+      for(unsigned int m = 0; m < M; m++)
+        G.setVal(w[p] * gKfu.getVal(n, m), n * P + p, m);
+}
+
+void CConvKern::addWeightGrad(CMatrix& g, const CMatrix& Kp, const CMatrix& gKfu) const
+{
+  if(mode == WEIGHTS_FIXED)
+    return;
+  const unsigned int nk = patch->getNumParams();
+  const unsigned int N = gKfu.getRows(), M = gKfu.getCols();
+  vector<double> gw(P, 0.0);
+  for(unsigned int n = 0; n < N; n++)
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double c = gKfu.getVal(n, m);
+      for(unsigned int p = 0; p < P; p++)
+        gw[p] += c * Kp.getVal(n * P + p, m);
+    }
+  if(mode == WEIGHTS_LEARNED)
+    for(unsigned int p = 0; p < P; p++)
+      g.setVal(gw[p], nk + p);
+  else
+  {
+    double s = 0.0;
+    for(unsigned int p = 0; p < P; p++)
+      s += gw[p];
+    g.setVal(s, nk);
+  }
+}
+
+void CConvKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                    const CMatrix& a, double s) const
+{
+  CMatrix Xp, Kp(X.getRows() * P, V.getRows());
+  extractPatches(Xp, X);
+  patch->wsRidgeCrossCompute(Kp, Xp, V, a, s);
+  contractKp(Kfu, Kp, X.getRows());
+}
+
+void CConvKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                  const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
+  const unsigned int N = X.getRows(), M = V.getRows(), nk = patch->getNumParams();
+  CMatrix Xp, Kp(N * P, M), G, gp(1, nk);
+  extractPatches(Xp, X);
+  patch->wsRidgeCrossCompute(Kp, Xp, V, a, s);
+  expandKfuGrad(G, gKfu);
+  gp.zeros();
+  patch->wsRidgeGradParams(gp, Xp, V, a, s, G);
+  g.zeros();
+  for(unsigned int i = 0; i < nk; i++)
+    g.setVal(gp.getVal(i), i);
+  addWeightGrad(g, Kp, gKfu);
+}
+
+void CConvKern::wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                             const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CMatrix Xp, G;
+  extractPatches(Xp, X);
+  expandKfuGrad(G, gKfu);
+  patch->wsRidgeGradS(gS, Xp, V, a, s, G);
+}
+
+void CConvKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                              const CMatrix& a, double s, const CMatrix& gKfu) const
+{
+  CMatrix Xp, G;
+  extractPatches(Xp, X);
+  expandKfuGrad(G, gKfu);
+  patch->wsRidgeGradVA(gV, ga, Xp, V, a, s, G);
+}
+
+void CConvKern::wsRidgeGradX(CMatrix&, const CMatrix&, const CMatrix&, const CMatrix&, double,
+                             const CMatrix&) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CConvKern: input gradients are not implemented (convolutional first layer only; CIP-0040 Phase 4).");
+}
+
+void CConvKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                                      const std::vector<unsigned int>& ks) const
+{
+  CMatrix Xp, Kp(X.getRows() * P, V.getRows());
+  extractPatches(Xp, X);
+  patch->wsHermiteCrossCompute(Kp, Xp, V, ks);
+  contractKp(Kfu, Kp, X.getRows());
+}
+
+void CConvKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                                    const std::vector<unsigned int>& ks, const CMatrix& gKfu) const
+{
+  DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
+  const unsigned int N = X.getRows(), M = V.getRows(), nk = patch->getNumParams();
+  CMatrix Xp, Kp(N * P, M), G, gp(1, nk);
+  extractPatches(Xp, X);
+  patch->wsHermiteCrossCompute(Kp, Xp, V, ks);
+  expandKfuGrad(G, gKfu);
+  gp.zeros();
+  patch->wsHermiteGradParams(gp, Xp, V, ks, G);
+  g.zeros();
+  for(unsigned int i = 0; i < nk; i++)
+    g.setVal(gp.getVal(i), i);
+  addWeightGrad(g, Kp, gKfu);
+}
+
+void CConvKern::wsHermiteGradX(CMatrix&, const CMatrix&, const CMatrix&,
+                               const std::vector<unsigned int>&, const CMatrix&) const
+{
+  throw ndlexceptions::NotImplementedError(
+      "CConvKern: input gradients are not implemented (convolutional first layer only; CIP-0040 Phase 4).");
+}
+
 void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrd,
                               bool regularise) const
 {

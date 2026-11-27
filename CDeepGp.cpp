@@ -983,18 +983,15 @@ void CDeepGp::readParamsFromStream(istream& is)
   M.resize(numLayers);
   inducingTypes.resize(numLayers);
   vector<std::unique_ptr<CInducingHermite> > hermiteLoaded(numLayers);
+  vector<CMatrix> hermiteV(numLayers), hermiteKs(numLayers);
   for(unsigned int ell = 0; ell < numLayers; ell++)
   {
     M[ell] = (unsigned int)readIntFromStream(is, "numInducing");
     inducingTypes[ell] = readStringFromStream(is, "inducingType");
     if(inducingTypes[ell] == "hermite")
     {
-      CMatrix Vh, ksh;
-      Vh.fromStream(is);
-      ksh.fromStream(is);
-      // E6: validated here, before any layer is rebuilt.
-      hermiteLoaded[ell].reset(
-          CInducingHermite::fromStreamData(Vh, ksh, M[ell], layerDims[ell]));
+      hermiteV[ell].fromStream(is);
+      hermiteKs[ell].fromStream(is);
     }
   }
   X.resize(nData, inputDim);
@@ -1017,6 +1014,13 @@ void CDeepGp::readParamsFromStream(istream& is)
     savedParams[ell].resize(1, np > 0 ? np : 1);
     savedParams[ell].fromStream(is);
   }
+
+  // E6: Hermite data validated here, before any layer is rebuilt; the window-space
+  // dimension comes from the kernel (the patch dimension for a convolutional layer).
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    if(inducingTypes[ell] == "hermite")
+      hermiteLoaded[ell].reset(CInducingHermite::fromStreamData(
+          hermiteV[ell], hermiteKs[ell], M[ell], pkerns[ell]->wsDomainDim()));
 
   std::unique_ptr<CNoise> loadedLikelihood;
   is >> std::ws;

@@ -338,11 +338,22 @@ PyDeepGP::PyDeepGP(
       throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace', 'hermite' or 'patches'");
     if(ind == "patches" && kernNames[ell] != "conv")
       throw ndlexceptions::Error(pre + "inducing='patches' requires a convolutional kernel (gpc.kern.Conv)");
-    if(kernNames[ell] == "conv" && ind != "patches")
-      throw ndlexceptions::Error(pre + "a convolutional kernel supports inducing='patches' only in this release");
-    if(ind == "weightspace" && kernNames[ell] != "mlp")
+    const bool isConv = kernNames[ell] == "conv";
+    if(isConv && ind == "points")
+      throw ndlexceptions::Error(pre + "a convolutional kernel takes inducing='patches', 'weightspace' or 'hermite'");
+    if(isConv && (ind == "weightspace" || ind == "hermite"))
+    {
+      // CIP-0040 Phase 2: windows over the filters need the MLP patch kernel.
+      py::dict pk = py::cast<py::dict>(convParts[ell]["patch"]);
+      const std::string ptype = py::cast<std::string>(pk["type"]);
+      const bool pard = pk.contains("ARD") && py::cast<bool>(pk["ARD"]);
+      if(ptype != "mlp" || pard)
+        throw ndlexceptions::Error(pre + "inducing='" + ind + "' on a convolutional kernel requires "
+                                   "a plain MLP patch kernel (got '" + ptype + "')");
+    }
+    else if(ind == "weightspace" && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp' (got '" + kernNames[ell] + "')");
-    if(ind == "hermite" && kernNames[ell] != "mlp")
+    if(ind == "hermite" && !isConv && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '"
                                  + kernNames[ell] + "'.");
     nWeightspace += (ind == "weightspace");

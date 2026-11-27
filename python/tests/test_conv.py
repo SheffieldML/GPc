@@ -116,3 +116,30 @@ def test_diag_estimate_guards():
                       diag_force=True)
     with pytest.raises(Exception, match="convolutional"):
         gpc.models.DeepGP(X, y, layers=1, kernel="rbf", diag="estimate")
+
+
+@pytest.mark.parametrize("family", ["weightspace", "hermite"])
+def test_deepgp_conv_weightspace_trains_and_roundtrips(family, tmp_path):
+    # CIP-0040 Phase 2: windows over the filters of an MLP patch kernel.
+    X, y = _data(40)
+    k = Conv(MLP(PH * PW * C), (H, W, C), (PH, PW), stride=2, weights="tied")
+    m = gpc.models.DeepGP(X, y, layers=1, kernel=k, inducing=family, num_inducing=12)
+    e0 = m.elbo()
+    m.optimize(iters=30, batch_size=20, adam_lr=0.02, seed=1)
+    assert m.elbo() > e0
+    mu, var = m.predict(X[:5])
+    assert np.all(np.isfinite(mu)) and np.all(var > 0)
+    path = tmp_path / "conv.model"
+    m.save(str(path))
+    loaded = gpc.models.DeepGP.load(str(path))
+    mu2, var2 = loaded.predict(X[:5])
+    np.testing.assert_allclose(mu, mu2, atol=1e-8)
+    np.testing.assert_allclose(var, var2, atol=1e-8)
+
+
+def test_deepgp_conv_weightspace_errors():
+    X, y = _data(20)
+    rbf = Conv(RBF(PH * PW * C), (H, W, C), (PH, PW))
+    for family in ("weightspace", "hermite"):
+        with pytest.raises(Exception, match="MLP patch kernel"):
+            gpc.models.DeepGP(X, y, layers=1, kernel=rbf, inducing=family, num_inducing=12)

@@ -1948,7 +1948,9 @@ void CInducingHermite::setLearnWindowWidth(bool learn)
 
 void CInducingHermite::checkKernelSupport(const CKern& kern, unsigned int inputDim)
 {
-  CMatrix X(1, inputDim), V(1, inputDim + 1), Kfu;
+  // inputDim is the window-space dimension (the patch dimension for a convolutional kernel);
+  // the probe image has the kernel's own input dimension.
+  CMatrix X(1, kern.getInputDim()), V(1, inputDim + 1), Kfu;
   X.zeros();
   V.zeros();
   V.setVal(1.0, 0, 0);

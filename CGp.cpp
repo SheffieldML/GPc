@@ -2680,6 +2680,7 @@ void CGp::updateG() const
     }
     else
       epEngine.fillDLDK(dLdK);
+    dLdK.setSymmetric(true);  // sums of symmetric gradients are symmetric
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)
@@ -2702,6 +2703,7 @@ void CGp::updateG() const
         dLdK.axpy(dk, 1.0);
       }
     }
+    dLdK.setSymmetric(true);  // sum of symmetric per-group gradients
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)

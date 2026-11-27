@@ -161,9 +161,20 @@ void CGp::setEpInference(bool on)
     if(isSparseApproximation() || getApproximationType() != FTC)
       throw ndlexceptions::Error(
           "CGp::setEpInference: CIP-0033 EP requires FTC (dense) approximation.");
-    if(getOutputDim() != 1)
-      throw ndlexceptions::Error(
-          "CGp::setEpInference: EP currently supports a single output.");
+    // CIP-003E: EP runs through the block engine for every likelihood and
+    // needs it to supply cavity moments. (Before this, a single output was
+    // treated as probit whatever the noise object was.)
+    pnoise->requireCapability(CNoise::CapCavityMoments, "CGp::setEpInference");
+    // EP/Laplace follow GPy: Phi(y f) on f. The legacy probit (step on f+eps,
+    // softener as White in K) is for IVM/ADF; switch it over, as the old
+    // probit-only EP path always behaved this way.
+    CProbitNoise* pp = dynamic_cast<CProbitNoise*>(pnoise);
+    if(pp && !pp->isGpyMode())
+    {
+      pp->setGpyMode(true);
+      if(getVerbosity()>0)
+        cout << "CGp::setEpInference: probit switched to GPy mode (Phi(y f), zero bias)." << endl;
+    }
     laplaceInference = false;
     laplaceUpToDate = false;
   }
@@ -179,9 +190,10 @@ void CGp::setLaplaceInference(bool on)
     if(isSparseApproximation() || getApproximationType() != FTC)
       throw ndlexceptions::Error(
           "CGp::setLaplaceInference: CIP-0033 Laplace requires FTC (dense).");
-    if(getOutputDim() != 1)
-      throw ndlexceptions::Error(
-          "CGp::setLaplaceInference: Laplace currently supports a single output.");
+    // CIP-003E: scalar-block likelihoods give D independent Laplace problems
+    // sharing the kernel; a coupled block needs a block W (Phase 5).
+    pnoise->requireScalarBlocks("CGp::setLaplaceInference");
+    pnoise->requireCapability(CNoise::CapPointDerivs, "CGp::setLaplaceInference");
     epInference = false;
     epUpToDate = false;
   }
@@ -195,7 +207,11 @@ double CGp::epLogLikelihood() const
   const unsigned int n = getNumData();
   CMatrix Kep(n, n);
   pkern->compute(Kep, *pX);
-  epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
+  if(epUsesBlockEngine())
+    epLogMarginalCache = epEngine.runBlock(std::vector<CMatrix>(1, Kep), *py, *pnoise,
+                                           epSites, epMu, epVarDiag);
+  else
+    epLogMarginalCache = epEngine.run(Kep, *py, epSites, epMu, epVarDiag);
   epUpToDate = true;
   return epLogMarginalCache + pkern->priorLogProb();
 }
@@ -213,7 +229,24 @@ void CGp::epLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) con
   CMatrix kss(nt, 1);
   for(unsigned int i = 0; i < nt; i++)
     kss.setVal(pkern->diagComputeElement(Xin, i), i, 0);
-  epEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+  if(!epUsesBlockEngine())
+  {
+    epEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+    return;
+  }
+  const unsigned int D = getOutputDim();
+  mu.resize(nt, D);
+  varDiag.resize(nt, D);
+  CMatrix mk, vk;
+  for(unsigned int k = 0; k < D; k++)
+  {
+    epEngine.predictiveMeanVarBlock(k, Kx, kss, mk, vk);
+    for(unsigned int i = 0; i < nt; i++)
+    {
+      mu.setVal(mk.getVal(i), i, k);
+      varDiag.setVal(vk.getVal(i), i, k);
+    }
+  }
 }
 
 void CGp::laplaceLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin) const
@@ -230,7 +263,19 @@ void CGp::laplaceLatentMeanVar(CMatrix& mu, CMatrix& varDiag, const CMatrix& Xin
   CMatrix kss(nt, 1);
   for(unsigned int i = 0; i < nt; i++)
     kss.setVal(pkern->diagComputeElement(Xin, i), i, 0);
-  laplaceEngine.predictiveMeanVar(Kx, kss, mu, varDiag);
+  const unsigned int D = getOutputDim();
+  mu.resize(nt, D);
+  varDiag.resize(nt, D);
+  CMatrix mk, vk;
+  for(unsigned int k = 0; k < D; k++)
+  {
+    laplaceCols[k].predictiveMeanVar(Kx, kss, mk, vk);
+    for(unsigned int i = 0; i < nt; i++)
+    {
+      mu.setVal(mk.getVal(i), i, k);
+      varDiag.setVal(vk.getVal(i), i, k);
+    }
+  }
 }
 
 double CGp::laplaceLogLikelihood() const
@@ -239,9 +284,21 @@ double CGp::laplaceLogLikelihood() const
   CMatrix Klap(n, n);
   pkern->compute(Klap, *pX);
   // CIP-003A Phase 5: generalised Laplace over the attached CNoise oracles.
-  laplaceEngine.setNoise(pnoise);
-  laplaceLogMarginalCache = laplaceEngine.run(Klap, *py);
-  laplaceFhat.deepCopy(laplaceEngine.lastFhat());
+  // One Laplace problem per output column (scalar blocks), shared kernel.
+  const unsigned int D = getOutputDim();
+  laplaceCols.assign(D, laplaceEngine);
+  laplaceLogMarginalCache = 0.0;
+  laplaceFhat.resize(n, D);
+  CMatrix yk(n, 1);
+  for(unsigned int k = 0; k < D; k++)
+  {
+    for(unsigned int i = 0; i < n; i++)
+      yk.setVal(py->getVal(i, k), i, 0);
+    laplaceCols[k].setNoise(pnoise);
+    laplaceLogMarginalCache += laplaceCols[k].run(Klap, yk);
+    for(unsigned int i = 0; i < n; i++)
+      laplaceFhat.setVal(laplaceCols[k].lastFhat().getVal(i, 0), i, k);
+  }
   laplaceUpToDate = true;
   return laplaceLogMarginalCache + pkern->priorLogProb();
 }
@@ -2572,7 +2629,19 @@ void CGp::updateG() const
     const unsigned int numKernParams = pkern->getNumParams();
     CMatrix tempG(1, numKernParams);
     CMatrix dLdK(getNumData(), getNumData());
-    epEngine.fillDLDK(dLdK);
+    if(epUsesBlockEngine())
+    {
+      // Shared kernel across latents: dL/dK sums over the K posteriors.
+      CMatrix dk(getNumData(), getNumData());
+      dLdK.zeros();
+      for(unsigned int k = 0; k < epEngine.numLatentsBlock(); k++)
+      {
+        epEngine.fillDLDKBlock(k, dk);
+        dLdK.axpy(dk, 1.0);
+      }
+    }
+    else
+      epEngine.fillDLDK(dLdK);
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)
@@ -2586,7 +2655,15 @@ void CGp::updateG() const
     const unsigned int numKernParams = pkern->getNumParams();
     CMatrix tempG(1, numKernParams);
     CMatrix dLdK(getNumData(), getNumData());
-    laplaceEngine.fillDLDK(dLdK);
+    {
+      CMatrix dk(getNumData(), getNumData());
+      dLdK.zeros();
+      for(unsigned int k = 0; k < laplaceCols.size(); k++)
+      {
+        laplaceCols[k].fillDLDK(dk);
+        dLdK.axpy(dk, 1.0);
+      }
+    }
     g_param.zeros();
     pkern->getGradTransParams(tempG, *pX, dLdK, true);
     for(unsigned int i = 0; i < numKernParams; i++)

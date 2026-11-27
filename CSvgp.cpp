@@ -4,6 +4,7 @@
 #include "ndlassert.h"
 #include "ndlexceptions.h"
 #include "ndlutil.h"
+#include "ndlstrutil.h"
 #include <cmath>
 #include <iostream>
 
@@ -252,6 +253,22 @@ CMatrix CSvgp::getQCov(unsigned int j) const
   return S;
 }
 
+void CSvgp::setLikelihood(CNoise* noise)
+{
+  if(noise != 0)
+  {
+    // CIP-003E: refuse a likelihood that cannot supply E_q[log p] gradients,
+    // or whose blocks do not tile the output columns.
+    noise->requireCapability(CNoise::CapExpectedLogLik, "CSvgp::setLikelihood");
+    if(outputDim % noise->blockSize() != 0)
+      throw ndlexceptions::Error("CSvgp::setLikelihood: likelihood couples blocks of "
+                                 + ndlstrutil::itoa(noise->blockSize())
+                                 + " outputs but the model has "
+                                 + ndlstrutil::itoa(outputDim) + ".");
+  }
+  pnoise = noise;
+}
+
 double CSvgp::expectedLogLik(double yv, double mu, double var,
                              double& gMu, double& gVar, unsigned int j) const
 {
@@ -267,6 +284,54 @@ double CSvgp::expectedLogLik(double yv, double mu, double var,
   gMu = beta * r;
   gVar = -0.5 * beta;
   return -ndlutil::HALFLOGTWOPI + 0.5 * log(beta) - 0.5 * beta * (r * r + var);
+}
+
+// CIP-003E: E_q[log p(y_i | f_i)] for every row of a batch, with the gradients
+// w.r.t. the marginal means/variances of all latents. Scalar-block likelihoods
+// (and the Gaussian default) keep the per-element path in its original order;
+// blockSize() > 1 goes through the block oracle, the K latents of a datum being
+// independent under q. Returns sum over rows/latents of c * E[log p].
+double CSvgp::expectedLogLikBatch(const vector<unsigned int>& rows,
+                                  const CMatrix& mu, const CMatrix& var, double c,
+                                  CMatrix& gMuB, CMatrix& gVarB) const
+{
+  const unsigned int B = rows.size();
+  gMuB.resize(B, outputDim);
+  gVarB.resize(B, outputDim);
+  double L = 0.0;
+  double gMu = 0.0, gVar = 0.0;
+  const unsigned int bs = (pnoise != 0) ? pnoise->blockSize() : 1;
+  if(bs == 1)
+  {
+    for(unsigned int j = 0; j < outputDim; j++)
+      for(unsigned int k = 0; k < B; k++)
+      {
+        L += c * expectedLogLik(py->getVal(rows[k], j), mu.getVal(k, j),
+                                var.getVal(k, j), gMu, gVar, j);
+        gMuB.setVal(gMu, k, j);
+        gVarB.setVal(gVar, k, j);
+      }
+    return L;
+  }
+  vector<double> by(bs), bm(bs), bv(bs), bgm(bs), bgv(bs);
+  for(unsigned int k = 0; k < B; k++)
+    for(unsigned int j0 = 0; j0 < outputDim; j0 += bs)
+    {
+      for(unsigned int b = 0; b < bs; b++)
+      {
+        by[b] = py->getVal(rows[k], j0 + b);
+        bm[b] = mu.getVal(k, j0 + b);
+        bv[b] = var.getVal(k, j0 + b);
+      }
+      L += c * pnoise->expectedLogLikelihoodBlock(by.data(), bm.data(), bv.data(), j0,
+                                                  bgm.data(), bgv.data());
+      for(unsigned int b = 0; b < bs; b++)
+      {
+        gMuB.setVal(bgm[b], k, j0 + b);
+        gVarB.setVal(bgv[b], k, j0 + b);
+      }
+    }
+  return L;
 }
 
 double CSvgp::expectedLogLikBetaDeriv(double yv, double mu, double var) const
@@ -476,17 +541,7 @@ double CSvgp::dataTermAt(const CMatrix& XB, const vector<unsigned int>& yRows,
   if(!(c > 0.0))
     throw ndlexceptions::Error("CSvgp::dataTermAt: c must be positive");
   fillMarginalsFromX(XB, wsMu, wsVar);
-  double L = 0.0;
-  double gMu = 0.0, gVar = 0.0;
-  for(unsigned int j = 0; j < outputDim; j++)
-    for(unsigned int k = 0; k < yRows.size(); k++)
-    {
-      const unsigned int i = yRows[k];
-      L += c * expectedLogLik(py->getVal(i, j),
-                              wsMu.getVal(k, j), wsVar.getVal(k, j),
-                              gMu, gVar, j);
-    }
-  return L;
+  return expectedLogLikBatch(yRows, wsMu, wsVar, c, wsGMu, wsGVar);
 }
 
 double CSvgp::dataTerm(const vector<unsigned int>& batch) const
@@ -498,17 +553,7 @@ double CSvgp::dataTerm(const vector<unsigned int>& batch) const
   if(isFullOrderedBatch(batch))
   {
     fillMarginals(batch, wsMu, wsVar);
-    double L = 0.0;
-    double gMu = 0.0, gVar = 0.0;
-    for(unsigned int j = 0; j < outputDim; j++)
-      for(unsigned int k = 0; k < batch.size(); k++)
-      {
-        const unsigned int i = batch[k];
-        L += c * expectedLogLik(py->getVal(i, j),
-                                wsMu.getVal(k, j), wsVar.getVal(k, j),
-                                gMu, gVar, j);
-      }
-    return L;
+    return expectedLogLikBatch(batch, wsMu, wsVar, c, wsGMu, wsGVar);
   }
   gatherXB(batch, wsXB);
   return dataTermAt(wsXB, batch, c);
@@ -565,6 +610,7 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
     pA = &wsAB;
   }
 
+  expectedLogLikBatch(batch, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     // Current natural parameters.
@@ -591,7 +637,7 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
     {
       const unsigned int i = batch[k];
       const double mu = wsMu.getVal(k, j);
-      expectedLogLik(py->getVal(i, j), mu, wsVar.getVal(k, j), gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       wsCoeffs.setVal(c * (gMu - 2.0 * gVar * mu), k);
       const double alpha = -2.0 * c * gVar;
       alphas.setVal(alpha, k);
@@ -722,6 +768,7 @@ double CSvgp::elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta,
 
   CMatrix mj(M, 1);
   double gMu = 0.0, gVar = 0.0;
+  expectedLogLikBatch(yRows, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     mj.copyColCol(0, qMean, j);
@@ -733,7 +780,7 @@ double CSvgp::elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta,
       const double yv = py->getVal(i, j);
       const double mu = wsMu.getVal(k, j);
       const double var = wsVar.getVal(k, j);
-      expectedLogLik(yv, mu, var, gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
       gLambda.addVal(c * gVar, k);
       for(unsigned int r = 0; r < M; r++)
@@ -828,6 +875,7 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
 
   CMatrix mj(M, 1);
   double gMu = 0.0, gVar = 0.0;
+  expectedLogLikBatch(batch, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     mj.copyColCol(0, qMean, j);
@@ -839,7 +887,7 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
       const double yv = py->getVal(i, j);
       const double mu = wsMu.getVal(k, j);
       const double var = wsVar.getVal(k, j);
-      expectedLogLik(yv, mu, var, gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
       gLambda.addVal(c * gVar, i);
       // ∂L/∂a = c gMu m~ + 2 c gVar (S~ a - a)
@@ -898,6 +946,7 @@ void CSvgp::naturalGradientStepAt(double gamma, const CMatrix& XB,
   fillMarginalsFromX(XB, wsMu, wsVar);
   const CMatrix& AB = wsAB;
 
+  expectedLogLikBatch(yRows, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     CMatrix Scopy(qCov[j]);
@@ -920,7 +969,7 @@ void CSvgp::naturalGradientStepAt(double gamma, const CMatrix& XB,
     {
       const unsigned int i = yRows[k];
       const double mu = wsMu.getVal(k, j);
-      expectedLogLik(py->getVal(i, j), mu, wsVar.getVal(k, j), gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       wsCoeffs.setVal(c * (gMu - 2.0 * gVar * mu), k);
       const double alpha = -2.0 * c * gVar;
       alphas.setVal(alpha, k);
@@ -1237,14 +1286,14 @@ void CSvgp::dataTermQGrads(const vector<unsigned int>& batch,
 
   CMatrix mj(M, 1);
   double gMu = 0.0, gVar = 0.0;
+  expectedLogLikBatch(batch, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     mj.copyColCol(0, qMean, j);
     for(unsigned int k = 0; k < B; k++)
     {
       const unsigned int i = batch[k];
-      expectedLogLik(py->getVal(i, j), wsMu.getVal(k, j), wsVar.getVal(k, j),
-                     gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       for(unsigned int r = 0; r < M; r++)
         gM.setVal(gM.getVal(r, j) + c * gMu * pA->getVal(r, k), r, j);
       // ∂E[log p]/∂S = gVar * a a^T  (and data term scaled by c)
@@ -1279,13 +1328,13 @@ void CSvgp::dataTermQGradsAt(const CMatrix& XB, const vector<unsigned int>& yRow
   }
   fillMarginalsFromX(XB, wsMu, wsVar);
   double gMu = 0.0, gVar = 0.0;
+  expectedLogLikBatch(yRows, wsMu, wsVar, 1.0, wsGMu, wsGVar);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     for(unsigned int k = 0; k < B; k++)
     {
       const unsigned int i = yRows[k];
-      expectedLogLik(py->getVal(i, j), wsMu.getVal(k, j), wsVar.getVal(k, j),
-                     gMu, gVar, j);
+      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       for(unsigned int r = 0; r < M; r++)
         gM.setVal(gM.getVal(r, j) + c * gMu * wsAB.getVal(r, k), r, j);
       for(unsigned int r = 0; r < M; r++)

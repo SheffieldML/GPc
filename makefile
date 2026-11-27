@@ -199,7 +199,7 @@ libgp$(LIBDEXT): $(LIBGP_OBJS)
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSvgpBlock testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -213,7 +213,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
 # testNoiseBatched / testNoiseInLikelihood / testCip0027Perf / testIvmSoftener are CIP-0027 (no .mat).
-matio-tests: testDist testKern testMatrix testMltools testIvm testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+matio-tests: testDist testKern testMatrix testMltools testIvm testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -223,11 +223,13 @@ run-matio-tests: matio-tests
 	./testNoise
 	./testNoiseBatched
 	./testNoiseInLikelihood
+	./testNoiseBlock
 	./testSkewNoise
 	./testLikelihoodZoo
 	./testCip0027Perf
 	./testIvmSoftener
 	./testEp
+	./testEpBlock
 	./testKern
 	./testDiagGradParams
 	./testInducingGradZ
@@ -334,6 +336,10 @@ testSparsePpa: testSparsePpa.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoin
 
 # CIP-002A: SVGP q(u) natural gradients, ELBO grads, Adam (Gaussian).
 testSvgp: testSvgp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
+
+
+testSvgpBlock: testSvgpBlock.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 
 
@@ -496,6 +502,14 @@ testLikelihoodZoo: testLikelihoodZoo.o CLaplaceInference.o CGp.o CInducing.o CCh
 
 
 # CIP-0027 Phase A: likelihood.variance on FTC Gram + path aliases.
+testEpBlock: testEpBlock.o CEpInference.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
+
+
+testNoiseBlock: testNoiseBlock.o CMatrix.o ndlfortran.o CNoise.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
+
+
 testNoiseInLikelihood: testNoiseInLikelihood.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 

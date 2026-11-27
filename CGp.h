@@ -677,7 +677,8 @@ public:
   mutable bool epUpToDate;
   mutable bool laplaceUpToDate;
   mutable CEpInference epEngine;
-  mutable CLaplaceInference laplaceEngine;
+  mutable CLaplaceInference laplaceEngine; // solver settings (template for the columns)
+  mutable std::vector<CLaplaceInference> laplaceCols; // one per output (CIP-003E)
   mutable CEpSites epSites;
   mutable CMatrix epMu;
   mutable CMatrix epVarDiag;
@@ -685,6 +686,8 @@ public:
   mutable double epLogMarginalCache;
   mutable double laplaceLogMarginalCache;
   double epLogLikelihood() const; // GPy EP marginal + kern prior
+  // CIP-003E: EP always uses the block engine (legacy run() remains for fixtures).
+  bool epUsesBlockEngine() const { return true; }
   double laplaceLogLikelihood() const;
   bool loadedModel;
   bool spherical;

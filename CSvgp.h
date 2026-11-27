@@ -101,7 +101,7 @@ class CSvgp : public CStochasticOptimisable {
   CKern* getKern() { return pkern; }
   const CKern* getKern() const { return pkern; }
   // Optional non-Gaussian likelihood (Phase 4). Null => internal Gaussian beta.
-  void setLikelihood(CNoise* noise) { pnoise = noise; }
+  void setLikelihood(CNoise* noise);
   CNoise* getLikelihood() const { return pnoise; }
 
   // CIP-0035 Phase 4: drop Nyström residual k−Q from q(f) variance (finite-network
@@ -217,6 +217,10 @@ class CSvgp : public CStochasticOptimisable {
   double expectedLogLik(double yv, double mu, double var,
                         double& gMu, double& gVar, unsigned int j = 0) const;
   double expectedLogLikBetaDeriv(double yv, double mu, double var) const;
+  // CIP-003E: batch/block form over all latents (see CSvgp.cpp).
+  double expectedLogLikBatch(const vector<unsigned int>& rows, const CMatrix& mu,
+                             const CMatrix& var, double c,
+                             CMatrix& gMuB, CMatrix& gVarB) const;
   // Marginals of q(f_i) for output j at training point i.
   void marginal(unsigned int i, unsigned int j, double& mu, double& var) const;
   // CIP-002D QW6: batch form of A_B and marginals (BLAS-3).
@@ -271,6 +275,7 @@ class CSvgp : public CStochasticOptimisable {
   mutable CMatrix wsDK;
   mutable CMatrix wsDQ;
   mutable CMatrix wsMu;
+  mutable CMatrix wsGMu, wsGVar; // per-site dE/dmu, dE/dvar (CIP-003E)
   mutable CMatrix wsVar;
   mutable CMatrix wsSAB;
   mutable CMatrix wsABS;

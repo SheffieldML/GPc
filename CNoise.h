@@ -259,6 +259,47 @@ class CNoise : public CTransformable, public CRegularisable, public COptimisable
   // Distinct from ADF logLikelihood(mu, var, y) = log E_q[p(y|f)].
   virtual double expectedLogLikelihood(double y, double mu, double var,
                                        double& gMu, double& gVar) const;
+
+  // ---- CIP-003E Phase 1: block oracles and capabilities ----
+  // A likelihood term is a function of a block of blockSize() consecutive output
+  // columns. Independent likelihoods have blockSize 1 and the defaults below are
+  // the existing element-wise code, so behaviour is unchanged. y, mu, var, g* are
+  // arrays of length blockSize(); j0 is the first output column of the block
+  // (per-output biases are keyed on the column).
+  virtual unsigned int blockSize() const { return 1; }
+  enum Capability { CapExpectedLogLik = 1, CapPointDerivs = 2,
+                    CapCavityMoments = 4, CapPredictive = 8 };
+  virtual unsigned int capabilities() const;
+  // Throw NotImplementedError naming `consumer` and this noise type.
+  void requireCapability(unsigned int cap, const string& consumer) const;
+  void requireScalarBlocks(const string& consumer) const;
+
+  // VI: sum_k E_q[log p(y|f)] over the block; gMu/gVar are per output.
+  virtual double expectedLogLikelihoodBlock(const double* y, const double* mu,
+                                            const double* var, unsigned int j0,
+                                            double* gMu, double* gVar) const;
+  // Laplace: log p, gradient g (length blockSize), negative Hessian W
+  // (blockSize x blockSize) and optionally dW/df for blockSize 1.
+  virtual void pointDerivsBlock(const double* y, const double* f, unsigned int j0,
+                                double* logp, double* g, CMatrix& negHessian,
+                                CMatrix* dNegHessian = 0) const;
+  // EP / ADF: derivatives of log Z (cavity N(mu, var)) in the sense of
+  // getGradInputs: dMu = dlogZ/dmu, dVar = dlogZ/dvar. (log Z itself is added with
+  // block EP in Phase 2.)
+  virtual void cavityMomentsBlock(const double* y, const double* mu, const double* var,
+                                  unsigned int j0, double* dMu, double* dVar) const;
+  // Explicit-argument element form behind getGradInputs; implemented by the
+  // likelihoods that advertise CapCavityMoments.
+  virtual void cavityMomentsElement(double y, double mu, double var, unsigned int j,
+                                    double& gmu, double& gvs) const;
+  // log Z = log E_{N(mu,var)}[p(y|f)] over the block (the normaliser behind
+  // cavityMomentsBlock). Default: sum of logZElement over the block's outputs.
+  virtual double logZBlock(const double* y, const double* mu, const double* var,
+                           unsigned int j0) const;
+  virtual double logZElement(double y, double mu, double var, unsigned int j) const;
+  // Class probabilities for one block of marginals (block likelihoods).
+  virtual void predictBlock(const double* mu, const double* var, unsigned int j0,
+                            double* prob) const;
   virtual void writeParamsToStream(ostream& out) const;
   virtual void readParamsFromStream(istream& in);
   // CIP-003B: reads an optional trailing numPriors block; leaves the stream untouched if absent.
@@ -534,6 +575,9 @@ class CGaussianNoise : public CNoise {
   double getParam(unsigned int index) const;
   void getGradParams(CMatrix& g) const;
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void cavityMomentsElement(double y, double mu, double var, unsigned int j,
+                            double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const;
   void updateSites(CMatrix& m, CMatrix& beta, unsigned int actIndex, const CMatrix& g, const CMatrix& nu, unsigned int index) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
@@ -697,6 +741,9 @@ class CProbitNoise : public CNoise
   double getParam(unsigned int index) const;
   void getGradParams(CMatrix& g) const;
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void cavityMomentsElement(double y, double mu, double var, unsigned int j,
+                            double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
@@ -716,6 +763,20 @@ class CProbitNoise : public CNoise
   {
     return bias.getVal(0, index);
   }
+  // CIP-003E: GPy-convention probit. The likelihood is Phi(y f) with the unit
+  // softener inside the likelihood (sigma2 = 1), so the cavity moments are
+  // Phi(mu/sqrt(1+v)) and the latent is f, as in GPy's Bernoulli. Bias is
+  // fixed at zero. The default (false) keeps the CIP-0027 convention: a step
+  // function on f + eps with the softener as White in K, which is what IVM/ADF
+  // expect. Runtime state: not written to .model streams.
+  void setGpyMode(bool on)
+  {
+    gpyMode = on;
+    sigma2 = on ? 1.0 : 1e-6;
+    if(on && bias.getCols()>0)
+      bias.zeros();
+  }
+  bool isGpyMode() const { return gpyMode; }
   // CIP-0027: probit σ² is fixed (softener is White-in-K); expose for tests.
   double getSigma2() const { return sigma2; }
   
@@ -731,6 +792,7 @@ class CProbitNoise : public CNoise
   double sigma2;
   CMatrix bias;
   mutable double ellBias;
+  bool gpyMode = false;
 };
 
 // The null category noise model for semi-supervised learning (see Lawrence and Jordan in NIPS 2004).
@@ -762,6 +824,9 @@ class CNcnmNoise : public CNoise {
   double getParam(unsigned int index) const;
   void getGradParams(CMatrix& g) const;
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void cavityMomentsElement(double y, double mu, double var, unsigned int j,
+                            double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
@@ -850,6 +915,9 @@ class COrderedNoise : public CNoise {
   double getParam(unsigned int index) const;
   void getGradParams(CMatrix& g) const;
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void cavityMomentsElement(double y, double mu, double var, unsigned int j,
+                            double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;

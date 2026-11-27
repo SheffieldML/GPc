@@ -50,7 +50,7 @@ Every consumer of `CNoise` assumes one likelihood term per element: observation 
 | `CSvgp`, `CDeepGp` final layer | `expectedLogLikelihood(y, mu, var, gMu, gVar)` | scalar marginal in, scalar gradients out |
 | `CLaplaceInference` | `ndlnoise::laplacePointDerivs` (log p, d1, diagonal W, dW/df) | W is a diagonal vector |
 | `CEpInference` | cavity moments, site (tau, v) as N×1 vectors | one Gaussian site per element |
-| `CIvm`, `CPpa`, `CSparsePpa`, `CGp` (ADF) | `getNuG`, `updateSites`, `getGradInputs` per (i, j) | per-element site updates |
+| `CIvm`, `CPpa`, `CSparsePpa`, `CGp`, `CGplvm` (ADF; see `cip/cip003E/call-site-audit.md`) | `getNuG`, `updateSites`, `getGradInputs` per (i, j) | per-element site updates |
 | `CHmc` / variational HMC | pointwise log-density | scalar |
 | `CInterchange`, streams, `.mat` I/O, Python `gpc.likelihoods`, the type-string factory in `CNoise.cpp` | type string and parameter blocks | assumes the known zoo |
 
@@ -81,8 +81,9 @@ virtual double expectedLogLikelihoodBlock(const double* y, const double* mu,
     const double* var, double* gMu, double* gVar) const;          // VI
 virtual double pointDerivsBlock(const double* y, const double* f,
     double* g, CMatrix& negHessian, CMatrix* dHdf) const;         // Laplace
-virtual double cavityMomentsBlock(const double* y, const double* mu,
-    const double* var, double* dlogZdMu, double* dlogZdVar) const; // EP / ADF
+virtual void cavityMomentsBlock(const double* y, const double* mu,
+    const double* var, unsigned int j0,
+    double* dlogZdMu, double* dlogZdVar) const;                    // EP / ADF (log Z oracle arrives with block EP, Phase 2)
 virtual void   predictBlock(const double* mu, const double* var,
     double* prob) const;                                           // out()
 ```
@@ -147,9 +148,9 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 
 ## Implementation Status
 
-- [ ] Call-site audit and block-oracle contract (no behaviour change)
-- [ ] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals
-- [ ] SVGP and deep-GP dispatch
+- [x] Call-site audit and block-oracle contract (no behaviour change) — Phase 1
+- [x] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals — Phase 2. Also: GPy-convention probit mode (`setGpyMode`); `CGp` EP always via the block engine; `CGp` Laplace for D scalar-block outputs. Convention: the default probit is a step function on f+ε with the softener as White in K (IVM/ADF); GPy mode is Φ(y f) on f (σ²=1). Open: GPy mode is not serialised.
+- [x] SVGP and deep-GP dispatch — Phase 3 (`expectedLogLikBatch`; `testSvgpBlock`; coupled-block FD in `testDeepGp`)
 - [ ] `CRobustMaxNoise` and verification
 - [ ] `CSoftmaxNoise`, Laplace block W
 - [ ] Loaders, Python, factory/CLI

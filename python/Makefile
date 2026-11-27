@@ -6,7 +6,12 @@
 #   make clean
 
 ROOT := ..
+# Same platform selection as the top-level makefile: make.inc if present, else make.linux.
+ifeq ($(wildcard $(ROOT)/make.inc),$(ROOT)/make.inc)
 include $(ROOT)/make.inc
+else
+include $(ROOT)/make.linux
+endif
 
 PY ?= $(CURDIR)/.venv/bin/python
 PYBIND11_INCLUDE := $(shell $(PY) -c 'import pybind11; print(pybind11.get_include())')
@@ -19,7 +24,7 @@ OBJS := src/module.o src/matrix_numpy.o src/wrap_gp.o src/wrap_gplvm.o src/wrap_
 REF_FTC := ref_ftc_objective
 
 # Reuse root CCFLAGS (includes -fPIC, -std=c++17) plus pybind/numpy.
-PY_CCFLAGS = $(CCFLAGS) -I$(ROOT) -I$(PYBIND11_INCLUDE) -I$(NUMPY_INCLUDE) -I$(PYTHON_INCLUDE) -Isrc
+PY_CCFLAGS = $(CCFLAGS) -MMD -MP -I$(ROOT) -I$(PYBIND11_INCLUDE) -I$(NUMPY_INCLUDE) -I$(PYTHON_INCLUDE) -Isrc
 # On macOS, leave Python symbols undefined until dlopen (pybind11 convention).
 ifeq ($(PLAT),_OSX)
 PY_UNDEF = -undefined dynamic_lookup
@@ -30,36 +35,29 @@ PY_LDFLAGS = $(ROOT)/libgp$(LIBSEXT) $(LDFLAGS) $(PY_UNDEF)
 REF_CCFLAGS = $(CCFLAGS) -I$(ROOT)
 REF_LDFLAGS = $(ROOT)/libgp$(LIBSEXT) $(LDFLAGS)
 
-.PHONY: all test clean libgp
+.PHONY: all test clean libgp FORCE
 
 all: $(MODULE)
 
 libgp:
 	$(MAKE) -C $(ROOT) libgp$(LIBSEXT)
 
-$(ROOT)/libgp$(LIBSEXT):
+# FORCE makes the root make decide whether libgp is stale; without a prerequisite
+# an existing libgp.a would never be rebuilt after a root source change.
+$(ROOT)/libgp$(LIBSEXT): FORCE
 	$(MAKE) -C $(ROOT) libgp$(LIBSEXT)
 
-src/module.o: src/module.cpp src/wrap_interchange.h src/matrix_numpy.h src/wrap_gp.h src/wrap_gplvm.h src/wrap_deepgp.h src/wrap_likelihood.h
-	$(CC) -c src/module.cpp -o src/module.o $(PY_CCFLAGS)
+FORCE:
 
-src/matrix_numpy.o: src/matrix_numpy.cpp src/matrix_numpy.h
-	$(CC) -c src/matrix_numpy.cpp -o src/matrix_numpy.o $(PY_CCFLAGS)
+# Header dependencies come from -MMD (src/*.d, also covering ../*.h).
+# Rebuild when the compile flags change (the stamp is owned by the root makefile).
+$(ROOT)/.buildflags: FORCE
+	$(MAKE) -C $(ROOT) .buildflags
 
-src/wrap_gp.o: src/wrap_gp.cpp src/wrap_gp.h src/matrix_numpy.h
-	$(CC) -c src/wrap_gp.cpp -o src/wrap_gp.o $(PY_CCFLAGS)
+src/%.o: src/%.cpp $(ROOT)/.buildflags
+	$(CC) -c $< -o $@ $(PY_CCFLAGS)
 
-src/wrap_gplvm.o: src/wrap_gplvm.cpp src/wrap_gplvm.h src/matrix_numpy.h
-	$(CC) -c src/wrap_gplvm.cpp -o src/wrap_gplvm.o $(PY_CCFLAGS)
-
-src/wrap_deepgp.o: src/wrap_deepgp.cpp src/wrap_deepgp.h src/matrix_numpy.h
-	$(CC) -c src/wrap_deepgp.cpp -o src/wrap_deepgp.o $(PY_CCFLAGS)
-
-src/wrap_likelihood.o: src/wrap_likelihood.cpp src/wrap_likelihood.h
-	$(CC) -c src/wrap_likelihood.cpp -o src/wrap_likelihood.o $(PY_CCFLAGS)
-
-src/wrap_interchange.o: src/wrap_interchange.cpp src/wrap_interchange.h $(ROOT)/CInterchange.h $(ROOT)/CJson.h
-	$(CC) -c src/wrap_interchange.cpp -o src/wrap_interchange.o $(PY_CCFLAGS)
+-include $(OBJS:.o=.d)
 
 $(MODULE): $(OBJS) $(ROOT)/libgp$(LIBSEXT)
 	$(LD) ${XLINKERFLAGS} -shared -o $(MODULE) $(OBJS) $(PY_LDFLAGS)
@@ -71,4 +69,4 @@ test: $(MODULE) $(REF_FTC)
 	cd $(CURDIR) && $(PY) -m pytest -q tests
 
 clean:
-	rm -f src/*.o $(MODULE) $(REF_FTC) ref_ftc_objective.o
+	rm -f src/*.o src/*.d $(MODULE) $(REF_FTC) ref_ftc_objective.o

@@ -96,6 +96,12 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
                              const CMatrix& gKuu, const CMatrix& gKuf,
                              const CMatrix* KuuCached = 0,
                              const CMatrix* KufCached = 0) const;
+  // CIP-003F A3: process-wide switch selecting the per-element reference
+  // implementation of the CIP-0028 ridge windows (K_fu and its gradients) in
+  // place of the GEMM-based bulk path.  Intended for equivalence tests only.
+  static void setLegacyRidge(bool legacy);
+  static bool legacyRidge();
+
   // CIP-003F A2: accumulate into gX (N x d) the input gradient of the cross
   // covariance, gX(b,:) += sum_m gKuf(m,b) dK(z_m, x_b)/dx_b.  Default loops
   // getGradX per datum (the oracle); stationary and MLP kernels override with

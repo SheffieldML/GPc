@@ -4568,11 +4568,154 @@ inline void ridgeAccumSigmaDiag(vector<double>& gSigma, const RidgeKfuState& st,
   }
 }
 
+// CIP-003F A3: GEMM-based bulk evaluation of the ridge windows.  The O(N M d)
+// work (t = x̂ᵀv for every pair, then P V and Pᵀ X̂ in the gradients) goes
+// through BLAS; per-pair scalars (erf, exp) are computed once.  The per-element
+// functions above remain the reference (CKern::setLegacyRidge(true)).
+bool gRidgeLegacy = false;
+
+struct RidgeBulk
+{
+  unsigned int N, M, Dp;
+  double s2, cs, B, variance;
+  CMatrix Xh;             // N x Dp, x̂ = Σ^{1/2} x̃ (bias coordinate appended)
+  vector<double> n2;      // |x̂_n|²
+  vector<double> mu, Am, aVec;
+  CMatrix T, Den, Erf, Ep; // N x M
+
+  void fill(double var, const vector<double>& sigmaDiag, const CMatrix& X,
+            const CMatrix& V, const CMatrix& a, double s)
+  {
+    N = X.getRows();
+    M = V.getRows();
+    const unsigned int d = X.getCols();
+    Dp = d + 1;
+    BOUNDCHECK(V.getCols() == Dp);
+    BOUNDCHECK(sigmaDiag.size() == Dp);
+    BOUNDCHECK(s > 0.0 && var >= 0.0);
+    variance = var;
+    s2 = s * s;
+    cs = 2.0 * s2 / (2.0 + s2);
+    B = sqrt(var * M_PI / 2.0);
+    vector<double> sq(Dp);
+    for(unsigned int j = 0; j < Dp; j++)
+      sq[j] = sqrt(sigmaDiag[j]);
+    Xh.resize(N, Dp);
+    n2.assign(N, 0.0);
+    for(unsigned int n = 0; n < N; n++)
+    {
+      double acc = 0.0;
+      for(unsigned int j = 0; j < d; j++)
+      {
+        const double xh = sq[j] * X.getVal(n, j);
+        Xh.setVal(xh, n, j);
+        acc += xh * xh;
+      }
+      Xh.setVal(sq[d], n, d);
+      acc += sq[d] * sq[d];
+      n2[n] = acc;
+    }
+    T.resize(N, M);
+    T.gemm(Xh, V, 1.0, 0.0, "N", "T");
+    mu.resize(M);
+    Am.resize(M);
+    aVec.resize(M);
+    const double a0 = pow(2.0 * M_PI, -0.25) * pow(M_PI * s2, -0.25) * sqrt(2.0 * M_PI * cs);
+    for(unsigned int m = 0; m < M; m++)
+    {
+      const double am = a.getVal(m, 0);
+      aVec[m] = am;
+      mu[m] = am * cs / s2;
+      Am[m] = a0 * exp(mu[m] * mu[m] / (2.0 * cs) - am * am / (2.0 * s2));
+    }
+    Den.resize(N, M);
+    Erf.resize(N, M);
+    Ep.resize(N, M);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+      {
+        const double t = T.getVal(n, m);
+        const double varLin = n2[n] - (1.0 - cs) * t * t;
+        const double den = sqrt(1.0 + max(varLin, 0.0));
+        const double z = (mu[m] * t / sqrt(2.0)) / den;
+        Den.setVal(den, n, m);
+        Erf.setVal(erf(z), n, m);
+        Ep.setVal((2.0 / sqrt(M_PI)) * exp(-z * z), n, m);
+      }
+  }
+
+  void kfu(CMatrix& Kfu) const
+  {
+    Kfu.resize(N, M);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+        Kfu.setVal(B * Am[m] * Erf.getVal(n, m), n, m);
+  }
+
+  // P(n,m) = w B A_m e' (μ_m/√2) / den³  (∂K/∂z weighted by gKfu).
+  void weightedP(CMatrix& P, const CMatrix& gKfu) const
+  {
+    P.resize(N, M);
+    for(unsigned int n = 0; n < N; n++)
+      for(unsigned int m = 0; m < M; m++)
+      {
+        const double den = Den.getVal(n, m);
+        P.setVal(gKfu.getVal(n, m) * B * Am[m] * Ep.getVal(n, m) * (mu[m] / sqrt(2.0))
+                     / (den * den * den),
+                 n, m);
+      }
+  }
+
+  // Q(n,j) = (P V)(n,j) (1+|x̂_n|²) - (Σ_m P t)_n x̂_nj.
+  void inputQ(CMatrix& Q, const CMatrix& P, const CMatrix& V) const
+  {
+    Q.resize(N, Dp);
+    Q.gemm(P, V, 1.0, 0.0, "N", "N");
+    for(unsigned int n = 0; n < N; n++)
+    {
+      double r = 0.0;
+      for(unsigned int m = 0; m < M; m++)
+        r += P.getVal(n, m) * T.getVal(n, m);
+      const double scale = 1.0 + n2[n];
+      for(unsigned int j = 0; j < Dp; j++)
+        Q.setVal(Q.getVal(n, j) * scale - r * Xh.getVal(n, j), n, j);
+    }
+  }
+};
+
 void mlpRidgeGradParamsDiag(CMatrix& g, double variance, const vector<double>& sigmaDiag,
                             bool ardScales, const CMatrix& scales,
                             double weightVar, const CMatrix& X, const CMatrix& V,
                             const CMatrix& a, double s, const CMatrix& gKfu)
 {
+  if(!gRidgeLegacy)
+  {
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    CMatrix P, Q;
+    rb.weightedP(P, gKfu);
+    rb.inputQ(Q, P, V);
+    const unsigned int dd = X.getCols();
+    vector<double> gSig(dd + 1, 0.0);
+    for(unsigned int n = 0; n < rb.N; n++)
+      for(unsigned int j = 0; j <= dd; j++)
+        gSig[j] += rb.Xh.getVal(n, j) * Q.getVal(n, j) / (2.0 * sigmaDiag[j]);
+    double gVar = 0.0;
+    for(unsigned int n = 0; n < rb.N; n++)
+      for(unsigned int m = 0; m < rb.M; m++)
+        gVar += gKfu.getVal(n, m) * (rb.B / (2.0 * variance)) * rb.Am[m] * rb.Erf.getVal(n, m);
+    g.zeros();
+    double gAlpha = 0.0;
+    for(unsigned int j = 0; j < dd; j++)
+      gAlpha += ardScales ? gSig[j] * scales.getVal(j) : gSig[j];
+    g.addVal(gAlpha, 0);
+    g.addVal(gSig[dd], 1);
+    g.addVal(gVar, 2);
+    if(ardScales)
+      for(unsigned int j = 0; j < dd; j++)
+        g.addVal(gSig[j] * weightVar, 3 + j);
+    return;
+  }
   const unsigned int N = X.getRows();
   const unsigned int M = V.getRows();
   const unsigned int d = X.getCols();
@@ -4623,6 +4766,20 @@ void mlpRidgeGradXDiag(CMatrix& gX, double variance, const vector<double>& sigma
                        const CMatrix& X, const CMatrix& V, const CMatrix& a, double s,
                        const CMatrix& gKfu)
 {
+  if(!gRidgeLegacy)
+  {
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    CMatrix P, Q;
+    rb.weightedP(P, gKfu);
+    rb.inputQ(Q, P, V);
+    const unsigned int dd = X.getCols();
+    gX.resize(rb.N, dd);
+    for(unsigned int n = 0; n < rb.N; n++)
+      for(unsigned int j = 0; j < dd; j++)
+        gX.setVal(sqrt(sigmaDiag[j]) * Q.getVal(n, j), n, j);
+    return;
+  }
   const unsigned int N = X.getRows();
   const unsigned int M = V.getRows();
   gX.resize(N, X.getCols());
@@ -4643,6 +4800,35 @@ void mlpRidgeGradSDiag(CMatrix& gS, double variance, const vector<double>& sigma
                        const CMatrix& X, const CMatrix& V, const CMatrix& a, double s,
                        const CMatrix& gKfu)
 {
+  if(!gRidgeLegacy)
+  {
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    const double dcs = 8.0 * s / ((2.0 + s * s) * (2.0 + s * s));
+    const double cs = rb.cs;
+    double acc = 0.0;
+    for(unsigned int m = 0; m < rb.M; m++)
+    {
+      const double am = rb.aVec[m];
+      const double mum = rb.mu[m];
+      const double dmu = am * (s * dcs - 2.0 * cs) / (s * s * s);
+      const double dlogA = -0.5 / s + 0.5 * dcs / cs + mum * dmu / cs
+                           - mum * mum * dcs / (2.0 * cs * cs) + am * am / (s * s * s);
+      const double dAm = rb.Am[m] * dlogA;
+      for(unsigned int n = 0; n < rb.N; n++)
+      {
+        const double t = rb.T.getVal(n, m);
+        const double den = rb.Den.getVal(n, m);
+        const double dden = (t * t * dcs) / (2.0 * den);
+        const double dz = (t / sqrt(2.0)) * (dmu * den - mum * dden) / (den * den);
+        acc += gKfu.getVal(n, m) * rb.B
+               * (dAm * rb.Erf.getVal(n, m) + rb.Am[m] * rb.Ep.getVal(n, m) * dz);
+      }
+    }
+    gS.resize(1, 1);
+    gS.setVal(acc, 0);
+    return;
+  }
   const unsigned int N = X.getRows();
   const unsigned int M = V.getRows();
   gS.resize(1, 1);
@@ -4666,6 +4852,35 @@ void mlpRidgeGradVADiag(CMatrix& gV, CMatrix& ga, double variance,
                         const CMatrix& V, const CMatrix& a, double s,
                         const CMatrix& gKfu)
 {
+  if(!gRidgeLegacy)
+  {
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    CMatrix P, XS;
+    rb.weightedP(P, gKfu);
+    XS.resize(rb.N, rb.Dp);
+    for(unsigned int n = 0; n < rb.N; n++)
+      for(unsigned int j = 0; j < rb.Dp; j++)
+        XS.setVal(rb.Xh.getVal(n, j) * (1.0 + rb.n2[n]), n, j);
+    gV.resize(rb.M, rb.Dp);
+    gV.gemm(P, XS, 1.0, 0.0, "T", "N");
+    ga.resize(rb.M, 1);
+    ga.zeros();
+    const double dmuDa = rb.cs / rb.s2;
+    for(unsigned int m = 0; m < rb.M; m++)
+    {
+      const double dAmDa = rb.Am[m] * (rb.mu[m] - rb.aVec[m]) / rb.s2;
+      double acc = 0.0;
+      for(unsigned int n = 0; n < rb.N; n++)
+      {
+        const double dzDa = dmuDa * (rb.T.getVal(n, m) / sqrt(2.0)) / rb.Den.getVal(n, m);
+        acc += gKfu.getVal(n, m) * rb.B
+               * (dAmDa * rb.Erf.getVal(n, m) + rb.Am[m] * rb.Ep.getVal(n, m) * dzDa);
+      }
+      ga.setVal(acc, m, 0);
+    }
+    return;
+  }
   const unsigned int N = X.getRows();
   const unsigned int M = V.getRows();
   const unsigned int Dp = V.getCols();
@@ -4818,6 +5033,15 @@ void CMlpKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix
   DIMENSIONMATCH(V.getCols() == d + 1);
   DIMENSIONMATCH(a.getRows() == M && a.getCols() == 1);
   BOUNDCHECK(s > 0.0);
+  if(!gRidgeLegacy)
+  {
+    vector<double> sigmaDiag(d + 1, weightVariance);
+    sigmaDiag[d] = biasVariance;
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    rb.kfu(Kfu);
+    return;
+  }
   Kfu.resize(N, M);
   for(unsigned int n = 0; n < N; n++)
     for(unsigned int m = 0; m < M; m++)
@@ -4917,6 +5141,13 @@ void CMlpardKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMat
   for(unsigned int j = 0; j < d; j++)
     sigmaDiag[j] = weightVariance * scales.getVal(j);
   sigmaDiag[d] = biasVariance;
+  if(!gRidgeLegacy)
+  {
+    RidgeBulk rb;
+    rb.fill(variance, sigmaDiag, X, V, a, s);
+    rb.kfu(Kfu);
+    return;
+  }
   Kfu.resize(N, M);
   for(unsigned int n = 0; n < N; n++)
     for(unsigned int m = 0; m < M; m++)
@@ -12893,3 +13124,7 @@ void CCmpndKern::wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X,
   CKern* signal = wsSelectCompoundSignal(components);
   signal->wsRidgeGradVA(gV, ga, X, V, a, s, gKfu);
 }
+
+// CIP-003F A3 switch (see CKern.h).
+void CKern::setLegacyRidge(bool legacy) { gRidgeLegacy = legacy; }
+bool CKern::legacyRidge() { return gRidgeLegacy; }

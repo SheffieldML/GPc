@@ -213,10 +213,65 @@ void testInducingWire()
 
 } // namespace
 
+// CIP-003F A3: bulk ridge windows vs the per-element reference.
+void compareRidge(CKern& kern, const string& label)
+{
+  const unsigned int N = 17, M = 6, d = kern.getInputDim();
+  const double sc = 0.7;
+  CMatrix X(N, d), V(M, d + 1), a(M, 1), gKfu(N, M);
+  fillRand(X, 1.0);
+  fillRand(V, 1.0);
+  fillRand(a, 1.0);
+  fillRand(gKfu, 1.0);
+  struct Out { CMatrix K, g, gX, gS, gV, ga; } o[2];
+  for(int leg = 0; leg < 2; leg++)
+  {
+    CKern::setLegacyRidge(leg == 1);
+    Out& r = o[leg];
+    kern.wsRidgeCrossCompute(r.K, X, V, a, sc);
+    r.g.resize(1, kern.getNumParams());
+    kern.wsRidgeGradParams(r.g, X, V, a, sc, gKfu);
+    kern.wsRidgeGradX(r.gX, X, V, a, sc, gKfu);
+    kern.wsRidgeGradS(r.gS, X, V, a, sc, gKfu);
+    kern.wsRidgeGradVA(r.gV, r.ga, X, V, a, sc, gKfu);
+  }
+  CKern::setLegacyRidge(false);
+  auto cmp = [&](const CMatrix& A, const CMatrix& B, const string& what) {
+    expect(A.getRows() == B.getRows() && A.getCols() == B.getCols(), label + " " + what + " shape");
+    for(unsigned int i = 0; i < A.getRows(); i++)
+      for(unsigned int j = 0; j < A.getCols(); j++)
+        expectNear(A.getVal(i, j), B.getVal(i, j), 1e-12 * (1.0 + fabs(B.getVal(i, j))),
+                   label + " ridge " + what);
+  };
+  cmp(o[0].K, o[1].K, "Kfu");
+  cmp(o[0].g, o[1].g, "gParams");
+  cmp(o[0].gX, o[1].gX, "gX");
+  cmp(o[0].gS, o[1].gS, "gS");
+  cmp(o[0].gV, o[1].gV, "gV");
+  cmp(o[0].ga, o[1].ga, "ga");
+}
+
 int main()
 {
   try
   {
+    {
+      CMlpKern mlp(3);
+      mlp.setParam(2.5, 0);
+      mlp.setParam(1.5, 1);
+      mlp.setParam(0.8, 2);
+      compareRidge(mlp, "MLP");
+    }
+    {
+      CMlpardKern mlpard(3);
+      mlpard.setParam(1.7, 0);
+      mlpard.setParam(0.6, 1);
+      mlpard.setParam(1.3, 2);
+      mlpard.setParam(0.3, 3);
+      mlpard.setParam(1.1, 4);
+      mlpard.setParam(0.7, 5);
+      compareRidge(mlpard, "MLP-ARD");
+    }
     {
       CRbfKern rbf(3);
       rbf.setParam(1.4, 0);

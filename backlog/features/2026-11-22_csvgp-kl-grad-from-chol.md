@@ -6,7 +6,7 @@ priority: "Medium"
 created: "2026-11-22"
 last_updated: "2026-11-22"
 category: "features"
-related_cips: ["0035", "002A"]
+related_cips: ["0035", "002A", "003F"]
 owner: "Neil Lawrence"
 dependencies: []
 tags:
@@ -46,3 +46,6 @@ Compute \(\partial\mathrm{KL}/\partial L\) (and \(\partial\mathrm{KL}/\partial\t
 ### 2026-11-22
 
 Task created from DeepGP timing follow-ups (alongside MLP bulk grads).
+
+### 2026-11-27
+Folded into [CIP-003F](../../cip/cip003F.md) as item A5.

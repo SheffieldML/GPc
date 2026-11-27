@@ -1,7 +1,7 @@
 ---
 id: "2026-11-27_cip003f-phase4-bulk-ridges"
 title: "Phase 4: bulk weight-space ridges (A3)"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-27"
 last_updated: "2026-11-27"

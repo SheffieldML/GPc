@@ -1,7 +1,7 @@
 ---
 id: "2026-11-27_cip003f-phase3-gemm-data-term-kl"
 title: "Phase 3: GEMM data term and KL from Cholesky (A4, A5)"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-27"
 last_updated: "2026-11-27"

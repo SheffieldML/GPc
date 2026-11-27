@@ -1,7 +1,7 @@
 ---
 id: "2026-11-27_cip003f-phase2-batched-input-grads"
 title: "Phase 2: batched inducingGradX hook and kernel overrides (A2)"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-27"
 last_updated: "2026-11-27"

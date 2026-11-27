@@ -1,7 +1,7 @@
 ---
 id: "2026-11-27_cip003f-phase1-obatch-svgp"
 title: "Phase 1: O(B) SVGP minibatch steps (A1)"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-27"
 last_updated: "2026-11-27"

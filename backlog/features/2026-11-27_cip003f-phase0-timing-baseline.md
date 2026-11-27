@@ -1,7 +1,7 @@
 ---
 id: "2026-11-27_cip003f-phase0-timing-baseline"
 title: "Phase 0: timing baseline (A6)"
-status: "Ready"
+status: "Completed"
 priority: "Medium"
 created: "2026-11-27"
 last_updated: "2026-11-27"

@@ -112,6 +112,8 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // CIP-0040 Phase 1c: true when diagCompute is a stochastic unbiased estimate of the exact
   // diagonal (it may then fall below the Nystrom term; callers must not clamp it).
   virtual bool diagIsEstimated() const { return false; }
+  // Draw fresh samples for the next minibatch (no-op unless the diagonal is estimated).
+  virtual void advanceDiagSeed() {}
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -2377,7 +2379,7 @@ class CConvKern : public CKern {
   void setDiagEstimator(unsigned int S, uint64_t seed = 0);
   unsigned int getDiagSamples() const { return diagSamples; }
   bool diagIsEstimated() const override { return diagSamples >= 2 && diagSamples < P; }
-  void advanceDiagSeed() { ++diagSeed; }
+  void advanceDiagSeed() override { ++diagSeed; }
 
   void setInitParam();
   double getVariance() const { return patch->getVariance(); }

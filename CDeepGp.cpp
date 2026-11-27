@@ -481,6 +481,10 @@ double CDeepGp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g
   g.resize(1, Ptot);
   g.zeros();
 
+  // CIP-0040: kernels with an estimated diagonal draw fresh samples for each minibatch.
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    pkerns[ell]->advanceDiagSeed();
+
   if(numLayers == 1)
     return layers[0]->objectiveGradBatch(batch, g);
 

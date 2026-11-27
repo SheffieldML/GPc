@@ -41,7 +41,10 @@ public:
            unsigned int num_classes = 0,
            double likelihood_eps = 1e-3,
            unsigned int likelihood_samples = 256,
-           unsigned int likelihood_seed = 12345);
+           unsigned int likelihood_seed = 12345,
+           const std::string& diag = "exact",
+           unsigned int diag_samples = 64,
+           bool diag_force = false);
 
   void optimize(unsigned int iters = 100,
                 int batch_size = -1,
@@ -72,6 +75,10 @@ public:
       py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
       unsigned int samples = 0,
       uint64_t seed = 0) const;
+
+  // CIP-0040: inducing patches as (M, h, w, C); patch weights (P).
+  py::array_t<double> conv_filters() const;
+  py::array_t<double> conv_patch_weights() const;
 
   void reset_optimizer();
   unsigned long optimizer_steps() const { return adam ? adam->getStepCount() : 0; }
@@ -129,6 +136,11 @@ private:
   bool learnWindowWidth = false;
   bool learnWindowWidths = false;
 };
+
+py::array_t<double> conv_kern_K(
+    py::dict part,
+    py::array_t<double, py::array::c_style | py::array::forcecast> X,
+    py::object X2);
 
 void bind_deepgp(py::module_& m);
 

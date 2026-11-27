@@ -4,6 +4,7 @@
 #include <pybind11/stl.h>
 
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -90,11 +91,107 @@ py::array_t<double> noise_log_density(
   return out;
 }
 
+// CIP-003E Phase 6: multi-class block oracles for the Python façade.
+std::unique_ptr<CNoise> makeMulticlass(const std::string& type, unsigned int K, double eps,
+                                       unsigned int samples, unsigned int seed, CMatrix* target)
+{
+  if(type == "robustmax")
+    return std::unique_ptr<CNoise>(new CRobustMaxNoise(target, K, eps));
+  if(type == "softmax")
+    return std::unique_ptr<CNoise>(new CSoftmaxNoise(target, K, samples, seed));
+  throw ndlexceptions::Error("multiclass: type must be 'robustmax' or 'softmax', got '" + type + "'");
+}
+
+CMatrix matrix2d(const py::array_t<double, py::array::c_style | py::array::forcecast>& a)
+{
+  auto b = a.unchecked<2>();
+  CMatrix M(static_cast<unsigned int>(b.shape(0)), static_cast<unsigned int>(b.shape(1)));
+  for(py::ssize_t i = 0; i < b.shape(0); i++)
+    for(py::ssize_t j = 0; j < b.shape(1); j++)
+      M.setVal(b(i, j), static_cast<unsigned int>(i), static_cast<unsigned int>(j));
+  return M;
+}
+
+py::array_t<double> multiclass_expected_loglik(
+    const std::string& type,
+    py::array_t<double, py::array::c_style | py::array::forcecast> labels,
+    py::array_t<double, py::array::c_style | py::array::forcecast> mu,
+    py::array_t<double, py::array::c_style | py::array::forcecast> var,
+    unsigned int K, double eps, unsigned int samples, unsigned int seed)
+{
+  if(mu.ndim() != 2 || var.ndim() != 2 || mu.shape(1) != K || var.shape(1) != K
+     || mu.shape(0) != var.shape(0))
+    throw ndlexceptions::Error("multiclass_expected_loglik: mu and var must both be N x K");
+  const unsigned int N = static_cast<unsigned int>(mu.shape(0));
+  CMatrix lab = (labels.ndim() == 2) ? matrix2d(labels) : CMatrix(N, 1);
+  if(labels.ndim() == 1)
+  {
+    auto l = labels.unchecked<1>();
+    if(static_cast<unsigned int>(l.shape(0)) != N)
+      throw ndlexceptions::Error("multiclass_expected_loglik: labels need N entries");
+    for(unsigned int i = 0; i < N; i++)
+      lab.setVal(l(i), i, 0);
+  }
+  CMatrix Y = ndlnoise::oneHotLabels(lab, K);
+  if(Y.getRows() != N)
+    throw ndlexceptions::Error("multiclass_expected_loglik: labels need N rows");
+  std::unique_ptr<CNoise> noise = makeMulticlass(type, K, eps, samples, seed, &Y);
+  py::array_t<double> out(N);
+  auto o = out.mutable_unchecked<1>();
+  auto m = mu.unchecked<2>();
+  auto v = var.unchecked<2>();
+  std::vector<double> yr(K), mr(K), vr(K), gm(K), gv(K);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    for(unsigned int k = 0; k < K; k++)
+    {
+      yr[k] = Y.getVal(i, k);
+      mr[k] = m(i, k);
+      vr[k] = v(i, k);
+    }
+    o(i) = noise->expectedLogLikelihoodBlock(&yr[0], &mr[0], &vr[0], 0, &gm[0], &gv[0]);
+  }
+  return out;
+}
+
+py::array_t<double> multiclass_predict_proba(
+    const std::string& type,
+    py::array_t<double, py::array::c_style | py::array::forcecast> mu,
+    py::array_t<double, py::array::c_style | py::array::forcecast> var,
+    unsigned int K, double eps, unsigned int samples, unsigned int seed)
+{
+  if(mu.ndim() != 2 || var.ndim() != 2 || mu.shape(1) != K || var.shape(1) != K
+     || mu.shape(0) != var.shape(0))
+    throw ndlexceptions::Error("multiclass_predict_proba: mu and var must both be N x K");
+  const unsigned int N = static_cast<unsigned int>(mu.shape(0));
+  CMatrix Y(N, K);
+  Y.zeros();
+  std::unique_ptr<CNoise> noise = makeMulticlass(type, K, eps, samples, seed, &Y);
+  py::array_t<double> out({static_cast<py::ssize_t>(N), static_cast<py::ssize_t>(K)});
+  auto o = out.mutable_unchecked<2>();
+  auto m = mu.unchecked<2>();
+  auto v = var.unchecked<2>();
+  std::vector<double> mr(K), vr(K), p(K);
+  for(unsigned int i = 0; i < N; i++)
+  {
+    for(unsigned int k = 0; k < K; k++)
+    {
+      mr[k] = m(i, k);
+      vr[k] = v(i, k);
+    }
+    noise->predictBlock(&mr[0], &vr[0], 0, &p[0]);
+    for(unsigned int k = 0; k < K; k++)
+      o(i, k) = p[k];
+  }
+  return out;
+}
+
 std::vector<std::string> likelihood_types()
 {
   return {
       "gaussian", "probit", "skew_gaussian", "skew_exponential", "student_t",
       "poisson", "binomial", "exponential", "gamma", "ordered", "ncnm", "scale",
+      "robustmax", "softmax",
   };
 }
 
@@ -111,6 +208,15 @@ void bind_likelihood(py::module_& m)
       py::arg("params") = py::dict(),
       "Elementwise log p(y|f) for a CIP-003A likelihood type.\n\n"
       "params keys depend on type (variance, alpha, deg_free, rate, beta, num_trials).");
+  m.def("multiclass_expected_loglik", &multiclass_expected_loglik, py::arg("type"),
+        py::arg("labels"), py::arg("mu"), py::arg("var"), py::arg("num_classes"),
+        py::arg("eps") = 1e-3, py::arg("samples") = 256, py::arg("seed") = 12345,
+        "Per-row E_q[log p(y|f)] for 'robustmax' or 'softmax' with q = N(mu, diag(var)) (N x K). "
+        "labels: integer labels (N) or one-hot (N x K).");
+  m.def("multiclass_predict_proba", &multiclass_predict_proba, py::arg("type"),
+        py::arg("mu"), py::arg("var"), py::arg("num_classes"), py::arg("eps") = 1e-3,
+        py::arg("samples") = 256, py::arg("seed") = 12345,
+        "Class probabilities (N x K) for marginals N(mu, var) under robustmax or softmax.");
   m.def(
       "likelihood_types",
       &likelihood_types,

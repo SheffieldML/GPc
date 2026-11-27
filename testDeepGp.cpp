@@ -1223,6 +1223,93 @@ int main()
       expect(fabs(L0 - L1) < 1e-6, "Phase4: stream ELBO match");
     }
 
+    // ---- CIP-003E Phase 6: one-hot boundary and likelihood in the .model stream ----
+    {
+      CMatrix lab(5, 1);
+      const double lv[5] = {0, 2, 1, 2, 0};
+      for(unsigned int i = 0; i < 5; i++)
+        lab.setVal(lv[i], i, 0);
+      CMatrix oh = ndlnoise::oneHotLabels(lab);
+      bool ok = oh.getRows() == 5 && oh.getCols() == 3;
+      for(unsigned int i = 0; i < 5 && ok; i++)
+        for(unsigned int k = 0; k < 3; k++)
+          ok = ok && oh.getVal(i, k) == ((unsigned int)lv[i] == k ? 1.0 : 0.0);
+      expect(ok, "Phase6: oneHotLabels infers K and encodes labels");
+      CMatrix back = ndlnoise::labelsFromOneHot(oh);
+      expect(maxAbsDiff(back, lab) == 0.0, "Phase6: labelsFromOneHot inverts oneHotLabels");
+      expect(ndlnoise::oneHotLabels(lab, 4).getCols() == 4, "Phase6: explicit K widens the block");
+      expect(maxAbsDiff(ndlnoise::oneHotLabels(oh), oh) == 0.0, "Phase6: one-hot input passes through");
+      bool threwNeg = false, threwFrac = false, threwRange = false, threwNotHot = false;
+      CMatrix bad(2, 1);
+      bad.setVal(-1.0, 0, 0); bad.setVal(0.0, 1, 0);
+      try { ndlnoise::oneHotLabels(bad); } catch(ndlexceptions::Error&) { threwNeg = true; }
+      bad.setVal(0.5, 0, 0);
+      try { ndlnoise::oneHotLabels(bad); } catch(ndlexceptions::Error&) { threwFrac = true; }
+      bad.setVal(3.0, 0, 0);
+      try { ndlnoise::oneHotLabels(bad, 3); } catch(ndlexceptions::Error&) { threwRange = true; }
+      CMatrix notHot(2, 2);
+      notHot.setVal(1.0, 0, 0); notHot.setVal(1.0, 0, 1); notHot.setVal(1.0, 1, 0); notHot.setVal(0.0, 1, 1);
+      try { ndlnoise::oneHotLabels(notHot); } catch(ndlexceptions::Error&) { threwNotHot = true; }
+      expect(threwNeg && threwFrac && threwRange && threwNotHot,
+             "Phase6: oneHotLabels rejects negative, fractional, out-of-range and non-one-hot input");
+
+      for(int variant = 0; variant < 2; variant++)
+      {
+        const unsigned int N = 12, M = 4, K = 3;
+        CMatrix X(N, 1), labs(N, 1);
+        for(unsigned int i = 0; i < N; i++)
+        {
+          X.setVal((double)i / (double)(N - 1), i, 0);
+          labs.setVal((double)(i % K), i, 0);
+        }
+        CMatrix Yc = ndlnoise::oneHotLabels(labs, K);
+        ndlutil::init_genrand(211u);
+        CCmpndKern k0(X), k1(X);
+        makeRbfOnly(k0, X, 1.2, 0.4);
+        makeRbfOnly(k1, X, 0.9, 1.0);
+        CDeepGp dgp(X, Yc, vector<CKern*>{&k0, &k1}, vector<unsigned int>{1u, 1u, K},
+                    vector<unsigned int>{M, M}, 1.0, 0.4, 0);
+        const string kind = variant == 0 ? "softmax" : "robustmax";
+        if(variant == 0)
+          dgp.adoptLikelihood(unique_ptr<CNoise>(new CSoftmaxNoise(&Yc, K, 64, 9)));
+        else
+          dgp.adoptLikelihood(unique_ptr<CNoise>(new CRobustMaxNoise(&Yc, K, 2e-2)));
+        dgp.setNumSamples(2);
+        dgp.setSeed(5);
+        CAdam adam(0.02);
+        adam.setBatchSize(N);
+        adam.setMaxIters(15);
+        adam.setSeed(5);
+        adam.maximise(dgp);
+        CMatrix p0;
+        dgp.getStochasticParams(p0);
+        dgp.setSeed(77);
+        const double L0 = dgp.elboEstimate();
+        ostringstream oss;
+        dgp.toStream(oss);
+        istringstream iss(oss.str());
+        CMatrix Xtmp(1, 1), Ytmp(1, 1);
+        CRbfKern ktmp(1);
+        ktmp.setInitParam();
+        vector<CKern*> tk{&ktmp};
+        CDeepGp loaded(Xtmp, Ytmp, tk, vector<unsigned int>{1u, 1u}, vector<unsigned int>{1u}, 1.0, 1.0, 0);
+        loaded.fromStream(iss);
+        CMatrix p1;
+        loaded.getStochasticParams(p1);
+        expect(loaded.getLikelihood() != 0 && loaded.getLikelihood()->getType() == kind,
+               "Phase6: " + kind + " likelihood restored from the .model stream");
+        expect(loaded.getLikelihood() != 0 && loaded.getLikelihood()->blockSize() == K,
+               "Phase6: " + kind + " block size restored");
+        expect(p0.getCols() == p1.getCols() && maxAbsDiff(p0, p1) < 1e-10,
+               "Phase6: " + kind + " stochastic params restored");
+        loaded.setNumSamples(2);
+        loaded.setSeed(77);
+        const double L1 = loaded.elboEstimate();
+        cout << "  info: Phase6 " << kind << " stream L0=" << L0 << " L1=" << L1 << endl;
+        expect(fabs(L0 - L1) < 1e-8 * (1.0 + fabs(L0)), "Phase6: " + kind + " ELBO identical after round trip");
+      }
+    }
+
     // ---- Phase 4 V7: prior Jacobian spread with chi=1/L stays bounded ----
     // Draws v~N(0,I) per layer (A^T v), independent of trained q — matches
     // prototype dgp_jacobian.py residual-off prior probe.

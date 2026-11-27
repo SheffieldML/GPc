@@ -561,9 +561,16 @@ class DeepGP(_DeepGP):
     drop_residual :
         If True, omit Nyström residual (finite-network bound).
     likelihood :
-        ``'gaussian'``, ``'probit'``, or ``'ordered'``.
+        ``'gaussian'``, ``'probit'``, ``'ordered'``, ``'robustmax'`` or
+        ``'softmax'``, or a :class:`gpc.likelihoods.RobustMax` /
+        :class:`gpc.likelihoods.Softmax` instance. The multi-class likelihoods take
+        integer labels ``0..K-1`` (or one-hot ``N x K``) as ``Y``; the output
+        dimension becomes ``K``. Use ``predict_proba`` for class probabilities.
     num_categories :
         Categories for ordered likelihood.
+    num_classes :
+        Number of classes for the multi-class likelihoods (default: inferred from
+        the labels, or taken from a likelihood instance).
     learn_window_width, learn_window_widths :
         Weight-space only (``inducing='hermite'`` raises: the windows have no
         width). Optimise a tied window width ``s`` per layer, or untied
@@ -596,12 +603,31 @@ class DeepGP(_DeepGP):
         chi: float = 1.0,
         beta: float = 1.0,
         drop_residual: bool = False,
-        likelihood: str = "gaussian",
+        likelihood: Any = "gaussian",
         num_categories: int = 3,
         verbosity: int = 0,
         learn_window_width: bool = False,
         learn_window_widths: bool = False,
+        num_classes: int = 0,
     ) -> None:
+        mc: dict[str, Any] = {}
+        if not isinstance(likelihood, str):
+            from . import likelihoods as _lik
+
+            if isinstance(likelihood, _lik.RobustMax):
+                mc = {"likelihood_eps": likelihood.eps}
+            elif isinstance(likelihood, _lik.Softmax):
+                mc = {
+                    "likelihood_samples": likelihood.num_samples,
+                    "likelihood_seed": likelihood.seed,
+                }
+            else:
+                raise TypeError(
+                    "DeepGP likelihood must be a string, RobustMax or Softmax; got "
+                    f"{type(likelihood).__name__}"
+                )
+            num_classes = int(likelihood.num_classes)
+            likelihood = likelihood.type
         super().__init__(
             X,
             Y,
@@ -618,6 +644,8 @@ class DeepGP(_DeepGP):
             verbosity=verbosity,
             learn_window_width=learn_window_width,
             learn_window_widths=learn_window_widths,
+            num_classes=num_classes,
+            **mc,
         )
         _emit_hermite_warnings(self)
 

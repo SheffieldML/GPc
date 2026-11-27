@@ -197,6 +197,10 @@ void CCldeepgp::learn()
   double beta = 1.0;
   bool dropResidual = false;
   string kernelType = "rbf";
+  string likelihoodType = "gaussian";
+  int numClasses = 0;
+  double robustMaxEps = 1e-3;
+  int softmaxSamples = 256;
   string modelFileName = "deepgp_model";
 
   while(isFlags())
@@ -271,6 +275,26 @@ void CCldeepgp::learn()
         incrementArgument();
         adamLr = getDoubleFromCurrentArgument();
       }
+      else if(isCurrentArg("--likelihood", "--likelihood"))
+      {
+        incrementArgument();
+        likelihoodType = getCurrentArgument();
+      }
+      else if(isCurrentArg("--num-classes", "--num-classes"))
+      {
+        incrementArgument();
+        numClasses = getIntFromCurrentArgument();
+      }
+      else if(isCurrentArg("--robustmax-eps", "--robustmax-eps"))
+      {
+        incrementArgument();
+        robustMaxEps = getDoubleFromCurrentArgument();
+      }
+      else if(isCurrentArg("--softmax-samples", "--softmax-samples"))
+      {
+        incrementArgument();
+        softmaxSamples = getIntFromCurrentArgument();
+      }
       else if(isCurrentArg("-k", "--kernel"))
       {
         incrementArgument();
@@ -316,10 +340,35 @@ void CCldeepgp::learn()
   if(getFileFormat() != 0)
     exitError("deepgp currently writes only the native text .model format (-f 0).");
 
+  const bool multiclass = (likelihoodType == "robustmax" || likelihoodType == "softmax");
+  if(!multiclass && likelihoodType != "gaussian")
+    exitError("--likelihood must be gaussian, robustmax or softmax.");
+  if(multiclass)
+  {
+    if(numClasses < 0 || numClasses == 1)
+      exitError("--num-classes must be at least 2 (or 0 to infer from the labels).");
+    if(!(robustMaxEps > 0.0 && robustMaxEps < 1.0))
+      exitError("--robustmax-eps must be in (0, 1).");
+    if(softmaxSamples < 2)
+      exitError("--softmax-samples must be at least 2.");
+  }
+
   CMatrix X;
   CMatrix y;
   readData(X, y, trainDataFileName);
-  if(centreData)
+  if(multiclass)
+  {
+    // Integer labels (or an existing one-hot block) become N x K one-hot here, at the boundary.
+    try
+    {
+      y = ndlnoise::oneHotLabels(y, (unsigned int)numClasses);
+    }
+    catch(ndlexceptions::Error& e)
+    {
+      exitError(e.getMessage());
+    }
+  }
+  else if(centreData)
     centreColumns(y);
 
   const unsigned int Din = X.getCols();
@@ -373,6 +422,15 @@ void CCldeepgp::learn()
   }
   if(dropResidual)
     model.setDropResidual(true);
+  if(multiclass)
+  {
+    if(likelihoodType == "robustmax")
+      model.adoptLikelihood(unique_ptr<CNoise>(
+          new CRobustMaxNoise(&y, Dout, robustMaxEps)));
+    else
+      model.adoptLikelihood(unique_ptr<CNoise>(
+          new CSoftmaxNoise(&y, Dout, (unsigned int)softmaxSamples, (unsigned int)getSeed())));
+  }
   model.setNumSamples((unsigned int)numSamples);
   model.setNatGradGamma(natGradGamma);
   model.setSeed((uint64_t)getSeed());
@@ -487,7 +545,12 @@ void CCldeepgp::helpInfo()
   cout << "  --natgrad-gamma final-layer CVI step in [0,1] (default 0)" << endl;
   cout << "  --adam-lr a     Adam learning rate (default 1e-2)" << endl;
   cout << "  -k TYPE         rbf | mlp | lin (default rbf)" << endl;
-  cout << "  -C bool         centre outputs (default true)" << endl;
+  cout << "  --likelihood L  gaussian | robustmax | softmax (default gaussian); the" << endl;
+  cout << "                  multi-class likelihoods take integer labels 0..K-1 (or one-hot)" << endl;
+  cout << "  --num-classes K number of classes (default: max label + 1)" << endl;
+  cout << "  --robustmax-eps e  robust-max label noise (default 1e-3)" << endl;
+  cout << "  --softmax-samples S  fixed Monte Carlo draws for softmax (default 256)" << endl;
+  cout << "  -C bool         centre outputs (default true; ignored for multi-class)" << endl;
   cout << "  -# iters        Adam iterations (default 100)" << endl;
   cout << endl;
   cout << "Stream type is deepgp. See docs/tutorials/deepgp.md." << endl;

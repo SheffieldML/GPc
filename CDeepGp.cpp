@@ -386,6 +386,15 @@ void CDeepGp::setLikelihood(CNoise* noise)
   layers.back()->setLikelihood(noise);
 }
 
+void CDeepGp::adoptLikelihood(std::unique_ptr<CNoise> noise)
+{
+  if(!noise)
+    throw ndlexceptions::Error("CDeepGp::adoptLikelihood: null likelihood");
+  noise->setTarget(&Y);
+  setLikelihood(noise.get());
+  ownedLikelihood = std::move(noise);
+}
+
 CNoise* CDeepGp::getLikelihood() const
 {
   return layers.back()->getLikelihood();
@@ -841,6 +850,8 @@ void CDeepGp::display(ostream& os) const
      << " dropResidual=" << (dropResidual ? 1 : 0) << endl;
   os << "  samples=" << numSamples
      << " natgrad_gamma=" << natGradGamma << endl;
+  if(!layers.empty() && layers.back()->getLikelihood() != 0)
+    os << "  likelihood=" << layers.back()->getLikelihood()->getType() << endl;
   os << "  dims:";
   for(unsigned int ell = 0; ell <= numLayers; ell++)
     os << " " << layerDims[ell];
@@ -900,6 +911,12 @@ void CDeepGp::writeParamsToStream(ostream& os) const
     if(np > 0)
       peWrite.deepCopy(pe);
     peWrite.toStream(os);
+  }
+  // Optional trailing block (absent in files written before CIP-003E Phase 6).
+  if(layers.back()->getLikelihood() != 0)
+  {
+    writeToStream(os, "hasLikelihood", true);
+    writeNoiseToStream(*layers.back()->getLikelihood(), os);
   }
 }
 
@@ -962,7 +979,18 @@ void CDeepGp::readParamsFromStream(istream& is)
     savedParams[ell].fromStream(is);
   }
 
+  std::unique_ptr<CNoise> loadedLikelihood;
+  is >> std::ws;
+  if(is.peek() != std::char_traits<char>::eof())
+  {
+    if(readBoolFromStream(is, "hasLikelihood"))
+      loadedLikelihood.reset(readNoiseFromStream(is));
+  }
+
   rebuildLayers(betaStore);
+  ownedLikelihood.reset();
+  if(loadedLikelihood)
+    adoptLikelihood(std::move(loadedLikelihood));  // before parameters: it changes the free set
   for(unsigned int ell = 0; ell < numLayers; ell++)
   {
     meanP[ell].deepCopy(savedMeanP[ell]);

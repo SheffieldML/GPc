@@ -196,6 +196,14 @@ void laplacePointDerivs(const CNoise& noise,
                         double& W,
                         double& dWdf);
 
+// CIP-003E Phase 6: multi-class targets are one-hot N x K inside the library; integer
+// labels are converted here, at the boundary (loaders, CLI, Python), and nowhere else.
+// labels: N x 1 integers in 0..K-1 (numClasses = 0 infers K = max + 1, at least 2), or
+// an N x K matrix that is already one-hot (validated and copied). Throws on bad input.
+CMatrix oneHotLabels(const CMatrix& labels, unsigned int numClasses = 0);
+// Class index (argmax) of each row of a one-hot matrix, as an N x 1 matrix.
+CMatrix labelsFromOneHot(const CMatrix& Y);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.
@@ -279,7 +287,8 @@ class CNoise : public CTransformable, public CRegularisable, public COptimisable
                                             const double* var, unsigned int j0,
                                             double* gMu, double* gVar) const;
   // Laplace: log p, gradient g (length blockSize), negative Hessian W
-  // (blockSize x blockSize) and optionally dW/df for blockSize 1.
+  // (blockSize x blockSize) and optionally dW/df: for blockSize 1 a 1x1 matrix, for
+  // blockSize b a (b*b) x b matrix with entry (a*b+c, d) = dW_ac/df_d.
   virtual void pointDerivsBlock(const double* y, const double* f, unsigned int j0,
                                 double* logp, double* g, CMatrix& negHessian,
                                 CMatrix* dNegHessian = 0) const;
@@ -1277,6 +1286,165 @@ class CGammaNoise : public CNoise {
   double beta;
 };
 
+
+/** CIP-003E Phase 4: robust-max multi-class likelihood (Hernandez-Lobato et al. 2011).
+ *  One block of K latents per datum, one-hot targets. p(y=c|f) = 1-eps if c is the
+ *  argmax of f and eps/(K-1) otherwise, so the expectation under independent
+ *  Gaussian marginals needs only P(argmax = c), a one-dimensional integral
+ *  int N(f_c) prod_{k!=c} Phi((f_c-mu_k)/s_k) df_c done by composite
+ *  Gauss-Legendre with breakpoints at the Phi transitions (robust to small
+ *  variances, unlike fixed Gauss-Hermite). eps is a fixed hyperparameter. The
+ *  likelihood is piecewise constant in f, so there is no Laplace capability. */
+class CRobustMaxNoise : public CNoise {
+ public:
+  CRobustMaxNoise() : numClasses(2), eps(1e-3) { _init(); }
+  CRobustMaxNoise(CMatrix* pyin, unsigned int classes, double epsilon = 1e-3)
+    : numClasses(classes), eps(epsilon)
+  {
+    BOUNDCHECK(classes >= 2);
+    BOUNDCHECK(epsilon > 0.0 && epsilon < 1.0 - 1.0/classes);
+    _init();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CRobustMaxNoise();
+
+  unsigned int blockSize() const { return numClasses; }
+  unsigned int capabilities() const;
+  unsigned int getNumClasses() const { return numClasses; }
+  double getEps() const { return eps; }
+  void setEps(double e) { BOUNDCHECK(e > 0.0 && e < 1.0 - 1.0/numClasses); eps = e; }
+
+  /** P(argmax f = c) for f_k ~ N(mu_k, var_k) independent, with derivatives in
+   *  every mu_k and var_k (either derivative pointer may be null). */
+  static double classProbability(const double* mu, const double* var,
+                                 unsigned int K, unsigned int c,
+                                 double* dMu, double* dVar);
+  /** d/d eps of the block expected log-likelihood (for tests / future learning of eps). */
+  double expectedLogLikelihoodDEps(const double* y, const double* mu, const double* var) const;
+
+  double expectedLogLikelihoodBlock(const double* y, const double* mu, const double* var,
+                                    unsigned int j0, double* gMu, double* gVar) const;
+  void cavityMomentsBlock(const double* y, const double* mu, const double* var,
+                          unsigned int j0, double* dMu, double* dVar) const;
+  double logZBlock(const double* y, const double* mu, const double* var,
+                   unsigned int j0) const;
+  void predictBlock(const double* mu, const double* var, unsigned int j0,
+                    double* prob) const;
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  unsigned int observedClass(const double* y) const;
+  unsigned int numClasses;
+  double eps;
+};
+
+/** CIP-003E Phase 5: softmax multi-class likelihood, p(y=c|f) = exp(f_c)/sum_k exp(f_k).
+ *  One block of K latents per datum, one-hot targets. Expectations and cavity
+ *  moments are reparameterised Monte Carlo over a fixed set of S standard normal
+ *  draws (antithetic pairs; seed fixed per object), so every estimate is a
+ *  deterministic, differentiable function of (mu, var): gradients are exact
+ *  derivatives of the sampled estimate and finite differences are meaningful.
+ *  The estimator is stochastic in the sense that it carries Monte Carlo error
+ *  ~ 1/sqrt(S); EP with it is not claimed monotone. Laplace uses the exact
+ *  point derivatives (gradient delta - pi, negative Hessian diag(pi) - pi pi^T). */
+class CSoftmaxNoise : public CNoise {
+ public:
+  CSoftmaxNoise() : numClasses(2), numSamples(256), seed(12345) { _init(); resample(); }
+  CSoftmaxNoise(CMatrix* pyin, unsigned int classes, unsigned int samples = 256,
+                unsigned int seedVal = 12345)
+    : numClasses(classes), numSamples(samples), seed(seedVal)
+  {
+    BOUNDCHECK(classes >= 2);
+    BOUNDCHECK(samples >= 2);
+    _init();
+    resample();
+    setTarget(pyin);
+    initNames();
+    initVals();
+    initParams();
+  }
+  ~CSoftmaxNoise();
+
+  unsigned int blockSize() const { return numClasses; }
+  unsigned int capabilities() const;
+  unsigned int getNumClasses() const { return numClasses; }
+  unsigned int getNumSamples() const { return numSamples; }
+  unsigned int getSeed() const { return seed; }
+  void setNumSamples(unsigned int s) { BOUNDCHECK(s >= 2); numSamples = s; resample(); }
+  void setSeed(unsigned int s) { seed = s; resample(); }
+
+  double expectedLogLikelihoodBlock(const double* y, const double* mu, const double* var,
+                                    unsigned int j0, double* gMu, double* gVar) const;
+  void pointDerivsBlock(const double* y, const double* f, unsigned int j0,
+                        double* logp, double* g, CMatrix& negHessian,
+                        CMatrix* dNegHessian = 0) const;
+  void cavityMomentsBlock(const double* y, const double* mu, const double* var,
+                          unsigned int j0, double* dMu, double* dVar) const;
+  double logZBlock(const double* y, const double* mu, const double* var,
+                   unsigned int j0) const;
+  void predictBlock(const double* mu, const double* var, unsigned int j0,
+                    double* prob) const;
+
+  void initStoreage();
+  void initNames();
+  void initVals();
+  void initParams();
+  ostream& display(ostream& os);
+  void setParams(const CMatrix& params);
+  void setParam(double val, unsigned int index);
+  void getParams(CMatrix& params) const;
+  double getParam(unsigned int index) const;
+  void getGradParams(CMatrix& g) const;
+  void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
+  void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
+  void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
+  void likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest, const CMatrix& yTest) const;
+  double logLikelihood() const
+  {
+    return logLikelihood(activeSites().mu, activeSites().varSigma, *py);
+  }
+  void writeParamsToStream(ostream& out) const;
+  void readParamsFromStream(istream& in);
+
+ private:
+  void _init();
+  void resample();
+  unsigned int observedClass(const double* y) const;
+  // softmax probabilities of one sample f (length K), returns log-sum-exp.
+  static double softmaxOf(const double* f, unsigned int K, double* pi);
+  unsigned int numClasses;
+  unsigned int numSamples;
+  unsigned int seed;
+  std::vector<double> draws;  // numSamples x numClasses standard normals
+};
 
 void writeNoiseToStream(const CNoise& noise, ostream& out);
 CNoise* readNoiseFromStream(istream& in);

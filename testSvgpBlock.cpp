@@ -191,6 +191,83 @@ int main()
       expect(fabs(s2.elbo() - Lbefore) < 1e-5, "coupled block: CVI approaches a fixed point");
     }
 
+    // --- Multi-class likelihoods end to end (CIP-003E Phase 4/5 coverage) ---
+    {
+      const unsigned int Nc = 30, C = 3;
+      CMatrix Xc(Nc, 1), Yc(Nc, C), Zc(M, 1);
+      Yc.zeros();
+      for(unsigned int i = 0; i < Nc; i++)
+      {
+        const double x = -2.5 + 5.0 * (double)i / (double)(Nc - 1);
+        Xc.setVal(x, i, 0);
+        Yc.setVal(1.0, i, x < -0.8 ? 0 : (x < 0.9 ? 1 : 2));
+      }
+      for(unsigned int k = 0; k < M; k++)
+        Zc.setVal(-2.2 + 4.4 * (double)k / (double)(M - 1), k, 0);
+      for(int which = 0; which < 2; which++)
+      {
+        const string name = which == 0 ? "softmax" : "robust-max";
+        CCmpndKern k(Xc);
+        makeKern(k, Xc);
+        CSoftmaxNoise sm(&Yc, C, 256, 4);
+        CRobustMaxNoise rm(&Yc, C, 1e-2);
+        CNoise* nz = which == 0 ? static_cast<CNoise*>(&sm) : static_cast<CNoise*>(&rm);
+        CSvgp sv(&k, &Xc, &Yc, Zc, 1.0, 0);
+        sv.setLikelihood(nz);
+        for(unsigned int t = 0; t < 4; t++)
+          sv.naturalGradientStep(0.3);
+        vector<unsigned int> all(Nc);
+        for(unsigned int i = 0; i < Nc; i++) all[i] = i;
+        for(int pass = 0; pass < 2; pass++)
+        {
+          vector<unsigned int> rows = pass == 0 ? all : vector<unsigned int>(all.begin(), all.begin() + 11);
+          CMatrix g(1, sv.getOptNumParams());
+          sv.objectiveGradBatch(rows, g);
+          CMatrix p0(1, sv.getOptNumParams());
+          sv.getOptParams(p0);
+          const double eps = 1e-6;
+          double maxRel = 0.0;
+          for(unsigned int i = 0; i < sv.getOptNumParams(); i++)
+          {
+            CMatrix pp(p0), pm(p0), gtmp(1, sv.getOptNumParams());
+            pp.setVal(p0.getVal(i) + eps, i);
+            pm.setVal(p0.getVal(i) - eps, i);
+            sv.setOptParams(pp);
+            const double Lp = pass == 0 ? sv.elbo() : sv.objectiveGradBatch(rows, gtmp);
+            sv.setOptParams(pm);
+            const double Lm = pass == 0 ? sv.elbo() : sv.objectiveGradBatch(rows, gtmp);
+            sv.setOptParams(p0);
+            const double fd = (Lp - Lm) / (2.0 * eps);
+            maxRel = max(maxRel, fabs(fd - g.getVal(i)) / max(1.0, max(fabs(fd), fabs(g.getVal(i)))));
+          }
+          cout << "  info: " << name << " SVGP FD max relative diff (pass " << pass << ")=" << maxRel << endl;
+          expect(maxRel < 5e-4, "SVGP " + name + (pass == 0 ? ": full-batch" : ": minibatch") + " gradient matches finite differences");
+        }
+        CCmpndKern k2(Xc);
+        makeKern(k2, Xc);
+        CSvgp s2(&k2, &Xc, &Yc, Zc, 1.0, 0);
+        s2.setLikelihood(nz);
+        const double L0 = s2.elbo();
+        double prev = L0;
+        bool monotone = true;
+        double worstDrop = 0.0;
+        for(int it = 0; it < 40; it++)
+        {
+          s2.naturalGradientStep(0.3);
+          const double cur = s2.elbo();
+          if(cur < prev - 1e-9 * max(1.0, fabs(prev))) monotone = false;
+          worstDrop = max(worstDrop, prev - cur);
+          prev = cur;
+        }
+        // Softmax is log-concave in f, so CVI ascends monotonically. Robust-max is
+        // not (sites can have negative precision and the step is halved to keep q
+        // proper), so only the overall improvement is required of it.
+        cout << "  info: " << name << " CVI worst single-step ELBO drop " << worstDrop << endl;
+        expect((which == 1 || monotone) && prev > L0,
+               "SVGP " + name + ": CVI natural-gradient steps improve the ELBO (" + to_string(L0) + " -> " + to_string(prev) + ")");
+      }
+    }
+
     // --- Refusal: block size must tile the outputs ---
     {
       CMatrix Y3(N, 3);

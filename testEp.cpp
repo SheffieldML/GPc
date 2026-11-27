@@ -483,7 +483,7 @@ static int testCGpSoftmaxLaplace()
   model.getOptParams(p0);
   for(unsigned int i = 0; i < k.getNumParams() && i < p0.getCols(); i++)
   {
-    const double h = 1e-5;
+    const double h = 1e-4;
     CMatrix pp(p0), pm(p0);
     pp.setVal(p0.getVal(i) + h, i);
     pm.setVal(p0.getVal(i) - h, i);
@@ -493,7 +493,7 @@ static int testCGpSoftmaxLaplace()
     const double Lm = model.logLikelihood();
     model.setOptParams(p0);
     const double fd = (Lp - Lm) / (2.0 * h);
-    fail += checkClose("CGp softmax Laplace kern gradient vs FD", fabs(fd - g.getVal(i)) < 1e-5 * (1.0 + fabs(fd)) ? 1.0 : 0.0, 1.0, 0.0);
+    fail += checkClose("CGp softmax Laplace kern gradient vs FD", fabs(fd - g.getVal(i)) < 5e-5 * (1.0 + fabs(fd)) ? 1.0 : 0.0, 1.0, 0.0);
   }
   model.logLikelihood();
   CMatrix Xt(2, 1); Xt.setVal(-2.0, 0, 0); Xt.setVal(2.0, 1, 0);

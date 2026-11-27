@@ -73,6 +73,9 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   // Phase 3: non-Gaussian final-layer likelihood (borrowed; not owned).
   void setLikelihood(CNoise* noise);
   CNoise* getLikelihood() const;
+  // CIP-003E Phase 6: take ownership of a likelihood, point it at this model's targets
+  // and install it. Owned likelihoods are written to and restored from the .model stream.
+  void adoptLikelihood(std::unique_ptr<CNoise> noise);
 
   // Phase 4: drop Nyström residual on every layer (finite-network bound).
   void setDropResidual(bool val);
@@ -129,6 +132,7 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
 
   CMatrix X;
   CMatrix Y;
+  std::unique_ptr<CNoise> ownedLikelihood;  // set by adoptLikelihood / readParamsFromStream
   unsigned int nData;
   unsigned int inputDim;
   unsigned int outputDim;

@@ -196,6 +196,14 @@ void laplacePointDerivs(const CNoise& noise,
                         double& W,
                         double& dWdf);
 
+// CIP-003E Phase 6: multi-class targets are one-hot N x K inside the library; integer
+// labels are converted here, at the boundary (loaders, CLI, Python), and nowhere else.
+// labels: N x 1 integers in 0..K-1 (numClasses = 0 infers K = max + 1, at least 2), or
+// an N x K matrix that is already one-hot (validated and copied). Throws on bad input.
+CMatrix oneHotLabels(const CMatrix& labels, unsigned int numClasses = 0);
+// Class index (argmax) of each row of a one-hot matrix, as an N x 1 matrix.
+CMatrix labelsFromOneHot(const CMatrix& Y);
+
 } // namespace ndlnoise
 
 // The basic noise class. The class allows its parameters to be transformed or optimised. Also noise models can be loaded from matlab files.

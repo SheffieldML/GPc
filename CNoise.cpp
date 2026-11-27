@@ -1,6 +1,7 @@
 
 #include "CNoise.h"
 #include <algorithm>
+#include <sstream>
 
 using namespace std;
 
@@ -460,6 +461,79 @@ void laplacePointDerivs(const CNoise& noise,
   throw ndlexceptions::Error(
       "ndlnoise::laplacePointDerivs: Laplace not supported for noise type '"
       + t + "'");
+}
+
+
+CMatrix oneHotLabels(const CMatrix& labels, unsigned int numClasses)
+{
+  const unsigned int n = labels.getRows();
+  if(labels.getCols() > 1)
+  {
+    // Already N x K: must be one-hot (exactly one 1, the rest 0).
+    if(numClasses != 0 && labels.getCols() != numClasses)
+      throw ndlexceptions::Error("oneHotLabels: targets have " + ndlstrutil::itoa(labels.getCols())
+                                 + " columns but " + ndlstrutil::itoa(numClasses) + " classes were requested");
+    for(unsigned int i = 0; i < n; i++)
+    {
+      unsigned int ones = 0;
+      for(unsigned int k = 0; k < labels.getCols(); k++)
+      {
+        const double v = labels.getVal(i, k);
+        if(v == 1.0)
+          ones++;
+        else if(v != 0.0)
+          throw ndlexceptions::Error("oneHotLabels: row " + ndlstrutil::itoa(i) + " is not one-hot");
+      }
+      if(ones != 1)
+        throw ndlexceptions::Error("oneHotLabels: row " + ndlstrutil::itoa(i) + " is not one-hot");
+    }
+    CMatrix out(labels);
+    return out;
+  }
+  if(labels.getCols() != 1)
+    throw ndlexceptions::Error("oneHotLabels: labels must have at least one column");
+  unsigned int K = numClasses;
+  if(K == 0)
+  {
+    double mx = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+      if(labels.getVal(i) > mx)
+        mx = labels.getVal(i);
+    K = static_cast<unsigned int>(mx) + 1;
+    if(K < 2)
+      K = 2;
+  }
+  if(K < 2)
+    throw ndlexceptions::Error("oneHotLabels: need at least two classes");
+  CMatrix out(n, K);
+  out.zeros();
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double v = labels.getVal(i);
+    if(!(v >= 0.0) || v != std::floor(v) || v >= static_cast<double>(K))
+    {
+      std::ostringstream lab;
+      lab << v;
+      throw ndlexceptions::Error("oneHotLabels: label " + lab.str() + " in row " + ndlstrutil::itoa(i)
+                                 + " is not an integer in 0.." + ndlstrutil::itoa(K - 1));
+    }
+    out.setVal(1.0, i, static_cast<unsigned int>(v));
+  }
+  return out;
+}
+
+CMatrix labelsFromOneHot(const CMatrix& Y)
+{
+  CMatrix out(Y.getRows(), 1);
+  for(unsigned int i = 0; i < Y.getRows(); i++)
+  {
+    unsigned int best = 0;
+    for(unsigned int k = 1; k < Y.getCols(); k++)
+      if(Y.getVal(i, k) > Y.getVal(i, best))
+        best = k;
+    out.setVal(static_cast<double>(best), i);
+  }
+  return out;
 }
 
 } // namespace ndlnoise

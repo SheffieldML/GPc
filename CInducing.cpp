@@ -2032,31 +2032,84 @@ const CConvKern& CInducingPatches::convKern(const CKern& kern)
   return *ck;
 }
 
+// With a location kernel the centres are augmented pairs (patch, location): M x (q + 2),
+// the last two columns being the inducing locations (patch-grid row, column in [0,1]).
+static unsigned int patchColsOf(const CConvKern& ck)
+{
+  return ck.patchDim() + (ck.hasLocation() ? 2u : 0u);
+}
+
+// Kl[m,p] = k_loc(L_m, l_p) and the squared distances, M x P.
+static void locCrossGram(CMatrix& Kl, CMatrix& D2, const CConvKern& ck, const CMatrix& Z)
+{
+  const unsigned int M = Z.getRows(), P = ck.numPatches(), q = ck.patchDim();
+  const double l2 = exp(2.0 * log(ck.locationLengthscale()));
+  Kl.resize(M, P);
+  D2.resize(M, P);
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int p = 0; p < P; p++)
+    {
+      double li, lj;
+      ck.patchLocation(p, li, lj);
+      const double a = Z.getVal(m, q) - li, b = Z.getVal(m, q + 1) - lj;
+      const double d2 = a * a + b * b;
+      D2.setVal(d2, m, p);
+      Kl.setVal(exp(-0.5 * d2 / l2), m, p);
+    }
+}
+
+static void patchPart(CMatrix& Zp, const CMatrix& Z, unsigned int q)
+{
+  Zp.resize(Z.getRows(), q);
+  for(unsigned int m = 0; m < Z.getRows(); m++)
+    for(unsigned int j = 0; j < q; j++)
+      Zp.setVal(Z.getVal(m, j), m, j);
+}
+
 void CInducingPatches::computeKuu(CMatrix& Kuu, const CKern& kern) const
 {
   const CConvKern& ck = convKern(kern);
-  DIMENSIONMATCH(Z.getCols() == ck.patchDim());
-  ck.patchKernel().compute(Kuu, Z);
+  DIMENSIONMATCH(Z.getCols() == patchColsOf(ck));
+  if(!ck.hasLocation())
+  {
+    ck.patchKernel().compute(Kuu, Z);
+    return;
+  }
+  const unsigned int M = Z.getRows(), q = ck.patchDim();
+  const double l2 = exp(2.0 * log(ck.locationLengthscale()));
+  CMatrix Zp;
+  patchPart(Zp, Z, q);
+  ck.patchKernel().compute(Kuu, Zp);
+  for(unsigned int a = 0; a < M; a++)
+    for(unsigned int b = 0; b < M; b++)
+    {
+      const double da = Z.getVal(a, q) - Z.getVal(b, q), db = Z.getVal(a, q + 1) - Z.getVal(b, q + 1);
+      Kuu.setVal(Kuu.getVal(a, b) * exp(-0.5 * (da * da + db * db) / l2), a, b);
+    }
+  Kuu.setSymmetric(true);
 }
 
 void CInducingPatches::computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const
 {
   const CConvKern& ck = convKern(kern);
-  DIMENSIONMATCH(Z.getCols() == ck.patchDim());
+  DIMENSIONMATCH(Z.getCols() == patchColsOf(ck));
   const unsigned int P = ck.numPatches();
   const unsigned int N = X.getRows();
   const unsigned int M = Z.getRows();
   const vector<double>& w = ck.patchWeights();
-  CMatrix Xp, Kp(M, N * P);
+  CMatrix Xp, Kp(M, N * P), Zp, Kl, D2;
   ck.extractPatches(Xp, X);
-  ck.patchKernel().compute(Kp, Z, Xp);
+  patchPart(Zp, Z, ck.patchDim());
+  ck.patchKernel().compute(Kp, Zp, Xp);
+  if(ck.hasLocation())
+    locCrossGram(Kl, D2, ck, Z);
   Kuf.resize(M, N);
   for(unsigned int m = 0; m < M; m++)
     for(unsigned int n = 0; n < N; n++)
     {
       double s = 0.0;
       for(unsigned int p = 0; p < P; p++)
-        s += w[p] * Kp.getVal(m, n * P + p);
+        s += (ck.hasLocation() ? Kl.getVal(m, p) : w[p]) * Kp.getVal(m, n * P + p);
       Kuf.setVal(s, m, n);
     }
 }
@@ -2081,31 +2134,65 @@ void CInducingPatches::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix
   const unsigned int M = Z.getRows();
   const unsigned int N = X.getRows();
   const unsigned int P = ck.numPatches();
+  const unsigned int q = ck.patchDim();
   const unsigned int nk = ck.patchKernel().getNumParams();
+  const bool loc = ck.hasLocation();
+  DIMENSIONMATCH(Z.getCols() == patchColsOf(ck));
   DIMENSIONMATCH(gKernParams.getCols() == ck.getNumParams());
   DIMENSIONMATCH(gKuu.getRows() == M && gKuu.getCols() == M);
   DIMENSIONMATCH(gKuf.getRows() == M && gKuf.getCols() == N);
   const vector<double>& w = ck.patchWeights();
 
-  CMatrix Xp, Kp(M, N * P), G(M, N * P);
+  CMatrix Xp, Kp(M, N * P), G(M, N * P), Zp, Kl, D2;
   ck.extractPatches(Xp, X);
-  ck.patchKernel().compute(Kp, Z, Xp);
+  patchPart(Zp, Z, q);
+  ck.patchKernel().compute(Kp, Zp, Xp);
   vector<double> gw(P, 0.0);
+  if(loc)
+    locCrossGram(Kl, D2, ck, Z);
+  CMatrix gKl(M, P, 0.0);  // cotangent of the cross location kernel k_loc(L_m, l_p)
   for(unsigned int m = 0; m < M; m++)
     for(unsigned int n = 0; n < N; n++)
     {
       const double c = gKuf.getVal(m, n);
       for(unsigned int p = 0; p < P; p++)
       {
-        G.setVal(w[p] * c, m, n * P + p);
-        gw[p] += c * Kp.getVal(m, n * P + p);
+        G.setVal((loc ? Kl.getVal(m, p) : w[p]) * c, m, n * P + p);
+        const double t = c * Kp.getVal(m, n * P + p);
+        if(loc)
+          gKl.addVal(t, m, p);
+        else
+          gw[p] += t;
       }
     }
 
+  // K_uu = K_g(Z, Z) [* K_loc(L, L)]: split the cotangent between the factors.
+  CMatrix gKg(gKuu);
+  CMatrix Kll, Kgg;
+  const double l2 = exp(2.0 * log(ck.locationLengthscale()));
+  double gLogLs = 0.0;
+  if(loc)
+  {
+    Kgg.resize(M, M);
+    ck.patchKernel().compute(Kgg, Zp);
+    Kll.resize(M, M);
+    for(unsigned int a = 0; a < M; a++)
+      for(unsigned int b = 0; b < M; b++)
+      {
+        const double da = Z.getVal(a, q) - Z.getVal(b, q), db = Z.getVal(a, q + 1) - Z.getVal(b, q + 1);
+        const double d2 = da * da + db * db;
+        const double kl = exp(-0.5 * d2 / l2);
+        Kll.setVal(kl, a, b);
+        gKg.setVal(gKuu.getVal(a, b) * kl, a, b);
+        gLogLs += gKuu.getVal(a, b) * Kgg.getVal(a, b) * kl * d2 / l2;
+      }
+    gKg.setSymmetric(true);
+  }
+
   // Patch-kernel parameters (priors once, with the K_uu term).
   CMatrix t1(1, nk), t2(1, nk);
-  ck.patchKernel().getGradTransParams(t1, Z, gKuu, regulariseKern);
-  ck.patchKernel().getGradTransParams(t2, Z, Xp, G, false);
+  ck.patchKernel().getGradTransParams(t1, Zp, gKg, regulariseKern);
+  ck.patchKernel().getGradTransParams(t2, Zp, Xp, G, false);
   for(unsigned int i = 0; i < nk; i++)
     gKernParams.addVal(t1.getVal(i) + t2.getVal(i), i);
   // Weights carry no transform.
@@ -2122,7 +2209,44 @@ void CInducingPatches::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix
     gKernParams.addVal(s, nk);
   }
 
-  ck.patchKernel().inducingGradZ(gZ, Z, Xp, gKuu, G, KuuCached, 0);
+  if(!loc)
+  {
+    ck.patchKernel().inducingGradZ(gZ, Z, Xp, gKuu, G, KuuCached, 0);
+    return;
+  }
+
+  // Cross term: d k_loc / d log(lengthscale) = k d2 / l2, and d k_loc / d L = -k (L - l_p) / l2.
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int p = 0; p < P; p++)
+      gLogLs += gKl.getVal(m, p) * Kl.getVal(m, p) * D2.getVal(m, p) / l2;
+  gKernParams.addVal(gLogLs, nk);
+
+  CMatrix gZp(M, q, 0.0);
+  ck.patchKernel().inducingGradZ(gZp, Zp, Xp, gKg, G, 0, 0);
+  gZ.resize(M, q + 2);
+  gZ.zeros();
+  for(unsigned int m = 0; m < M; m++)
+  {
+    for(unsigned int j = 0; j < q; j++)
+      gZ.setVal(gZp.getVal(m, j), m, j);
+    double gi = 0.0, gj = 0.0;
+    for(unsigned int p = 0; p < P; p++)
+    {
+      double li, lj;
+      ck.patchLocation(p, li, lj);
+      const double c = gKl.getVal(m, p) * Kl.getVal(m, p) / l2;
+      gi -= c * (Z.getVal(m, q) - li);
+      gj -= c * (Z.getVal(m, q + 1) - lj);
+    }
+    for(unsigned int b = 0; b < M; b++)
+    {
+      const double c = (gKuu.getVal(m, b) + gKuu.getVal(b, m)) * Kgg.getVal(m, b) * Kll.getVal(m, b) / l2;
+      gi -= c * (Z.getVal(m, q) - Z.getVal(b, q));
+      gj -= c * (Z.getVal(m, q + 1) - Z.getVal(b, q + 1));
+    }
+    gZ.setVal(gi, m, q);
+    gZ.setVal(gj, m, q + 1);
+  }
 }
 
 void CInducingPatches::getParams(CMatrix& param, unsigned int offset) const
@@ -2158,11 +2282,19 @@ void CInducingPatches::initFromData(CMatrix& Z, const CConvKern& kern, const CMa
     throw ndlexceptions::Error("CInducingPatches::initFromData: need 0 < M <= (images x patches).");
   CMatrix Xp;
   kern.extractPatches(Xp, X);
-  Z.resize(M, kern.patchDim());
+  const unsigned int q = kern.patchDim();
+  Z.resize(M, q + (kern.hasLocation() ? 2u : 0u));
   for(unsigned int m = 0; m < M; m++)
   {
     const unsigned long idx = (unsigned long)(((double)m + 0.5) * total / M);
-    for(unsigned int j = 0; j < kern.patchDim(); j++)
+    for(unsigned int j = 0; j < q; j++)
       Z.setVal(Xp.getVal((unsigned int)idx, j), m, j);
+    if(kern.hasLocation())
+    {
+      double li, lj;
+      kern.patchLocation((unsigned int)(idx % P), li, lj);  // the patch's own location
+      Z.setVal(li, m, q);
+      Z.setVal(lj, m, q + 1);
+    }
   }
 }

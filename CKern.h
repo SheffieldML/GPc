@@ -2368,6 +2368,18 @@ class CConvKern : public CKern {
   const CKern& patchKernel() const { return *patch; }
   CKern& patchKernel() { return *patch; }
   const vector<double>& patchWeights() const { return w; }
+  // CIP-0040 Phase 3: translation-insensitive kernel (Dutordoir et al., 2020),
+  //   k(x, x') = sum_{p,p'} k_g(x^[p], x'^[p']) k_loc(l_p, l_p'),
+  // with k_loc a squared-exponential kernel on patch locations l_p in [0,1]^2 (patch-grid
+  // row and column, each scaled to [0,1]) and one extra parameter log(lengthscale).
+  // Requires WEIGHTS_FIXED (the location kernel replaces the weights; k_loc == 1 recovers
+  // the weighted kernel with tied weight 1).  Inducing pairs (patch, location) are handled
+  // by CInducingPatches.  Weight-space windows are not defined (the response depends on
+  // location) and throw.
+  void enableLocation(double lengthscale);
+  bool hasLocation() const { return locEnabled; }
+  double locationLengthscale() const { return exp(locLogLs); }
+  void patchLocation(unsigned int p, double& li, double& lj) const;
   // Xp is (N P) x q; row n*P+p is patch p of image n.
   void extractPatches(CMatrix& Xp, const CMatrix& X) const;
 
@@ -2450,7 +2462,16 @@ class CConvKern : public CKern {
   void rebuildParams();   // nParams, names, transforms from patch + weight mode
   void setWeightsFromParams();
   void imagePatches(CMatrix& Xn, const CMatrix& Xp, unsigned int n) const;
-  double quadForm(const CMatrix& G) const;  // w^T G w for a P x P block
+  double quadForm(const CMatrix& G) const;  // sum_{ab} A_ab G_ab for a P x P block
+  // Pair coefficient: w_a w_b (weighted kernel) or k_loc(l_a, l_b) (location kernel), and its
+  // derivative with respect to log(lengthscale) (zero without locations).
+  double pairCoef(unsigned int a, unsigned int b) const
+  { return locEnabled ? locA[a * P + b] : w[a] * w[b]; }
+  double pairCoefLoc(unsigned int a, unsigned int b) const
+  { return locEnabled ? locdA[a * P + b] : 0.0; }
+  void refreshLocation();
+  void rejectLocation(const char* what) const;
+  unsigned int locParamIndex() const { return patch->getNumParams() + (unsigned int)wParams.size(); }
   // Stacked-patch helpers for the weight-space hooks.
   void expandKfuGrad(CMatrix& G, const CMatrix& gKfu) const;           // (N P) x M, w_p gKfu[n,m]
   void contractKp(CMatrix& Kfu, const CMatrix& Kp, unsigned int N) const;  // sum_p w_p Kp[nP+p, m]
@@ -2463,6 +2484,9 @@ class CConvKern : public CKern {
   WeightMode mode;
   vector<double> w;        // effective weights, length P
   vector<double> wParams;  // parameter storage: P (learned), 1 (tied), 0 (fixed)
+  bool locEnabled = false;
+  double locLogLs = 0.0;
+  vector<double> locA, locdA;  // P x P, row-major: k_loc and d k_loc / d log(lengthscale)
   unsigned int diagSamples = 0;  // 0: exact diagonal
   uint64_t diagSeed = 0;
 };

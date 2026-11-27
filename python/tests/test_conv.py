@@ -143,3 +143,48 @@ def test_deepgp_conv_weightspace_errors():
     for family in ("weightspace", "hermite"):
         with pytest.raises(Exception, match="MLP patch kernel"):
             gpc.models.DeepGP(X, y, layers=1, kernel=rbf, inducing=family, num_inducing=12)
+
+
+def test_conv_location_kernel_matches_double_loop_and_reduces():
+    X, _ = _data(4)
+    base = RBF(PH * PW * C, lengthscale=1.5)
+    k = Conv(base, (H, W, C), (PH, PW), stride=2, location=0.5)
+    K = k.K(X)
+    assert K.shape == (4, 4) and np.allclose(K, K.T)
+    # k_loc -> 1 recovers the weighted kernel with tied weight 1 (CIP-0040 Phase 3, C1).
+    flat = Conv(base, (H, W, C), (PH, PW), stride=2, location=1e6).K(X)
+    tied = Conv(base, (H, W, C), (PH, PW), stride=2, weights="tied")
+    P = tied.num_patches
+    ref = _double_loop(X, X, 1.5, 1.0, 2, np.ones(P))
+    np.testing.assert_allclose(flat, ref, rtol=1e-6)
+
+
+def test_conv_location_validation():
+    base = RBF(PH * PW * C)
+    with pytest.raises(ValueError):
+        Conv(base, (H, W, C), (PH, PW), location=-1.0)
+    with pytest.raises(ValueError):
+        Conv(base, (H, W, C), (PH, PW), weights="tied", location=0.5)
+
+
+def test_deepgp_conv_location_trains_and_roundtrips(tmp_path):
+    X, y = _data(40)
+    k = Conv(RBF(PH * PW * C, lengthscale=2.0), (H, W, C), (PH, PW), stride=2, location=0.5)
+    m = gpc.models.DeepGP(X, y, layers=1, kernel=k, num_inducing=8)
+    assert m.inducing_locations().shape == (8, 2)
+    e0 = m.elbo()
+    l0 = m.inducing_locations().copy()
+    m.optimize(iters=30, batch_size=20, adam_lr=0.02, seed=1)
+    assert m.elbo() > e0
+    assert not np.allclose(l0, m.inducing_locations())
+    mu, var = m.predict(X[:5])
+    assert np.all(np.isfinite(mu)) and np.all(var > 0)
+    path = tmp_path / "loc.model"
+    m.save(str(path))
+    loaded = gpc.models.DeepGP.load(str(path))
+    mu2, var2 = loaded.predict(X[:5])
+    np.testing.assert_allclose(mu, mu2, atol=1e-8)
+    np.testing.assert_allclose(var, var2, atol=1e-8)
+    with pytest.raises(Exception, match="translation-insensitive"):
+        gpc.models.DeepGP(X, y, layers=1, num_inducing=12, inducing="weightspace",
+                          kernel=Conv(MLP(PH * PW * C), (H, W, C), (PH, PW), location=0.5))

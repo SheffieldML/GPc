@@ -13165,6 +13165,10 @@ CConvKern::CConvKern(const CConvKern& k)
   setInputDim(k.getInputDim());  // resets the weights via setInitParam ...
   w = k.w;                       // ... so restore them afterwards
   wParams = k.wParams;
+  locEnabled = k.locEnabled;
+  locLogLs = k.locLogLs;
+  locA = k.locA;
+  locdA = k.locdA;
   if(patch)
     rebuildParams();
 }
@@ -13197,7 +13201,7 @@ void CConvKern::configure(unsigned int H, unsigned int Wd, unsigned int C,
 void CConvKern::rebuildParams()
 {
   const unsigned int nk = patch->getNumParams();
-  nParams = nk + (unsigned int)wParams.size();
+  nParams = nk + (unsigned int)wParams.size() + (locEnabled ? 1u : 0u);
   paramNames.clear();
   for(unsigned int i = 0; i < nParams; i++)
     setParamName(getParamName(i), i);
@@ -13212,6 +13216,8 @@ string CConvKern::getParamName(unsigned int i) const
   const unsigned int nk = patch->getNumParams();
   if(i < nk)
     return "patch." + patch->getParamName(i);
+  if(locEnabled && i == nk + wParams.size())
+    return "log_location_lengthscale";
   return mode == WEIGHTS_TIED ? string("weight") : "weight_" + ndlstrutil::itoa(i - nk);
 }
 
@@ -13240,6 +13246,11 @@ void CConvKern::setParam(double val, unsigned int paramNo)
   const unsigned int nk = patch->getNumParams();
   if(paramNo < nk)
     patch->setParam(val, paramNo);
+  else if(locEnabled && paramNo == locParamIndex())
+  {
+    locLogLs = val;
+    refreshLocation();
+  }
   else
   {
     wParams[paramNo - nk] = val;
@@ -13251,7 +13262,61 @@ double CConvKern::getParam(unsigned int paramNo) const
 {
   BOUNDCHECK(paramNo < nParams);
   const unsigned int nk = patch->getNumParams();
-  return paramNo < nk ? patch->getParam(paramNo) : wParams[paramNo - nk];
+  if(paramNo < nk)
+    return patch->getParam(paramNo);
+  if(locEnabled && paramNo == locParamIndex())
+    return locLogLs;
+  return wParams[paramNo - nk];
+}
+
+void CConvKern::patchLocation(unsigned int p, double& li, double& lj) const
+{
+  BOUNDCHECK(p < P);
+  const unsigned int pr = p / nPatchCols, pc = p % nPatchCols;
+  li = nPatchRows > 1 ? (double)pr / (double)(nPatchRows - 1) : 0.0;
+  lj = nPatchCols > 1 ? (double)pc / (double)(nPatchCols - 1) : 0.0;
+}
+
+void CConvKern::enableLocation(double lengthscale)
+{
+  if(!(lengthscale > 0.0))
+    throw ndlexceptions::Error("CConvKern: location lengthscale must be positive.");
+  if(mode != WEIGHTS_FIXED)
+    throw ndlexceptions::Error("CConvKern: the location kernel replaces the patch weights; use WEIGHTS_FIXED.");
+  locEnabled = true;
+  locLogLs = log(lengthscale);
+  rebuildParams();
+  refreshLocation();
+}
+
+void CConvKern::refreshLocation()
+{
+  if(!locEnabled)
+    return;
+  const double l2 = exp(2.0 * locLogLs);
+  locA.assign((size_t)P * P, 0.0);
+  locdA.assign((size_t)P * P, 0.0);
+  for(unsigned int a = 0; a < P; a++)
+  {
+    double ai, aj;
+    patchLocation(a, ai, aj);
+    for(unsigned int b = 0; b < P; b++)
+    {
+      double bi, bj;
+      patchLocation(b, bi, bj);
+      const double d2 = (ai - bi) * (ai - bi) + (aj - bj) * (aj - bj);
+      const double k = exp(-0.5 * d2 / l2);
+      locA[(size_t)a * P + b] = k;
+      locdA[(size_t)a * P + b] = k * d2 / l2;
+    }
+  }
+}
+
+void CConvKern::rejectLocation(const char* what) const
+{
+  if(locEnabled)
+    throw ndlexceptions::NotImplementedError(
+        string("CConvKern: ") + what + " is not defined for the translation-insensitive (location) kernel.");
 }
 
 void CConvKern::extractPatches(CMatrix& Xp, const CMatrix& X) const
@@ -13286,12 +13351,8 @@ double CConvKern::quadForm(const CMatrix& G) const
 {
   double s = 0.0;
   for(unsigned int a = 0; a < P; a++)
-  {
-    double r = 0.0;
     for(unsigned int b = 0; b < P; b++)
-      r += G.getVal(a, b) * w[b];
-    s += w[a] * r;
-  }
+      s += pairCoef(a, b) * G.getVal(a, b);
   return s;
 }
 
@@ -13314,7 +13375,7 @@ double CConvKern::diagComputeElement(const CMatrix& X, unsigned int index) const
     for(unsigned int i = 0; i < S; i++)
       for(unsigned int j = 0; j < S; j++)
         if(i != j)
-          s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+          s += pairCoef(idx[i], idx[j]) * Gs.getVal(i, j);
     return (double)P * (double)P / ((double)S * (double)(S - 1)) * s;
   }
   patch->compute(G, Xp);
@@ -13371,7 +13432,7 @@ void CConvKern::diagCompute(CMatrix& d, const CMatrix& X) const
       for(unsigned int i = 0; i < S; i++)
         for(unsigned int j = 0; j < S; j++)
           if(i != j)
-            s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+            s += pairCoef(idx[i], idx[j]) * Gs.getVal(i, j);
       d.setVal(scale * s, n);
     }
     return;
@@ -13411,12 +13472,8 @@ void CConvKern::compute(CMatrix& K, const CMatrix& X, const CMatrix& X2) const
     {
       double s = 0.0;
       for(unsigned int a = 0; a < P; a++)
-      {
-        double r = 0.0;
         for(unsigned int b = 0; b < P; b++)
-          r += Kn.getVal(a, m * P + b) * w[b];
-        s += w[a] * r;
-      }
+          s += pairCoef(a, b) * Kn.getVal(a, m * P + b);
       K.setVal(s, n, m);
     }
   }
@@ -13451,6 +13508,7 @@ void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
   extractPatches(Xp, X);
   extractPatches(X2p, X2);
   vector<double> gw(P, 0.0);
+  double gloc = 0.0;
   g.zeros();
   for(unsigned int n = 0; n < X.getRows(); n++)
   {
@@ -13464,9 +13522,14 @@ void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
         double rowSum = 0.0, colSum = 0.0;
         for(unsigned int b = 0; b < P; b++)
         {
-          rowSum += Kn.getVal(a, m * P + b) * w[b];
-          colSum += w[b] * Kn.getVal(b, m * P + a);
-          Gn.setVal(w[a] * w[b] * c, a, m * P + b);
+          if(!locEnabled)
+          {
+            rowSum += Kn.getVal(a, m * P + b) * w[b];
+            colSum += w[b] * Kn.getVal(b, m * P + a);
+          }
+          else
+            gloc += c * pairCoefLoc(a, b) * Kn.getVal(a, m * P + b);
+          Gn.setVal(pairCoef(a, b) * c, a, m * P + b);
         }
         gw[a] += c * (rowSum + colSum);
       }
@@ -13485,6 +13548,8 @@ void CConvKern::getGradParams(CMatrix& g, const CMatrix& X, const CMatrix& X2,
       s += gw[a];
     g.setVal(s, nk);
   }
+  if(locEnabled)
+    g.setVal(gloc, locParamIndex());
   if(regularise)
     addPriorGrad(g);
 }
@@ -13544,6 +13609,7 @@ void CConvKern::addWeightGrad(CMatrix& g, const CMatrix& Kp, const CMatrix& gKfu
 void CConvKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                                     const CMatrix& a, double s) const
 {
+  rejectLocation("weight-space inducing");
   CMatrix Xp, Kp(X.getRows() * P, V.getRows());
   extractPatches(Xp, X);
   patch->wsRidgeCrossCompute(Kp, Xp, V, a, s);
@@ -13553,6 +13619,7 @@ void CConvKern::wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatri
 void CConvKern::wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                                   const CMatrix& a, double s, const CMatrix& gKfu) const
 {
+  rejectLocation("weight-space inducing");
   DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
   const unsigned int N = X.getRows(), M = V.getRows(), nk = patch->getNumParams();
   CMatrix Xp, Kp(N * P, M), G, gp(1, nk);
@@ -13595,6 +13662,7 @@ void CConvKern::wsRidgeGradX(CMatrix&, const CMatrix&, const CMatrix&, const CMa
 void CConvKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
                                       const std::vector<unsigned int>& ks) const
 {
+  rejectLocation("weight-space inducing");
   CMatrix Xp, Kp(X.getRows() * P, V.getRows());
   extractPatches(Xp, X);
   patch->wsHermiteCrossCompute(Kp, Xp, V, ks);
@@ -13604,6 +13672,7 @@ void CConvKern::wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMat
 void CConvKern::wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
                                     const std::vector<unsigned int>& ks, const CMatrix& gKfu) const
 {
+  rejectLocation("weight-space inducing");
   DIMENSIONMATCH(g.getRows() == 1 && g.getCols() == nParams);
   const unsigned int N = X.getRows(), M = V.getRows(), nk = patch->getNumParams();
   CMatrix Xp, Kp(N * P, M), G, gp(1, nk);
@@ -13642,6 +13711,7 @@ void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   CMatrix Xp, Xn, G(P, P), Ge(P, P), gp(1, nk);
   extractPatches(Xp, X);
   vector<double> gw(P, 0.0);
+  double gloc = 0.0;
   g.zeros();
   const bool est = diagIsEstimated();
   const unsigned int S = diagSamples;
@@ -13666,8 +13736,10 @@ void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
         for(unsigned int j = 0; j < S; j++)
         {
           const bool off = (i != j);
-          r += off ? Gs.getVal(i, j) * w[idx[j]] : 0.0;
-          Ges.setVal(off ? c * scale * w[idx[i]] * w[idx[j]] : 0.0, i, j);
+          r += (off && !locEnabled) ? Gs.getVal(i, j) * w[idx[j]] : 0.0;
+          if(off && locEnabled)
+            gloc += c * scale * pairCoefLoc(idx[i], idx[j]) * Gs.getVal(i, j);
+          Ges.setVal(off ? c * scale * pairCoef(idx[i], idx[j]) : 0.0, i, j);
         }
         gw[idx[i]] += 2.0 * c * scale * r;
       }
@@ -13684,8 +13756,11 @@ void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
       double r = 0.0;
       for(unsigned int b = 0; b < P; b++)
       {
-        r += G.getVal(a, b) * w[b];
-        Ge.setVal(w[a] * w[b] * c, a, b);
+        if(!locEnabled)
+          r += G.getVal(a, b) * w[b];
+        else
+          gloc += c * pairCoefLoc(a, b) * G.getVal(a, b);
+        Ge.setVal(pairCoef(a, b) * c, a, b);
       }
       gw[a] += 2.0 * c * r;
     }
@@ -13704,6 +13779,8 @@ void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
       s += gw[a];
     g.setVal(s, nk);
   }
+  if(locEnabled)
+    g.setVal(gloc, locParamIndex());
   if(regularise)
     addPriorGrad(g);
 }
@@ -13776,8 +13853,9 @@ void CConvKern::writeParamsToStream(ostream& out) const
   writeToStream(out, "patchHeight", patchH);
   writeToStream(out, "patchWidth", patchW);
   writeToStream(out, "stride", stride);
-  writeToStream(out, "weightMode", string(mode == WEIGHTS_LEARNED ? "learned"
-                                          : (mode == WEIGHTS_TIED ? "tied" : "fixed")));
+  writeToStream(out, "weightMode", string(locEnabled ? "location"
+                                          : (mode == WEIGHTS_LEARNED ? "learned"
+                                             : (mode == WEIGHTS_TIED ? "tied" : "fixed"))));
   writeToStream(out, "numWeightParams", (unsigned int)wParams.size());
   if(!wParams.empty())
   {
@@ -13786,6 +13864,8 @@ void CConvKern::writeParamsToStream(ostream& out) const
       wp.setVal(wParams[i], i);
     wp.toStream(out);
   }
+  if(locEnabled)
+    writeToStream(out, "locationLogLengthscale", locLogLs);
   patch->toStream(out);
 }
 
@@ -13802,14 +13882,25 @@ void CConvKern::readParamsFromStream(istream& in)
   WeightMode m;
   if(ms == "learned") m = WEIGHTS_LEARNED;
   else if(ms == "tied") m = WEIGHTS_TIED;
-  else if(ms == "fixed") m = WEIGHTS_FIXED;
+  else if(ms == "fixed" || ms == "location") m = WEIGHTS_FIXED;
   else throw ndlexceptions::StreamFormatError("weightMode", "Unknown weight mode " + ms);
   const unsigned int nw = readIntFromStream(in, "numWeightParams");
   CMatrix wp(1, nw > 0 ? nw : 1);
   if(nw > 0)
     wp.fromStream(in);
+  const bool loc = (ms == "location");
+  double locLs = 0.0;
+  if(loc)
+    locLs = readDoubleFromStream(in, "locationLogLengthscale");
   patch.reset(readKernFromStream(in));
+  locEnabled = false;
   configure(H, Wd, C, ph, pw, st, m);
+  if(loc)
+  {
+    enableLocation(1.0);
+    locLogLs = locLs;
+    refreshLocation();
+  }
   if(inDim != getInputDim())
     throw ndlexceptions::StreamFormatError("inputDim", "Stored input dimension does not match the image geometry.");
   if(nw != wParams.size())

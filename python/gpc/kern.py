@@ -744,6 +744,14 @@ class Conv(Kern):
     weights :
         ``'learned'`` (one weight per patch position), ``'tied'`` (one shared
         weight) or ``'fixed'`` (``w = 1 / P``, no parameters).
+    location :
+        If given, the translation-insensitive kernel of Dutordoir et al. (2020):
+        ``k(x, x') = sum_{p,p'} k_g(x[p], x'[p']) k_loc(l_p, l_p')`` with ``k_loc``
+        a squared-exponential kernel (initial lengthscale ``location``, learned on
+        the log scale) over patch locations scaled to ``[0, 1]^2``. It replaces
+        the patch weights (``weights`` must be left at ``'learned'`` or ``'fixed'``;
+        no weights are used) and needs ``inducing='patches'``, whose inducing
+        variables are then (patch, location) pairs.
 
     Use it as ``DeepGP(X, Y, kernel=[Conv(...), 'rbf'], inducing='patches')``;
     the model's inducing variables are then patches, and
@@ -759,6 +767,7 @@ class Conv(Kern):
         patch_shape: Sequence[int],
         stride: int = 1,
         weights: str = "learned",
+        location: float | None = None,
     ) -> None:
         """Create a convolutional kernel descriptor."""
         if not isinstance(base, _Atomic):
@@ -779,6 +788,13 @@ class Conv(Kern):
             raise ValueError("patch_shape must fit inside image_shape")
         if weights not in ("learned", "tied", "fixed"):
             raise ValueError("weights must be 'learned', 'tied' or 'fixed'")
+        if location is not None:
+            if not float(location) > 0.0:
+                raise ValueError("location lengthscale must be positive")
+            if weights == "tied":
+                raise ValueError("location replaces the patch weights; use weights='fixed'")
+            weights = "fixed"
+            location = float(location)
         q = pshape[0] * pshape[1] * shape[2]
         if base.input_dim != q:
             raise ValueError(
@@ -790,6 +806,7 @@ class Conv(Kern):
         self.patch_shape = tuple(pshape)
         self.stride = int(stride)
         self.weights = weights
+        self.location = location
         self.input_dim = shape[0] * shape[1] * shape[2]
 
     @property
@@ -801,17 +818,18 @@ class Conv(Kern):
 
     def to_parts(self) -> list[dict[str, Any]]:
         """One ``conv`` part (consumed by ``DeepGP`` and ``Conv.K``)."""
-        return [
-            {
-                "type": "conv",
-                "input_dim": self.input_dim,
-                "image_shape": list(self.image_shape),
-                "patch_shape": list(self.patch_shape),
-                "stride": self.stride,
-                "weights": self.weights,
-                "patch": self.base.to_parts()[0],
-            }
-        ]
+        part: dict[str, Any] = {
+            "type": "conv",
+            "input_dim": self.input_dim,
+            "image_shape": list(self.image_shape),
+            "patch_shape": list(self.patch_shape),
+            "stride": self.stride,
+            "weights": self.weights,
+            "patch": self.base.to_parts()[0],
+        }
+        if self.location is not None:
+            part["location_lengthscale"] = self.location
+        return [part]
 
     def K(self, X: Any, X2: Any | None = None) -> Any:
         """Evaluate the convolutional covariance ``K(X)`` or ``K(X, X2)``."""
@@ -827,7 +845,7 @@ class Conv(Kern):
         return (
             f"Conv({self.base!r}, image_shape={self.image_shape}, "
             f"patch_shape={self.patch_shape}, stride={self.stride}, "
-            f"weights={self.weights!r})"
+            f"weights={self.weights!r}, location={self.location!r})"
         )
 
 

@@ -82,6 +82,7 @@ public:
   // CIP-0040: inducing patches as (M, h, w, C); patch weights (P).
   py::array_t<double> conv_filters() const;
   py::array_t<double> conv_patch_weights() const;
+  py::array_t<double> conv_locations() const;
 
   void reset_optimizer();
   unsigned long optimizer_steps() const { return adam ? adam->getStepCount() : 0; }

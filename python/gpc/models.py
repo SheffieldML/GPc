@@ -693,6 +693,13 @@ class DeepGP(_DeepGP):
         """
         return self.conv_filters()
 
+    def inducing_locations(self) -> np.ndarray:
+        """Inducing (patch-grid row, column) locations ``(M, 2)`` in ``[0, 1]^2``.
+
+        Requires ``kernel=Conv(..., location=...)`` (CIP-0040 Phase 3).
+        """
+        return self.conv_locations()
+
     def patch_weights(self) -> np.ndarray:
         """Patch-position weights ``w_p`` of the convolutional first layer."""
         return self.conv_patch_weights()

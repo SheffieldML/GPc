@@ -431,4 +431,46 @@ class CInducingHermite : public CInducing
   mutable CMatrix tempG; // 1 x nKernParams scratch
 };
 
+
+// CIP-0040 Phase 1b: inducing patches for a convolutional kernel.  The inducing
+// variables are u_m = g(z_m) with z_m in patch space (R^q); the SVGP kernel
+// must be a CConvKern.  K_uu = k_g(Z,Z) and
+// K_uf[m,n] = sum_p w_p k_g(z_m, x_n^[p]).  Owns Z (M x q).
+class CInducingPatches : public CInducing
+{
+ public:
+  explicit CInducingPatches(const CMatrix& Z0);
+  virtual ~CInducingPatches() {}
+
+  unsigned int numInducing() const { return Z.getRows(); }
+  unsigned int domainDim() const { return Z.getCols(); }
+  bool kuuDependsOnKernel() const { return true; }
+  std::string typeName() const { return "patches"; }
+
+  void computeKuu(CMatrix& Kuu, const CKern& kern) const;
+  void computeKuf(CMatrix& Kuf, const CKern& kern, const CMatrix& X) const;
+  void computeKux(CMatrix& Kux, const CKern& kern, const CMatrix& Xstar) const;
+  void gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix* gXOrNull,
+                      const CKern& kern, const CMatrix& X,
+                      const CMatrix& gKuu, const CMatrix& gKuf,
+                      bool wantX, bool regulariseKern,
+                      const CMatrix* KuuCached = 0,
+                      const CMatrix* KufCached = 0) const;
+
+  unsigned int getNumParams() const { return Z.getRows() * Z.getCols(); }
+  void getParams(CMatrix& param, unsigned int offset) const;
+  void setParams(const CMatrix& param, unsigned int offset);
+
+  const CMatrix& centres() const { return Z; }
+  void setCentres(const CMatrix& Znew);
+
+  // Initialise Z from M patches of the training images, evenly spaced over the
+  // pooled (image, position) index set (deterministic).
+  static void initFromData(CMatrix& Z, const CConvKern& kern, const CMatrix& X, unsigned int M);
+
+ private:
+  static const CConvKern& convKern(const CKern& kern);
+  CMatrix Z;
+};
+
 #endif /* CINDUCING_H */

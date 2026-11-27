@@ -670,22 +670,37 @@ void CSvgp::naturalGradientStep(double gamma, const vector<unsigned int>& batch)
     CMatrix theta1star(M, 1);
     theta1star.gemv(*pA, wsCoeffs, 1.0, 0.0, "n");
 
-    // Interpolate in natural-parameter space.
-    P.scale(1.0 - gamma);
-    P.axpy(Pstar, gamma);
-    theta1.scale(1.0 - gamma);
-    theta1.axpy(theta1star, gamma);
-    // Symmetrise against round-off before factorising.
-    for(unsigned int r = 0; r < M; r++)
-      for(unsigned int s = 0; s < r; s++)
-      {
-        const double v = 0.5 * (P.getVal(r, s) + P.getVal(s, r));
-        P.setVal(v, r, s);
-        P.setVal(v, s, r);
-      }
-    P.setSymmetric(true);
-    CMatrix cholP(P);
-    cholP.chol();
+    // Interpolate in natural-parameter space. With sites of either sign (probit,
+    // robust-max) the full target can be indefinite, so the step is halved until
+    // the interpolated precision is positive definite (the first attempt is the
+    // plain step, so log-concave likelihoods are unchanged). If no step works q
+    // is left as it is.
+    CMatrix P0(P), theta0(theta1), cholP(M, M);
+    bool pd = false;
+    double stepG = gamma;
+    for(unsigned int tries = 0; tries < 40 && !pd; tries++)
+    {
+      P.deepCopy(P0);
+      theta1.deepCopy(theta0);
+      P.scale(1.0 - stepG);
+      P.axpy(Pstar, stepG);
+      theta1.scale(1.0 - stepG);
+      theta1.axpy(theta1star, stepG);
+      // Symmetrise against round-off before factorising.
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s < r; s++)
+        {
+          const double v = 0.5 * (P.getVal(r, s) + P.getVal(s, r));
+          P.setVal(v, r, s);
+          P.setVal(v, s, r);
+        }
+      P.setSymmetric(true);
+      cholP.deepCopy(P);
+      try { cholP.chol(); pd = true; }
+      catch(ndlexceptions::Error&) { stepG *= 0.5; }
+    }
+    if(!pd)
+      continue;
     CMatrix Snew(M, M);
     Snew.setSymmetric(true);
     Snew.pdinv(cholP);
@@ -1001,20 +1016,33 @@ void CSvgp::naturalGradientStepAt(double gamma, const CMatrix& XB,
     CMatrix theta1star(M, 1);
     theta1star.gemv(AB, wsCoeffs, 1.0, 0.0, "n");
 
-    P.scale(1.0 - gamma);
-    P.axpy(Pstar, gamma);
-    theta1.scale(1.0 - gamma);
-    theta1.axpy(theta1star, gamma);
-    for(unsigned int r = 0; r < M; r++)
-      for(unsigned int s = 0; s < r; s++)
-      {
-        const double v = 0.5 * (P.getVal(r, s) + P.getVal(s, r));
-        P.setVal(v, r, s);
-        P.setVal(v, s, r);
-      }
-    P.setSymmetric(true);
-    CMatrix cholP(P);
-    cholP.chol();
+    // Step halving as in naturalGradientStep (indefinite targets).
+    CMatrix P0(P), theta0(theta1), cholP(M, M);
+    bool pd = false;
+    double stepG = gamma;
+    for(unsigned int tries = 0; tries < 40 && !pd; tries++)
+    {
+      P.deepCopy(P0);
+      theta1.deepCopy(theta0);
+      P.scale(1.0 - stepG);
+      P.axpy(Pstar, stepG);
+      theta1.scale(1.0 - stepG);
+      theta1.axpy(theta1star, stepG);
+      // Symmetrise against round-off before factorising.
+      for(unsigned int r = 0; r < M; r++)
+        for(unsigned int s = 0; s < r; s++)
+        {
+          const double v = 0.5 * (P.getVal(r, s) + P.getVal(s, r));
+          P.setVal(v, r, s);
+          P.setVal(v, s, r);
+        }
+      P.setSymmetric(true);
+      cholP.deepCopy(P);
+      try { cholP.chol(); pd = true; }
+      catch(ndlexceptions::Error&) { stepG *= 0.5; }
+    }
+    if(!pd)
+      continue;
     CMatrix Snew(M, M);
     Snew.setSymmetric(true);
     Snew.pdinv(cholP);

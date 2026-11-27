@@ -267,6 +267,87 @@ int main()
              "softmax block EP (fixed seed): finite log marginal " + dtoa(L) + ", " + ndlstrutil::itoa(correct) + "/20 correct");
     }
 
+    // --- Block EP gradient with sampled cavity moments (fixed draws) ---
+    {
+      CMatrix Yc(N, C);
+      Yc.zeros();
+      for(unsigned int i = 0; i < N; i++)
+      {
+        const double x = X.getVal(i, 0);
+        Yc.setVal(1.0, i, x < -1.0 ? 0 : (x < 1.0 ? 1 : 2));
+      }
+      CSoftmaxNoise sm(&Yc, C, 512, 5);
+      auto runEp = [&](double sc, CEpInference& ep, bool& conv, double& minTau) {
+        ep.setJitter(1e-6); ep.setMaxIters(2000); ep.setTol(1e-11); ep.setEta(1.0); ep.setDelta(0.5);
+        CEpSites st;
+        CMatrix m, v;
+        const double L = ep.runBlock(vector<CMatrix>(1, gram(X, sc)), Yc, sm, st, m, v);
+        conv = ep.converged();
+        minTau = 1e300;
+        for(unsigned int i = 0; i < N; i++)
+          for(unsigned int a = 0; a < C; a++) minTau = min(minTau, st.tau.getVal(i, a));
+        return L;
+      };
+      CEpInference ep0;
+      bool conv; double minTau;
+      runEp(s0, ep0, conv, minTau);
+      CMatrix dK;
+      double analytic = 0.0;
+      for(unsigned int a = 0; a < C; a++)
+      {
+        ep0.fillDLDKBlock(a, dK);
+        for(unsigned int i = 0; i < N; i++)
+          for(unsigned int j = 0; j < N; j++)
+            analytic += dK.getVal(i, j) * 4.0 * exp(-0.5 * pow(X.getVal(i, 0) - X.getVal(j, 0), 2.0) / s0)
+                        * 0.5 * pow(X.getVal(i, 0) - X.getVal(j, 0), 2.0) / (s0 * s0);
+      }
+      const double h = 1e-4;
+      CEpInference e1, e2;
+      bool c1, c2; double t1, t2;
+      const double Lp = runEp(s0 * (1.0 + h), e1, c1, t1), Lm = runEp(s0 * (1.0 - h), e2, c2, t2);
+      const double fd = (Lp - Lm) / (2 * h * s0);
+      expect(conv && c1 && c2 && minTau > 1e-8, "softmax EP converged with site precisions above the floor");
+      expect(fabs(fd - analytic) < 1e-4 * (1.0 + fabs(fd)),
+             "softmax EP dL/d(lengthscale) vs FD with fixed draws (fd " + dtoa(fd) + ", analytic " + dtoa(analytic) + ")");
+    }
+
+    // --- ADF: getNuG on a coupled block equals g = dlogZ/dmu, nu = g^2 - 2 dlogZ/dvar ---
+    {
+      CMatrix Yb(3, C);
+      Yb.zeros();
+      Yb.setVal(1.0, 0, 0); Yb.setVal(1.0, 1, 1); Yb.setVal(1.0, 2, 2);
+      CSoftmaxNoise sm(&Yb, C, 128, 2);
+      CRobustMaxNoise rm(&Yb, C, 1e-2);
+      CNoise* noises[2] = { &sm, &rm };
+      const char* names[2] = { "softmax", "robust-max" };
+      for(int t = 0; t < 2; t++)
+      {
+        CNoise& nz = *noises[t];
+        double worst = 0.0;
+        for(unsigned int i = 0; i < 3; i++)
+        {
+          double m[3], v[3], yb[3], dM[3], dV[3];
+          for(unsigned int a = 0; a < C; a++)
+          {
+            m[a] = 0.4 * sin(1.0 + i + 2.0 * a);
+            v[a] = 0.5 + 0.1 * i + 0.05 * a;
+            yb[a] = Yb.getVal(i, a);
+            nz.setMu(m[a], i, a);
+            nz.setVarSigma(v[a], i, a);
+          }
+          nz.cavityMomentsBlock(yb, m, v, 0, dM, dV);
+          CMatrix g(3, C), nu(3, C);
+          nz.getNuG(g, nu, i);
+          for(unsigned int a = 0; a < C; a++)
+          {
+            worst = max(worst, fabs(g.getVal(i, a) - dM[a]));
+            worst = max(worst, fabs(nu.getVal(i, a) - (dM[a] * dM[a] - 2.0 * dV[a])));
+          }
+        }
+        expect(worst < 1e-12, string("ADF getNuG on a coupled ") + names[t] + " block == (g, g^2 - 2 dv) (" + dtoa(worst) + ")");
+      }
+    }
+
     // --- capabilities and stream ---
     {
       CSoftmaxNoise sm(&Y, C, 128, 99);

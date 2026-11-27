@@ -1,7 +1,7 @@
 # Deep Gaussian processes (doubly stochastic VI)
 
 **Design:** [CIP-0035](../../cip/cip0035.md) · [REQ-001A](../../requirements/req001A_deep-gaussian-processes.md)  
-**Core:** `CDeepGp` stacks `CSvgp` layers with fixed mean maps and minibatch Adam.
+**Core:** `CDeepGp` stacks `CSvgp` layers with fixed mean maps and minibatch Adam. Model, per-step cost and tests: [docs/deepgp.md](../deepgp.md).
 
 Use this path for compositional regression when a shallow sparse GP underfits. Prefer a single `CSvgp` / `./gp` when one layer is enough.
 

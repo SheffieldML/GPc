@@ -96,6 +96,12 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
                              const CMatrix& gKuu, const CMatrix& gKuf,
                              const CMatrix* KuuCached = 0,
                              const CMatrix* KufCached = 0) const;
+  // CIP-003F A2: accumulate into gX (N x d) the input gradient of the cross
+  // covariance, gX(b,:) += sum_m gKuf(m,b) dK(z_m, x_b)/dx_b.  Default loops
+  // getGradX per datum (the oracle); stationary and MLP kernels override with
+  // GEMM forms.  KufCached, when given, must be this kernel's own K(Z, X).
+  virtual void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                             const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -785,6 +791,8 @@ class CCmpndKern: public CComponentKern {
   void diagCompute(CMatrix& d, const CMatrix& X) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 		 const CMatrix& X2, unsigned int index2) const;
   void compute(CMatrix& K, const CMatrix& X) const;
@@ -1116,6 +1124,8 @@ class CRbfKern: public CStationaryKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
   void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
                      const CMatrix& gKuu, const CMatrix& gKuf,
                      const CMatrix* KuuCached = 0,
@@ -1409,6 +1419,8 @@ class CLinKern: public CKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
   void getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& cvGrad, bool regularise=true) const;
   void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
                      const CMatrix& gKuu, const CMatrix& gKuf,
@@ -1458,6 +1470,12 @@ class CMlpKern: public CKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addG=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
+  void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuu, const CMatrix& gKuf,
+                     const CMatrix* KuuCached = 0,
+                     const CMatrix* KufCached = 0) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;
@@ -1681,6 +1699,8 @@ class CRbfardKern: public CArdKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addGrad=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;
@@ -1735,6 +1755,12 @@ class CMlpardKern: public CArdKern {
   double getParam(unsigned int paramNum) const;
   void getGradX(CMatrix& g, const CMatrix& X, unsigned int pointNo, const CMatrix& X2, bool addG=false) const;
   void getDiagGradX(CMatrix& g, const CMatrix& X, bool addGrad=false) const;
+  void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
+  void inducingGradZ(CMatrix& gZ, const CMatrix& Z, const CMatrix& X,
+                     const CMatrix& gKuu, const CMatrix& gKuf,
+                     const CMatrix* KuuCached = 0,
+                     const CMatrix* KufCached = 0) const;
   double getWhite() const;
   double computeElement(const CMatrix& X1, unsigned int index1, 
 			const CMatrix& X2, unsigned int index2) const;

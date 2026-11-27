@@ -1,5 +1,6 @@
 
 #include "CNoise.h"
+#include <algorithm>
 
 using namespace std;
 
@@ -87,7 +88,7 @@ double gaussianLogPredictiveDensity(const CMatrix& y,
       L += log(v) + arg / v;
     }
   }
-  L += static_cast<double>(y.getRows() * y.getCols()) * log(2.0 * M_PI);
+  L += static_cast<double>(y.getRows() * y.getCols()) * log(2.0 * 3.14159265358979323846);
   L *= -0.5;
   return L;
 }
@@ -261,7 +262,7 @@ void studentTLaplaceDerivs(double& logp,
   const double vs = variance * degFree;
   const double denom = vs + e2;
   logp = ndlutil::gammaln(0.5 * (degFree + 1.0)) - ndlutil::gammaln(0.5 * degFree)
-         - 0.5 * log(variance * degFree * M_PI)
+         - 0.5 * log(variance * degFree * 3.14159265358979323846)
          - 0.5 * (degFree + 1.0) * log(1.0 + e2 / vs);
   d1 = ((degFree + 1.0) * e) / denom;
   const double d2 = ((degFree + 1.0) * (e2 - vs)) / (denom * denom);
@@ -1299,7 +1300,7 @@ void CGaussianNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatri
       arg = yTest.getVal(i, j) - muTest.getVal(i, j) - bias.getVal(j);
       arg *= arg;
       var = varSigmaTest.getVal(i, j) + sigma2;
-      arg = 1/sqrt(2*M_PI*var)*exp(-.5*arg*arg/var);
+      arg = 1/sqrt(2*3.14159265358979323846*var)*exp(-.5*arg*arg/var);
       L.setVal(arg, i, j);
     }
   }
@@ -1325,7 +1326,7 @@ double CGaussianNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSi
       L += log(var)+arg;
     }
   }  
-  L += muTest.getRows()*muTest.getCols()*log(2*M_PI);
+  L += muTest.getRows()*muTest.getCols()*log(2*3.14159265358979323846);
   L *= -0.5;
   return L;
 }
@@ -1563,7 +1564,7 @@ void CScaleNoise::likelihoods(CMatrix& L, const CMatrix& muTest, const CMatrix& 
     arg = yTest.getVal(i, j) - muTest.getVal(i, j) - bias.getVal(j);
     arg *= arg;
     var = varSigmaTest.getVal(i, j) + sigma2;
-    arg = 1/sqrt(2*M_PI*var)*exp(-.5*arg*arg/var);
+    arg = 1/sqrt(2*3.14159265358979323846*var)*exp(-.5*arg*arg/var);
     L.setVal(arg, i, j);
     }
     }
@@ -1592,7 +1593,7 @@ double CScaleNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSigma
     L += log(var)+arg;
     }
     }  
-    L += muTest.getRows()*muTest.getCols()*log(2*M_PI);
+    L += muTest.getRows()*muTest.getCols()*log(2*3.14159265358979323846);
     L *= -0.5;
     return L;
     ~*/
@@ -2661,6 +2662,8 @@ CNoise* readNoiseFromStream(istream& in)
     pnoise = new CExponentialNoise();
   else if(type=="gamma")
     pnoise = new CGammaNoise();
+  else if(type=="robustmax")
+    pnoise = new CRobustMaxNoise();
   else
     throw ndlexceptions::StreamFormatError("type", "Unknown noise type " + type);
   pnoise->readParamsFromStream(in);  
@@ -2852,7 +2855,7 @@ void CSkewGaussianNoise::out(CMatrix& yPred, const CMatrix& muTest,
   DIMENSIONMATCH(yPred.dimensionsMatch(muTest));
   const double sigma = sqrt(variance);
   const double delta = alpha / sqrt(1.0 + alpha * alpha);
-  const double shift = sigma * delta * sqrt(2.0 / M_PI);
+  const double shift = sigma * delta * sqrt(2.0 / 3.14159265358979323846);
   for(unsigned int i = 0; i < muTest.getRows(); i++)
     for(unsigned int j = 0; j < muTest.getCols(); j++)
       yPred.setVal(muTest.getVal(i, j) + shift, i, j);
@@ -2863,7 +2866,7 @@ void CSkewGaussianNoise::out(CMatrix& yPred, CMatrix& errorBarOut,
 {
   out(yPred, muTest, varSigmaTest);
   const double delta = alpha / sqrt(1.0 + alpha * alpha);
-  const double noise = variance * (1.0 - 2.0 * delta * delta / M_PI);
+  const double noise = variance * (1.0 - 2.0 * delta * delta / 3.14159265358979323846);
   for(unsigned int i = 0; i < errorBarOut.getRows(); i++)
     for(unsigned int j = 0; j < errorBarOut.getCols(); j++)
       errorBarOut.setVal(sqrt(varSigmaTest.getVal(i, j) + noise), i, j);
@@ -3627,6 +3630,340 @@ void CBinomialNoise::readParamsFromStream(istream& in)
         "Number of parameters in file does not match computed number.");
 }
 
+// ---- CIP-003E Phase 4: robust-max multi-class -------------------------------
+
+namespace {
+const double RM_INV_SQRT_2PI = 0.3989422804014327;
+const unsigned int RM_GL = 16;
+struct GaussLegendre {
+  double x[RM_GL], w[RM_GL];
+  GaussLegendre()
+  {
+    const unsigned int n = RM_GL;
+    for(unsigned int i = 0; i < (n + 1) / 2; i++)
+    {
+      double z = cos(3.14159265358979323846 * (i + 0.75) / (n + 0.5)), pp = 0.0;
+      for(int it = 0; it < 100; it++)
+      {
+        double p1 = 1.0, p2 = 0.0;
+        for(unsigned int j = 0; j < n; j++)
+        {
+          const double p3 = p2;
+          p2 = p1;
+          p1 = ((2.0 * j + 1.0) * z * p2 - j * p3) / (j + 1.0);
+        }
+        pp = n * (z * p1 - p2) / (z * z - 1.0);
+        const double dz = p1 / pp;
+        z -= dz;
+        if(fabs(dz) < 1e-15) break;
+      }
+      x[i] = -z;
+      x[n - 1 - i] = z;
+      w[i] = w[n - 1 - i] = 2.0 / ((1.0 - z * z) * pp * pp);
+    }
+  }
+};
+inline double rmPhi(double z) { return 0.5 * erfc(-z * 0.7071067811865476); }
+inline double rmphi(double z) { return RM_INV_SQRT_2PI * exp(-0.5 * z * z); }
+}  // namespace
+
+double CRobustMaxNoise::classProbability(const double* mu, const double* var,
+                                         unsigned int K, unsigned int c,
+                                         double* dMu, double* dVar)
+{
+  static const GaussLegendre gl;
+  BOUNDCHECK(c < K);
+  const double vFloor = 1e-14;
+  const double sc = sqrt(var[c] > vFloor ? var[c] : vFloor);
+  std::vector<double> s(K);
+  for(unsigned int k = 0; k < K; k++) s[k] = sqrt(var[k] > vFloor ? var[k] : vFloor);
+  const double lo = mu[c] - 9.0 * sc, hi = mu[c] + 9.0 * sc;
+  std::vector<double> bp;
+  bp.push_back(lo);
+  bp.push_back(hi);
+  for(unsigned int k = 0; k < K; k++)
+  {
+    if(k == c) continue;
+    const double cuts[3] = { mu[k] - 6.0 * s[k], mu[k], mu[k] + 6.0 * s[k] };
+    for(unsigned int m = 0; m < 3; m++)
+      if(cuts[m] > lo && cuts[m] < hi) bp.push_back(cuts[m]);
+  }
+  std::sort(bp.begin(), bp.end());
+
+  double P = 0.0, dvc = 0.0;
+  std::vector<double> aMu(K, 0.0), aVar(K, 0.0), Phik(K), phik(K), z(K);
+  for(size_t b = 0; b + 1 < bp.size(); b++)
+  {
+    const double a = bp[b], bb = bp[b + 1], width = bb - a;
+    if(width <= 0.0) continue;
+    const unsigned int panels = static_cast<unsigned int>(ceil(width / (2.0 * sc)));
+    const double h = width / panels;
+    for(unsigned int pn = 0; pn < panels; pn++)
+    {
+      const double mid = a + (pn + 0.5) * h;
+      for(unsigned int q = 0; q < RM_GL; q++)
+      {
+        const double f = mid + 0.5 * h * gl.x[q];
+        const double zc = (f - mu[c]) / sc;
+        const double wq = 0.5 * h * gl.w[q] * RM_INV_SQRT_2PI * exp(-0.5 * zc * zc) / sc;
+        for(unsigned int k = 0; k < K; k++)
+        {
+          if(k == c) { Phik[k] = 1.0; phik[k] = 0.0; z[k] = 0.0; continue; }
+          z[k] = (f - mu[k]) / s[k];
+          Phik[k] = rmPhi(z[k]);
+          phik[k] = rmphi(z[k]);
+        }
+        double G = 1.0, Gp = 0.0;
+        for(unsigned int k = 0; k < K; k++) G *= Phik[k];
+        P += wq * G;
+        for(unsigned int k = 0; k < K; k++)
+        {
+          if(k == c) continue;
+          double others = 1.0;
+          for(unsigned int j = 0; j < K; j++)
+            if(j != k) others *= Phik[j];
+          const double t = phik[k] * others;
+          Gp += t / s[k];
+          aMu[k] -= wq * t / s[k];
+          aVar[k] -= wq * t * z[k] / (2.0 * s[k] * s[k]);
+        }
+        dvc += wq * zc * Gp / (2.0 * sc);
+      }
+    }
+  }
+  if(dMu)
+  {
+    double sum = 0.0;
+    for(unsigned int k = 0; k < K; k++)
+      if(k != c) { dMu[k] = aMu[k]; sum += aMu[k]; }
+    dMu[c] = -sum;
+  }
+  if(dVar)
+  {
+    for(unsigned int k = 0; k < K; k++)
+      if(k != c) dVar[k] = aVar[k];
+    dVar[c] = dvc;
+  }
+  return P;
+}
+
+CRobustMaxNoise::~CRobustMaxNoise() {}
+void CRobustMaxNoise::_init()
+{
+  setType("robustmax");
+  setName("Robust-max");
+}
+unsigned int CRobustMaxNoise::capabilities() const
+{
+  return CapExpectedLogLik | CapCavityMoments | CapPredictive;
+}
+unsigned int CRobustMaxNoise::observedClass(const double* y) const
+{
+  unsigned int c = 0;
+  double sum = 0.0;
+  for(unsigned int k = 0; k < numClasses; k++)
+  {
+    sum += y[k];
+    if(y[k] > y[c]) c = k;
+  }
+  if(fabs(sum - 1.0) > 1e-8 || fabs(y[c] - 1.0) > 1e-8)
+    throw ndlexceptions::Error("CRobustMaxNoise requires one-hot targets");
+  return c;
+}
+double CRobustMaxNoise::expectedLogLikelihoodBlock(const double* y, const double* mu,
+                                                   const double* var, unsigned int j0,
+                                                   double* gMu, double* gVar) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses;
+  const double a = eps / (K - 1.0);
+  const double delta = log(1.0 - eps) - log(a);
+  std::vector<double> dm(K), dv(K);
+  const double P = classProbability(mu, var, K, observedClass(y), &dm[0], &dv[0]);
+  for(unsigned int k = 0; k < K; k++)
+  {
+    gMu[k] = delta * dm[k];
+    gVar[k] = delta * dv[k];
+  }
+  return log(a) + delta * P;
+}
+double CRobustMaxNoise::expectedLogLikelihoodDEps(const double* y, const double* mu,
+                                                  const double* var) const
+{
+  const double P = classProbability(mu, var, numClasses, observedClass(y), 0, 0);
+  return 1.0 / eps - P * (1.0 / (1.0 - eps) + 1.0 / eps);
+}
+double CRobustMaxNoise::logZBlock(const double* y, const double* mu, const double* var,
+                                  unsigned int j0) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const double a = eps / (numClasses - 1.0);
+  const double P = classProbability(mu, var, numClasses, observedClass(y), 0, 0);
+  return log(a + (1.0 - eps - a) * P);
+}
+void CRobustMaxNoise::cavityMomentsBlock(const double* y, const double* mu,
+                                         const double* var, unsigned int j0,
+                                         double* dMu, double* dVar) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses;
+  const double a = eps / (K - 1.0), kap = 1.0 - eps - a;
+  const double P = classProbability(mu, var, K, observedClass(y), dMu, dVar);
+  const double Z = a + kap * P;
+  for(unsigned int k = 0; k < K; k++)
+  {
+    dMu[k] *= kap / Z;
+    dVar[k] *= kap / Z;
+  }
+}
+void CRobustMaxNoise::predictBlock(const double* mu, const double* var,
+                                   unsigned int j0, double* prob) const
+{
+  BOUNDCHECK(j0 + numClasses <= getOutputDim());
+  const unsigned int K = numClasses;
+  const double a = eps / (K - 1.0), kap = 1.0 - eps - a;
+  for(unsigned int c = 0; c < K; c++)
+    prob[c] = a + kap * classProbability(mu, var, K, c, 0, 0);
+}
+void CRobustMaxNoise::initStoreage()
+{
+  if(getOutputDim() % numClasses != 0)
+    throw ndlexceptions::Error("CRobustMaxNoise: outputDim must be a multiple of numClasses");
+  setNumParams(0);
+  initSiteStoreage();
+  clearTransforms();
+  setLogConcave(false);
+  setSpherical(false);
+  setMissing(false);
+}
+void CRobustMaxNoise::initNames() {}
+void CRobustMaxNoise::initVals() { activeSites().zeros(); }
+void CRobustMaxNoise::initParams() {}
+ostream& CRobustMaxNoise::display(ostream& os)
+{
+  os << "Robust-max Noise: numClasses=" << numClasses << " eps=" << eps << endl;
+  return os;
+}
+void CRobustMaxNoise::setParam(double /*val*/, unsigned int /*index*/)
+{
+  throw ndlexceptions::Error("CRobustMaxNoise has no free parameters (eps is fixed)");
+}
+void CRobustMaxNoise::setParams(const CMatrix& params)
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+double CRobustMaxNoise::getParam(unsigned int /*index*/) const
+{
+  throw ndlexceptions::Error("CRobustMaxNoise has no free parameters (eps is fixed)");
+}
+void CRobustMaxNoise::getParams(CMatrix& params) const
+{
+  DIMENSIONMATCH(params.getCols() == 0 || getNumParams() == 0);
+}
+void CRobustMaxNoise::getGradParams(CMatrix& g) const
+{
+  DIMENSIONMATCH(g.getCols() == 0 || getNumParams() == 0);
+}
+void CRobustMaxNoise::getGradInputs(double& /*gmu*/, double& /*gvs*/,
+                                    unsigned int /*i*/, unsigned int /*j*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "CRobustMaxNoise is a block likelihood; use cavityMomentsBlock");
+}
+void CRobustMaxNoise::out(CMatrix& yPred, const CMatrix& muTest,
+                          const CMatrix& varSigmaTest) const
+{
+  CMatrix prob(muTest.getRows(), muTest.getCols());
+  out(yPred, prob, muTest, varSigmaTest);
+}
+void CRobustMaxNoise::out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest,
+                          const CMatrix& varSigmaTest) const
+{
+  const unsigned int K = numClasses;
+  DIMENSIONMATCH(muTest.getCols() % K == 0);
+  std::vector<double> mu(K), var(K), p(K);
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < muTest.getCols(); j0 += K)
+    {
+      for(unsigned int k = 0; k < K; k++)
+      {
+        mu[k] = muTest.getVal(i, j0 + k);
+        var[k] = varSigmaTest.getVal(i, j0 + k);
+      }
+      predictBlock(&mu[0], &var[0], j0, &p[0]);
+      unsigned int best = 0;
+      for(unsigned int k = 0; k < K; k++)
+      {
+        probOut.setVal(p[k], i, j0 + k);
+        if(p[k] > p[best]) best = k;
+      }
+      for(unsigned int k = 0; k < K; k++)
+        yPred.setVal(k == best ? 1.0 : 0.0, i, j0 + k);
+    }
+}
+void CRobustMaxNoise::likelihoods(CMatrix& L, const CMatrix& muTest,
+                                  const CMatrix& varSigmaTest,
+                                  const CMatrix& /*yTest*/) const
+{
+  // L holds the predictive class probabilities, N x outputDim.
+  CMatrix yPred(muTest.getRows(), muTest.getCols());
+  out(yPred, L, muTest, varSigmaTest);
+}
+double CRobustMaxNoise::logLikelihood(const CMatrix& muTest, const CMatrix& varSigmaTest,
+                                      const CMatrix& yTest) const
+{
+  const unsigned int K = numClasses;
+  DIMENSIONMATCH(muTest.getCols() % K == 0);
+  std::vector<double> y(K), mu(K), var(K);
+  double L = 0.0;
+  for(unsigned int i = 0; i < muTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < muTest.getCols(); j0 += K)
+    {
+      for(unsigned int k = 0; k < K; k++)
+      {
+        y[k] = yTest.getVal(i, j0 + k);
+        mu[k] = muTest.getVal(i, j0 + k);
+        var[k] = varSigmaTest.getVal(i, j0 + k);
+      }
+      L += logZBlock(&y[0], &mu[0], &var[0], j0);
+    }
+  return L;
+}
+void CRobustMaxNoise::test(const CMatrix& muout, const CMatrix& varSigmaOut,
+                           const CMatrix& yTest) const
+{
+  CMatrix yPred(yTest.getRows(), yTest.getCols());
+  out(yPred, muout, varSigmaOut);
+  unsigned int wrong = 0;
+  for(unsigned int i = 0; i < yTest.getRows(); i++)
+    for(unsigned int j0 = 0; j0 < yTest.getCols(); j0 += numClasses)
+      for(unsigned int k = 0; k < numClasses; k++)
+        if(yTest.getVal(i, j0 + k) > 0.5 && yPred.getVal(i, j0 + k) < 0.5)
+        { wrong++; break; }
+  cout << "Classification error: " << wrong << " of " << yTest.getRows() << endl;
+}
+void CRobustMaxNoise::writeParamsToStream(ostream& out) const
+{
+  writeToStream(out, "baseType", getBaseType());
+  writeToStream(out, "type", getType());
+  writeToStream(out, "outputDim", getOutputDim());
+  writeToStream(out, "numParams", getNumParams());
+  writeToStream(out, "numClasses", numClasses);
+  writeToStream(out, "eps", eps);
+}
+void CRobustMaxNoise::readParamsFromStream(istream& in)
+{
+  setOutputDim(readIntFromStream(in, "outputDim"));
+  unsigned int numPar = readIntFromStream(in, "numParams");
+  numClasses = static_cast<unsigned int>(readIntFromStream(in, "numClasses"));
+  setEps(readDoubleFromStream(in, "eps"));
+  setNumData(1);
+  initStoreage();
+  if(numPar != getNumParams())
+    throw ndlexceptions::StreamFormatError("numParams",
+        "Number of parameters in file does not match computed number.");
+}
+
 // ---- CIP-003A Phase 3: Exponential / Gamma ----------------------------------
 
 namespace {
@@ -3938,7 +4275,7 @@ double CGaussianNoise::logZElement(double y, double mu, double var, unsigned int
 {
   const double r = y - mu - bias.getVal(j);
   const double s = var + sigma2;
-  return -0.5 * (log(s) + r * r / s + log(2 * M_PI));
+  return -0.5 * (log(s) + r * r / s + log(2 * 3.14159265358979323846));
 }
 
 double CProbitNoise::logZElement(double y, double mu, double var, unsigned int j) const

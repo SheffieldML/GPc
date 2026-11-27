@@ -151,7 +151,7 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 - [x] Call-site audit and block-oracle contract (no behaviour change) — Phase 1
 - [x] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals — Phase 2. Also: GPy-convention probit mode (`setGpyMode`); `CGp` EP always via the block engine; `CGp` Laplace for D scalar-block outputs. Convention: the default probit is a step function on f+ε with the softener as White in K (IVM/ADF); GPy mode is Φ(y f) on f (σ²=1). Open: GPy mode is not serialised.
 - [x] SVGP and deep-GP dispatch — Phase 3 (`expectedLogLikBatch`; `testSvgpBlock`; coupled-block FD in `testDeepGp`)
-- [ ] `CRobustMaxNoise` and verification
+- [x] `CRobustMaxNoise` and verification — Phase 4 (`testRobustMax`; fixture `testdata/robustmax`). P(argmax) by composite Gauss–Legendre with breakpoints at the Φ transitions (fixed Gauss–Hermite is inaccurate for small variances); ε is a fixed hyperparameter; capabilities are expected log-lik, cavity moments, predictive (no Laplace). The fixture is an independent stdlib Simpson reference, not GPflow output (GPflow was unavailable). Finding: EP on non-log-concave robust-max clamps site precisions at the floor when labels conflict with the prior, and the EP gradient is then not stationary; the EP gradient check uses clean labels. Robust-max marginal likelihood is flat in kernel amplitude, so the check perturbs the lengthscale.
 - [ ] `CSoftmaxNoise`, Laplace block W
 - [ ] Loaders, Python, factory/CLI
 - [ ] K-class example and MNIST comparison

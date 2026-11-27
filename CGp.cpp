@@ -161,11 +161,20 @@ void CGp::setEpInference(bool on)
     if(isSparseApproximation() || getApproximationType() != FTC)
       throw ndlexceptions::Error(
           "CGp::setEpInference: CIP-0033 EP requires FTC (dense) approximation.");
-    // CIP-003E: single scalar-block output keeps the legacy probit path;
-    // anything else goes through the block engine and needs the likelihood
-    // to supply cavity moments.
-    if(epUsesBlockEngine())
-      pnoise->requireCapability(CNoise::CapCavityMoments, "CGp::setEpInference");
+    // CIP-003E: EP runs through the block engine for every likelihood and
+    // needs it to supply cavity moments. (Before this, a single output was
+    // treated as probit whatever the noise object was.)
+    pnoise->requireCapability(CNoise::CapCavityMoments, "CGp::setEpInference");
+    // EP/Laplace follow GPy: Phi(y f) on f. The legacy probit (step on f+eps,
+    // softener as White in K) is for IVM/ADF; switch it over, as the old
+    // probit-only EP path always behaved this way.
+    CProbitNoise* pp = dynamic_cast<CProbitNoise*>(pnoise);
+    if(pp && !pp->isGpyMode())
+    {
+      pp->setGpyMode(true);
+      if(getVerbosity()>0)
+        cout << "CGp::setEpInference: probit switched to GPy mode (Phi(y f), zero bias)." << endl;
+    }
     laplaceInference = false;
     laplaceUpToDate = false;
   }

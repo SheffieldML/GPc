@@ -1611,7 +1611,9 @@ void CProbitNoise::initStoreage()
   initSiteStoreage();
   bias.resize(1, getOutputDim());
   clearTransforms();
-  sigma2 = 1e-6;
+  sigma2 = gpyMode ? 1.0 : 1e-6;
+  if(gpyMode)
+    bias.zeros();
   setLogConcave(true);
   setSpherical(false);
   setMissing(false);
@@ -1719,7 +1721,9 @@ void CProbitNoise::cavityMomentsElement(double y, double mu, double var,
                                       unsigned int j, double& gmu, double& gvs) const
 {
   double b = bias.getVal(j);
-  double c = y/sqrt(sigma2+var);
+  // Targets are +-1 (CIP-0027) or {0,1} (GPy / pods); anything not positive is class -1.
+  const double ys = y > 0.0 ? 1.0 : -1.0;
+  double c = ys/sqrt(sigma2+var);
   double u = c*(mu + b);
   gmu = ndlutil::gradLnCumGaussian(u)*c;
   gvs = -0.5*c*u*gmu;
@@ -3939,7 +3943,8 @@ double CGaussianNoise::logZElement(double y, double mu, double var, unsigned int
 
 double CProbitNoise::logZElement(double y, double mu, double var, unsigned int j) const
 {
-  const double arg = (mu + bias.getVal(j)) * y;
+  const double ys = y > 0.0 ? 1.0 : -1.0;  // see cavityMomentsElement
+  const double arg = (mu + bias.getVal(j)) * ys;
   return ndlutil::lnCumGaussian(arg / sqrt(var + sigma2));
 }
 

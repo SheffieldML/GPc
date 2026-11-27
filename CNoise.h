@@ -763,6 +763,20 @@ class CProbitNoise : public CNoise
   {
     return bias.getVal(0, index);
   }
+  // CIP-003E: GPy-convention probit. The likelihood is Phi(y f) with the unit
+  // softener inside the likelihood (sigma2 = 1), so the cavity moments are
+  // Phi(mu/sqrt(1+v)) and the latent is f, as in GPy's Bernoulli. Bias is
+  // fixed at zero. The default (false) keeps the CIP-0027 convention: a step
+  // function on f + eps with the softener as White in K, which is what IVM/ADF
+  // expect. Runtime state: not written to .model streams.
+  void setGpyMode(bool on)
+  {
+    gpyMode = on;
+    sigma2 = on ? 1.0 : 1e-6;
+    if(on && bias.getCols()>0)
+      bias.zeros();
+  }
+  bool isGpyMode() const { return gpyMode; }
   // CIP-0027: probit σ² is fixed (softener is White-in-K); expose for tests.
   double getSigma2() const { return sigma2; }
   
@@ -778,6 +792,7 @@ class CProbitNoise : public CNoise
   double sigma2;
   CMatrix bias;
   mutable double ellBias;
+  bool gpyMode = false;
 };
 
 // The null category noise model for semi-supervised learning (see Lawrence and Jordan in NIPS 2004).

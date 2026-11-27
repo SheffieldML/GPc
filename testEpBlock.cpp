@@ -276,37 +276,55 @@ int main()
              "blockSize 2 stand-in == independent blockSize 1");
     }
 
-    // --- Probit K = 1: block path == existing probit-only run() ---
+    // --- Probit K = 1 ---
     {
-      CMatrix yp(N, 1);
+      CMatrix yp(N, 1), y01(N, 1);
       for(unsigned int i = 0; i < N; i++)
+      {
         yp.setVal(Y.getVal(i, 0) + 0.2 > 0.0 ? 1.0 : -1.0, i, 0);
+        y01.setVal(yp.getVal(i, 0) > 0.0 ? 1.0 : 0.0, i, 0);
+      }
+      // GPy mode: Phi(y f) on f, so the block path on plain K must equal the
+      // legacy probit-only run() on everything: log marginal, posterior, dL/dK.
       CProbitNoise pn(&yp);
-      // The constructor initialises the bias to the class-prior probit;
-      // the legacy run() has no bias, so zero it for the comparison.
-      pn.setParam(0.0, 0);
-      CEpInference epA, epB;
-      epA.setJitter(1e-6);
-      epB.setJitter(1e-6);
-      // CIP-0027 convention: the probit CNoise is a step function on
-      // g = f + eps, with the unit softener carried as White in the Gram.
-      // So CNoise-driven EP on K + I is the same model as the legacy
-      // Phi(y f) run() on K: the log marginal and dL/dK must agree.
-      // (The posterior over g differs from that over f by construction,
-      // so we compare the f-quantities only.)
-      CMatrix Kw(K1);
-      for(unsigned int i = 0; i < N; i++)
-        Kw.setVal(K1.getVal(i, i) + 1.0, i, i);
-      CEpSites sA, sB;
-      CMatrix mA, vA, mB, vB;
+      pn.setGpyMode(true);
+      expect(pn.isGpyMode() && pn.getSigma2() == 1.0 && pn.getBiasVal(0) == 0.0,
+             "GPy mode: sigma2 = 1, zero bias");
+      CEpInference epA, epB, epC;
+      epA.setJitter(1e-6); epB.setJitter(1e-6); epC.setJitter(1e-6);
+      CEpSites sA, sB, sC;
+      CMatrix mA, vA, mB, vB, mC, vC;
       const double LA = epA.run(K1, yp, sA, mA, vA);
-      const double LB = epB.runBlock(vector<CMatrix>(1, Kw), yp, pn, sB, mB, vB);
-      expect(fabs(LA - LB) < 1e-5 * (1.0 + fabs(LA)),
-             "probit K=1: block log marginal (K+I) == run() (K)");
+      const double LB = epB.runBlock(vector<CMatrix>(1, K1), yp, pn, sB, mB, vB);
+      expect(fabs(LA - LB) < 1e-6 * (1.0 + fabs(LA)), "GPy probit: block log marginal == run()");
+      expect(maxAbs(mA, mB) < 1e-6 && maxAbs(vA, vB) < 1e-6, "GPy probit: block posterior == run()");
       CMatrix dA, dB;
       epA.fillDLDK(dA);
       epB.fillDLDKBlock(0, dB);
-      expect(maxAbs(dA, dB) < 1e-5, "probit K=1: block dL/dK (K+I) == run() (K)");
+      expect(maxAbs(dA, dB) < 1e-6, "GPy probit: block dL/dK == run()");
+      // {0,1} targets (GPy / pods) mean the same thing as +-1.
+      CProbitNoise pn01(&y01);
+      pn01.setGpyMode(true);
+      const double LC = epC.runBlock(vector<CMatrix>(1, K1), y01, pn01, sC, mC, vC);
+      expect(fabs(LB - LC) < 1e-12 && maxAbs(mB, mC) < 1e-12, "GPy probit: {0,1} targets == +-1");
+
+      // Legacy CIP-0027 convention (step on f + eps, White in K): the same
+      // model, so on K + I the log marginal and dL/dK still agree.
+      CProbitNoise pl(&yp);
+      pl.setParam(0.0, 0);
+      expect(!pl.isGpyMode(), "default probit is the legacy convention");
+      CMatrix Kw(K1);
+      for(unsigned int i = 0; i < N; i++)
+        Kw.setVal(K1.getVal(i, i) + 1.0, i, i);
+      CEpInference epD;
+      epD.setJitter(1e-6);
+      CEpSites sD;
+      CMatrix mD, vD;
+      const double LD = epD.runBlock(vector<CMatrix>(1, Kw), yp, pl, sD, mD, vD);
+      expect(fabs(LA - LD) < 1e-5 * (1.0 + fabs(LA)), "legacy probit on K+I: log marginal == GPy on K");
+      CMatrix dD;
+      epD.fillDLDKBlock(0, dD);
+      expect(maxAbs(dA, dD) < 1e-5, "legacy probit on K+I: dL/dK == GPy on K");
     }
 
     // --- Refusals ---

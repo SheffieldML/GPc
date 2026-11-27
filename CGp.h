@@ -685,8 +685,8 @@ public:
   mutable double epLogMarginalCache;
   mutable double laplaceLogMarginalCache;
   double epLogLikelihood() const; // GPy EP marginal + kern prior
-  // CIP-003E: true when EP must use the block engine (K>1 or blockSize>1).
-  bool epUsesBlockEngine() const { return getOutputDim() != 1 || pnoise->blockSize() != 1; }
+  // CIP-003E: EP always uses the block engine (legacy run() remains for fixtures).
+  bool epUsesBlockEngine() const { return true; }
   double laplaceLogLikelihood() const;
   bool loadedModel;
   bool spherical;

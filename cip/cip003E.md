@@ -148,8 +148,8 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 
 ## Implementation Status
 
-- [ ] Call-site audit and block-oracle contract (no behaviour change)
-- [ ] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals
+- [x] Call-site audit and block-oracle contract (no behaviour change) — Phase 1
+- [x] Block EP (N×K sites), ADF in IVM/PPA/sparse PPA/CGp, capability refusals — Phase 2. Also: GPy-convention probit mode (`setGpyMode`); `CGp` EP always via the block engine; `CGp` Laplace for D scalar-block outputs. Convention: the default probit is a step function on f+ε with the softener as White in K (IVM/ADF); GPy mode is Φ(y f) on f (σ²=1). Open: GPy mode is not serialised.
 - [ ] SVGP and deep-GP dispatch
 - [ ] `CRobustMaxNoise` and verification
 - [ ] `CSoftmaxNoise`, Laplace block W

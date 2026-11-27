@@ -161,3 +161,12 @@ Existing likelihoods and models are unaffected: `isRowCoupled()` defaults to fal
 - Hernández-Lobato, Lobato and Dupont (2011), Robust multi-class Gaussian process classification.
 - Hensman, Matthews and Ghahramani (2015), Scalable variational Gaussian process classification.
 - CIP-0036 (multi-class deferred), CIP-003A (likelihood zoo), CIP-002A (SVGP).
+
+
+## Phase 6 results (2026-11-27)
+
+- **Boundary.** `ndlnoise::oneHotLabels(labels, K)` and `labelsFromOneHot` are the only place integer labels become N x K one-hot. It accepts N x 1 integers (K inferred as max + 1 if not given) or an existing one-hot block, and rejects negative, fractional, out-of-range and non-one-hot input. The deepgp CLI and the Python `DeepGP` call it; nothing inside the library sees integer class labels.
+- **CLI.** `deepgp learn --likelihood gaussian|robustmax|softmax [--num-classes K] [--robustmax-eps e] [--softmax-samples S]`. Centring is skipped for the multi-class likelihoods. `scripts/smoke_deepgp.sh` trains both from a three-class CSV and checks the `display` output.
+- **`.model` round trip.** `CDeepGp` now owns its likelihood (`adoptLikelihood`) and writes it as an optional trailing `hasLikelihood` block via the existing `writeNoiseToStream` / `readNoiseFromStream` factory, so `robustmax` and `softmax` (and any other `CNoise`) survive save and load. Files written before this change have no block and load as Gaussian, as before. The likelihood is installed before the stochastic parameters are restored because it changes the free parameter set. Verified: stochastic parameters and the fixed-seed ELBO are identical after a round trip for both likelihoods (`testDeepGp`).
+- **Python.** `gpc.likelihoods.RobustMax(K, eps)` and `Softmax(K, num_samples, seed)` with `expected_loglik` and `predict_proba` (both evaluated by the C++ oracles through `_gpc.multiclass_*`) and a closed-form `logpdf`; `DeepGP(..., likelihood='robustmax'|'softmax'|instance, num_classes=)`, `predict_proba`, and `load` restoring the likelihood type. Tests: `python/tests/test_multiclass.py` (oracle versus closed form as the variance vanishes, probabilities sum to one, train/save/load, label errors).
+- **Not done.** The `gp` and `ivm` command lines do not take the multi-class likelihoods; Laplace and EP at the model level need `CGp` object construction, which is Python/C++ API only for now. `DeepGP.elbo()` is a Monte Carlo estimate with an advancing seed, so two calls differ; this is existing behaviour.

@@ -37,7 +37,11 @@ public:
            unsigned int num_categories = 3,
            int verbosity = 0,
            bool learn_window_width = false,
-           bool learn_window_widths = false);
+           bool learn_window_widths = false,
+           unsigned int num_classes = 0,
+           double likelihood_eps = 1e-3,
+           unsigned int likelihood_samples = 256,
+           unsigned int likelihood_seed = 12345);
 
   void optimize(unsigned int iters = 100,
                 int batch_size = -1,
@@ -63,6 +67,12 @@ public:
       uint64_t seed = 0) const;
 
   // Discard Adam moments / step count (otherwise kept between optimize calls).
+  // Class probabilities (N x K) at Xtest for a multi-class likelihood; samples/seed as predict().
+  py::array_t<double> predict_proba(
+      py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+      unsigned int samples = 0,
+      uint64_t seed = 0) const;
+
   void reset_optimizer();
   unsigned long optimizer_steps() const { return adam ? adam->getStepCount() : 0; }
 

@@ -113,13 +113,24 @@ PyDeepGP::PyDeepGP(
     unsigned int num_categories,
     int verbosity,
     bool learn_window_width,
-    bool learn_window_widths)
+    bool learn_window_widths,
+    unsigned int num_classes,
+    double likelihood_eps,
+    unsigned int likelihood_samples,
+    unsigned int likelihood_seed)
   : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)),
     inducingType(inducing), likelihoodType(likelihood),
     learnWindowWidth(learn_window_width),
     learnWindowWidths(learn_window_widths)
 {
   checkXY(X, Y);
+  const bool multiclass = (likelihood == "robustmax" || likelihood == "RobustMax"
+                           || likelihood == "softmax" || likelihood == "Softmax");
+  if(multiclass)
+  {
+    // Integer labels (N or N x 1) or one-hot (N x K) -> N x K one-hot, here and only here.
+    Y = ndlnoise::oneHotLabels(Y, num_classes);
+  }
   if(learn_window_width && learn_window_widths)
     throw ndlexceptions::Error(
         "Pass only one of learn_window_width=True (tied) or "
@@ -205,6 +216,22 @@ PyDeepGP::PyDeepGP(
     model->setLikelihood(ownedNoise.get());
     likelihoodType = "probit";
   }
+  else if(likelihood == "robustmax" || likelihood == "RobustMax")
+  {
+    if(!(likelihood_eps > 0.0 && likelihood_eps < 1.0))
+      throw ndlexceptions::Error("robustmax eps must be in (0, 1)");
+    model->adoptLikelihood(std::unique_ptr<CNoise>(
+        new CRobustMaxNoise(&Y, Dout, likelihood_eps)));
+    likelihoodType = "robustmax";
+  }
+  else if(likelihood == "softmax" || likelihood == "Softmax")
+  {
+    if(likelihood_samples < 2)
+      throw ndlexceptions::Error("softmax samples must be at least 2");
+    model->adoptLikelihood(std::unique_ptr<CNoise>(
+        new CSoftmaxNoise(&Y, Dout, likelihood_samples, likelihood_seed)));
+    likelihoodType = "softmax";
+  }
   else if(likelihood == "ordered" || likelihood == "Ordered")
   {
     if(Dout != 1)
@@ -274,7 +301,7 @@ PyDeepGP::PyDeepGP(
   }
   else
     throw ndlexceptions::Error(
-        "likelihood must be gaussian, probit, ordered, student_t, poisson, "
+        "likelihood must be gaussian, probit, robustmax, softmax, ordered, student_t, poisson, "
         "binomial, exponential, gamma, skew_gaussian, or skew_exponential");
 }
 
@@ -366,6 +393,40 @@ std::pair<py::array_t<double>, py::array_t<double>> PyDeepGP::predict_noiseless(
   return {matrixToNumpy(mu), matrixToNumpy(var)};
 }
 
+py::array_t<double> PyDeepGP::predict_proba(
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xtest,
+    unsigned int samples,
+    uint64_t seed) const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  CNoise* lik = model->getLikelihood();
+  if(lik == 0 || lik->blockSize() < 2)
+    throw ndlexceptions::Error(
+        "predict_proba needs a multi-class likelihood (robustmax or softmax)");
+  CMatrix Xt = matrixFromNumpy(Xtest);
+  if(Xt.getCols() != model->getInputDim())
+    throw ndlexceptions::Error("Xtest input dimension does not match training X");
+  CMatrix mu, var;
+  model->predictMeanVar(Xt, mu, var, samples, seed, false);
+  const unsigned int K = lik->blockSize();
+  CMatrix P(mu.getRows(), mu.getCols());
+  std::vector<double> m(K), v(K), p(K);
+  for(unsigned int i = 0; i < mu.getRows(); i++)
+    for(unsigned int j0 = 0; j0 + K <= mu.getCols(); j0 += K)
+    {
+      for(unsigned int k = 0; k < K; k++)
+      {
+        m[k] = mu.getVal(i, j0 + k);
+        v[k] = var.getVal(i, j0 + k);
+      }
+      lik->predictBlock(&m[0], &v[0], j0, &p[0]);
+      for(unsigned int k = 0; k < K; k++)
+        P.setVal(p[k], i, j0 + k);
+    }
+  return matrixToNumpy(P);
+}
+
 void PyDeepGP::reset_optimizer()
 {
   if(adam)
@@ -395,7 +456,9 @@ std::unique_ptr<PyDeepGP> PyDeepGP::load(const std::string& path)
   self->X.deepCopy(self->model->getX());
   self->Y.deepCopy(self->model->getY());
   self->inducingType = self->model->getLayerInducingType(0);
-  self->likelihoodType = "gaussian";
+  self->likelihoodType = (self->model->getLikelihood() != 0)
+                             ? self->model->getLikelihood()->getType()
+                             : std::string("gaussian");
   self->kernelType = "loaded";
   return self;
 }
@@ -562,7 +625,11 @@ void bind_deepgp(py::module_& m)
                     unsigned int,
                     int,
                     bool,
-                    bool>(),
+                    bool,
+                    unsigned int,
+                    double,
+                    unsigned int,
+                    unsigned int>(),
            py::arg("X"),
            py::arg("Y"),
            py::arg("layers") = 2,
@@ -577,7 +644,11 @@ void bind_deepgp(py::module_& m)
            py::arg("num_categories") = 3,
            py::arg("verbosity") = 0,
            py::arg("learn_window_width") = false,
-           py::arg("learn_window_widths") = false)
+           py::arg("learn_window_widths") = false,
+           py::arg("num_classes") = 0,
+           py::arg("likelihood_eps") = 1e-3,
+           py::arg("likelihood_samples") = 256,
+           py::arg("likelihood_seed") = 12345)
       .def("optimize",
            &PyDeepGP::optimize,
            py::arg("iters") = 100,
@@ -602,6 +673,12 @@ void bind_deepgp(py::module_& m)
            "likelihood the variance includes 1/beta; other likelihoods return "
            "the latent variance. samples=0 uses the mean path; samples>=1 mixes "
            "S hidden-layer draws (CIP-0035). See predict_noiseless().")
+      .def("predict_proba",
+           &PyDeepGP::predict_proba,
+           py::arg("Xtest"),
+           py::arg("samples") = 0,
+           py::arg("seed") = 0,
+           "Class probabilities (N x K) at Xtest for a robustmax or softmax likelihood.")
       .def("predict_noiseless",
            &PyDeepGP::predict_noiseless,
            py::arg("Xtest"),

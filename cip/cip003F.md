@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-27"
 id: "003F"
 last_updated: "2026-11-27"
-status: "Accepted"
+status: "Closed"
 compressed: false
 related_requirements: ["001A", "0015", "0002", "0016"]
 related_cips: ["0035", "002A", "002D", "0028", "003C", "003D", "003E", "0041"]
@@ -25,8 +25,8 @@ title: "Deep GP training speed (batched gradients, O(B) SVGP steps)"
 - [x] Proposed - Initial idea documented
 - [x] Accepted - Approved, ready to start work
 - [x] In Progress - Actively being implemented
-- [ ] Implemented - Work complete, awaiting verification
-- [ ] Closed - Verified and complete
+- [x] Implemented - Work complete, awaiting verification
+- [x] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
 - [ ] Deferred - Postponed
 
@@ -155,7 +155,7 @@ Two notes on what was implemented against what was proposed. First, A5 (KL gradi
 - [x] Phase 2: batched input and inducing gradients
 - [x] Phase 3: GEMM data term (KL from Cholesky already in place)
 - [x] Phase 4: bulk weight-space ridges
-- [ ] Phase 5: re-measure and document
+- [x] Phase 5: re-measure and document ([docs/deepgp.md](../docs/deepgp.md))
 
 ## References
 

@@ -282,6 +282,124 @@ static void runCase(bool withWhite)
   }
 }
 
+// CIP-003F A1 / A4: routed O(B) paths and BLAS-3 data-term gradients must equal
+// the original element-loop / full-data paths (setLegacyPaths) to round-off.
+static double maxAbs(const CMatrix& A)
+{
+  double m = 0.0;
+  for(unsigned int i = 0; i < A.getRows(); i++)
+    for(unsigned int j = 0; j < A.getCols(); j++)
+      m = max(m, fabs(A.getVal(i, j)));
+  return m;
+}
+
+static void routedEquivalenceCase(const string& inducingType)
+{
+  const string tag = " [routed/BLAS-3 vs legacy, " + inducingType + "]";
+  const double tol = 1e-10;
+  const unsigned int N = 60, M = 7, q = 3;
+  const double beta = 5.0;
+  mt19937 rng(321);
+  normal_distribution<double> nd(0.0, 1.0);
+  CMatrix X(N, q), y(N, 2), Z(M, q);
+  for(unsigned int i = 0; i < N; i++)
+    {
+      for(unsigned int d = 0; d < q; d++)
+        X.setVal(nd(rng), i, d);
+      y.setVal(tanh(X.getVal(i, 0)) + 0.1 * nd(rng), i, 0);
+      y.setVal(sin(X.getVal(i, 1)) + 0.1 * nd(rng), i, 1);
+    }
+  for(unsigned int k = 0; k < M; k++)
+    for(unsigned int d = 0; d < q; d++)
+      Z.setVal(0.7 * nd(rng), k, d);
+  const bool ws = (inducingType == "weightspace");
+  CRbfKern rbf(X);
+  CMlpKern mlp(X);
+  for(unsigned int i = 0; i < 3; i++)
+    mlp.setParam(0.5, i);
+  CKern* kern = ws ? static_cast<CKern*>(&mlp) : static_cast<CKern*>(&rbf);
+  CSvgp sv(kern, &X, &y, Z, beta, 0);
+  if(ws)
+    sv.setInducingType("weightspace");
+  sv.naturalGradientStep(0.7);  // non-trivial q
+  sv.setQParamMode(CSvgp::QModeCholesky);
+
+  // Batches: small (routed), half (4B >= N, full-data path), shuffled full.
+  vector<vector<unsigned int> > batches(3);
+  for(unsigned int k = 0; k < 8; k++)
+    batches[0].push_back((7 * k + 3) % N);
+  for(unsigned int k = 0; k < N / 2; k++)
+    batches[1].push_back((11 * k + 1) % N);
+  for(unsigned int k = 0; k < N; k++)
+    batches[2].push_back((k * 7) % N);  // gcd(7, 60) = 1: a permutation
+  for(unsigned int b = 0; b < batches.size(); b++)
+    {
+      const vector<unsigned int>& batch = batches[b];
+      const string bt = tag + " batch " + to_string(b);
+      CMatrix gK1, gZ1, gK0, gZ0, gQ1, gQ0;
+      double gB1 = 0.0, gB0 = 0.0;
+      sv.setLegacyPaths(false);
+      const double e1 = sv.elboGrad(gK1, gZ1, gB1, batch, 0);
+      sv.qParamsGrad(gQ1, batch);
+      sv.setLegacyPaths(true);
+      const double e0 = sv.elboGrad(gK0, gZ0, gB0, batch, 0);
+      sv.qParamsGrad(gQ0, batch);
+      sv.setLegacyPaths(false);
+      expect(fabs(e1 - e0) < tol * max(1.0, fabs(e0)), "elboGrad value" + bt);
+      expect(maxAbsDiff(gK1, gK0) < tol * (1.0 + maxAbs(gK0)), "gKern" + bt);
+      expect(maxAbsDiff(gZ1, gZ0) < tol * (1.0 + maxAbs(gZ0)), "gZ" + bt);
+      expect(fabs(gB1 - gB0) < tol * (1.0 + fabs(gB0)), "gBeta" + bt);
+      expect(maxAbsDiff(gQ1, gQ0) < tol * (1.0 + maxAbs(gQ0)), "q-gradients" + bt);
+    }
+
+  // Explicit-input path with input gradients (A4 site adjoint).
+  {
+    const vector<unsigned int>& batch = batches[0];
+    CMatrix XB(batch.size(), q);
+    for(unsigned int k = 0; k < batch.size(); k++)
+      for(unsigned int d = 0; d < q; d++)
+        XB.setVal(X.getVal(batch[k], d), k, d);
+    const double c = (double)N / (double)batch.size();
+    CMatrix gK1, gZ1, gX1, gK0, gZ0, gX0;
+    double gB1 = 0.0, gB0 = 0.0;
+    sv.setLegacyPaths(false);
+    sv.elboGradAt(gK1, gZ1, gB1, &gX1, XB, batch, c);
+    sv.setLegacyPaths(true);
+    sv.elboGradAt(gK0, gZ0, gB0, &gX0, XB, batch, c);
+    sv.setLegacyPaths(false);
+    expect(maxAbsDiff(gK1, gK0) < tol * (1.0 + maxAbs(gK0)), "elboGradAt gKern" + tag);
+    expect(maxAbsDiff(gZ1, gZ0) < tol * (1.0 + maxAbs(gZ0)), "elboGradAt gZ" + tag);
+    expect(maxAbsDiff(gX1, gX0) < tol * (1.0 + maxAbs(gX0)), "elboGradAt gX" + tag);
+  }
+
+  // Natural-gradient step on a small batch leaves the same q either way.
+  {
+    CSvgp a(kern, &X, &y, Z, beta, 0), b(kern, &X, &y, Z, beta, 0);
+    if(ws)
+      {
+        a.setInducingType("weightspace");
+        b.setInducingType("weightspace");
+      }
+    b.setLegacyPaths(true);
+    a.naturalGradientStep(0.5, batches[0]);
+    b.naturalGradientStep(0.5, batches[0]);
+    expect(maxAbsDiff(a.getQMean(), b.getQMean()) < tol, "natural-gradient mean" + tag);
+    expect(maxAbsDiff(a.getQCov(0), b.getQCov(0)) < tol, "natural-gradient cov" + tag);
+  }
+
+  // Step cost must not touch full-data matrices for a small batch.
+  {
+    CSvgp lz(kern, &X, &y, Z, beta, 0);
+    if(ws)
+      lz.setInducingType("weightspace");
+    lz.updateKernelMatrices();
+    CMatrix gK, gZ;
+    double gB = 0.0;
+    lz.elboGrad(gK, gZ, gB, batches[0], 0);
+    expect(!lz.fullDataBuilt(), "small-batch elboGrad leaves full data unbuilt" + tag);
+  }
+}
+
 // Lazy vs eager full-data matrices must give identical results.
 static void lazyEquivalenceCase(const string& inducingType)
 {
@@ -433,6 +551,8 @@ int main()
       runCase(true);
       lazyEquivalenceCase("points");
       lazyEquivalenceCase("weightspace");
+      routedEquivalenceCase("points");
+      routedEquivalenceCase("weightspace");
 
       // 4. M = N, Z = X, no white kernel.
       //    lengthscale 0.3: K_uu well conditioned -> optimum ELBO == exact marginal.

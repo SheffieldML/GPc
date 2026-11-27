@@ -45,6 +45,84 @@
       "q": 2,
       "M": 0,
       "reps": 7
+    },
+    {
+      "id": "deepgp_rbf_points_n6000",
+      "kind": "deepgp",
+      "kern": "rbf",
+      "inducing": "points",
+      "N": 6000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
+    },
+    {
+      "id": "deepgp_mlp_points_n6000",
+      "kind": "deepgp",
+      "kern": "mlp",
+      "inducing": "points",
+      "N": 6000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
+    },
+    {
+      "id": "deepgp_mlp_weightspace_n6000",
+      "kind": "deepgp",
+      "kern": "mlp",
+      "inducing": "weightspace",
+      "N": 6000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
+    },
+    {
+      "id": "deepgp_rbf_points_n60000",
+      "kind": "deepgp",
+      "kern": "rbf",
+      "inducing": "points",
+      "N": 60000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
+    },
+    {
+      "id": "deepgp_mlp_points_n60000",
+      "kind": "deepgp",
+      "kern": "mlp",
+      "inducing": "points",
+      "N": 60000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
+    },
+    {
+      "id": "deepgp_mlp_weightspace_n60000",
+      "kind": "deepgp",
+      "kern": "mlp",
+      "inducing": "weightspace",
+      "N": 60000,
+      "q": 784,
+      "M": 100,
+      "layers": 3,
+      "hidden": 20,
+      "batch": 256,
+      "reps": 9
     }
   ]
 }

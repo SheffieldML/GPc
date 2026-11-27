@@ -75,13 +75,9 @@ void CInducingPoints::gradFromKuuKuf(CMatrix& gKernParams, CMatrix& gZ, CMatrix*
   if(wantX && gXOrNull != 0)
   {
     gXOrNull->resize(N, d);
-    gKX_uf2.resize(M, d);
-    for(unsigned int i = 0; i < N; i++)
-    {
-      kern.getGradX(gKX_uf2, X, i, *pZ);
-      for(unsigned int j = 0; j < d; j++)
-        gXOrNull->setVal(gKX_uf2.dotColCol(j, gKuf, i), i, j);
-    }
+    gXOrNull->zeros();
+    // CIP-003F A2: batched hook (kernel overrides use GEMMs; default loops getGradX).
+    kern.inducingGradX(*gXOrNull, *pZ, X, gKuf, KufCached);
   }
 }
 

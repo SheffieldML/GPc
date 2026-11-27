@@ -20,6 +20,7 @@
 #include <vector>
 #include "CGp.h"
 #include "CSvgp.h"
+#include "CDeepGp.h"
 #include "CKern.h"
 #include "CNoise.h"
 #include "CMatrix.h"
@@ -153,6 +154,10 @@ int main(int argc, char** argv)
   unsigned int reps = 7;
   unsigned int warm = 2;
   bool inducingFixed = false;
+  // CIP-003F A6: synthetic deep GP (no download): N x q inputs uniform on [0,1],
+  // `out` one-hot outputs, one step = objectiveGradBatch on a random batch.
+  unsigned int layers = 3, hidden = 20, batch = 256, outDim = 10;
+  string inducingKind = "points";
   for(int i = 1; i < argc; i++)
   {
     if(!strcmp(argv[i], "--kind") && i + 1 < argc)
@@ -173,16 +178,100 @@ int main(int argc, char** argv)
       dataDir = argv[++i];
     else if(!strcmp(argv[i], "--inducing-fixed"))
       inducingFixed = true;
+    else if(!strcmp(argv[i], "--layers") && i + 1 < argc)
+      layers = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--hidden") && i + 1 < argc)
+      hidden = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--batch") && i + 1 < argc)
+      batch = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--out") && i + 1 < argc)
+      outDim = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--inducing") && i + 1 < argc)
+      inducingKind = argv[++i];
     else if(!strcmp(argv[i], "--help"))
     {
-      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp] [--kern rbf|mlp]\n"
+      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp|deepgp] [--kern rbf|mlp]\n"
            << "                [--sparse-linalg lq|stable|legacy]\n"
            << "                [--N N] [--q q] [--M M] [--reps R]\n"
            << "                [--data-dir DIR] [--inducing-fixed]\n"
+           << "  deepgp: [--layers L] [--hidden H] [--batch B] [--out D]\n"
+           << "          [--inducing points|weightspace]  (kernel via --kern rbf|mlp)\n"
            << "Checked-build timings: make CHECKS=full bench && ./benchGPc ...\n"
            << "  (gpc_checks=on|off is printed; RELEASE=1 is the competitive path)\n";
       return 0;
     }
+  }
+
+  if(kind == "deepgp")
+  {
+    // Synthetic deep GP step timing (CIP-003F A6).
+    srand(13);
+    CMatrix Xd(N, q), Yd(N, outDim);
+    Yd.zeros();
+    for(unsigned int i = 0; i < N; i++)
+    {
+      for(unsigned int d = 0; d < q; d++)
+        Xd.setVal((double)rand() / (double)RAND_MAX, i, d);
+      Yd.setVal(1.0, i, (unsigned)rand() % outDim);
+    }
+    vector<unsigned int> dims(layers + 1, hidden);
+    dims[0] = q;
+    dims[layers] = outDim;
+    vector<unsigned int> Ms(layers, M);
+    vector<CKern*> kerns;
+    CMatrix Xdummy(1, 1);
+    for(unsigned int l = 0; l < layers; l++)
+    {
+      CKern* k;
+      if(kernName == "mlp")
+        k = new CMlpKern(dims[l]);
+      else
+        k = new CRbfKern(dims[l]);
+      kerns.push_back(k);
+    }
+    CDeepGp dgp(Xd, Yd, kerns, dims, Ms, 10.0, 1.0, 0);
+    if(inducingKind != "points")
+      for(unsigned int l = 0; l < layers; l++)
+        dgp.setLayerInducingType(l, inducingKind);
+    CMatrix g;
+    vector<unsigned int> idx(batch);
+    auto fillBatch = [&](unsigned int rep) {
+      for(unsigned int k = 0; k < batch; k++)
+        idx[k] = (unsigned)(((unsigned long)rep * 7919u + (unsigned long)k * 104729u) % N);
+    };
+    for(unsigned int w = 0; w < warm; w++)
+    {
+      fillBatch(w);
+      (void)dgp.objectiveGradBatch(idx, g);
+    }
+    vector<double> times;
+    for(unsigned int r = 0; r < reps; r++)
+    {
+      fillBatch(warm + r);
+      auto t0 = chrono::steady_clock::now();
+      (void)dgp.objectiveGradBatch(idx, g);
+      auto t1 = chrono::steady_clock::now();
+      times.push_back(chrono::duration<double, milli>(t1 - t0).count());
+    }
+    cout << "kind=deepgp"
+         << " kern=" << kernName
+         << " inducing=" << inducingKind
+         << " layers=" << layers
+         << " N=" << N
+         << " q=" << q
+         << " M=" << M
+         << " hidden=" << hidden
+         << " batch=" << batch
+         << " nparams=" << g.getCols()
+         << " ll=0"
+         << " median_ms=" << median(times)
+         << " allocs_per_eval=0"
+         << " reps=" << reps
+         << " threads=see_OPENBLAS_NUM_THREADS"
+         << endl;
+    for(unsigned int l = 0; l < layers; l++)
+      delete kerns[l];
+    return 0;
   }
 
   CMatrix X, y, Xu;

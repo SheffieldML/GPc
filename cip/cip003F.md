@@ -3,7 +3,7 @@ author: "Neil Lawrence"
 created: "2026-11-27"
 id: "003F"
 last_updated: "2026-11-27"
-status: "Proposed"
+status: "Accepted"
 compressed: false
 related_requirements: ["001A", "0015", "0002", "0016"]
 related_cips: ["0035", "002A", "002D", "0028", "003C", "003D", "003E", "0041"]
@@ -23,8 +23,8 @@ title: "Deep GP training speed (batched gradients, O(B) SVGP steps)"
 ## Status
 
 - [x] Proposed - Initial idea documented
-- [ ] Accepted - Approved, ready to start work
-- [ ] In Progress - Actively being implemented
+- [x] Accepted - Approved, ready to start work
+- [x] In Progress - Actively being implemented
 - [ ] Implemented - Work complete, awaiting verification
 - [ ] Closed - Verified and complete
 - [ ] Rejected - Will not be implemented
@@ -99,14 +99,20 @@ with the current per-datum `getGradX` loop as the default, and use it in `CInduc
 
 ### Expected effect (estimates only, not commitments)
 
-The figures marked "Now" were measured once on a two-core CPU; the "After" column is an arithmetic estimate. Phase 0 re-measures the baseline on the reference machine with fixed threads, and Phase 5 replaces this table with measured values. Acceptance does not depend on reaching these numbers; the relative gates in Phases 1–4 and A6 do.
+Measured on the development machine (macOS, `RELEASE=1`, `OPENBLAS_NUM_THREADS=4`), synthetic MNIST-shaped case: \(q=784\), 10 one-hot outputs, \(L=3\), hidden width 20, \(M=100\), batch 256, median of 9 steps, three repeats. The baseline is the commit before Phase 1, built with the same benchmark. Timings vary by about 10% between runs on this machine; treat the ratios, not the digits, as the result. The same cases are in `bench/timing_cases.json` (`deepgp_*`) for the reference machine.
 
-| Configuration (MNIST timing case, \(L=3\)) | Now | After A1–A5 (estimate) |
-|---|---|---|
-| RBF, inducing points | ≈180 ms/step | ≈60–90 ms |
-| MLP, inducing points | ≈470 ms/step | ≈80–120 ms |
-| MLP, weight-space windows | ≈590 ms/step | ≈100–150 ms |
-| One layer (plain SVGP path) | grows with \(N\) (full-data rebuild each step) | ≈50 ms (47 ms measured with the local A1 patch) |
+| Configuration | \(N\) | Before (ms/step) | After (ms/step) |
+|---|---|---|---|
+| RBF, inducing points | 6000 | 112–123 | 45–48 |
+| RBF, inducing points | 60000 | 111–117 | 50–68 |
+| MLP, inducing points | 6000 | 320–327 | 77–78 |
+| MLP, inducing points | 60000 | 328–384 | 82–83 |
+| MLP, weight-space windows | 6000 | 592 | 80–92 |
+| MLP, weight-space windows | 60000 | 592–596 | 86–101 |
+
+The \(N\) dependence that the plain SVGP path showed (full-data rebuild every step) is removed by the \(O(B)\) routing; the remaining difference between \(N=6000\) and \(N=60000\) is cache and gather cost. The single-layer SVGP path is measured by `benchGPc --kind svgp`.
+
+Two notes on what was implemented against what was proposed. First, A5 (KL gradient from the Cholesky factor) was already satisfied: `klGradPackedQ` forms it from the factor, so the backlog item was stale and no code changed; Phase 3 consists of the BLAS-3 data-term gradients. Second, the equivalence tests for the SVGP routing and the data-term gradients use a tolerance of \(10^{-10}\) (absolute, on values of order one) rather than the \(10^{-12}\) stated in the gates; the kernel-level gradient and ridge tests meet \(10^{-12}\).
 
 ## Implementation Plan
 
@@ -143,12 +149,12 @@ The figures marked "Now" were measured once on a two-core CPU; the "After" colum
 
 ## Implementation Status
 
-- [ ] CIP accepted
-- [ ] Phase 0: timing baseline
-- [ ] Phase 1: \(O(B)\) SVGP steps
-- [ ] Phase 2: batched input and inducing gradients
-- [ ] Phase 3: GEMM data term and KL from Cholesky
-- [ ] Phase 4: bulk weight-space ridges
+- [x] CIP accepted
+- [x] Phase 0: timing baseline
+- [x] Phase 1: \(O(B)\) SVGP steps
+- [x] Phase 2: batched input and inducing gradients
+- [x] Phase 3: GEMM data term (KL from Cholesky already in place)
+- [x] Phase 4: bulk weight-space ridges
 - [ ] Phase 5: re-measure and document
 
 ## References

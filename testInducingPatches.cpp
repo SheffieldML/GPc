@@ -88,6 +88,7 @@ void testReduction()
   for(unsigned int i = 0; i < M; i++)
     for(unsigned int j = 0; j < M; j++)
       gs.setVal(0.5 * (gKuu.getVal(i, j) + gKuu.getVal(j, i)), i, j);
+  gs.setSymmetric(true);
   CMatrix gkc(1, conv.getNumParams()), gkp(1, base.getNumParams()), gZc, gZp;
   gkc.zeros(); gkp.zeros();
   ip.gradFromKuuKuf(gkc, gZc, 0, conv, X, gs, gKuf, false, false);

@@ -184,6 +184,9 @@ void CGp::setLaplaceInference(bool on)
     if(getOutputDim() != 1)
       throw ndlexceptions::Error(
           "CGp::setLaplaceInference: Laplace currently supports a single output.");
+    // CIP-003E: Laplace needs per-element point derivatives (block W comes in
+    // Phase 5); refuse coupled blocks rather than silently decoupling them.
+    pnoise->requireScalarBlocks("CGp::setLaplaceInference");
     epInference = false;
     epUpToDate = false;
   }

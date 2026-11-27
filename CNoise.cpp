@@ -718,9 +718,30 @@ void CNoise::getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const
   double nuval=0.0;
   double gval=0.0;
   
+  // CIP-003E: a likelihood over blocks of latents gets all of a block's
+  // cavity gradients jointly; scalar blocks keep the element path below.
+  const unsigned int bs = blockSize();
+  std::vector<double> bY(bs), bMu(bs), bVar(bs), bG(bs), bDv(bs);
   for(unsigned int j=0; j<g.getCols(); j++)
   {
-    getGradInputs(gval, nuval, index, j);
+    if(bs>1)
+    {
+      if(j%bs==0)
+      {
+        DIMENSIONMATCH(g.getCols()%bs==0);
+        for(unsigned int k=0; k<bs; k++)
+        {
+          bY[k]=getTarget(index, j+k);
+          bMu[k]=getMu(index, j+k);
+          bVar[k]=getVarSigma(index, j+k);
+        }
+        cavityMomentsBlock(bY.data(), bMu.data(), bVar.data(), j, bG.data(), bDv.data());
+      }
+      gval=bG[j%bs];
+      nuval=bDv[j%bs];
+    }
+    else
+      getGradInputs(gval, nuval, index, j);
     nuval = gval*gval - 2*nuval;
     if(nuval<0)
     {

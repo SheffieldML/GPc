@@ -288,6 +288,32 @@ int main()
     try { two.predictBlock(m, v, 0, pr); }
     catch(ndlexceptions::NotImplementedError&) { threw = true; }
     expect(threw, "predictBlock default is NotImplemented");
+
+    // ADF path (getNuG + updateSites): a block likelihood reduces to the scalar
+    // path when its block factorises, bitwise.
+    {
+      CGaussianNoise plain(&Y);
+      CTwoBlockGaussian blk(&Y);
+      for(unsigned int i = 0; i < N; i++)
+        for(unsigned int j = 0; j < D; j++)
+        {
+          const double mm = 0.3 * sin(1.0 + i + 2.0 * j), vv = 0.4 + 0.05 * i + 0.02 * j;
+          plain.setMu(mm, i, j); blk.setMu(mm, i, j);
+          plain.setVarSigma(vv, i, j); blk.setVarSigma(vv, i, j);
+        }
+      CMatrix gP(N, D), nP(N, D), gB(N, D), nB(N, D);
+      CMatrix mP(N, D), bP(N, D), mB(N, D), bB(N, D);
+      bool same = true;
+      for(unsigned int i = 0; i < N; i++)
+      {
+        plain.getNuG(gP, nP, i); blk.getNuG(gB, nB, i);
+        plain.updateSites(mP, bP, i, gP, nP, i); blk.updateSites(mB, bB, i, gB, nB, i);
+        for(unsigned int j = 0; j < D; j++)
+          same = same && gP.getVal(i, j) == gB.getVal(i, j) && nP.getVal(i, j) == nB.getVal(i, j)
+                      && mP.getVal(i, j) == mB.getVal(i, j) && bP.getVal(i, j) == bB.getVal(i, j);
+      }
+      expect(same, "ADF getNuG/updateSites: block path == scalar path (bitwise)");
+    }
   }
   catch(ndlexceptions::Error& e)
   {

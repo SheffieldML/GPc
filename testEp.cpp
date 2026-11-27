@@ -146,6 +146,13 @@ static int testCGpEpOptimise()
   return fail;
 }
 
+class CTwoBlockStandIn : public CGaussianNoise
+{
+ public:
+  CTwoBlockStandIn(CMatrix* y) : CGaussianNoise(y) {}
+  unsigned int blockSize() const { return 2; }
+};
+
 // CIP-003E: multi-output EP through CGp. With Gaussian noise EP is exact, so the
 // block path must reproduce the exact CGp likelihood and kernel gradients.
 static int testCGpBlockEpGaussian()
@@ -208,6 +215,18 @@ static int testCGpBlockEpGaussian()
   try { bad.setEpInference(true); }
   catch(ndlexceptions::Error&) { threw = true; }
   fail += checkClose("CGp EP refuses likelihood without cavity moments", threw ? 1.0 : 0.0, 1.0, 0.0);
+  // Laplace refuses a coupled block (until Phase 5 supplies a block W).
+  {
+    CMatrix Y1(n, 1);
+    for(unsigned int i = 0; i < n; i++) Y1.setVal(i % 2 ? 1.0 : 0.0, i, 0);
+    CRbfKern kL(X);
+    CTwoBlockStandIn tb(&Y1);
+    CGp lap(&kL, &tb, &X, CGp::FTC, 0, 0);
+    bool th = false;
+    try { lap.setLaplaceInference(true); }
+    catch(ndlexceptions::Error&) { th = true; }
+    fail += checkClose("CGp Laplace refuses blockSize>1", th ? 1.0 : 0.0, 1.0, 0.0);
+  }
   return fail;
 }
 

@@ -554,6 +554,23 @@ void CNoise::cavityMomentsBlock(const double* y, const double* mu, const double*
     cavityMomentsElement(y[k], mu[k], var[k], j0 + k, dMu[k], dVar[k]);
 }
 
+double CNoise::logZElement(double /*y*/, double /*mu*/, double /*var*/,
+                           unsigned int /*j*/) const
+{
+  throw ndlexceptions::NotImplementedError(
+    "logZElement not implemented for noise type " + getType());
+}
+
+double CNoise::logZBlock(const double* y, const double* mu, const double* var,
+                         unsigned int j0) const
+{
+  BOUNDCHECK(j0 + blockSize() <= getOutputDim());
+  double total = 0.0;
+  for(unsigned int k = 0; k < blockSize(); k++)
+    total += logZElement(y[k], mu[k], var[k], j0 + k);
+  return total;
+}
+
 void CNoise::predictBlock(const double* /*mu*/, const double* /*var*/,
                           unsigned int /*j0*/, double* /*prob*/) const
 {
@@ -3888,3 +3905,67 @@ double CGammaNoise::expectedLogLikelihood(double y, double muVal, double var,
                                      &ctx, gMu, gVar);
 }
  
+
+
+// ---- CIP-003E Phase 2: explicit-argument log Z (matches logLikelihood(mu,var,y)) ----
+
+double CGaussianNoise::logZElement(double y, double mu, double var, unsigned int j) const
+{
+  const double r = y - mu - bias.getVal(j);
+  const double s = var + sigma2;
+  return -0.5 * (log(s) + r * r / s + log(2 * M_PI));
+}
+
+double CProbitNoise::logZElement(double y, double mu, double var, unsigned int j) const
+{
+  const double arg = (mu + bias.getVal(j)) * y;
+  return ndlutil::lnCumGaussian(arg / sqrt(var + sigma2));
+}
+
+double CNcnmNoise::logZElement(double y, double mu, double var, unsigned int j) const
+{
+  const double halfWidth = width / 2.0;
+  double muAdj = mu + bias.getVal(j);
+  const double c = 1 / sqrt(sigma2 + var);
+  if(y == 1.0)
+  {
+    muAdj -= halfWidth;
+    return ndlutil::lnCumGaussian(muAdj * c) + log(1.0 - gammap);
+  }
+  if(y == -1.0)
+  {
+    muAdj += halfWidth;
+    return ndlutil::lnCumGaussian(-muAdj * c) + log(1.0 - gamman);
+  }
+  muAdj += halfWidth;
+  const double u = muAdj * c;
+  const double uprime = (muAdj - width) * c;
+  return ndlutil::lnCumGaussSum(-u, uprime, gamman, gammap);
+}
+
+double COrderedNoise::logZElement(double y, double mu, double var, unsigned int j) const
+{
+  if(isnan(y))
+    return 0.0;
+  double muAdj = mu + bias.getVal(j);
+  const double c = 1 / sqrt(sigma2 + var);
+  const int targVal = (int)y;
+  SANITYCHECK(y == (double)targVal);
+  if(targVal == 0)
+    return ndlutil::lnCumGaussian(-muAdj * c);
+  if(targVal > 0 && targVal < getNumCategories() - 1)
+  {
+    for(unsigned int k = 0; k < targVal - 1; k++)
+      muAdj -= widths.getVal(k);
+    const double u = muAdj * c;
+    const double uprime = (muAdj - widths.getVal(targVal - 1)) * c;
+    return ndlutil::lnDiffCumGaussian(u, uprime);
+  }
+  if(targVal == getNumCategories() - 1)
+  {
+    for(unsigned int k = 0; k < targVal - 1; k++)
+      muAdj -= widths.getVal(k);
+    return ndlutil::lnCumGaussian(muAdj * c);
+  }
+  throw ndlexceptions::Error("logZElement: invalid ordered category");
+}

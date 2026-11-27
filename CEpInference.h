@@ -4,6 +4,7 @@
 
 #include "CMatrix.h"
 #include "CNoise.h"
+#include <vector>
 
 // Gaussian site approximation in GPy natural parameters (tau, v).
 struct CEpSites
@@ -11,7 +12,8 @@ struct CEpSites
   CMatrix tau; // N×1 site precision τ̃
   CMatrix v;   // N×1 site ν̃ = τ̃ μ̃
 
-  void resize(unsigned int n);
+  void resize(unsigned int n);                    // N x 1
+  void resize(unsigned int n, unsigned int k);    // N x K (CIP-003E block EP)
   void zeros();
 };
 
@@ -50,6 +52,35 @@ class CEpInference
                          CMatrix& mu,
                          CMatrix& varDiag) const;
 
+  // ---- CIP-003E Phase 2: block EP over a CNoise ----
+  // K output columns (one-hot targets N x K for classification), one Gaussian site
+  // per (datum, latent) so sites are N x K and diagonal across the K latents.
+  // Given the sites the K latent posteriors are independent solves; the only
+  // coupling is the moment match, done per datum through
+  // CNoise::cavityMomentsBlock / logZBlock (blocks of noise.blockSize() columns).
+  //   Ks: one Gram matrix shared by all latents, or K Gram matrices (one per latent).
+  //   Y:  N x K targets; m0OrNull: optional N x K prior means.
+  // Fills sites (N x K), mu (N x K), varDiag (N x K). Returns the EP log marginal
+  // likelihood, summed over latents (GPy's _ep_marginal per latent, with the
+  // per-datum log Z entering once per block). For a blockSize-1 likelihood and
+  // K = 1 this is the usual EP; for Gaussian noise it equals the exact marginal.
+  double runBlock(const std::vector<CMatrix>& Ks,
+                  const CMatrix& Y,
+                  const CNoise& noise,
+                  CEpSites& sites,
+                  CMatrix& mu,
+                  CMatrix& varDiag,
+                  const CMatrix* m0OrNull = 0);
+  // After runBlock: dL/dK for latent k (N x N, symmetric); ½(ααᵀ − W) as in fillDLDK.
+  void fillDLDKBlock(unsigned int k, CMatrix& dLdK) const;
+  // Posterior at test inputs for latent k.
+  void predictiveMeanVarBlock(unsigned int k,
+                              const CMatrix& KtrainTest,
+                              const CMatrix& kss,
+                              CMatrix& mu,
+                              CMatrix& varDiag) const;
+  unsigned int numLatentsBlock() const { return (unsigned int)alphaK.size(); }
+
   double lastLogMarginal() const { return logMarginal; }
   double lastLogZTilde() const { return logZTilde; }
   unsigned int lastIters() const { return itersUsed; }
@@ -80,6 +111,10 @@ class CEpInference
   mutable CMatrix alpha;
   mutable CMatrix Wi; // (K + Σ̃)^{-1}
   mutable bool haveGradCache;
+  // Per-latent caches after runBlock.
+  mutable std::vector<CMatrix> alphaK;
+  mutable std::vector<CMatrix> WiK;
+  mutable bool haveBlockCache = false;
 };
 
 #endif /* CEPINFERENCE_H */

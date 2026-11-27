@@ -11,6 +11,12 @@ void CEpSites::resize(unsigned int n)
   v.resize(n, 1);
 }
 
+void CEpSites::resize(unsigned int n, unsigned int k)
+{
+  tau.resize(n, k);
+  v.resize(n, k);
+}
+
 void CEpSites::zeros()
 {
   tau.zeros();
@@ -307,6 +313,257 @@ void CEpInference::predictiveMeanVar(const CMatrix& KtrainTest,
     double quad = 0.0;
     for(unsigned int i = 0; i < n; i++)
       quad += KtrainTest.getVal(i, t) * Wk.getVal(i, 0);
+    double v = kss.getVal(t, 0) - quad;
+    if(v < ndlutil::EPS)
+      v = ndlutil::EPS;
+    varDiag.setVal(v, t, 0);
+  }
+}
+
+// ---- CIP-003E Phase 2: block EP ----
+
+double CEpInference::runBlock(const std::vector<CMatrix>& Ks,
+                              const CMatrix& Y,
+                              const CNoise& noise,
+                              CEpSites& sites,
+                              CMatrix& mu,
+                              CMatrix& varDiag,
+                              const CMatrix* m0OrNull)
+{
+  const unsigned int n = Y.getRows();
+  const unsigned int K = Y.getCols();
+  const unsigned int bs = noise.blockSize();
+  if(Ks.empty() || (Ks.size() != 1 && Ks.size() != K))
+    throw ndlexceptions::Error(
+        "CEpInference::runBlock: need one shared Gram matrix or one per latent");
+  if(bs == 0 || K % bs != 0)
+    throw ndlexceptions::Error(
+        "CEpInference::runBlock: blockSize must divide the number of output columns");
+  noise.requireCapability(CNoise::CapCavityMoments, "CEpInference::runBlock");
+  for(unsigned int k = 0; k < Ks.size(); k++)
+  {
+    DIMENSIONMATCH(Ks[k].getRows() == n);
+    DIMENSIONMATCH(Ks[k].getCols() == n);
+  }
+  if(m0OrNull != 0)
+  {
+    DIMENSIONMATCH(m0OrNull->getRows() == n);
+    DIMENSIONMATCH(m0OrNull->getCols() == K);
+  }
+
+  // Jittered Gram per distinct matrix.
+  std::vector<CMatrix> Kj(Ks.size());
+  for(unsigned int a = 0; a < Ks.size(); a++)
+  {
+    Kj[a].deepCopy(Ks[a]);
+    for(unsigned int i = 0; i < n; i++)
+      Kj[a].setVal(Kj[a].getVal(i, i) + jitter, i, i);
+    Kj[a].setSymmetric(true);
+  }
+  const bool shared = (Ks.size() == 1);
+
+  sites.resize(n, K);
+  sites.zeros();
+  mu.resize(n, K);
+  varDiag.resize(n, K);
+  alphaK.assign(K, CMatrix());
+  WiK.assign(K, CMatrix());
+  haveBlockCache = false;
+  haveGradCache = false;
+
+  std::vector<CMatrix> Sigma(K);
+  std::vector<double> logDetB(K, 0.0);
+  std::vector<CMatrix> m0(K);
+  for(unsigned int k = 0; k < K; k++)
+  {
+    m0[k].resize(n, 1);
+    m0[k].zeros();
+    if(m0OrNull != 0)
+      for(unsigned int i = 0; i < n; i++)
+        m0[k].setVal(m0OrNull->getVal(i, k), i, 0);
+    Sigma[k].resize(n, n);
+  }
+
+  CEpSites col;  // N x 1 view of one latent's sites
+  col.resize(n);
+  CMatrix muK, vdK;
+  auto recomputeAll = [&]() {
+    for(unsigned int k = 0; k < K; k++)
+    {
+      for(unsigned int i = 0; i < n; i++)
+      {
+        col.tau.setVal(sites.tau.getVal(i, k), i, 0);
+        col.v.setVal(sites.v.getVal(i, k), i, 0);
+      }
+      recomputePosterior(Kj[shared ? 0 : k], col, m0[k], muK, Sigma[k], vdK, logDetB[k]);
+      alphaK[k].deepCopy(alpha);
+      WiK[k].deepCopy(Wi);
+      for(unsigned int i = 0; i < n; i++)
+      {
+        mu.setVal(muK.getVal(i, 0), i, k);
+        varDiag.setVal(vdK.getVal(i, 0), i, k);
+      }
+    }
+  };
+  recomputeAll();
+
+  CMatrix tauCav(n, K), vCav(n, K), logZ(n, 1);
+  CMatrix oldTau(n, K), oldV(n, K);
+  std::vector<double> yv(bs), mc(bs), vc(bs), dM(bs), dV(bs);
+  didConverge = false;
+  itersUsed = 0;
+
+  for(unsigned int it = 0; it < maxIters; it++)
+  {
+    oldTau.deepCopy(sites.tau);
+    oldV.deepCopy(sites.v);
+
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double logZi = 0.0;
+      for(unsigned int j0 = 0; j0 < K; j0 += bs)
+      {
+        for(unsigned int b = 0; b < bs; b++)
+        {
+          const unsigned int k = j0 + b;
+          const double sii = varDiag.getVal(i, k);
+          const double mui = mu.getVal(i, k);
+          double tCav = 1.0 / sii - eta * sites.tau.getVal(i, k);
+          const double vC = mui / sii - eta * sites.v.getVal(i, k);
+          if(!(tCav > ndlutil::EPS))
+            tCav = ndlutil::EPS;
+          tauCav.setVal(tCav, i, k);
+          vCav.setVal(vC, i, k);
+          yv[b] = Y.getVal(i, k);
+          vc[b] = 1.0 / tCav;       // cavity variance
+          mc[b] = vC / tCav;        // cavity mean
+        }
+        noise.cavityMomentsBlock(yv.data(), mc.data(), vc.data(), j0, dM.data(), dV.data());
+        logZi += noise.logZBlock(yv.data(), mc.data(), vc.data(), j0);
+        for(unsigned int b = 0; b < bs; b++)
+        {
+          const unsigned int k = j0 + b;
+          const double sii = varDiag.getVal(i, k);
+          const double mui = mu.getVal(i, k);
+          // Tilted marginal moments from derivatives of log Z at the cavity.
+          const double muHat = mc[b] + vc[b] * dM[b];
+          double s2Hat = vc[b] + vc[b] * vc[b] * (2.0 * dV[b] - dM[b] * dM[b]);
+          if(!(s2Hat > ndlutil::EPS))
+            s2Hat = ndlutil::EPS;
+          const double dTau = (delta / eta) * (1.0 / s2Hat - 1.0 / sii);
+          const double dVs = (delta / eta) * (muHat / s2Hat - mui / sii);
+          double tauNew = sites.tau.getVal(i, k) + dTau;
+          if(tauNew < ndlutil::EPS)
+            tauNew = ndlutil::EPS;
+          sites.tau.setVal(tauNew, i, k);
+          sites.v.setVal(sites.v.getVal(i, k) + dVs, i, k);
+        }
+      }
+      logZ.setVal(logZi, i, 0);
+    }
+
+    recomputeAll();
+
+    double maxDiff = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+      for(unsigned int k = 0; k < K; k++)
+      {
+        maxDiff = max(maxDiff, fabs(sites.tau.getVal(i, k) - oldTau.getVal(i, k)));
+        maxDiff = max(maxDiff, fabs(sites.v.getVal(i, k) - oldV.getVal(i, k)));
+      }
+    itersUsed = it + 1;
+    if(it > 0 && maxDiff < tol)
+    {
+      didConverge = true;
+      break;
+    }
+  }
+
+  // Normaliser: per-datum block log Z once, site terms per latent.
+  logZTilde = 0.0;
+  for(unsigned int i = 0; i < n; i++)
+  {
+    logZTilde += logZ.getVal(i, 0);
+    for(unsigned int k = 0; k < K; k++)
+    {
+      const double tS = sites.tau.getVal(i, k);
+      const double vS = sites.v.getVal(i, k);
+      const double tC = tauCav.getVal(i, k);
+      const double vC = vCav.getVal(i, k);
+      const double den = tC + tS;
+      logZTilde += 0.5 * log(2.0 * M_PI)
+                   + 0.5 * log(1.0 + tS / tC)
+                   - 0.5 * (vS * vS) / den
+                   + 0.5 * (vC * ((tS / tC) * vC - 2.0 * vS) / den);
+    }
+  }
+
+  // Gaussian-prior part, per latent (GPy _ep_marginal with mean_prior = m0).
+  double prior = 0.0;
+  CMatrix vCentered(n, 1), SigmaV(n, 1);
+  for(unsigned int k = 0; k < K; k++)
+  {
+    for(unsigned int i = 0; i < n; i++)
+      vCentered.setVal(sites.v.getVal(i, k) - sites.tau.getVal(i, k) * m0[k].getVal(i, 0), i, 0);
+    SigmaV.gemvColCol(0, Sigma[k], vCentered, 0, 1.0, 0.0, "n");
+    double quad = 0.0, meanTerm = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+    {
+      quad += vCentered.getVal(i, 0) * SigmaV.getVal(i, 0);
+      const double Smp = sites.tau.getVal(i, k) * m0[k].getVal(i, 0);
+      meanTerm += m0[k].getVal(i, 0) * (Smp - 2.0 * sites.v.getVal(i, k));
+    }
+    prior += 0.5 * (-(double)n * log(2.0 * M_PI) - logDetB[k] + quad - meanTerm);
+  }
+  logMarginal = prior + logZTilde;
+  haveBlockCache = true;
+  return logMarginal;
+}
+
+void CEpInference::fillDLDKBlock(unsigned int k, CMatrix& dLdK) const
+{
+  if(!haveBlockCache || k >= alphaK.size())
+    throw ndlexceptions::Error("CEpInference::fillDLDKBlock requires a prior runBlock().");
+  const unsigned int n = alphaK[k].getRows();
+  dLdK.resize(n, n);
+  for(unsigned int i = 0; i < n; i++)
+    for(unsigned int j = i; j < n; j++)
+    {
+      const double val = 0.5 * (alphaK[k].getVal(i, 0) * alphaK[k].getVal(j, 0)
+                                - WiK[k].getVal(i, j));
+      dLdK.setVal(val, i, j);
+      if(j != i)
+        dLdK.setVal(val, j, i);
+    }
+  dLdK.setSymmetric(true);
+}
+
+void CEpInference::predictiveMeanVarBlock(unsigned int k,
+                                          const CMatrix& KtrainTest,
+                                          const CMatrix& kss,
+                                          CMatrix& mu,
+                                          CMatrix& varDiag) const
+{
+  if(!haveBlockCache || k >= alphaK.size())
+    throw ndlexceptions::Error(
+        "CEpInference::predictiveMeanVarBlock requires a prior runBlock().");
+  const unsigned int n = alphaK[k].getRows();
+  const unsigned int nt = KtrainTest.getCols();
+  DIMENSIONMATCH(KtrainTest.getRows() == n);
+  DIMENSIONMATCH(kss.getRows() == nt);
+  mu.resize(nt, 1);
+  varDiag.resize(nt, 1);
+  mu.gemvColCol(0, KtrainTest, alphaK[k], 0, 1.0, 0.0, "t");
+  for(unsigned int t = 0; t < nt; t++)
+  {
+    double quad = 0.0;
+    for(unsigned int i = 0; i < n; i++)
+    {
+      double s = 0.0;
+      for(unsigned int j = 0; j < n; j++)
+        s += WiK[k].getVal(i, j) * KtrainTest.getVal(j, t);
+      quad += KtrainTest.getVal(i, t) * s;
+    }
     double v = kss.getVal(t, 0) - quad;
     if(v < ndlutil::EPS)
       v = ndlutil::EPS;

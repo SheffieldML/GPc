@@ -292,6 +292,11 @@ class CNoise : public CTransformable, public CRegularisable, public COptimisable
   // likelihoods that advertise CapCavityMoments.
   virtual void cavityMomentsElement(double y, double mu, double var, unsigned int j,
                                     double& gmu, double& gvs) const;
+  // log Z = log E_{N(mu,var)}[p(y|f)] over the block (the normaliser behind
+  // cavityMomentsBlock). Default: sum of logZElement over the block's outputs.
+  virtual double logZBlock(const double* y, const double* mu, const double* var,
+                           unsigned int j0) const;
+  virtual double logZElement(double y, double mu, double var, unsigned int j) const;
   // Class probabilities for one block of marginals (block likelihoods).
   virtual void predictBlock(const double* mu, const double* var, unsigned int j0,
                             double* prob) const;
@@ -572,6 +577,7 @@ class CGaussianNoise : public CNoise {
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
   void cavityMomentsElement(double y, double mu, double var, unsigned int j,
                             double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void getNuG(CMatrix& g, CMatrix& nu, unsigned int index) const;
   void updateSites(CMatrix& m, CMatrix& beta, unsigned int actIndex, const CMatrix& g, const CMatrix& nu, unsigned int index) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
@@ -737,6 +743,7 @@ class CProbitNoise : public CNoise
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
   void cavityMomentsElement(double y, double mu, double var, unsigned int j,
                             double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
@@ -804,6 +811,7 @@ class CNcnmNoise : public CNoise {
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
   void cavityMomentsElement(double y, double mu, double var, unsigned int j,
                             double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
@@ -894,6 +902,7 @@ class COrderedNoise : public CNoise {
   void getGradInputs(double& gmu, double& gvs, unsigned int i, unsigned int j) const;
   void cavityMomentsElement(double y, double mu, double var, unsigned int j,
                             double& gmu, double& gvs) const;
+  double logZElement(double y, double mu, double var, unsigned int j) const;
   void test(const CMatrix& muout, const CMatrix& varSigmaOut, const CMatrix& yTest) const;
   void out(CMatrix& yPred, const CMatrix& muTest, const CMatrix& varSigmaTest) const;
   void out(CMatrix& yPred, CMatrix& probOut, const CMatrix& muTest, const CMatrix& varSigmaTest) const;

@@ -86,7 +86,15 @@ class CDeepGp : public CStochasticOptimisable, public CStreamInterface {
   // h ↦ m(h)+A(h)^T v (residual off). Independent of the trained q(v).
   // Rectangular Din!=Dout allowed (min(Din,Dout) singular values).
   // Returns median over nProbe inputs.
+  // CIP-0041 B2: mean over the data of the squared norm of layer ell's input (X pushed
+  // through the mean maps).
+  double layerInputMeanSqNorm(unsigned int ell) const;
   double jacobianSpread(unsigned int nProbe = 32, uint64_t probeSeed = 0) const;
+  // CIP-0041 B4. Median over probes of the log singular-value spread and of the mean log
+  // singular value of the input-output Jacobian. prior=true draws v_l ~ N(0, I) per layer
+  // (the whitened prior); prior=false evaluates the map at the variational mean of v_l.
+  void jacobianStats(unsigned int nProbe, uint64_t probeSeed, bool prior,
+                     double& medianSpread, double& medianMeanLogSv) const;
 
   // Predictive mean/variance at Xstar (N* x Din).
   // samples==0: mean path (hidden means only; final-layer marginal + optional

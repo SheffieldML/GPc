@@ -368,3 +368,98 @@ def test_thread_control_roundtrip():
             assert gpc.get_num_threads() == 1  # documented no-op build
     finally:
         gpc.set_num_threads(before)
+
+
+# ---- CIP-0041 Phase 3 (B2 mlp_init) and Phase 4 (B4 prior-draw Jacobian) -------------------
+
+
+def _mlp_toy(scale, n=40, d=6, seed=3):
+    rng = np.random.default_rng(seed)
+    X = scale * rng.normal(size=(n, d))
+    Y = np.sin(X[:, :1] / scale) + 0.05 * rng.normal(size=(n, 1))
+    return X, Y
+
+
+def _xhat_sq(m, ell):
+    w = m.get_layer_param(ell, "weightVariance")
+    b = m.get_layer_param(ell, "biasVariance")
+    return w * m.layer_input_mean_sqnorm(ell) + b
+
+
+@pytest.mark.parametrize("scale", [0.1, 1.0, 10.0])
+def test_mlp_init_scaled_normalises_xhat(scale):
+    X, Y = _mlp_toy(scale)
+    m = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
+                          mlp_init="scaled")
+    for ell in range(2):
+        assert 0.5 <= _xhat_sq(m, ell) <= 2.0
+        assert m.get_layer_param(ell, "biasVariance") == pytest.approx(0.1)
+    # The unit default does not normalise: ||xhat||^2 follows the input scale.
+    mu = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp")
+    assert mu.get_layer_param(0, "weightVariance") == 1.0
+    assert mu.get_layer_param(0, "biasVariance") == 1.0
+    assert np.isfinite(m.elbo())
+
+
+def test_mlp_init_unit_is_default_and_identical():
+    X, Y = _mlp_toy(2.0)
+    a = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp")
+    b = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
+                          mlp_init="unit")
+    for ell in range(2):
+        for p in a.layer_param_paths(ell):
+            assert a.get_layer_param(ell, p) == b.get_layer_param(ell, p)
+    assert np.array_equal(a.predict(X)[0], b.predict(X)[0])
+
+
+def test_mlp_init_per_layer_and_errors():
+    X, Y = _mlp_toy(1.0)
+    m = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
+                          mlp_init=["scaled", "unit"])
+    assert m.get_layer_param(1, "biasVariance") == 1.0
+    assert m.get_layer_param(0, "biasVariance") == pytest.approx(0.1)
+    with pytest.raises(Exception, match="layer 1: mlp_init='scaled' requires kernel='mlp'"):
+        gpc.models.DeepGP(X, Y, layers=2, hidden=3, kernel=["mlp", "rbf"],
+                          mlp_init=["scaled", "scaled"])
+    with pytest.raises(Exception, match="'unit' or 'scaled'"):
+        gpc.models.DeepGP(X, Y, layers=1, kernel="mlp", mlp_init="bogus")
+    with pytest.raises(Exception, match="length"):
+        gpc.models.DeepGP(X, Y, layers=2, hidden=3, kernel="mlp", mlp_init=["scaled"])
+
+
+def _spread_at_depth(L, var, d=3, seed=0):
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(30, d))
+    Y = rng.normal(size=(30, d))
+    m = gpc.models.DeepGP(X, Y, layers=L, hidden=d, num_inducing=8, kernel="rbf")
+    for ell in range(L):
+        m.set_layer_param(ell, "variance", var(L))
+    return m.jacobian_stats(n_probe=48, probe_seed=5)
+
+
+def test_jacobian_stats_prior_depth_trend():
+    flat = [_spread_at_depth(L, lambda L: 1.0 / L)[0] for L in (2, 4, 6)]
+    unit = [_spread_at_depth(L, lambda L: 1.0)[0] for L in (2, 4, 6)]
+    # Variance 1/L per layer keeps the spread nearly flat in depth (CIP-0035 V7); unit
+    # variance on every layer lets it grow. Compare growth, not level: the level depends
+    # on the input dimension and the number of inducing points.
+    growth_flat = flat[-1] - flat[0]
+    growth_unit = unit[-1] - unit[0]
+    assert growth_unit > 0.5
+    assert growth_flat < 0.5 * growth_unit
+
+
+def test_jacobian_spread_signature_and_posterior_mode():
+    X, Y = _mlp_toy(1.0, d=3)
+    Y = np.hstack([Y, Y**2])
+    m = gpc.models.DeepGP(X, Y, layers=2, hidden=3, num_inducing=6)
+    s_default = m.jacobian_spread(n_probe=6, probe_seed=2)
+    assert s_default == m.jacobian_spread(n_probe=6, probe_seed=2, prior=True)
+    assert s_default == m.jacobian_stats(n_probe=6, probe_seed=2)[0]
+    m.optimize(iters=40, batch_size=20, adam_lr=0.02, seed=1)
+    s_post, ml_post = m.jacobian_stats(n_probe=2, probe_seed=2, prior=False)
+    assert np.isfinite(s_post) and np.isfinite(ml_post)
+    # The posterior-mean map has no draws: only the probe points depend on the seed.
+    assert m.jacobian_stats(n_probe=2, probe_seed=2, prior=False) == (s_post, ml_post)
+    with pytest.raises(Exception, match="n_probe"):
+        m.jacobian_stats(n_probe=0)

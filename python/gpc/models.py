@@ -559,6 +559,13 @@ class DeepGP(_DeepGP):
         dimension, and warns (``UserWarning``) about conditioning, near-capacity
         fill, low captured variance and use in hidden layers; see
         ``describe()`` for the delivered layout.
+    mlp_init :
+        ``'unit'`` (default: weight, bias and signal variance all 1) or
+        ``'scaled'``: a string for every layer or a length-``layers`` sequence;
+        ``'scaled'`` needs ``kernel='mlp'`` on that layer. It sets the weight
+        variance to ``1 / mean ||h||^2`` (``h`` is the layer input pushed through
+        the mean maps) and the bias variance to 0.1, so that ``||xhat||^2``
+        starts near one whatever the input scale.
     chi, beta :
         Hidden variance scale and observation precision init.
     drop_residual :
@@ -613,6 +620,7 @@ class DeepGP(_DeepGP):
         learn_window_width: bool = False,
         learn_window_widths: bool = False,
         num_classes: int = 0,
+        mlp_init: Any = "unit",
     ) -> None:
         mc: dict[str, Any] = {}
         if not isinstance(likelihood, str):
@@ -649,6 +657,7 @@ class DeepGP(_DeepGP):
             learn_window_width=learn_window_width,
             learn_window_widths=learn_window_widths,
             num_classes=num_classes,
+            mlp_init=mlp_init,
             **mc,
         )
         _emit_hermite_warnings(self)

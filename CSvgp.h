@@ -71,6 +71,12 @@ class CSvgp : public CStochasticOptimisable {
   bool isLazyFullData() const { return lazyFullData; }
   bool fullDataBuilt() const { return fullDataValid; }
 
+  // CIP-003F equivalence oracle: when true, use the original element-loop and
+  // full-data code paths instead of the O(B) routed / BLAS-3 ones. Results agree
+  // to round-off; tests compare the two. Default false.
+  void setLegacyPaths(bool val) { legacyPaths = val; }
+  bool isLegacyPaths() const { return legacyPaths; }
+
   // Full-batch ELBO.
   double elbo() const;
   // Unbiased minibatch estimate: data term scaled by N/|batch|.
@@ -236,6 +242,8 @@ class CSvgp : public CStochasticOptimisable {
   vector<unsigned int> allIndices() const;
   // Build K_uf, A, diag K, diag Q from the current K_uu factor (no-op if valid).
   void ensureFullData() const;
+  void accumulateDataTermQGrads(const CMatrix& Ab, double c, CMatrix& gM,
+                                vector<CMatrix>& gS) const;
 
   CKern* pkern;
   const CMatrix* pX;
@@ -261,8 +269,9 @@ class CSvgp : public CStochasticOptimisable {
   mutable CMatrix A;        // M x N, L^{-1} K_uf (whitened projection)
   mutable CMatrix diagK;    // N x 1
   mutable CMatrix diagQ;    // N x 1, column norms^2 of A = diag(K_fu K_uu^{-1} K_uf)
-  bool lazyFullData;        // default false (eager)
+  bool lazyFullData;        // default true (CIP-003F A1); false = eager
   mutable bool fullDataValid;
+  bool legacyPaths;         // CIP-003F oracle switch (see setLegacyPaths)
 
   // Whitened variational parameters q(v_j) = N(qMean(:,j), qCov[j]).
   CMatrix qMean;         // M x d

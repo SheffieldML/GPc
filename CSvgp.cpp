@@ -24,7 +24,7 @@ CSvgp::CSvgp(CKern* kernel, const CMatrix* X, const CMatrix* y, const CMatrix& Z
              double betaVal, int verbos)
   : pkern(kernel), pX(X), py(y), pnoise(0), Z(Zin), pInducing(0), beta(betaVal),
     verbosity(verbos), betaTransform(CTransform::defaultPositive()), natGradGamma(0.0),
-    dropResidual(false), qParamMode(QModeCvi), lazyFullData(false), fullDataValid(false)
+    dropResidual(false), qParamMode(QModeCvi), lazyFullData(true), fullDataValid(false), legacyPaths(false)
 {
   if(X->getRows() != y->getRows())
     throw ndlexceptions::Error("CSvgp: X and y must have the same number of rows");
@@ -784,11 +784,36 @@ double CSvgp::elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta,
   CMatrix mj(M, 1);
   double gMu = 0.0, gVar = 0.0;
   expectedLogLikBatch(yRows, wsMu, wsVar, 1.0, wsGMu, wsGVar);
+  CMatrix coefMu(B, 1);
   for(unsigned int j = 0; j < outputDim; j++)
   {
     mj.copyColCol(0, qMean, j);
     wsSAB.resize(M, B);
     wsSAB.symm(qCov[j], wsAB, 1.0, 0.0, "u", "l");
+    if(legacyPaths)
+    {
+      for(unsigned int k = 0; k < B; k++)
+      {
+        const unsigned int i = yRows[k];
+        const double yv = py->getVal(i, j);
+        const double mu = wsMu.getVal(k, j);
+        const double var = wsVar.getVal(k, j);
+        gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
+        gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
+        gLambda.addVal(c * gVar, k);
+        for(unsigned int r = 0; r < M; r++)
+        {
+          const double da = c * gMu * mj.getVal(r)
+            + 2.0 * c * gVar * (wsSAB.getVal(r, k) - wsAB.getVal(r, k));
+          Abar.setVal(Abar.getVal(r, k) + da, r, k);
+        }
+      }
+      continue;
+    }
+    // CIP-003F A4: site adjoint as a rank-one update plus a column-scaled
+    // difference, i.e. Abar += m_j (c gMu)^T + (S_j A_B - A_B) diag(2 c gVar).
+    wsABS.deepCopy(wsSAB);
+    wsABS.axpy(wsAB, -1.0);
     for(unsigned int k = 0; k < B; k++)
     {
       const unsigned int i = yRows[k];
@@ -798,13 +823,11 @@ double CSvgp::elboGradAt(CMatrix& gKern, CMatrix& gZ, double& gBeta,
       gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
       gBeta += c * expectedLogLikBetaDeriv(yv, mu, var);
       gLambda.addVal(c * gVar, k);
-      for(unsigned int r = 0; r < M; r++)
-      {
-        const double da = c * gMu * mj.getVal(r)
-          + 2.0 * c * gVar * (wsSAB.getVal(r, k) - wsAB.getVal(r, k));
-        Abar.setVal(Abar.getVal(r, k) + da, r, k);
-      }
+      coefMu.setVal(c * gMu, k);
+      wsABS.scaleCol(k, 2.0 * c * gVar);
     }
+    Abar.axpy(wsABS, 1.0);
+    Abar.ger(mj, coefMu, 1.0);
   }
 
   CMatrix KufBar, Ubar;
@@ -866,6 +889,13 @@ double CSvgp::elboGrad(CMatrix& gKern, CMatrix& gZ, double& gBeta,
   {
     gatherXB(batch, wsXB);
     return elboGradAt(gKern, gZ, gBeta, gXOrNull, wsXB, batch, c);
+  }
+  // CIP-003F A1: small minibatches cost O(B), not O(N): route through the
+  // explicit-input path (no full-data matrices, no M x N adjoint).
+  if(!legacyPaths && batch.size() * 4 < nData)
+  {
+    gatherXB(batch, wsXB);
+    return elboGradAt(gKern, gZ, gBeta, 0, wsXB, batch, c);
   }
 
   const unsigned int M = numInducing;
@@ -1287,6 +1317,53 @@ void CSvgp::setQParams(const CMatrix& param, unsigned int offset)
   syncCovFromChol();
 }
 
+// d(data term)/d m~ and d(data term)/d S~_j at sites A_B (M x B), using the site
+// derivatives already in wsGMu / wsGVar.  CIP-003F A4: one gemv and one gemm per
+// output instead of B x M^2 element updates.  legacyPaths keeps the element loops.
+void CSvgp::accumulateDataTermQGrads(const CMatrix& Ab, double c, CMatrix& gM,
+                                     vector<CMatrix>& gS) const
+{
+  const unsigned int M = numInducing;
+  const unsigned int B = Ab.getCols();
+  if(legacyPaths)
+  {
+    for(unsigned int j = 0; j < outputDim; j++)
+      for(unsigned int k = 0; k < B; k++)
+      {
+        const double gMu = wsGMu.getVal(k, j), gVar = wsGVar.getVal(k, j);
+        for(unsigned int r = 0; r < M; r++)
+          gM.setVal(gM.getVal(r, j) + c * gMu * Ab.getVal(r, k), r, j);
+        for(unsigned int r = 0; r < M; r++)
+          for(unsigned int s = 0; s <= r; s++)
+          {
+            const double v = c * gVar * Ab.getVal(r, k) * Ab.getVal(s, k);
+            gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
+            if(s != r)
+              gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
+          }
+      }
+    return;
+  }
+  CMatrix coef(B, 1);
+  for(unsigned int j = 0; j < outputDim; j++)
+  {
+    for(unsigned int k = 0; k < B; k++)
+      coef.setVal(c * wsGMu.getVal(k, j), k);
+    gM.gemvColCol(j, Ab, coef, 0, 1.0, 1.0, "n");
+    wsABS.deepCopy(Ab);
+    for(unsigned int k = 0; k < B; k++)
+      wsABS.scaleCol(k, c * wsGVar.getVal(k, j));
+    CMatrix G(M, M);
+    G.gemm(wsABS, Ab, 1.0, 0.0, "n", "t");
+    // Mirror the upper triangle so the result is exactly symmetric.
+    for(unsigned int r = 0; r < M; r++)
+      for(unsigned int s = 0; s < r; s++)
+        G.setVal(G.getVal(s, r), r, s);
+    gS[j].axpy(G, 1.0);
+    gS[j].setSymmetric(true);
+  }
+}
+
 void CSvgp::dataTermQGrads(const vector<unsigned int>& batch,
                            CMatrix& gM, vector<CMatrix>& gS) const
 {
@@ -1312,29 +1389,8 @@ void CSvgp::dataTermQGrads(const vector<unsigned int>& batch,
     pA = &wsAB;
   }
 
-  CMatrix mj(M, 1);
-  double gMu = 0.0, gVar = 0.0;
   expectedLogLikBatch(batch, wsMu, wsVar, 1.0, wsGMu, wsGVar);
-  for(unsigned int j = 0; j < outputDim; j++)
-  {
-    mj.copyColCol(0, qMean, j);
-    for(unsigned int k = 0; k < B; k++)
-    {
-      const unsigned int i = batch[k];
-      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
-      for(unsigned int r = 0; r < M; r++)
-        gM.setVal(gM.getVal(r, j) + c * gMu * pA->getVal(r, k), r, j);
-      // ∂E[log p]/∂S = gVar * a a^T  (and data term scaled by c)
-      for(unsigned int r = 0; r < M; r++)
-        for(unsigned int s = 0; s <= r; s++)
-        {
-          const double v = c * gVar * pA->getVal(r, k) * pA->getVal(s, k);
-          gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
-          if(s != r)
-            gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
-        }
-    }
-  }
+  accumulateDataTermQGrads(*pA, c, gM, gS);
 }
 
 void CSvgp::dataTermQGradsAt(const CMatrix& XB, const vector<unsigned int>& yRows,
@@ -1355,26 +1411,8 @@ void CSvgp::dataTermQGradsAt(const CMatrix& XB, const vector<unsigned int>& yRow
     gS[j].setSymmetric(true);
   }
   fillMarginalsFromX(XB, wsMu, wsVar);
-  double gMu = 0.0, gVar = 0.0;
   expectedLogLikBatch(yRows, wsMu, wsVar, 1.0, wsGMu, wsGVar);
-  for(unsigned int j = 0; j < outputDim; j++)
-  {
-    for(unsigned int k = 0; k < B; k++)
-    {
-      const unsigned int i = yRows[k];
-      gMu = wsGMu.getVal(k, j); gVar = wsGVar.getVal(k, j);
-      for(unsigned int r = 0; r < M; r++)
-        gM.setVal(gM.getVal(r, j) + c * gMu * wsAB.getVal(r, k), r, j);
-      for(unsigned int r = 0; r < M; r++)
-        for(unsigned int s = 0; s <= r; s++)
-        {
-          const double v = c * gVar * wsAB.getVal(r, k) * wsAB.getVal(s, k);
-          gS[j].setVal(gS[j].getVal(r, s) + v, r, s);
-          if(s != r)
-            gS[j].setVal(gS[j].getVal(s, r) + v, s, r);
-        }
-    }
-  }
+  accumulateDataTermQGrads(wsAB, c, gM, gS);
 }
 
 void CSvgp::qParamsGradAt(CMatrix& gQ, const CMatrix& XB,

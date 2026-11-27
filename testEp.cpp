@@ -230,6 +230,47 @@ static int testCGpBlockEpGaussian()
   return fail;
 }
 
+// CIP-003E: Laplace for D scalar-block outputs is D independent problems on a
+// shared kernel: the likelihood and kernel gradient are the column sums.
+static int testCGpLaplaceMultiOutput()
+{
+  const unsigned int n = 10, D = 2;
+  CMatrix X(n, 1), Y(n, D), Yc[2] = {CMatrix(n, 1), CMatrix(n, 1)};
+  for(unsigned int i = 0; i < n; i++)
+  {
+    const double x = -1.5 + 3.0 * (double)i / (double)(n - 1);
+    X.setVal(x, i, 0);
+    for(unsigned int j = 0; j < D; j++)
+    {
+      const double v = (sin((1.0 + j) * x) + 0.15 * (j - 0.5) > 0.0) ? 1.0 : -1.0;
+      Y.setVal(v, i, j);
+      Yc[j].setVal(v, i, 0);
+    }
+  }
+  int fail = 0;
+  CRbfKern kJ(X), k0(X), k1(X);
+  CProbitNoise nJ(&Y), n0(&Yc[0]), n1(&Yc[1]);
+  CGp joint(&kJ, &nJ, &X, CGp::FTC, 0, 0);
+  CGp g0(&k0, &n0, &X, CGp::FTC, 0, 0), g1(&k1, &n1, &X, CGp::FTC, 0, 0);
+  joint.setLaplaceInference(true); g0.setLaplaceInference(true); g1.setLaplaceInference(true);
+  fail += checkClose("CGp Laplace D=2 log likelihood == sum of columns",
+                     joint.logLikelihood(), g0.logLikelihood() + g1.logLikelihood(), 1e-10);
+  CMatrix gj(1, joint.getOptNumParams()), a(1, g0.getOptNumParams()), b(1, g1.getOptNumParams());
+  joint.logLikelihoodGradient(gj); g0.logLikelihoodGradient(a); g1.logLikelihoodGradient(b);
+  for(unsigned int i = 0; i < kJ.getNumParams(); i++)
+    fail += checkClose("CGp Laplace D=2 kern gradient == sum of columns",
+                       gj.getVal(i), a.getVal(i) + b.getVal(i), 1e-9);
+  CMatrix Xt(2, 1); Xt.setVal(-0.4, 0, 0); Xt.setVal(0.9, 1, 0);
+  CMatrix mj, vj, m0, v0;
+  joint.laplaceLatentMeanVar(mj, vj, Xt);
+  g1.laplaceLatentMeanVar(m0, v0, Xt);
+  fail += checkClose("CGp Laplace D=2 predictive column 1 == single",
+                     mj.getVal(1, 1), m0.getVal(1, 0), 1e-10);
+  fail += checkClose("CGp Laplace D=2 predictive var column 1 == single",
+                     vj.getVal(0, 1), v0.getVal(0, 0), 1e-10);
+  return fail;
+}
+
 static int testLaplaceDerivsAndMode()
 {
   // W = r(t+r) at f=0.5, y=1: t=0.5
@@ -421,6 +462,7 @@ int main()
   fail += testEpLogMarginalFixture();
   fail += testCGpEpOptimise();
   fail += testCGpBlockEpGaussian();
+  fail += testCGpLaplaceMultiOutput();
   fail += testLaplaceDerivsAndMode();
   fail += testCGpLaplaceOptimise();
   fail += testCGpLaplaceLatentPredict();

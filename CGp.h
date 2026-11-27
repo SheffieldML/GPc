@@ -677,7 +677,8 @@ public:
   mutable bool epUpToDate;
   mutable bool laplaceUpToDate;
   mutable CEpInference epEngine;
-  mutable CLaplaceInference laplaceEngine;
+  mutable CLaplaceInference laplaceEngine; // solver settings (template for the columns)
+  mutable std::vector<CLaplaceInference> laplaceCols; // one per output (CIP-003E)
   mutable CEpSites epSites;
   mutable CMatrix epMu;
   mutable CMatrix epVarDiag;

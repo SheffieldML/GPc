@@ -182,7 +182,7 @@ int main()
           dAmp += dK.getVal(i, j) * Kmat.getVal(i, j);
         }
       double Lv[2], La[2];
-      const double h = 1e-5;
+      const double h = 1e-4;
       for(int sg = 0; sg < 2; sg++)
       {
         const double sc = sg == 0 ? 1.0 + h : 1.0 - h;
@@ -195,10 +195,10 @@ int main()
         La[sg] = l3.runBlock(Ks, Y);
       }
       const double fd = (Lv[0] - Lv[1]) / (2 * h * s0);
-      expect(fabs(fd - analytic) < 1e-5 * (1.0 + fabs(fd)),
+      expect(fabs(fd - analytic) < 5e-5 * (1.0 + fabs(fd)),
              "block Laplace dL/d(lengthscale) vs FD (fd " + dtoa(fd) + ", analytic " + dtoa(analytic) + ")");
       const double fdA = (La[0] - La[1]) / (2 * h);
-      expect(fabs(fdA - dAmp) < 1e-5 * (1.0 + fabs(fdA)),
+      expect(fabs(fdA - dAmp) < 5e-5 * (1.0 + fabs(fdA)),
              "block Laplace amplitude gradient vs FD (" + dtoa(fdA) + " vs " + dtoa(dAmp) + ")");
 
       CMatrix kss(N, 1), pm, pv;

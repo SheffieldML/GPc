@@ -13160,6 +13160,8 @@ CConvKern::CConvKern(const CConvKern& k)
 {
   setType("conv");
   setName("convolutional");
+  diagSamples = k.diagSamples;
+  diagSeed = k.diagSeed;
   setInputDim(k.getInputDim());  // resets the weights via setInitParam ...
   w = k.w;                       // ... so restore them afterwards
   wParams = k.wParams;
@@ -13300,8 +13302,53 @@ double CConvKern::diagComputeElement(const CMatrix& X, unsigned int index) const
   x1.copyRowRow(0, X, index);
   CMatrix Xp, G(P, P);
   extractPatches(Xp, x1);
+  if(diagIsEstimated())
+  {
+    // Same estimate as diagCompute for this row (seeded by the row index).
+    const unsigned int S = diagSamples;
+    std::vector<unsigned int> idx;
+    CMatrix Xs, Gs(S, S);
+    sampleDiagPatches(Xs, idx, Xp, 0, index);
+    patch->compute(Gs, Xs);
+    double s = 0.0;
+    for(unsigned int i = 0; i < S; i++)
+      for(unsigned int j = 0; j < S; j++)
+        if(i != j)
+          s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+    return (double)P * (double)P / ((double)S * (double)(S - 1)) * s;
+  }
   patch->compute(G, Xp);
   return quadForm(G);
+}
+
+void CConvKern::setDiagEstimator(unsigned int S, uint64_t seed)
+{
+  if(S == 1)
+    throw ndlexceptions::Error("CConvKern::setDiagEstimator: need S >= 2 samples (or 0 for exact).");
+  diagSamples = S;
+  diagSeed = seed;
+}
+
+// Stateless draw: splitmix64 of (seed, image row, draw number).
+static inline uint64_t convMix(uint64_t x)
+{
+  x += 0x9E3779B97F4A7C15ULL;
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  return x ^ (x >> 31);
+}
+
+void CConvKern::sampleDiagPatches(CMatrix& Xs, std::vector<unsigned int>& idx,
+                                  const CMatrix& Xp, unsigned int n, unsigned int seedRow) const
+{
+  idx.resize(diagSamples);
+  Xs.resize(diagSamples, patchDim());
+  for(unsigned int i = 0; i < diagSamples; i++)
+  {
+    const uint64_t r = convMix(convMix(diagSeed) ^ (convMix((uint64_t)seedRow + 1) + i));
+    idx[i] = (unsigned int)(r % P);
+    Xs.copyRowRow(i, Xp, n * P + idx[i]);
+  }
 }
 
 void CConvKern::diagCompute(CMatrix& d, const CMatrix& X) const
@@ -13310,6 +13357,25 @@ void CConvKern::diagCompute(CMatrix& d, const CMatrix& X) const
   DIMENSIONMATCH(d.getCols() == 1);
   CMatrix Xp, Xn, G(P, P);
   extractPatches(Xp, X);
+  if(diagIsEstimated())
+  {
+    const unsigned int S = diagSamples;
+    const double scale = (double)P * (double)P / ((double)S * (double)(S - 1));
+    std::vector<unsigned int> idx;
+    CMatrix Xs, Gs(S, S);
+    for(unsigned int n = 0; n < X.getRows(); n++)
+    {
+      sampleDiagPatches(Xs, idx, Xp, n, n);
+      patch->compute(Gs, Xs);
+      double s = 0.0;
+      for(unsigned int i = 0; i < S; i++)
+        for(unsigned int j = 0; j < S; j++)
+          if(i != j)
+            s += w[idx[i]] * w[idx[j]] * Gs.getVal(i, j);
+      d.setVal(scale * s, n);
+    }
+    return;
+  }
   for(unsigned int n = 0; n < X.getRows(); n++)
   {
     imagePatches(Xn, Xp, n);
@@ -13441,9 +13507,40 @@ void CConvKern::getDiagGradParams(CMatrix& g, const CMatrix& X, const CMatrix& c
   extractPatches(Xp, X);
   vector<double> gw(P, 0.0);
   g.zeros();
+  const bool est = diagIsEstimated();
+  const unsigned int S = diagSamples;
+  const double scale = est ? (double)P * (double)P / ((double)S * (double)(S - 1)) : 0.0;
+  std::vector<unsigned int> idx;
+  CMatrix Xs, Gs, Ges;
+  if(est)
+  {
+    Gs.resize(S, S);
+    Ges.resize(S, S);
+  }
   for(unsigned int n = 0; n < X.getRows(); n++)
   {
     const double c = cvGrad.getVal(n);
+    if(est)
+    {
+      sampleDiagPatches(Xs, idx, Xp, n, n);
+      patch->compute(Gs, Xs);
+      for(unsigned int i = 0; i < S; i++)
+      {
+        double r = 0.0;
+        for(unsigned int j = 0; j < S; j++)
+        {
+          const bool off = (i != j);
+          r += off ? Gs.getVal(i, j) * w[idx[j]] : 0.0;
+          Ges.setVal(off ? c * scale * w[idx[i]] * w[idx[j]] : 0.0, i, j);
+        }
+        gw[idx[i]] += 2.0 * c * scale * r;
+      }
+      Ges.setSymmetric(true);
+      patch->getGradParams(gp, Xs, Ges, false);
+      for(unsigned int i = 0; i < nk; i++)
+        g.addVal(gp.getVal(i), i);
+      continue;
+    }
     imagePatches(Xn, Xp, n);
     patch->compute(G, Xn);
     for(unsigned int a = 0; a < P; a++)

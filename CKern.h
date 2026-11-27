@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -108,6 +109,9 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // GEMM forms.  KufCached, when given, must be this kernel's own K(Z, X).
   virtual void inducingGradX(CMatrix& gX, const CMatrix& Z, const CMatrix& X,
                              const CMatrix& gKuf, const CMatrix* KufCached = 0) const;
+  // CIP-0040 Phase 1c: true when diagCompute is a stochastic unbiased estimate of the exact
+  // diagonal (it may then fall below the Nystrom term; callers must not clamp it).
+  virtual bool diagIsEstimated() const { return false; }
   // return the `signal strength' of the kernel.
   virtual double getVariance() const=0;
   // set the `signal strength' of the kernel.
@@ -2362,6 +2366,19 @@ class CConvKern : public CKern {
   // Xp is (N P) x q; row n*P+p is patch p of image n.
   void extractPatches(CMatrix& Xp, const CMatrix& X) const;
 
+  // CIP-0040 Phase 1c: unbiased diagonal estimator.  With S >= 2 and S < P the
+  // diagonal sum_{a,b} w_a w_b k_g(x^a, x^b) is estimated per image from S patches
+  // drawn uniformly with replacement, using the off-diagonal (i != j) terms of
+  // their S x S Gram matrix: a U-statistic, unbiased, O(S^2 q) rather than O(P^2 q).
+  // Samples are a pure function of (seed, row of X, draw), so diagCompute and
+  // getDiagGradParams agree for the same batch; call advanceDiagSeed() between
+  // optimiser steps to draw fresh samples.  S = 0 (default) or S >= P is exact.
+  // Not written to streams: a reloaded kernel is exact.
+  void setDiagEstimator(unsigned int S, uint64_t seed = 0);
+  unsigned int getDiagSamples() const { return diagSamples; }
+  bool diagIsEstimated() const override { return diagSamples >= 2 && diagSamples < P; }
+  void advanceDiagSeed() { ++diagSeed; }
+
   void setInitParam();
   double getVariance() const { return patch->getVariance(); }
   void setVariance(double val) { patch->setVariance(val); }
@@ -2408,6 +2425,7 @@ class CConvKern : public CKern {
   void setWeightsFromParams();
   void imagePatches(CMatrix& Xn, const CMatrix& Xp, unsigned int n) const;
   double quadForm(const CMatrix& G) const;  // w^T G w for a P x P block
+  void sampleDiagPatches(CMatrix& Xs, std::vector<unsigned int>& idx, const CMatrix& Xp, unsigned int n, unsigned int seedRow) const;
 
   std::unique_ptr<CKern> patch;
   unsigned int imageH, imageW, channels, patchH, patchW, stride;
@@ -2415,6 +2433,8 @@ class CConvKern : public CKern {
   WeightMode mode;
   vector<double> w;        // effective weights, length P
   vector<double> wParams;  // parameter storage: P (learned), 1 (tied), 0 (fixed)
+  unsigned int diagSamples = 0;  // 0: exact diagonal
+  uint64_t diagSeed = 0;
 };
 
 ostream& operator<<(ostream& os, const CKern& A);

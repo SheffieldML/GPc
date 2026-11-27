@@ -242,6 +242,60 @@ void testDeepGp()
   expect(maxAbsDiff(mu0, mu1) < 1e-9 && maxAbsDiff(v0, v1) < 1e-9, "stream: predictions reproduced");
 }
 
+// C5 through CSvgp: with a Gaussian likelihood the bound is linear in the kernel diagonal,
+// so the ELBO and its gradient computed with the estimated diagonal are unbiased.
+void testElboEstimator()
+{
+  const unsigned int H = 8, W = 8, C = 1, ph = 3, pw = 3, q = 9, M = 5, N = 6;
+  CRbfKern base = makeRbf(q);
+  CConvKern conv(base, H, W, C, ph, pw, 1, CConvKern::WEIGHTS_LEARNED);
+  for(unsigned int i = base.getNumParams(); i < conv.getNumParams(); i++)
+    conv.setParam(0.02 + 0.01 * sin(2.0 * i), i);
+  CMatrix X(N, H * W * C), y(N, 1), Zd(M, H * W * C);
+  fillRand(X, 31); fillRand(y, 32); fillRand(Zd, 33);
+  CSvgp sv(&conv, &X, &y, Zd, 3.0, 0);
+  sv.setInducingType("patches");
+  CMatrix qm(M, 1); fillRand(qm, 34);
+  vector<CMatrix> qc(1, CMatrix(M, M, 0.0));
+  qc[0].addDiag(0.7);
+  qc[0].setSymmetric(true);
+  sv.setWhitenedQ(qm, qc);
+  vector<unsigned int> all(N);
+  for(unsigned int i = 0; i < N; i++) all[i] = i;
+  CMatrix p0(1, sv.getOptNumParams()), g(1, sv.getOptNumParams());
+  sv.getOptParams(p0);
+  const double Lexact = sv.objectiveGradBatch(all, g);
+  CMatrix gExact(g);
+
+  const unsigned int S = 12, R = 3000;
+  double sL = 0.0, sL2 = 0.0;
+  vector<double> sg(g.getCols(), 0.0), sg2(g.getCols(), 0.0);
+  for(unsigned int r = 0; r < R; r++)
+  {
+    conv.setDiagEstimator(S, 5000 + r);
+    sv.setOptParams(p0);  // refresh cached kernel quantities
+    const double L = sv.objectiveGradBatch(all, g);
+    sL += L; sL2 += L * L;
+    for(unsigned int i = 0; i < g.getCols(); i++)
+    {
+      sg[i] += g.getVal(i); sg2[i] += g.getVal(i) * g.getVal(i);
+    }
+  }
+  const double mean = sL / R, var = sL2 / R - mean * mean;
+  const double z = fabs(mean - Lexact) / sqrt(var / R);
+  double zg = 0.0;
+  for(unsigned int i = 0; i < g.getCols(); i++)
+  {
+    const double m = sg[i] / R, v = sg2[i] / R - m * m;
+    if(v > 1e-30)
+      zg = max(zg, fabs(m - gExact.getVal(i)) / sqrt(v / R));
+  }
+  cout << "  info: ELBO exact " << Lexact << ", estimated mean " << mean << " (sd " << sqrt(var) << ")" << ", z=" << z
+       << ", worst gradient z=" << zg << endl;
+  expect(z < 4.0, "C5: Gaussian-likelihood ELBO estimate unbiased within 4 standard errors");
+  expect(zg < 5.0, "C5: Gaussian-likelihood ELBO gradient estimate unbiased within 5 standard errors");
+}
+
 void testErrors()
 {
   CRbfKern base = makeRbf(4);
@@ -276,6 +330,7 @@ int main()
         testSvgpGradients(modes[mi], stride);
       }
     testDeepGp();
+    testElboEstimator();
     testErrors();
   }
   catch(const ndlexceptions::Error& e)

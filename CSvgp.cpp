@@ -437,7 +437,8 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
       double v = wsAB.dotColCol(k, wsSAB, k);
       if(!dropResidual)
         v += wsDK.getVal(k) - wsDQ.getVal(k);
-      clampLatentVar(v, wsDK.getVal(k));
+      if(!pkern->diagIsEstimated())
+        clampLatentVar(v, wsDK.getVal(k));
       varOut.setVal(v, k, j);
     }
   }
@@ -488,7 +489,8 @@ void CSvgp::fillMarginals(const vector<unsigned int>& batch,
       double v = pA->dotColCol(k, wsSAB, k);
       if(!dropResidual)
         v += pDK->getVal(k) - pDQ->getVal(k);
-      clampLatentVar(v, pDK->getVal(k));
+      if(!pkern->diagIsEstimated())
+        clampLatentVar(v, pDK->getVal(k));
       varOut.setVal(v, k, j);
     }
   }

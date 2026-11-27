@@ -158,6 +158,8 @@ int main(int argc, char** argv)
   // `out` one-hot outputs, one step = objectiveGradBatch on a random batch.
   unsigned int layers = 3, hidden = 20, batch = 256, outDim = 10;
   string inducingKind = "points";
+  // CIP-0040 Phase 1c: convgp = deep GP with a convolutional first layer on side x side images.
+  unsigned int patchSide = 5, convStride = 1, diagSamples = 0;
   for(int i = 1; i < argc; i++)
   {
     if(!strcmp(argv[i], "--kind") && i + 1 < argc)
@@ -188,18 +190,100 @@ int main(int argc, char** argv)
       outDim = (unsigned)atoi(argv[++i]);
     else if(!strcmp(argv[i], "--inducing") && i + 1 < argc)
       inducingKind = argv[++i];
+    else if(!strcmp(argv[i], "--patch") && i + 1 < argc)
+      patchSide = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--stride") && i + 1 < argc)
+      convStride = (unsigned)atoi(argv[++i]);
+    else if(!strcmp(argv[i], "--diag-samples") && i + 1 < argc)
+      diagSamples = (unsigned)atoi(argv[++i]);
     else if(!strcmp(argv[i], "--help"))
     {
-      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp|deepgp] [--kern rbf|mlp]\n"
+      cout << "Usage: benchGPc [--kind ftc|dtcvar|fitc|svgp|deepgp|convgp] [--kern rbf|mlp]\n"
            << "                [--sparse-linalg lq|stable|legacy]\n"
            << "                [--N N] [--q q] [--M M] [--reps R]\n"
            << "                [--data-dir DIR] [--inducing-fixed]\n"
            << "  deepgp: [--layers L] [--hidden H] [--batch B] [--out D]\n"
            << "          [--inducing points|weightspace]  (kernel via --kern rbf|mlp)\n"
+           << "  convgp: [--q side^2] [--patch p] [--stride t] [--diag-samples S] [--hidden H] [--batch B]\n"
            << "Checked-build timings: make CHECKS=full bench && ./benchGPc ...\n"
            << "  (gpc_checks=on|off is printed; RELEASE=1 is the competitive path)\n";
       return 0;
     }
+  }
+
+  if(kind == "convgp")
+  {
+    // One objectiveGradBatch step of a 2-layer deep GP whose first layer is a
+    // convolutional kernel with inducing patches (q = side*side greyscale pixels).
+    srand(13);
+    unsigned int side = 1;
+    while(side * side < q)
+      ++side;
+    if(side * side != q)
+    {
+      cerr << "benchGPc: convgp needs --q to be a perfect square (image side^2)" << endl;
+      return 2;
+    }
+    CMatrix Xd(N, q), Yd(N, outDim);
+    Yd.zeros();
+    for(unsigned int i = 0; i < N; i++)
+    {
+      for(unsigned int d = 0; d < q; d++)
+        Xd.setVal((double)rand() / (double)RAND_MAX, i, d);
+      Yd.setVal(1.0, i, (unsigned)rand() % outDim);
+    }
+    CRbfKern base(patchSide * patchSide);
+    base.setInitParam();
+    CConvKern conv(base, side, side, 1, patchSide, patchSide, convStride, CConvKern::WEIGHTS_LEARNED);
+    if(diagSamples > 0)
+      conv.setDiagEstimator(diagSamples, 1);
+    CRbfKern top(hidden);
+    top.setInitParam();
+    vector<CKern*> kerns = {&conv, &top};
+    CDeepGp dgp(Xd, Yd, kerns, vector<unsigned int>{q, hidden, outDim}, vector<unsigned int>{M, M},
+                10.0, 1.0, 0);
+    dgp.setLayerInducingType(0, "patches");
+    CMatrix g;
+    vector<unsigned int> idx(batch);
+    auto fillBatch = [&](unsigned int rep) {
+      for(unsigned int k = 0; k < batch; k++)
+        idx[k] = (unsigned)(((unsigned long)rep * 7919u + (unsigned long)k * 104729u) % N);
+    };
+    for(unsigned int w = 0; w < warm; w++)
+    {
+      fillBatch(w);
+      (void)dgp.objectiveGradBatch(idx, g);
+    }
+    vector<double> times;
+    for(unsigned int r = 0; r < reps; r++)
+    {
+      fillBatch(warm + r);
+      conv.advanceDiagSeed();
+      auto t0 = chrono::steady_clock::now();
+      (void)dgp.objectiveGradBatch(idx, g);
+      auto t1 = chrono::steady_clock::now();
+      times.push_back(chrono::duration<double, milli>(t1 - t0).count());
+    }
+    cout << "kind=convgp"
+         << " kern=conv"
+         << " inducing=patches"
+         << " layers=2"
+         << " N=" << N
+         << " q=" << q
+         << " M=" << M
+         << " P=" << conv.numPatches()
+         << " stride=" << convStride
+         << " diag_samples=" << diagSamples
+         << " hidden=" << hidden
+         << " batch=" << batch
+         << " nparams=" << g.getCols()
+         << " ll=0"
+         << " median_ms=" << median(times)
+         << " allocs_per_eval=0"
+         << " reps=" << reps
+         << " threads=see_OPENBLAS_NUM_THREADS"
+         << endl;
+    return 0;
   }
 
   if(kind == "deepgp")

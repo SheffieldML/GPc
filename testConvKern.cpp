@@ -312,6 +312,111 @@ void testErrors()
   delete base;
 }
 
+
+// C5: the diagonal estimator is unbiased (value and gradients), is a fixed function of
+// (seed, row) so its gradient matches finite differences, and is exact when S >= P.
+void testDiagEstimator()
+{
+  const unsigned int H = 8, W = 8, C = 1, ph = 3, pw = 3, q = 9, N = 3;
+  CRbfKern* base = makeRbf(q);
+  CConvKern conv(*base, H, W, C, ph, pw, 1, CConvKern::WEIGHTS_LEARNED);
+  delete base;
+  for(unsigned int i = conv.patchKernel().getNumParams(); i < conv.getNumParams(); i++)
+    conv.setParam(0.02 + 0.01 * sin(2.0 * i), i);
+  const unsigned int P = conv.numPatches(), np = conv.getNumParams();
+  CMatrix X(N, H * W * C);
+  fillRand(X, 1.0, 0.4);
+  CMatrix cv(N, 1);
+  for(unsigned int n = 0; n < N; n++)
+    cv.setVal(0.5 + 0.3 * n, n);
+
+  CMatrix dExact(N, 1), gExact(1, np);
+  conv.diagCompute(dExact, X);
+  conv.getDiagGradParams(gExact, X, cv, false);
+
+  // S >= P is exact.
+  conv.setDiagEstimator(P, 3);
+  CMatrix d(N, 1);
+  conv.diagCompute(d, X);
+  expect(maxAbsDiff(d, dExact) < 1e-13, "diag estimator: S >= P is exact");
+
+  // Unbiasedness over seeds, using the standard error of the mean.
+  const unsigned int S = 14, R = 4000;
+  vector<double> sd(N, 0.0), sd2(N, 0.0), sg(np, 0.0), sg2(np, 0.0);
+  CMatrix g(1, np);
+  for(unsigned int r = 0; r < R; r++)
+  {
+    conv.setDiagEstimator(S, 1000 + r);
+    conv.diagCompute(d, X);
+    for(unsigned int n = 0; n < N; n++)
+    {
+      sd[n] += d.getVal(n);
+      sd2[n] += d.getVal(n) * d.getVal(n);
+    }
+    conv.getDiagGradParams(g, X, cv, false);
+    for(unsigned int i = 0; i < np; i++)
+    {
+      sg[i] += g.getVal(i);
+      sg2[i] += g.getVal(i) * g.getVal(i);
+    }
+  }
+  double worstD = 0.0, worstG = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+  {
+    const double mean = sd[n] / R, var = sd2[n] / R - mean * mean;
+    worstD = max(worstD, fabs(mean - dExact.getVal(n)) / sqrt(var / R));
+  }
+  for(unsigned int i = 0; i < np; i++)
+  {
+    const double mean = sg[i] / R, var = sg2[i] / R - mean * mean;
+    if(var > 1e-30)
+      worstG = max(worstG, fabs(mean - gExact.getVal(i)) / sqrt(var / R));
+  }
+  cout << "  info: worst |mean - exact| / s.e.: diag " << worstD << ", gradient " << worstG << endl;
+  expect(worstD < 4.0, "C5: estimated diagonal unbiased within 4 standard errors");
+  expect(worstG < 5.0, "C5: estimated diagonal gradients unbiased within 5 standard errors");
+
+  // Gradient consistency at fixed seed: FD of sum_n cv_n d_n against getDiagGradParams.
+  conv.setDiagEstimator(S, 77);
+  conv.getDiagGradParams(g, X, cv, false);
+  const double eps = 1e-6;
+  double worst = 0.0;
+  for(unsigned int i = 0; i < np; i++)
+  {
+    const double p0 = conv.getParam(i);
+    double f[2];
+    for(int s = 0; s < 2; s++)
+    {
+      conv.setParam(p0 + (s == 0 ? eps : -eps), i);
+      conv.diagCompute(d, X);
+      f[s] = 0.0;
+      for(unsigned int n = 0; n < N; n++)
+        f[s] += cv.getVal(n) * d.getVal(n);
+    }
+    conv.setParam(p0, i);
+    const double fd = (f[0] - f[1]) / (2.0 * eps);
+    worst = max(worst, fabs(fd - g.getVal(i)) / max(1.0, fabs(fd)));
+  }
+  expectNear(worst, 0.0, 1e-6, "C5: estimated diagonal gradient matches finite differences at fixed seed");
+
+  // diagComputeElement (used by CSvgp) is the same estimate, row by row.
+  conv.diagCompute(d, X);
+  double eltDiff = 0.0;
+  for(unsigned int n = 0; n < N; n++)
+    eltDiff = max(eltDiff, fabs(conv.diagComputeElement(X, n) - d.getVal(n)));
+  expect(eltDiff < 1e-13, "C5: diagComputeElement agrees with diagCompute when estimated");
+
+  // Same seed, same value; copy keeps the estimator.
+  CMatrix d1(N, 1), d2(N, 1);
+  conv.diagCompute(d1, X);
+  CConvKern copy(conv);
+  copy.diagCompute(d2, X);
+  expect(maxAbsDiff(d1, d2) == 0.0 && copy.getDiagSamples() == S, "C5: deterministic in (seed, row); copy keeps estimator");
+  bool threw = false;
+  try { conv.setDiagEstimator(1, 0); } catch(ndlexceptions::Error&) { threw = true; }
+  expect(threw, "C5: S = 1 rejected");
+}
+
 } // namespace
 
 int main()
@@ -343,6 +448,7 @@ int main()
         delete m;
       }
     testShift();
+    testDiagEstimator();
     testStream();
     testErrors();
   }

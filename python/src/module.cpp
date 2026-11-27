@@ -1,3 +1,4 @@
+#include <dlfcn.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
@@ -83,6 +84,31 @@ PYBIND11_MODULE(_gpc, m)
         &matrixToNumpy,
         py::arg("matrix"),
         "Copy CMatrix to a NumPy array.");
+
+  // CIP-0041 B5: BLAS thread control.  Resolved at run time so that builds against a BLAS
+  // without the call (Accelerate, reference BLAS) still load; there it is a no-op.
+  m.def("set_num_threads",
+        [](int n) {
+          if(n < 1)
+            throw ndlexceptions::Error("set_num_threads: n must be >= 1");
+          typedef void (*set_fn)(int);
+          set_fn f = reinterpret_cast<set_fn>(dlsym(RTLD_DEFAULT, "openblas_set_num_threads"));
+          if(f == 0)
+            return false;
+          f(n);
+          return true;
+        },
+        py::arg("n"),
+        "Set the BLAS thread count; returns False (and does nothing) when the linked BLAS "
+        "has no thread control.");
+  m.def("get_num_threads",
+        []() {
+          typedef int (*get_fn)(void);
+          get_fn f = reinterpret_cast<get_fn>(dlsym(RTLD_DEFAULT, "openblas_get_num_threads"));
+          const int n = (f == 0) ? 1 : f();
+          return n < 1 ? 1 : n;  // OpenBLAS can report 0 before its pool starts
+        },
+        "BLAS thread count, or 1 when the linked BLAS has no thread control.");
 
   bind_gp(m);
   bind_gplvm(m);

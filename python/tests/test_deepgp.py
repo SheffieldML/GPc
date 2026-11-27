@@ -320,3 +320,51 @@ def test_learn_window_width_applies_to_weightspace_layers_only():
             X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
             inducing=["points", "points"], learn_window_width=True,
         )
+
+
+# ---- CIP-0041 Phase 2 (B3 ARD kernels, B5 thread control) ----------------------------------
+
+
+@pytest.mark.parametrize("name", ["rbfard", "mlpard"])
+def test_ard_kernels_per_layer_describe_and_roundtrip(name, tmp_path):
+    X, Y = _sinc_toy(30)
+    X2 = np.hstack([X, 0.3 * np.cos(3 * X)])
+    m = gpc.models.DeepGP(
+        X2, Y, layers=2, hidden=2, num_inducing=6, kernel=[name, "rbf"]
+    )
+    d = m.describe()
+    lines = [l for l in d.header_lines if l.startswith("layer 0 " + name)]
+    assert len(lines) == 1, d.header_lines
+    assert not any(l.startswith("layer 1 ") and "ard" in l for l in d.header_lines)
+    m.optimize(iters=15, batch_size=15, seed=2)
+    path = tmp_path / "ard.model"
+    m.save(str(path))
+    m2 = gpc.models.DeepGP.load(str(path))
+    # ELBO is Monte Carlo; the mean-path prediction and the ARD scales are deterministic.
+    assert np.allclose(m.predict(X2)[0], m2.predict(X2)[0], atol=1e-6)
+    assert m2.describe().header_lines == m.describe().header_lines
+
+
+def test_ard_rejected_for_weightspace_and_unknown_names():
+    X, Y = _sinc_toy(20)
+    with pytest.raises(Exception, match="requires kernel='mlp'"):
+        gpc.models.DeepGP(X, Y, layers=1, kernel="mlpard", inducing="weightspace")
+    with pytest.raises(Exception, match="rbfard"):
+        gpc.models.DeepGP(X, Y, layers=1, kernel="matern")
+
+
+def test_thread_control_roundtrip():
+    before = gpc.get_num_threads()
+    assert before >= 1
+    with pytest.raises(Exception):
+        gpc.set_num_threads(0)
+    applied = gpc.set_num_threads(1)
+    try:
+        if applied:
+            assert gpc.get_num_threads() == 1
+            gpc.set_num_threads(2)
+            assert gpc.get_num_threads() == 2
+        else:
+            assert gpc.get_num_threads() == 1  # documented no-op build
+    finally:
+        gpc.set_num_threads(before)

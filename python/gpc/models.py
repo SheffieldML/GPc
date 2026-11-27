@@ -547,7 +547,7 @@ class DeepGP(_DeepGP):
     num_inducing :
         Int or length-``L`` sequence of inducing counts.
     kernel :
-        ``'rbf'``, ``'mlp'``, or ``'lin'``: a string (same type on every layer)
+        ``'rbf'``, ``'mlp'``, ``'lin'``, ``'rbfard'`` or ``'mlpard'``: a string (same type on every layer)
         or a length-``layers`` sequence (one per layer, CIP-0041).
     inducing :
         ``'points'``, ``'weightspace'`` or ``'hermite'`` (the last two need

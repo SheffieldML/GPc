@@ -26,7 +26,9 @@ from ._gpc import (
     OptimiserPhase,
     ParamRow,
     matrix_from_numpy,
+    get_num_threads,
     matrix_to_numpy,
+    set_num_threads,
 )
 from .models import (
     BayesianGPLVM,
@@ -40,6 +42,8 @@ from .models import (
 )
 
 __all__ = [
+    "get_num_threads",
+    "set_num_threads",
     "GPRegression",
     "SparseGPRegression",
     "GPClassification",

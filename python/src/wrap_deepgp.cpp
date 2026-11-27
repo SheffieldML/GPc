@@ -46,8 +46,21 @@ CKern* makeLayerKern(const std::string& name, unsigned int din)
     lin->setInitParam();
     return lin;
   }
+  // CIP-0041 B3: ARD kernels, one input scale per layer-input dimension.
+  if(name == "rbfard")
+  {
+    CRbfardKern* k = new CRbfardKern(din);
+    k->setInitParam();
+    return k;
+  }
+  if(name == "mlpard")
+  {
+    CMlpardKern* k = new CMlpardKern(din);
+    k->setInitParam();
+    return k;
+  }
   throw ndlexceptions::Error(
-      "DeepGP kernel must be 'rbf', 'mlp', or 'lin' (got '" + name + "').");
+      "DeepGP kernel must be 'rbf', 'mlp', 'lin', 'rbfard' or 'mlpard' (got '" + name + "').");
 }
 
 // CIP-0041 B1: a string (applied to every layer) or a length-L sequence of strings.
@@ -83,6 +96,8 @@ std::string canonicalKernelName(const std::string& n)
 {
   if(n == "RBF") return "rbf";
   if(n == "MLP") return "mlp";
+  if(n == "RBFARD" || n == "rbf_ard") return "rbfard";
+  if(n == "MLPARD" || n == "mlp_ard") return "mlpard";
   if(n == "Linear" || n == "linear") return "lin";
   return n;
 }
@@ -205,7 +220,7 @@ PyDeepGP::PyDeepGP(
     if(ind != "points" && ind != "weightspace" && ind != "hermite")
       throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace' or 'hermite'");
     if(ind == "weightspace" && kernNames[ell] != "mlp")
-      throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp'");
+      throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp' (got '" + kernNames[ell] + "')");
     if(ind == "hermite" && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '"
                                  + kernNames[ell] + "'.");
@@ -621,6 +636,19 @@ ModelDescription PyDeepGP::describe() const
     if(model->getLayerInducingType(ell) == "hermite")
       d.headerLines.push_back("layer " + std::to_string(ell) + " hermite layout: " +
                               model->layer(ell).hermiteLayoutDescription());
+  // CIP-0041 B3: ARD scales are part of what was built; show every parameter of ARD layers.
+  for(unsigned int ell = 0; ell < model->getNumLayers(); ++ell)
+  {
+    const CKern* k = model->layer(ell).getKern();
+    const std::string t = k->getType();
+    if(t != "rbfard" && t != "mlpard")
+      continue;
+    std::ostringstream os;
+    os << "layer " << ell << " " << t << ":";
+    for(unsigned int i = 0; i < k->getNumParams(); ++i)
+      os << " " << k->getParamName(i) << "=" << k->getParam(i);
+    d.headerLines.push_back(os.str());
+  }
   d.hasLogLikelihood = true;
   d.logLikelihood = model->elboEstimate();
   d.optNumParams = static_cast<int>(model->getStochasticNumParams());

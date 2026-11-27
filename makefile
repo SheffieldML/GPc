@@ -67,11 +67,14 @@ ALL_BINARIES = benchGPc \
   testPpa \
   testSparsePpa \
   testSvgp \
+  testInducingPatches \
   testSviBayesGplvm \
   testDeepGp \
   testKern \
   testDiagGradParams \
   testInducingGradZ \
+  testConvKern \
+  testInducingPatches \
   testInducingHermite \
   testPsi \
   testWnHankel \
@@ -199,7 +202,7 @@ libgp$(LIBDEXT): $(LIBGP_OBJS)
 # Full historical suite still needs the MATLAB interface (_NDLMATLAB) for object I/O
 # (kernels/noise/models as structs). Numeric fixtures can use libmatio instead:
 #   make USE_MATIO=1 matio-tests
-tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testRobustMax testSoftmax testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSvgpBlock testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testRobustMax testSoftmax testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testOptimisable testParamPaths testCGp testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testCholAdjoint testLQAdjoint testClctrl testPpa testSparsePpa testSvgp testSvgpBlock testSviBayesGplvm testDeepGp testDiagGradParams testInducingGradZ testConvKern testInducingPatches testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Reference tests runnable without MATLAB (CIP-0001 / REQ-0002): numeric .mat via matio.
 # testOptimisable needs no .mat fixtures but is part of the hard gate (CIP-0010).
@@ -213,7 +216,7 @@ tests: testDist testGp testIvm testKern testMatrix testMltools testNdlutil testN
 # testCholAdjoint is CIP-0012 (no .mat); must run under coverage so CCholAdjoint.cpp is hit.
 # testClctrl is CIP-0022 (CSV/SVML data I/O; no .mat).
 # testNoiseBatched / testNoiseInLikelihood / testCip0027Perf / testIvmSoftener are CIP-0027 (no .mat).
-matio-tests: testDist testKern testMatrix testMltools testIvm testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testRobustMax testSoftmax testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
+matio-tests: testDist testKern testMatrix testMltools testIvm testNdlutil testNoise testNoiseBatched testNoiseInLikelihood testNoiseBlock testRobustMax testSoftmax testSkewNoise testLikelihoodZoo testCip0027Perf testIvmSoftener testEp testEpBlock testTransform testGp testOptimisable testParamPaths testCGp testCholAdjoint testLQAdjoint testCoregionalize testPsi testWnHankel testBayesGplvm testMrd testClctrl testDiagGradParams testInducingGradZ testConvKern testInducingPatches testInducingHermite testNoisePrior testHmc testVariationalHmc testInterchange
 
 # Run matio reference binaries (CIP-0004 coverage workflow uses this after a COVERAGE=1 build).
 run-matio-tests: matio-tests
@@ -235,6 +238,8 @@ run-matio-tests: matio-tests
 	./testKern
 	./testDiagGradParams
 	./testInducingGradZ
+	./testConvKern
+	./testInducingPatches
 	./testInducingHermite
 	./testNoisePrior
 	./testHmc
@@ -370,6 +375,13 @@ testDiagGradParams: testDiagGradParams.o CMatrix.o ndlfortran.o CKern.o CTransfo
 
 
 # CIP-002D follow-up: batched inducingGradZ + MLP bulk compute.
+# CIP-0040 Phase 1a: convolutional covariance function.
+testInducingPatches: testInducingPatches.o CDeepGp.o CSvgp.o CAdam.o CStochasticOptimisable.o CSparsePpa.o CPpa.o CGp.o CInducing.o CCholAdjoint.o CLQAdjoint.o CMatrix.o ndlfortran.o CNoise.o CEpInference.o CLaplaceInference.o ndlutil.o ndlstrutil.o CTransform.o COptimisable.o CKern.o CDist.o CClctrl.o CMltools.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
+
+testConvKern: testConvKern.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
+	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
+
 testInducingGradZ: testInducingGradZ.o CInducing.o CMatrix.o ndlfortran.o CKern.o CTransform.o COptimisable.o CDist.o ndlutil.o ndlstrutil.o CClctrl.o ndlassert.o
 	$(LD) ${XLINKERFLAGS} -o $@ $^ $(LDFLAGS)
 

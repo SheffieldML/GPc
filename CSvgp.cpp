@@ -105,6 +105,16 @@ void CSvgp::setInducingType(const string& typeName)
       s0 = 1.0;
     setInducing(new CInducingGreens(&Z, s0, false));
   }
+  else if(typeName == "patches")
+  {
+    // CIP-0040: M patches drawn evenly from the training images.
+    const CConvKern* ck = dynamic_cast<const CConvKern*>(pkern);
+    if(ck == 0)
+      throw ndlexceptions::Error("CSvgp::setInducingType(\"patches\") requires a convolutional kernel.");
+    CMatrix Zp;
+    CInducingPatches::initFromData(Zp, *ck, *pX, numInducing);
+    setInducing(new CInducingPatches(Zp));
+  }
   else if(typeName == "weightspace")
   {
     CMatrix W;
@@ -180,7 +190,7 @@ void CSvgp::ensureFullData() const
 void CSvgp::setInducingCentres(const CMatrix& Znew)
 {
   pInducing->setCentres(Znew);
-  if(pInducing->typeName() != "weightspace")
+  if(pInducing->typeName() != "weightspace" && pInducing->typeName() != "patches")
   {
     // Points / WN / greens share member Z via non-owned pointer.
     if(Znew.getRows() != Z.getRows() || Znew.getCols() != Z.getCols())
@@ -427,7 +437,8 @@ void CSvgp::fillMarginalsFromX(const CMatrix& XB, CMatrix& muOut,
       double v = wsAB.dotColCol(k, wsSAB, k);
       if(!dropResidual)
         v += wsDK.getVal(k) - wsDQ.getVal(k);
-      clampLatentVar(v, wsDK.getVal(k));
+      if(!pkern->diagIsEstimated())
+        clampLatentVar(v, wsDK.getVal(k));
       varOut.setVal(v, k, j);
     }
   }
@@ -478,7 +489,8 @@ void CSvgp::fillMarginals(const vector<unsigned int>& batch,
       double v = pA->dotColCol(k, wsSAB, k);
       if(!dropResidual)
         v += pDK->getVal(k) - pDQ->getVal(k);
-      clampLatentVar(v, pDK->getVal(k));
+      if(!pkern->diagIsEstimated())
+        clampLatentVar(v, pDK->getVal(k));
       varOut.setVal(v, k, j);
     }
   }

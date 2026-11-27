@@ -550,7 +550,7 @@ class DeepGP(_DeepGP):
         ``'rbf'``, ``'mlp'``, ``'lin'``, ``'rbfard'`` or ``'mlpard'``: a string (same type on every layer)
         or a length-``layers`` sequence (one per layer, CIP-0041).
     inducing :
-        ``'points'``, ``'weightspace'`` or ``'hermite'`` (the last two need
+        ``'points'``, ``'patches'``, ``'weightspace'`` or ``'hermite'`` (the last two need
         ``kernel='mlp'`` on that layer): a string for every layer or a
         length-``layers`` sequence, e.g. ``['weightspace', 'points', 'points']``.
         Invalid combinations raise with the layer index. ``'hermite'`` uses fixed Hermite ridge windows
@@ -559,6 +559,15 @@ class DeepGP(_DeepGP):
         dimension, and warns (``UserWarning``) about conditioning, near-capacity
         fill, low captured variance and use in hidden layers; see
         ``describe()`` for the delivered layout.
+        ``'patches'`` (CIP-0040) needs a first-layer :class:`gpc.kern.Conv`
+        kernel and is implied by it.
+    diag, diag_samples, diag_force :
+        ``diag='estimate'`` replaces the exact ``O(P^2)`` convolutional kernel
+        diagonal by an unbiased U-statistic over ``diag_samples`` patches,
+        redrawn each minibatch. It is unbiased only for a single-layer model
+        with a Gaussian likelihood and is refused otherwise unless
+        ``diag_force=True`` (then biased). A larger ``stride`` is the exact way
+        to reduce the cost.
     mlp_init :
         ``'unit'`` (default: weight, bias and signal variance all 1) or
         ``'scaled'``: a string for every layer or a length-``layers`` sequence;
@@ -620,8 +629,19 @@ class DeepGP(_DeepGP):
         learn_window_width: bool = False,
         learn_window_widths: bool = False,
         num_classes: int = 0,
+        diag: str = "exact",
+        diag_samples: int = 64,
+        diag_force: bool = False,
         mlp_init: Any = "unit",
     ) -> None:
+        from .kern import Conv as _Conv
+
+        if isinstance(kernel, _Conv):
+            kernel = [kernel.to_parts()[0]] + ["rbf"] * (int(layers) - 1)
+        elif isinstance(kernel, (list, tuple)):
+            kernel = [
+                k.to_parts()[0] if isinstance(k, _Conv) else k for k in kernel
+            ]
         mc: dict[str, Any] = {}
         if not isinstance(likelihood, str):
             from . import likelihoods as _lik
@@ -657,10 +677,25 @@ class DeepGP(_DeepGP):
             learn_window_width=learn_window_width,
             learn_window_widths=learn_window_widths,
             num_classes=num_classes,
+            diag=diag,
+            diag_samples=diag_samples,
+            diag_force=diag_force,
             mlp_init=mlp_init,
             **mc,
         )
         _emit_hermite_warnings(self)
+
+    def inducing_filters(self) -> np.ndarray:
+        """Inducing patches of a convolutional first layer, ``(M, h, w, C)``.
+
+        Requires ``kernel=Conv(...)`` with ``inducing='patches'``. Patches are
+        learned in the (unscaled) pixel space of the input images.
+        """
+        return self.conv_filters()
+
+    def patch_weights(self) -> np.ndarray:
+        """Patch-position weights ``w_p`` of the convolutional first layer."""
+        return self.conv_patch_weights()
 
     def __str__(self) -> str:  # noqa: D105
         return format_model_description(

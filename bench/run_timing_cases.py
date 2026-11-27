@@ -46,7 +46,7 @@ def run_one(bench: Path, case: dict) -> dict:
     M = int(case.get("M", 0) or 0)
     if case["kind"] != "ftc" and M > 0:
         cmd.extend(["--M", str(M)])
-    for key in ("layers", "hidden", "batch", "inducing"):  # CIP-003F deepgp cases
+    for key in ("layers", "hidden", "batch", "inducing", "patch", "stride", "diag-samples"):  # CIP-003F deepgp, CIP-0040 convgp cases
         if key in case:
             cmd.extend(["--" + key, str(case[key])])
     proc = subprocess.run(

@@ -481,6 +481,10 @@ double CDeepGp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g
   g.resize(1, Ptot);
   g.zeros();
 
+  // CIP-0040: kernels with an estimated diagonal draw fresh samples for each minibatch.
+  for(unsigned int ell = 0; ell < numLayers; ell++)
+    pkerns[ell]->advanceDiagSeed();
+
   if(numLayers == 1)
     return layers[0]->objectiveGradBatch(batch, g);
 
@@ -575,14 +579,20 @@ double CDeepGp::objectiveGradBatch(const vector<unsigned int>& batch, CMatrix& g
             gVar.setVal(gh * epss[ell].getVal(b, j) / (2.0 * s), b, j);
           }
       CMatrix gKernH, gZH, gQH, gXH;
-      layers[ell]->marginalsGradAt(Hs[ell], gMean, gVar, gKernH, gZH, gQH, &gXH);
+      // CIP-0040: the data inputs of layer 0 need no gradient (and a convolutional
+      // first layer cannot supply one), so skip the input-gradient path there.
+      layers[ell]->marginalsGradAt(Hs[ell], gMean, gVar, gKernH, gZH, gQH,
+                                   ell > 0 ? &gXH : 0);
 
-      CMatrix gHprev(B, layerDims[ell]);
-      gHprev.gemm(gH, meanP[ell], 1.0, 0.0, "n", "t");
-      for(unsigned int b = 0; b < B; b++)
-        for(unsigned int d = 0; d < layerDims[ell]; d++)
-          gHprev.setVal(gHprev.getVal(b, d) + gXH.getVal(b, d), b, d);
-      gH.deepCopy(gHprev);
+      if(ell > 0)
+      {
+        CMatrix gHprev(B, layerDims[ell]);
+        gHprev.gemm(gH, meanP[ell], 1.0, 0.0, "n", "t");
+        for(unsigned int b = 0; b < B; b++)
+          for(unsigned int d = 0; d < layerDims[ell]; d++)
+            gHprev.setVal(gHprev.getVal(b, d) + gXH.getVal(b, d), b, d);
+        gH.deepCopy(gHprev);
+      }
 
       CMatrix gThis;
       packOptIntoStochastic(*layers[ell], gKernH, gZH, 0.0, gQH, gThis);

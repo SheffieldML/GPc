@@ -63,6 +63,90 @@ CKern* makeLayerKern(const std::string& name, unsigned int din)
       "DeepGP kernel must be 'rbf', 'mlp', 'lin', 'rbfard' or 'mlpard' (got '" + name + "').");
 }
 
+
+// ---- CIP-0040 Phase 1d: convolutional kernel descriptors ------------------------------------
+
+double dictNum(const py::dict& d, const char* key, double dflt)
+{
+  return d.contains(key) ? py::cast<double>(d[key]) : dflt;
+}
+
+// Patch kernel from the descriptor's `patch` part (rbf / rbfard / mlp / mlpard / linear).
+std::unique_ptr<CKern> makePatchKern(const py::dict& part, unsigned int q)
+{
+  const std::string type = py::cast<std::string>(part["type"]);
+  const bool ard = part.contains("ARD") && py::cast<bool>(part["ARD"]);
+  if(type == "rbf" || type == "rbfard")
+  {
+    if(ard || type == "rbfard")
+    {
+      std::unique_ptr<CRbfardKern> k(new CRbfardKern(q));
+      k->setInitParam();
+      return std::unique_ptr<CKern>(k.release());
+    }
+    std::unique_ptr<CRbfKern> k(new CRbfKern(q));
+    k->setInitParam();
+    const double ell = dictNum(part, "lengthscale", 1.0);
+    if(!(ell > 0.0))
+      throw ndlexceptions::Error("Conv: patch kernel lengthscale must be positive");
+    k->setInverseWidth(1.0 / (ell * ell));
+    k->setVariance(dictNum(part, "variance", 1.0));
+    return std::unique_ptr<CKern>(k.release());
+  }
+  if(type == "mlp" || type == "mlpard")
+  {
+    if(ard || type == "mlpard")
+    {
+      std::unique_ptr<CMlpardKern> k(new CMlpardKern(q));
+      k->setInitParam();
+      return std::unique_ptr<CKern>(k.release());
+    }
+    std::unique_ptr<CMlpKern> k(new CMlpKern(q));
+    k->setInitParam();
+    k->setParam(dictNum(part, "weight_variance", 1.0), 0);
+    k->setParam(dictNum(part, "bias_variance", 1.0), 1);
+    k->setParam(dictNum(part, "variance", 1.0), 2);
+    return std::unique_ptr<CKern>(k.release());
+  }
+  if(type == "lin" || type == "linear" || type == "Linear")
+  {
+    std::unique_ptr<CLinKern> k(new CLinKern(q));
+    k->setInitParam();
+    k->setVariance(dictNum(part, "variance", 1.0));
+    return std::unique_ptr<CKern>(k.release());
+  }
+  throw ndlexceptions::Error("Conv: patch kernel must be rbf, mlp or linear (got '" + type + "')");
+}
+
+std::unique_ptr<CConvKern> makeConvFromPart(const py::dict& part)
+{
+  std::vector<unsigned int> shape = py::cast<std::vector<unsigned int> >(part["image_shape"]);
+  std::vector<unsigned int> pshape = py::cast<std::vector<unsigned int> >(part["patch_shape"]);
+  if(shape.size() != 3 || pshape.size() != 2)
+    throw ndlexceptions::Error("Conv: image_shape must be (H, W, C) and patch_shape (h, w)");
+  const unsigned int stride = part.contains("stride") ? py::cast<unsigned int>(part["stride"]) : 1u;
+  const std::string weights = part.contains("weights") ? py::cast<std::string>(part["weights"])
+                                                       : std::string("learned");
+  CConvKern::WeightMode mode;
+  if(weights == "learned")
+    mode = CConvKern::WEIGHTS_LEARNED;
+  else if(weights == "tied")
+    mode = CConvKern::WEIGHTS_TIED;
+  else if(weights == "fixed")
+    mode = CConvKern::WEIGHTS_FIXED;
+  else
+    throw ndlexceptions::Error("Conv: weights must be 'learned', 'tied' or 'fixed'");
+  const unsigned int q = pshape[0] * pshape[1] * shape[2];
+  std::unique_ptr<CKern> patch = makePatchKern(py::cast<py::dict>(part["patch"]), q);
+  return std::unique_ptr<CConvKern>(
+      new CConvKern(*patch, shape[0], shape[1], shape[2], pshape[0], pshape[1], stride, mode));
+}
+
+bool isConvPart(py::handle h)
+{
+  return py::isinstance<py::dict>(h);
+}
+
 // CIP-0041 B1: a string (applied to every layer) or a length-L sequence of strings.
 std::vector<std::string> parseLayerStrings(py::object obj, unsigned int nLayers,
                                            const char* what)
@@ -81,9 +165,12 @@ std::vector<std::string> parseLayerStrings(py::object obj, unsigned int nLayers,
                                  + ") must equal layers (" + std::to_string(nLayers) + ")");
     for(py::handle h : seq)
     {
-      if(!py::isinstance<py::str>(h))
+      if(isConvPart(h) && std::string(what) == "kernel")
+        out.push_back("conv");
+      else if(!py::isinstance<py::str>(h))
         throw ndlexceptions::Error(std::string(what) + " entries must be strings");
-      out.push_back(py::cast<std::string>(h));
+      else
+        out.push_back(py::cast<std::string>(h));
     }
   }
   else
@@ -184,6 +271,9 @@ PyDeepGP::PyDeepGP(
     double likelihood_eps,
     unsigned int likelihood_samples,
     unsigned int likelihood_seed,
+    const std::string& diag,
+    unsigned int diag_samples,
+    bool diag_force,
     py::object mlp_init)
   : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)),
     likelihoodType(likelihood),
@@ -213,13 +303,43 @@ PyDeepGP::PyDeepGP(
   std::vector<std::string> indNames = parseLayerStrings(inducing, layers, "inducing");
   for(std::string& n : kernNames)
     n = canonicalKernelName(n);
+  // CIP-0040: a convolutional kernel (a Conv descriptor dict) is first-layer only and
+  // takes inducing patches ('points' is promoted since it cannot apply).
+  std::vector<py::dict> convParts(layers);
+  if(py::isinstance<py::list>(kernel) || py::isinstance<py::tuple>(kernel))
+  {
+    unsigned int ell = 0;
+    for(py::handle h : py::reinterpret_borrow<py::sequence>(kernel))
+    {
+      if(isConvPart(h))
+        convParts[ell] = py::reinterpret_borrow<py::dict>(h);
+      ++ell;
+    }
+  }
+  unsigned int nConv = 0;
+  for(unsigned int ell = 0; ell < layers; ++ell)
+  {
+    if(kernNames[ell] != "conv")
+      continue;
+    ++nConv;
+    if(ell != 0)
+      throw ndlexceptions::Error("layer " + std::to_string(ell)
+                                 + ": a convolutional kernel is supported on the first layer only "
+                                   "(deep convolutional GPs are CIP-0040 Phase 4)");
+    if(indNames[ell] == "points")
+      indNames[ell] = "patches";
+  }
   unsigned int nWeightspace = 0, nHermite = 0;
   for(unsigned int ell = 0; ell < layers; ++ell)
   {
     const std::string pre = perLayer ? "layer " + std::to_string(ell) + ": " : "";
     const std::string& ind = indNames[ell];
-    if(ind != "points" && ind != "weightspace" && ind != "hermite")
-      throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace' or 'hermite'");
+    if(ind != "points" && ind != "weightspace" && ind != "hermite" && ind != "patches")
+      throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace', 'hermite' or 'patches'");
+    if(ind == "patches" && kernNames[ell] != "conv")
+      throw ndlexceptions::Error(pre + "inducing='patches' requires a convolutional kernel (gpc.kern.Conv)");
+    if(kernNames[ell] == "conv" && ind != "patches")
+      throw ndlexceptions::Error(pre + "a convolutional kernel supports inducing='patches' only in this release");
     if(ind == "weightspace" && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp' (got '" + kernNames[ell] + "')");
     if(ind == "hermite" && kernNames[ell] != "mlp")
@@ -258,9 +378,38 @@ PyDeepGP::PyDeepGP(
   ownedKerns.clear();
   for(unsigned int ell = 0; ell < layers; ++ell)
   {
-    CKern* k = makeLayerKern(kernNames[ell], dims[ell]);
+    CKern* k;
+    if(kernNames[ell] == "conv")
+    {
+      std::unique_ptr<CConvKern> ck = makeConvFromPart(convParts[ell]);
+      if(ck->getInputDim() != dims[ell])
+        throw ndlexceptions::Error("Conv: image_shape implies " + std::to_string(ck->getInputDim())
+                                   + " input columns but X has " + std::to_string(dims[ell]));
+      k = ck.release();
+    }
+    else
+      k = makeLayerKern(kernNames[ell], dims[ell]);
     ownedKerns.emplace_back(k);
     kernPtrs.push_back(k);
+  }
+  // CIP-0040 Phase 1c: diagonal estimator.  Unbiased only for the bound of a Gaussian
+  // single-layer model; hidden layers take sqrt of a noisy variance, and non-Gaussian
+  // likelihoods are not linear in the diagonal.
+  if(diag != "exact" && diag != "estimate")
+    throw ndlexceptions::Error("diag must be 'exact' or 'estimate'");
+  if(diag == "estimate")
+  {
+    if(nConv == 0)
+      throw ndlexceptions::Error("diag='estimate' requires a convolutional kernel");
+    const bool gaussian = (likelihood == "gaussian" || likelihood == "Gaussian");
+    if(!diag_force && !(layers == 1 && gaussian))
+      throw ndlexceptions::Error(
+          "diag='estimate' is unbiased only for a single-layer model with a Gaussian likelihood "
+          "(the variance enters the bound linearly there); pass diag_force=True to use it anyway "
+          "(biased), or use a larger stride to cut the cost exactly.");
+    if(diag_samples < 2)
+      throw ndlexceptions::Error("diag_samples must be at least 2");
+    static_cast<CConvKern*>(ownedKerns[0].get())->setDiagEstimator(diag_samples, 0);
   }
   kernelType = joinLayerNames(kernNames);
   layerKernelTypes = kernNames;
@@ -535,6 +684,63 @@ void PyDeepGP::reset_optimizer()
     adam->resetState();
 }
 
+py::array_t<double> conv_kern_K(
+    py::dict part,
+    py::array_t<double, py::array::c_style | py::array::forcecast> Xin,
+    py::object X2in)
+{
+  std::unique_ptr<CConvKern> k = makeConvFromPart(part);
+  CMatrix X = matrixFromNumpy(Xin);
+  if(X.getCols() != k->getInputDim())
+    throw ndlexceptions::Error("X has " + std::to_string(X.getCols()) + " columns but the Conv kernel expects "
+                               + std::to_string(k->getInputDim()));
+  if(X2in.is_none())
+  {
+    CMatrix K(X.getRows(), X.getRows());
+    k->compute(K, X);
+    return matrixToNumpy(K);
+  }
+  CMatrix X2 = matrixFromNumpy(py::cast<py::array_t<double, py::array::c_style | py::array::forcecast> >(X2in));
+  if(X2.getCols() != k->getInputDim())
+    throw ndlexceptions::Error("X2 has " + std::to_string(X2.getCols()) + " columns but the Conv kernel expects "
+                               + std::to_string(k->getInputDim()));
+  CMatrix K(X.getRows(), X2.getRows());
+  k->compute(K, X, X2);
+  return matrixToNumpy(K);
+}
+
+py::array_t<double> PyDeepGP::conv_filters() const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  const CConvKern* ck = dynamic_cast<const CConvKern*>(model->layer(0).getKern());
+  if(ck == 0)
+    throw ndlexceptions::Error("the first layer is not convolutional");
+  const CMatrix& Z = model->layer(0).getInducingCentres();
+  const unsigned int M = Z.getRows(), h = ck->getPatchHeight(), w = ck->getPatchWidth(), C = ck->numChannels();
+  py::array_t<double> out({(py::ssize_t)M, (py::ssize_t)h, (py::ssize_t)w, (py::ssize_t)C});
+  double* o = out.mutable_data();
+  // A patch vector is ordered (di, dj, c): row-major (h, w, C).
+  for(unsigned int m = 0; m < M; m++)
+    for(unsigned int j = 0; j < h * w * C; j++)
+      o[(size_t)m * h * w * C + j] = Z.getVal(m, j);
+  return out;
+}
+
+py::array_t<double> PyDeepGP::conv_patch_weights() const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  const CConvKern* ck = dynamic_cast<const CConvKern*>(model->layer(0).getKern());
+  if(ck == 0)
+    throw ndlexceptions::Error("the first layer is not convolutional");
+  const std::vector<double>& w = ck->patchWeights();
+  py::array_t<double> out((py::ssize_t)w.size());
+  for(size_t i = 0; i < w.size(); i++)
+    out.mutable_data()[i] = w[i];
+  return out;
+}
+
 void PyDeepGP::save(const std::string& path) const
 {
   if(!model)
@@ -745,6 +951,8 @@ double PyDeepGP::chi() const
 
 void bind_deepgp(py::module_& m)
 {
+  m.def("conv_kern_K", &conv_kern_K, py::arg("part"), py::arg("X"), py::arg("X2") = py::none(),
+        "Evaluate a convolutional kernel descriptor (gpc.kern.Conv.to_parts()[0]) on X (and X2).");
   py::class_<PyDeepGP>(
       m,
       "DeepGP",
@@ -769,6 +977,9 @@ void bind_deepgp(py::module_& m)
                     double,
                     unsigned int,
                     unsigned int,
+                    const std::string&,
+                    unsigned int,
+                    bool,
                     py::object>(),
            py::arg("X"),
            py::arg("Y"),
@@ -789,6 +1000,9 @@ void bind_deepgp(py::module_& m)
            py::arg("likelihood_eps") = 1e-3,
            py::arg("likelihood_samples") = 256,
            py::arg("likelihood_seed") = 12345,
+           py::arg("diag") = "exact",
+           py::arg("diag_samples") = 64,
+           py::arg("diag_force") = false,
            py::arg("mlp_init") = py::str("unit"))
       .def("optimize",
            &PyDeepGP::optimize,
@@ -860,6 +1074,10 @@ void bind_deepgp(py::module_& m)
            py::arg("probe_seed") = 0,
            py::arg("prior") = true,
            "(median spread, median mean log singular value) of the input-output Jacobian.")
+      .def("conv_filters", &PyDeepGP::conv_filters,
+           "Inducing patches of the convolutional first layer as an (M, h, w, C) array.")
+      .def("conv_patch_weights", &PyDeepGP::conv_patch_weights,
+           "Patch weights w_p of the convolutional first layer (length P, row-major positions).")
       .def("describe", &PyDeepGP::describe)
       .def("hermite_warnings",
            [](const PyDeepGP& self) { return self.hermite_warnings(); },

@@ -79,7 +79,7 @@ where \(g^\mu_i, g^v_i\) are derivatives of \(\mathbb{E}_q[\log p(y_i\mid f_i)]\
 
 - **Gaussian, full batch, \(\gamma=1\)**: one step lands on the Titsias optimum; ELBO = DTCVAR bound. This is the primary oracle.
 - **Minibatch**: the step is linear in the per-point sites, so batch steps are unbiased in natural-parameter space; use \(\gamma<1\) with a decaying schedule.
-- **Non-Gaussian**: warm up \(\gamma\) from small values (Salimbeni et al. 2018). Positive definiteness holds for \(\gamma\le1\) when \(g^v_i\le0\), i.e. log-concave likelihoods. All current noise models except `CNcnmNoise` qualify; NCNM is out of scope for the first delivery (would need damping / clipping).
+- **Non-Gaussian**: warm up \(\gamma\) from small values (Salimbeni et al. 2018). Positive definiteness holds for \(\gamma\le1\) when \(g^v_i\le0\), i.e. log-concave likelihoods. NCNM is out of scope for the first delivery (would need damping / clipping). *Update (CIP-003E, 2026-11-27):* the list of qualifying likelihoods was too generous. `CRobustMaxNoise` is not log-concave and Student-t is not either (Student-t with CVI was not examined). For a non-log-concave likelihood the target precision can be indefinite and the step has no ascent guarantee; `CSvgp` now halves \(\gamma\) until \(q\) is valid, which protects validity only. See CIP-003E, "CVI and non-log-concave likelihoods".
 - **Not** for hyperparameters, \(\mathbf{Z}\), or noise parameters: those are not exponential-family variational parameters and use Adam.
 - Natural gradients are invariant to the affine whitening map, so whitening changes conditioning, not the step.
 

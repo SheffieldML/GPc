@@ -50,6 +50,57 @@ CKern* makeLayerKern(const std::string& name, unsigned int din)
       "DeepGP kernel must be 'rbf', 'mlp', or 'lin' (got '" + name + "').");
 }
 
+// CIP-0041 B1: a string (applied to every layer) or a length-L sequence of strings.
+std::vector<std::string> parseLayerStrings(py::object obj, unsigned int nLayers,
+                                           const char* what)
+{
+  std::vector<std::string> out;
+  if(py::isinstance<py::str>(obj))
+  {
+    out.assign(nLayers, py::cast<std::string>(obj));
+  }
+  else if(py::isinstance<py::list>(obj) || py::isinstance<py::tuple>(obj))
+  {
+    py::sequence seq = py::reinterpret_borrow<py::sequence>(obj);
+    if(py::len(seq) != nLayers)
+      throw ndlexceptions::Error(std::string(what) + " sequence length ("
+                                 + std::to_string(py::len(seq))
+                                 + ") must equal layers (" + std::to_string(nLayers) + ")");
+    for(py::handle h : seq)
+    {
+      if(!py::isinstance<py::str>(h))
+        throw ndlexceptions::Error(std::string(what) + " entries must be strings");
+      out.push_back(py::cast<std::string>(h));
+    }
+  }
+  else
+    throw ndlexceptions::Error(std::string(what)
+                               + " must be a string or a sequence of strings of length layers");
+  return out;
+}
+
+std::string canonicalKernelName(const std::string& n)
+{
+  if(n == "RBF") return "rbf";
+  if(n == "MLP") return "mlp";
+  if(n == "Linear" || n == "linear") return "lin";
+  return n;
+}
+
+// "a" when every layer agrees, else "a,b,c".
+std::string joinLayerNames(const std::vector<std::string>& v)
+{
+  bool uniform = true;
+  for(const std::string& e : v)
+    uniform = uniform && (e == v[0]);
+  if(uniform)
+    return v[0];
+  std::string out;
+  for(size_t i = 0; i < v.size(); ++i)
+    out += (i ? "," : "") + v[i];
+  return out;
+}
+
 std::vector<unsigned int> parseNumInducing(py::object num_inducing,
                                            unsigned int nLayers,
                                            unsigned int nData)
@@ -105,7 +156,7 @@ PyDeepGP::PyDeepGP(
     int hidden,
     py::object num_inducing,
     py::object kernel,
-    const std::string& inducing,
+    py::object inducing,
     double chi,
     double beta,
     bool drop_residual,
@@ -119,7 +170,7 @@ PyDeepGP::PyDeepGP(
     unsigned int likelihood_samples,
     unsigned int likelihood_seed)
   : X(matrixFromNumpy(Xin)), Y(matrixFromNumpy(Yin)),
-    inducingType(inducing), likelihoodType(likelihood),
+    likelihoodType(likelihood),
     learnWindowWidth(learn_window_width),
     learnWindowWidths(learn_window_widths)
 {
@@ -135,30 +186,43 @@ PyDeepGP::PyDeepGP(
     throw ndlexceptions::Error(
         "Pass only one of learn_window_width=True (tied) or "
         "learn_window_widths=True (untied).");
-  if((learn_window_width || learn_window_widths) && inducing == "hermite")
-    throw ndlexceptions::Error(
-        "Hermite inducing (E3): Hermite windows have no width; learn_window_width(s) "
-        "cannot be used with inducing='hermite'.");
-  if((learn_window_width || learn_window_widths) && inducing != "weightspace")
-    throw ndlexceptions::Error(
-        "learn_window_width(s) is only supported with inducing='weightspace'.");
   if(layers < 1)
     throw ndlexceptions::Error("layers must be >= 1");
-  if(inducing != "points" && inducing != "weightspace" && inducing != "hermite")
-    throw ndlexceptions::Error("inducing must be 'points', 'weightspace' or 'hermite'");
   if(!(chi > 0.0) || !(beta > 0.0))
     throw ndlexceptions::Error("chi and beta must be positive");
 
-  kernelType = py::cast<std::string>(kernel);
-  if(inducing == "weightspace"
-     && !(kernelType == "mlp" || kernelType == "MLP"))
+  // CIP-0041 B1: per-layer kernel and inducing family, validated per layer.
+  const bool perLayer = !(py::isinstance<py::str>(kernel) && py::isinstance<py::str>(inducing));
+  std::vector<std::string> kernNames = parseLayerStrings(kernel, layers, "kernel");
+  std::vector<std::string> indNames = parseLayerStrings(inducing, layers, "inducing");
+  for(std::string& n : kernNames)
+    n = canonicalKernelName(n);
+  unsigned int nWeightspace = 0, nHermite = 0;
+  for(unsigned int ell = 0; ell < layers; ++ell)
+  {
+    const std::string pre = perLayer ? "layer " + std::to_string(ell) + ": " : "";
+    const std::string& ind = indNames[ell];
+    if(ind != "points" && ind != "weightspace" && ind != "hermite")
+      throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace' or 'hermite'");
+    if(ind == "weightspace" && kernNames[ell] != "mlp")
+      throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp'");
+    if(ind == "hermite" && kernNames[ell] != "mlp")
+      throw ndlexceptions::Error(pre + "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '"
+                                 + kernNames[ell] + "'.");
+    nWeightspace += (ind == "weightspace");
+    nHermite += (ind == "hermite");
+  }
+  if((learn_window_width || learn_window_widths) && nWeightspace == 0)
+  {
+    if(nHermite > 0)
+      throw ndlexceptions::Error(
+          "Hermite inducing (E3): Hermite windows have no width; learn_window_width(s) "
+          "cannot be used with inducing='hermite'.");
     throw ndlexceptions::Error(
-        "inducing='weightspace' requires kernel='mlp'");
-
-  if(inducing == "hermite"
-     && !(kernelType == "mlp" || kernelType == "MLP"))
-    throw ndlexceptions::Error(
-        "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '" + kernelType + "'.");
+        "learn_window_width(s) is only supported with inducing='weightspace'.");
+  }
+  inducingType = joinLayerNames(indNames);
+  layerInducingTypes = indNames;
 
   const unsigned int Din = X.getCols();
   const unsigned int Dout = Y.getCols();
@@ -178,28 +242,25 @@ PyDeepGP::PyDeepGP(
   ownedKerns.clear();
   for(unsigned int ell = 0; ell < layers; ++ell)
   {
-    CKern* k = makeLayerKern(kernelType, dims[ell]);
+    CKern* k = makeLayerKern(kernNames[ell], dims[ell]);
     ownedKerns.emplace_back(k);
     kernPtrs.push_back(k);
   }
-  if(kernelType == "RBF")
-    kernelType = "rbf";
-  else if(kernelType == "MLP")
-    kernelType = "mlp";
-  else if(kernelType == "Linear" || kernelType == "linear")
-    kernelType = "lin";
+  kernelType = joinLayerNames(kernNames);
+  layerKernelTypes = kernNames;
 
   ndlutil::init_genrand(0);
   model = std::make_unique<CDeepGp>(X, Y, kernPtrs, dims, M, beta, chi,
                                     verbosity);
   for(unsigned int ell = 0; ell < layers; ++ell)
   {
-    if(inducing != "points")
-      model->setLayerInducingType(ell, inducing);
+    if(indNames[ell] != "points")
+      model->setLayerInducingType(ell, indNames[ell]);
   }
   if(learn_window_width || learn_window_widths)
     for(unsigned int ell = 0; ell < layers; ++ell)
-      model->setLayerLearnWindowWidth(ell, true, learn_window_widths);
+      if(indNames[ell] == "weightspace")
+        model->setLayerLearnWindowWidth(ell, true, learn_window_widths);
   if(drop_residual)
     model->setDropResidual(true);
 
@@ -455,11 +516,14 @@ std::unique_ptr<PyDeepGP> PyDeepGP::load(const std::string& path)
   self->model->fromFile(path);
   self->X.deepCopy(self->model->getX());
   self->Y.deepCopy(self->model->getY());
-  self->inducingType = self->model->getLayerInducingType(0);
+  for(unsigned int ell = 0; ell < self->model->getNumLayers(); ++ell)
+    self->layerInducingTypes.push_back(self->model->getLayerInducingType(ell));
+  self->inducingType = joinLayerNames(self->layerInducingTypes);
   self->likelihoodType = (self->model->getLikelihood() != 0)
                              ? self->model->getLikelihood()->getType()
                              : std::string("gaussian");
   self->kernelType = "loaded";
+  self->layerKernelTypes.assign(self->model->getNumLayers(), "loaded");
   return self;
 }
 
@@ -617,7 +681,7 @@ void bind_deepgp(py::module_& m)
                     int,
                     py::object,
                     py::object,
-                    const std::string&,
+                    py::object,
                     double,
                     double,
                     bool,
@@ -636,7 +700,7 @@ void bind_deepgp(py::module_& m)
            py::arg("hidden") = -1,
            py::arg("num_inducing") = 10,
            py::arg("kernel") = py::str("rbf"),
-           py::arg("inducing") = "points",
+           py::arg("inducing") = py::str("points"),
            py::arg("chi") = 1.0,
            py::arg("beta") = 1.0,
            py::arg("drop_residual") = false,
@@ -722,6 +786,10 @@ void bind_deepgp(py::module_& m)
       .def_property_readonly("hidden_dim", &PyDeepGP::hidden_dim)
       .def_property_readonly("kernel_type", &PyDeepGP::kernel_type)
       .def_property_readonly("inducing_type", &PyDeepGP::inducing_type)
+      .def_property_readonly("layer_kernel_types", &PyDeepGP::layer_kernel_types,
+                             "Kernel type of each layer.")
+      .def_property_readonly("layer_inducing_types", &PyDeepGP::layer_inducing_types,
+                             "Inducing family of each layer.")
       .def_property_readonly("likelihood_type", &PyDeepGP::likelihood_type)
       .def_property_readonly("chi", &PyDeepGP::chi)
       .def_property_readonly("approx", &PyDeepGP::approx);

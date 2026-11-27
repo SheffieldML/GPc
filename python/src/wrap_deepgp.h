@@ -29,7 +29,7 @@ public:
            int hidden = -1,
            py::object num_inducing = py::int_(10),
            py::object kernel = py::str("rbf"),
-           const std::string& inducing = "points",
+           py::object inducing = py::str("points"),
            double chi = 1.0,
            double beta = 1.0,
            bool drop_residual = false,
@@ -102,6 +102,8 @@ public:
   unsigned int hidden_dim() const;
   const std::string& kernel_type() const { return kernelType; }
   const std::string& inducing_type() const { return inducingType; }
+  const std::vector<std::string>& layer_kernel_types() const { return layerKernelTypes; }
+  const std::vector<std::string>& layer_inducing_types() const { return layerInducingTypes; }
   std::vector<std::string> hermite_warnings() const
   {
     return model ? model->hermiteWarnings() : std::vector<std::string>();
@@ -117,6 +119,8 @@ private:
   CMatrix Y;
   std::string kernelType;
   std::string inducingType;
+  std::vector<std::string> layerKernelTypes;
+  std::vector<std::string> layerInducingTypes;
   std::string likelihoodType;
   std::vector<std::unique_ptr<CKern> > ownedKerns;
   std::unique_ptr<CNoise> ownedNoise;

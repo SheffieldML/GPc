@@ -225,3 +225,98 @@ def test_learned_window_width_changes_the_trained_elbo():
         m.optimize(iters=100, batch_size=100, samples=1, adam_lr=1e-2, seed=0)
         elbo[flag] = m.elbo()
     assert abs(elbo[True] - elbo[False]) > 1e-3
+
+
+# ---- CIP-0041 B1: per-layer kernel and inducing family -------------------
+
+
+def _hd_toy(n: int = 30, d: int = 6, seed: int = 1):
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(n, d))
+    Y = np.sin(X[:, :1]) + 0.05 * rng.normal(size=(n, 1))
+    return X, Y
+
+
+def test_per_layer_inducing_constructs_trains_and_roundtrips(tmp_path):
+    X, Y = _hd_toy()
+    m = gpc.models.DeepGP(
+        X, Y, layers=3, hidden=3, num_inducing=6, kernel="mlp",
+        inducing=["weightspace", "points", "points"],
+    )
+    assert m.layer_inducing_types == ["weightspace", "points", "points"]
+    assert m.layer_kernel_types == ["mlp", "mlp", "mlp"]
+    assert m.inducing_type == "weightspace,points,points"
+    assert m.kernel_type == "mlp"
+    assert np.isfinite(m.elbo())
+    m.optimize(iters=5, batch_size=X.shape[0], adam_lr=0.01, seed=0)
+    assert np.isfinite(m.elbo())
+    path = tmp_path / "pl.model"
+    m.save(str(path))
+    m2 = gpc.models.DeepGP.load(str(path))
+    assert m2.layer_inducing_types == ["weightspace", "points", "points"]
+    # Mean-path predict is deterministic; ELBO is Monte Carlo.
+    mu0, _ = m.predict(X)
+    mu1, _ = m2.predict(X)
+    assert np.allclose(mu0, mu1, atol=1e-6)
+
+
+def test_per_layer_kernels_mixed():
+    X, Y = _hd_toy()
+    m = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=3, num_inducing=6, kernel=["mlp", "rbf"],
+        inducing=["weightspace", "points"],
+    )
+    assert m.layer_kernel_types == ["mlp", "rbf"]
+    assert m.kernel_type == "mlp,rbf"
+    assert np.isfinite(m.elbo())
+
+
+def test_per_layer_errors_name_the_layer():
+    X, Y = _hd_toy()
+    with pytest.raises(Exception, match=r"layer 1: .*weightspace.*mlp"):
+        gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=6, kernel=["mlp", "rbf"],
+            inducing=["points", "weightspace"],
+        )
+    with pytest.raises(Exception, match=r"layer 0: .*hermite.*mlp"):
+        gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=6, kernel=["rbf", "mlp"],
+            inducing=["hermite", "points"],
+        )
+    with pytest.raises(Exception, match=r"layer 1: inducing must be"):
+        gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=6, inducing=["points", "bogus"],
+        )
+    with pytest.raises(Exception, match="length"):
+        gpc.models.DeepGP(X, Y, layers=3, hidden=3, num_inducing=6, kernel=["rbf", "rbf"])
+
+
+def test_scalar_strings_match_single_element_sequences():
+    X, Y = _hd_toy()
+    a = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp", inducing="weightspace"
+    )
+    b = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=3, num_inducing=6, kernel=["mlp", "mlp"],
+        inducing=["weightspace", "weightspace"],
+    )
+    mu_a, _ = a.predict(X)
+    mu_b, _ = b.predict(X)
+    assert np.array_equal(mu_a, mu_b)
+    assert a.kernel_type == b.kernel_type == "mlp"
+    assert a.inducing_type == b.inducing_type == "weightspace"
+
+
+def test_learn_window_width_applies_to_weightspace_layers_only():
+    X, Y = _hd_toy()
+    m = gpc.models.DeepGP(
+        X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
+        inducing=["weightspace", "points"], learn_window_width=True,
+    )
+    m.optimize(iters=3, batch_size=X.shape[0], adam_lr=0.01, seed=0)
+    assert np.isfinite(m.elbo())
+    with pytest.raises(Exception, match="weightspace"):
+        gpc.models.DeepGP(
+            X, Y, layers=2, hidden=3, num_inducing=6, kernel="mlp",
+            inducing=["points", "points"], learn_window_width=True,
+        )

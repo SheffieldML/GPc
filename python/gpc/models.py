@@ -547,10 +547,13 @@ class DeepGP(_DeepGP):
     num_inducing :
         Int or length-``L`` sequence of inducing counts.
     kernel :
-        ``'rbf'``, ``'mlp'``, or ``'lin'`` (same type on every layer).
+        ``'rbf'``, ``'mlp'``, or ``'lin'``: a string (same type on every layer)
+        or a length-``layers`` sequence (one per layer, CIP-0041).
     inducing :
         ``'points'``, ``'weightspace'`` or ``'hermite'`` (the last two need
-        ``kernel='mlp'``). ``'hermite'`` uses fixed Hermite ridge windows
+        ``kernel='mlp'`` on that layer): a string for every layer or a
+        length-``layers`` sequence, e.g. ``['weightspace', 'points', 'points']``.
+        Invalid combinations raise with the layer index. ``'hermite'`` uses fixed Hermite ridge windows
         (CIP-003D): no width, no offset, no learnable inducing parameters. It
         raises if ``num_inducing`` exceeds the capacity for the layer's input
         dimension, and warns (``UserWarning``) about conditioning, near-capacity
@@ -573,7 +576,8 @@ class DeepGP(_DeepGP):
         the labels, or taken from a likelihood instance).
     learn_window_width, learn_window_widths :
         Weight-space only (``inducing='hermite'`` raises: the windows have no
-        width). Optimise a tied window width ``s`` per layer, or untied
+        width); with per-layer ``inducing`` they apply to the weight-space
+        layers. Optimise a tied window width ``s`` per layer, or untied
         per-unit widths ``s_m`` (mutually exclusive; see
         :class:`SparseGPRegression`).
 
@@ -598,8 +602,8 @@ class DeepGP(_DeepGP):
         layers: int = 2,
         hidden: int = -1,
         num_inducing: Any = 10,
-        kernel: str = "rbf",
-        inducing: str = "points",
+        kernel: Any = "rbf",
+        inducing: Any = "points",
         chi: float = 1.0,
         beta: float = 1.0,
         drop_residual: bool = False,

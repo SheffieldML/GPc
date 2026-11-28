@@ -138,8 +138,11 @@ std::unique_ptr<CConvKern> makeConvFromPart(const py::dict& part)
     throw ndlexceptions::Error("Conv: weights must be 'learned', 'tied' or 'fixed'");
   const unsigned int q = pshape[0] * pshape[1] * shape[2];
   std::unique_ptr<CKern> patch = makePatchKern(py::cast<py::dict>(part["patch"]), q);
-  return std::unique_ptr<CConvKern>(
+  std::unique_ptr<CConvKern> ck(
       new CConvKern(*patch, shape[0], shape[1], shape[2], pshape[0], pshape[1], stride, mode));
+  if(part.contains("location_lengthscale"))
+    ck->enableLocation(py::cast<double>(part["location_lengthscale"]));  // CIP-0040 Phase 3
+  return ck;
 }
 
 bool isConvPart(py::handle h)
@@ -338,11 +341,25 @@ PyDeepGP::PyDeepGP(
       throw ndlexceptions::Error(pre + "inducing must be 'points', 'weightspace', 'hermite' or 'patches'");
     if(ind == "patches" && kernNames[ell] != "conv")
       throw ndlexceptions::Error(pre + "inducing='patches' requires a convolutional kernel (gpc.kern.Conv)");
-    if(kernNames[ell] == "conv" && ind != "patches")
-      throw ndlexceptions::Error(pre + "a convolutional kernel supports inducing='patches' only in this release");
-    if(ind == "weightspace" && kernNames[ell] != "mlp")
+    const bool isConv = kernNames[ell] == "conv";
+    if(isConv && ind == "points")
+      throw ndlexceptions::Error(pre + "a convolutional kernel takes inducing='patches', 'weightspace' or 'hermite'");
+    if(isConv && (ind == "weightspace" || ind == "hermite"))
+    {
+      // CIP-0040 Phase 2: windows over the filters need the MLP patch kernel.
+      py::dict pk = py::cast<py::dict>(convParts[ell]["patch"]);
+      const std::string ptype = py::cast<std::string>(pk["type"]);
+      const bool pard = pk.contains("ARD") && py::cast<bool>(pk["ARD"]);
+      if(py::dict(convParts[ell]).contains("location_lengthscale"))
+        throw ndlexceptions::Error(pre + "inducing='" + ind + "' is not defined for the translation-insensitive "
+                                   "(location) convolutional kernel; use inducing='patches'");
+      if(ptype != "mlp" || pard)
+        throw ndlexceptions::Error(pre + "inducing='" + ind + "' on a convolutional kernel requires "
+                                   "a plain MLP patch kernel (got '" + ptype + "')");
+    }
+    else if(ind == "weightspace" && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "inducing='weightspace' requires kernel='mlp' (got '" + kernNames[ell] + "')");
-    if(ind == "hermite" && kernNames[ell] != "mlp")
+    if(ind == "hermite" && !isConv && kernNames[ell] != "mlp")
       throw ndlexceptions::Error(pre + "Hermite inducing (E2): inducing='hermite' requires kernel='mlp', got '"
                                  + kernNames[ell] + "'.");
     nWeightspace += (ind == "weightspace");
@@ -727,6 +744,25 @@ py::array_t<double> PyDeepGP::conv_filters() const
   return out;
 }
 
+py::array_t<double> PyDeepGP::conv_locations() const
+{
+  if(!model)
+    throw ndlexceptions::Error("DeepGP is uninitialised");
+  const CConvKern* ck = dynamic_cast<const CConvKern*>(model->layer(0).getKern());
+  if(ck == 0 || !ck->hasLocation())
+    throw ndlexceptions::Error("the first layer is not a translation-insensitive convolutional kernel");
+  const CMatrix& Z = model->layer(0).getInducingCentres();
+  const unsigned int M = Z.getRows(), q = ck->patchDim();
+  py::array_t<double> out({(py::ssize_t)M, (py::ssize_t)2});
+  double* o = out.mutable_data();
+  for(unsigned int m = 0; m < M; m++)
+  {
+    o[2 * m] = Z.getVal(m, q);
+    o[2 * m + 1] = Z.getVal(m, q + 1);
+  }
+  return out;
+}
+
 py::array_t<double> PyDeepGP::conv_patch_weights() const
 {
   if(!model)
@@ -1076,6 +1112,8 @@ void bind_deepgp(py::module_& m)
            "(median spread, median mean log singular value) of the input-output Jacobian.")
       .def("conv_filters", &PyDeepGP::conv_filters,
            "Inducing patches of the convolutional first layer as an (M, h, w, C) array.")
+      .def("conv_locations", &PyDeepGP::conv_locations,
+           "Inducing locations (M, 2) in [0,1]^2 of a translation-insensitive convolutional first layer.")
       .def("conv_patch_weights", &PyDeepGP::conv_patch_weights,
            "Patch weights w_p of the convolutional first layer (length P, row-major positions).")
       .def("describe", &PyDeepGP::describe)

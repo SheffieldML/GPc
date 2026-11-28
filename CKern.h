@@ -112,6 +112,9 @@ class CKern : public CMatInterface, public CStreamInterface, public CTransformab
   // CIP-0040 Phase 1c: true when diagCompute is a stochastic unbiased estimate of the exact
   // diagonal (it may then fall below the Nystrom term; callers must not clamp it).
   virtual bool diagIsEstimated() const { return false; }
+  // Dimension of the space the weight-space families (ridge / Hermite windows) live over:
+  // the input dimension, except for the convolutional kernel, where it is the patch dimension.
+  virtual unsigned int wsDomainDim() const { return getInputDim(); }
   // Draw fresh samples for the next minibatch (no-op unless the diagonal is estimated).
   virtual void advanceDiagSeed() {}
   // return the `signal strength' of the kernel.
@@ -2365,6 +2368,18 @@ class CConvKern : public CKern {
   const CKern& patchKernel() const { return *patch; }
   CKern& patchKernel() { return *patch; }
   const vector<double>& patchWeights() const { return w; }
+  // CIP-0040 Phase 3: translation-insensitive kernel (Dutordoir et al., 2020),
+  //   k(x, x') = sum_{p,p'} k_g(x^[p], x'^[p']) k_loc(l_p, l_p'),
+  // with k_loc a squared-exponential kernel on patch locations l_p in [0,1]^2 (patch-grid
+  // row and column, each scaled to [0,1]) and one extra parameter log(lengthscale).
+  // Requires WEIGHTS_FIXED (the location kernel replaces the weights; k_loc == 1 recovers
+  // the weighted kernel with tied weight 1).  Inducing pairs (patch, location) are handled
+  // by CInducingPatches.  Weight-space windows are not defined (the response depends on
+  // location) and throw.
+  void enableLocation(double lengthscale);
+  bool hasLocation() const { return locEnabled; }
+  double locationLengthscale() const { return exp(locLogLs); }
+  void patchLocation(unsigned int p, double& li, double& lj) const;
   // Xp is (N P) x q; row n*P+p is patch p of image n.
   void extractPatches(CMatrix& Xp, const CMatrix& X) const;
 
@@ -2380,6 +2395,27 @@ class CConvKern : public CKern {
   unsigned int getDiagSamples() const { return diagSamples; }
   bool diagIsEstimated() const override { return diagSamples >= 2 && diagSamples < P; }
   void advanceDiagSeed() override { ++diagSeed; }
+
+  // CIP-0040 Phase 2: weight-space inducing variables over filters.  Windows live in patch
+  // space (V is M x (q+1)); K_fu[n,m] = sum_p w_p K_patch(x_n^[p], window m), one call of the
+  // patch kernel's hook on the stacked patches.  Needs an MLP-family patch kernel.
+  unsigned int wsDomainDim() const override { return patchDim(); }
+  void wsRidgeCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                           const CMatrix& a, double s) const override;
+  void wsRidgeGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                         const CMatrix& a, double s, const CMatrix& gKfu) const override;
+  void wsRidgeGradS(CMatrix& gS, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const override;
+  void wsRidgeGradVA(CMatrix& gV, CMatrix& ga, const CMatrix& X, const CMatrix& V,
+                     const CMatrix& a, double s, const CMatrix& gKfu) const override;
+  void wsRidgeGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                    const CMatrix& a, double s, const CMatrix& gKfu) const override;
+  void wsHermiteCrossCompute(CMatrix& Kfu, const CMatrix& X, const CMatrix& V,
+                             const std::vector<unsigned int>& ks) const override;
+  void wsHermiteGradParams(CMatrix& g, const CMatrix& X, const CMatrix& V,
+                           const std::vector<unsigned int>& ks, const CMatrix& gKfu) const override;
+  void wsHermiteGradX(CMatrix& gX, const CMatrix& X, const CMatrix& V,
+                      const std::vector<unsigned int>& ks, const CMatrix& gKfu) const override;
 
   void setInitParam();
   double getVariance() const { return patch->getVariance(); }
@@ -2426,7 +2462,20 @@ class CConvKern : public CKern {
   void rebuildParams();   // nParams, names, transforms from patch + weight mode
   void setWeightsFromParams();
   void imagePatches(CMatrix& Xn, const CMatrix& Xp, unsigned int n) const;
-  double quadForm(const CMatrix& G) const;  // w^T G w for a P x P block
+  double quadForm(const CMatrix& G) const;  // sum_{ab} A_ab G_ab for a P x P block
+  // Pair coefficient: w_a w_b (weighted kernel) or k_loc(l_a, l_b) (location kernel), and its
+  // derivative with respect to log(lengthscale) (zero without locations).
+  double pairCoef(unsigned int a, unsigned int b) const
+  { return locEnabled ? locA[a * P + b] : w[a] * w[b]; }
+  double pairCoefLoc(unsigned int a, unsigned int b) const
+  { return locEnabled ? locdA[a * P + b] : 0.0; }
+  void refreshLocation();
+  void rejectLocation(const char* what) const;
+  unsigned int locParamIndex() const { return patch->getNumParams() + (unsigned int)wParams.size(); }
+  // Stacked-patch helpers for the weight-space hooks.
+  void expandKfuGrad(CMatrix& G, const CMatrix& gKfu) const;           // (N P) x M, w_p gKfu[n,m]
+  void contractKp(CMatrix& Kfu, const CMatrix& Kp, unsigned int N) const;  // sum_p w_p Kp[nP+p, m]
+  void addWeightGrad(CMatrix& g, const CMatrix& Kp, const CMatrix& gKfu) const;
   void sampleDiagPatches(CMatrix& Xs, std::vector<unsigned int>& idx, const CMatrix& Xp, unsigned int n, unsigned int seedRow) const;
 
   std::unique_ptr<CKern> patch;
@@ -2435,6 +2484,9 @@ class CConvKern : public CKern {
   WeightMode mode;
   vector<double> w;        // effective weights, length P
   vector<double> wParams;  // parameter storage: P (learned), 1 (tied), 0 (fixed)
+  bool locEnabled = false;
+  double locLogLs = 0.0;
+  vector<double> locA, locdA;  // P x P, row-major: k_loc and d k_loc / d log(lengthscale)
   unsigned int diagSamples = 0;  // 0: exact diagonal
   uint64_t diagSeed = 0;
 };
